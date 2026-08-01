@@ -1,0 +1,197 @@
+-- allium: 3
+-- content-media.allium
+
+-- Scope: Media types that Vera stores and presents as native page content
+-- Includes: Markdown, compressed audio and voice, raster images, PDF, SVG,
+--   Mermaid diagrams, and JavaScript canvas sketches including p5.js
+-- Excludes:
+--   - Physical file layout and object storage
+--   - Codec and compression implementation
+--   - Canvas library selection
+--   - Sandbox implementation
+-- Dependencies: Page and Participant are governed by core.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract NativeMediaSupport {
+    store: (resource: MediaResource) -> StoredMedia
+    present: (resource: MediaResource) -> PresentedMedia
+
+    @invariant SourceFidelity
+        -- Vera preserves the canonical source or original file for every resource.
+        -- Presentation does not replace or destructively transcode that source.
+
+    @invariant NativePresentation
+        -- Every declared media variant can be presented within a Vera page
+        -- without requiring the reader to export it to another application.
+
+    @invariant ExecutableContentIsolation
+        -- Presenting SVG, Mermaid or JavaScript canvas content cannot grant that
+        -- content access to private graph data not explicitly supplied to it.
+}
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity MediaResource {
+    kind: Markdown | Audio | RasterImage | Pdf | Svg | Mermaid | CanvasSketch
+    title: String?
+    created_by: core/Participant
+    created_at: Timestamp
+}
+
+variant Markdown : MediaResource {
+    source: String
+}
+
+variant Audio : MediaResource {
+    original_file: String
+    media_type: String
+    transcript: String?
+    is_authenticated_voice: Boolean
+}
+
+variant RasterImage : MediaResource {
+    original_file: String
+    media_type: String
+    alternative_text: String?
+}
+
+variant Pdf : MediaResource {
+    original_file: String
+}
+
+variant Svg : MediaResource {
+    source: String
+    alternative_text: String?
+}
+
+variant Mermaid : MediaResource {
+    source: String
+}
+
+variant CanvasSketch : MediaResource {
+    javascript_source: String
+    canvas_library: String?
+}
+
+entity PageEmbedding {
+    page: core/Page
+    resource: MediaResource
+    attached_by: core/Participant
+    attached_at: Timestamp
+}
+
+entity StoredMedia {
+    resource: MediaResource
+    source_preserved: Boolean
+}
+
+entity PresentedMedia {
+    resource: MediaResource
+    source_preserved: Boolean
+    presented_natively: Boolean
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule AttachMediaToPage {
+    when: ParticipantAttachesMedia(participant, page, resource)
+
+    let membership = core/Membership{graph: page.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: resource.created_by = participant
+
+    ensures: PageEmbedding.created(
+        page: page,
+        resource: resource,
+        attached_by: participant,
+        attached_at: now
+    )
+}
+
+rule StoreCanonicalMediaSource {
+    when: StoreMedia(resource)
+
+    ensures: StoredMedia.created(
+        resource: resource,
+        source_preserved: true
+    )
+}
+
+rule PresentMediaWithinPage {
+    when: PresentMedia(resource)
+
+    ensures: PresentedMedia.created(
+        resource: resource,
+        source_preserved: true,
+        presented_natively: true
+    )
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant StoredSourceIsPreserved {
+    for stored in StoredMedias:
+        stored.source_preserved = true
+}
+
+invariant NativePresentationPreservesSource {
+    for presentation in PresentedMedias:
+        presentation.presented_natively = true and presentation.source_preserved = true
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor PageParticipant {
+    within: core/Page
+    identified_by: core/Participant where core/Membership{graph: within.graph, participant: this}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface PageMedia {
+    facing participant: PageParticipant
+    context page: core/Page
+
+    exposes:
+        page.title
+
+    provides:
+        ParticipantAttachesMedia(participant, page, resource)
+        StoreMedia(resource)
+        PresentMedia(resource)
+
+    contracts:
+        fulfils NativeMediaSupport
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred ExecutableContentSandbox.present -- see: executable-content-sandbox.allium
+deferred AudioTranscription.create         -- see: audio-transcription.allium
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Are binary media files canonical members of the Vera corpus, or may a resource be only an external reference?"
+open question "Which media types must Vera edit directly, rather than only store and present?"
+open question "May a canvas sketch receive an explicit read-only projection of graph data as input?"
