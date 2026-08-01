@@ -37,6 +37,7 @@ value AnnotationLocation {
 ------------------------------------------------------------
 
 enum BibliographicSource { zotero }
+enum BibliographicPresence { present_in_source | orphaned_from_source }
 
 ------------------------------------------------------------
 -- Entities and Variants
@@ -52,6 +53,8 @@ entity BibliographicRecord {
     source: BibliographicSource
     source_key: String
     source_version: Integer
+    presence: BibliographicPresence
+    orphaned_at: Timestamp?
     snapshot: BibliographicSnapshot
     page: core/Page
     attachments: BibliographicAttachment with record = this
@@ -101,6 +104,8 @@ rule ImportNewZoteroRecord {
         source: zotero,
         source_key: source_key,
         source_version: source_version,
+        presence: present_in_source,
+        orphaned_at: null,
         snapshot: snapshot,
         page: page
     )
@@ -117,6 +122,19 @@ rule RefreshExistingZoteroRecord {
     ensures:
         record.source_version = source_version
         record.snapshot = snapshot
+}
+
+rule MarkMissingZoteroRecordAsOrphaned {
+    when: ZoteroRecordMissing(participant, library, source_key)
+
+    let record = BibliographicRecord{library, source: zotero, source_key}
+
+    requires: exists record
+    requires: record.presence = present_in_source
+
+    ensures:
+        record.presence = orphaned_from_source
+        record.orphaned_at = now
 }
 
 rule ImportZoteroAttachment {
@@ -208,6 +226,7 @@ surface BibliographicAggregation {
 
     provides:
         ZoteroRecordAvailable(participant, library, source_key, source_version, snapshot, page)
+        ZoteroRecordMissing(participant, library, source_key)
         ZoteroAttachmentAvailable(participant, record, source_key, media_reference) when record.library = library
         ZoteroAnnotationAvailable(participant, record, source_key, text, comment?, location) when record.library = library
         ZoteroNoteAvailable(participant, record, source_key, content) when record.library = library
@@ -217,6 +236,11 @@ surface BibliographicAggregation {
         -- Bibliographic metadata, Zotero tags, notes and annotations flow from
         -- Zotero into Vera. This surface provides no operation that writes them
         -- back to Zotero.
+
+    @guarantee MissingSourceNeverDeletesVeraRecord
+        -- When a previously imported record no longer exists in Zotero, Vera
+        -- retains it and identifies it as orphaned. Source synchronization never
+        -- deletes the Vera record; only an explicit action by Herbert may do so.
 
     @guarantee VeraAggregatesResearchContext
         -- Imported records may participate in Vera links, ontology assignments,
@@ -230,6 +254,6 @@ surface BibliographicAggregation {
 -- Open Questions
 ------------------------------------------------------------
 
-open question "When a Zotero item is deleted, should Vera archive its imported record or remove it?"
+open question "When Herbert explicitly deletes an orphaned bibliographic record, what happens to its attachments, annotations, citable fragments and incoming links?"
 open question "Are Zotero collections projected as Vera pages, tags, semantic types or a distinct collection entity?"
 open question "Should attachment binaries be copied into Vera storage or referenced from Zotero storage?"
