@@ -1,0 +1,256 @@
+-- allium: 3
+-- personal-site-projection.allium
+
+-- Scope: Public website projection and eventual migration of doble pagina into Vera
+-- Includes: Public page rendering, canonical URLs, HTML metadata, public search,
+--   RSS, and ingestion of historical Jekyll content into the graph
+-- Excludes:
+--   - Static site generator and deployment implementation
+--   - Jekyll compatibility as a permanent runtime requirement
+--   - Detailed visual design and CSS implementation
+-- Reference: herbertspencer.net is the visual, editorial and publishing baseline
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract PersonalWebsiteProjection {
+    render: (publication: core/Publication) -> PublicDocument
+    metadata: (publication: core/Publication) -> HtmlMetadata
+    search: (site: core/PersonalSite, text: String) -> PublicSearchResult
+    rss: (site: core/PersonalSite) -> RssFeed
+
+    @invariant SameCorpus
+        -- Every public document is projected from a page in Vera's graph.
+        -- The website does not maintain an independent canonical copy of content.
+
+    @invariant CanonicalAddress
+        -- Every public document has one stable canonical URL.
+
+    @invariant PublicDiscoverability
+        -- Published pages expose useful HTML metadata, participate in public
+        -- search and can appear in the site's RSS feed when appropriate.
+
+    @invariant ReproducibleOutput
+        -- The same publication revision and presentation configuration produce
+        -- equivalent public output independent of deployment technology.
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity PublicDocument {
+    publication: core/Publication
+    canonical_url: String
+    html: String
+}
+
+entity HtmlMetadata {
+    publication: core/Publication
+    title: String
+    description: String
+    canonical_url: String
+    language: String
+    image_url: String?
+    search_indexable: Boolean
+}
+
+entity PublicSearchResult {
+    site: core/PersonalSite
+    text: String
+    matching_publications: Set<core/Publication>
+}
+
+entity RssFeed {
+    site: core/PersonalSite
+    canonical_url: String
+    entries: RssEntry with feed = this
+}
+
+entity RssEntry {
+    feed: RssFeed
+    publication: core/Publication
+    title: String
+    canonical_url: String
+    published_at: Timestamp
+}
+
+entity LegacyContent {
+    site: core/PersonalSite
+    source_path: String
+    public_url: String
+    markdown_source: String
+    metadata_source: String
+}
+
+entity LegacyMigration {
+    legacy_content: LegacyContent
+    page: core/Page
+    imported_by: core/Participant
+    imported_at: Timestamp
+    original_url_preserved: Boolean
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule RenderPublishedPage {
+    when: RenderPublication(publication)
+
+    requires: publication.page.visibility = public
+
+    ensures: PublicDocument.created(
+        publication: publication,
+        canonical_url: canonical_url(publication.site, publication.path),
+        html: render_publication(publication)
+    )
+}
+
+rule GeneratePublishedPageMetadata {
+    when: GenerateHtmlMetadata(publication)
+
+    requires: publication.page.visibility = public
+
+    ensures: HtmlMetadata.created(
+        publication: publication,
+        title: publication.page.title,
+        description: publication_description(publication),
+        canonical_url: canonical_url(publication.site, publication.path),
+        language: publication_language(publication),
+        image_url: publication_image(publication),
+        search_indexable: true
+    )
+}
+
+rule SearchPublicSite {
+    when: SearchPublishedPages(site, text)
+
+    ensures: PublicSearchResult.created(
+        site: site,
+        text: text,
+        matching_publications: search_publications(site, text)
+    )
+}
+
+rule GenerateSiteRss {
+    when: GenerateRss(site)
+
+    ensures: RssFeed.created(
+        site: site,
+        canonical_url: rss_url(site)
+    )
+}
+
+rule ImportHistoricalContentIntoGraph {
+    when: ImportLegacyContent(participant, legacy_content, page)
+
+    let site = legacy_content.site
+    let membership = core/Membership{graph: site.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: site.owner = participant
+    requires: page.graph = site.graph
+
+    ensures: LegacyMigration.created(
+        legacy_content: legacy_content,
+        page: page,
+        imported_by: participant,
+        imported_at: now,
+        original_url_preserved: true
+    )
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant PublicDocumentsComeFromPublicPages {
+    for document in PublicDocuments:
+        document.publication.page.visibility = public
+}
+
+invariant MetadataUsesCanonicalDocumentUrl {
+    for metadata in HtmlMetadatas:
+        metadata.canonical_url = canonical_url(metadata.publication.site, metadata.publication.path)
+}
+
+invariant HistoricalUrlsArePreserved {
+    for migration in LegacyMigrations:
+        migration.original_url_preserved = true
+}
+
+invariant SearchReturnsOnlyPublicPages {
+    for result in PublicSearchResults:
+        result.matching_publications.all(p => p.page.visibility = public)
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor SiteOwner {
+    within: core/PersonalSite
+    identified_by: core/Participant where this = within.owner
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface PersonalWebsite {
+    context site: core/PersonalSite
+
+    exposes:
+        site.title
+        site.canonical_domain
+        site.publications
+
+    provides:
+        SearchPublishedPages(site, text)
+        GenerateRss(site)
+
+    contracts:
+        fulfils PersonalWebsiteProjection
+
+    @guarantee PublicOnly
+        -- The website reveals only explicitly published pages and their
+        -- deliberately public media and metadata.
+}
+
+surface HistoricalSiteMigration {
+    facing owner: SiteOwner
+    context site: core/PersonalSite
+
+    exposes:
+        site.title
+        site.canonical_domain
+
+    provides:
+        ImportLegacyContent(owner, legacy_content, page)
+
+    @guarantee LosslessEditorialMigration
+        -- Import preserves Markdown source, relevant metadata and the original
+        -- public URL while making the resulting page part of Vera's graph.
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred PublicPresentation.render -- see: public-presentation.allium
+deferred SearchIndex.publish       -- see: public-search-index.allium
+deferred FeedSelection.select      -- see: rss-selection.allium
+deferred JekyllMigration.ingest    -- see: jekyll-migration.allium
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Which publications belong in RSS: every public page or only dated editorial entries?"
+open question "Which current HTML metadata fields and structured data must be preserved exactly?"
+open question "Should the first migration preserve the existing visual design exactly or reproduce its editorial character with Vera's token system?"
