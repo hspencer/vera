@@ -1,0 +1,264 @@
+-- allium: 3
+-- workspace-interface.allium
+
+-- Scope: Vera's navigable reading, editing and graph workspace
+-- Includes: Text/graph/split layouts, 2D/3D graph modes, breadcrumbs, search,
+--   internal queries, editable style sources and tokens, light/dark themes
+-- Excludes:
+--   - CSS framework and component implementation
+--   - D3 force simulation parameters
+--   - Search index implementation and query execution engine
+--   - Device-specific responsive layout
+-- References: Logseq and logseq-constel are implementation and interaction references
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract GraphQuerySupport {
+    search: (graph: core/Graph, text: String) -> SearchResult
+    query: (graph: core/Graph, expression: String) -> QueryResult
+
+    @invariant CurrentGraphOnly
+        -- Search and query results contain only information the participant
+        -- is authorized to read from the current graph.
+}
+
+contract EditablePresentation {
+    apply_theme: (theme: Theme) -> ThemeApplication
+
+    @invariant TransparentStyleSource
+        -- Theme tokens and stylesheet source remain directly inspectable and editable.
+
+    @invariant DualColourScheme
+        -- Every theme provides both light and dark colour schemes.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum WorkspaceLayout { text_only | graph_only | split }
+enum GraphViewMode { graph_2d | graph_3d }
+enum ColourScheme { light | dark }
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity Workspace {
+    graph: core/Graph
+    participant: core/Participant
+    active_page: core/Page?
+    layout: WorkspaceLayout
+    graph_view: GraphViewMode
+    colour_scheme: ColourScheme
+    navigation_history: List<core/Page>
+    theme: Theme
+}
+
+entity Theme {
+    graph: core/Graph
+    name: String
+    stylesheet_source: String
+    tokens: DesignToken with theme = this
+}
+
+entity DesignToken {
+    theme: Theme
+    name: String
+    light_value: String
+    dark_value: String
+}
+
+entity SearchResult {
+    graph: core/Graph
+    text: String
+    matching_pages: Set<core/Page>
+}
+
+entity QueryResult {
+    graph: core/Graph
+    expression: String
+    matching_pages: Set<core/Page>
+}
+
+entity ThemeApplication {
+    theme: Theme
+    scheme: ColourScheme
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule ParticipantChangesWorkspaceLayout {
+    when: ChangeWorkspaceLayout(participant, workspace, layout)
+
+    requires: workspace.participant = participant
+
+    ensures: workspace.layout = layout
+}
+
+rule ParticipantChangesGraphView {
+    when: ChangeGraphView(participant, workspace, graph_view)
+
+    requires: workspace.participant = participant
+
+    ensures: workspace.graph_view = graph_view
+}
+
+rule ParticipantChangesColourScheme {
+    when: ChangeColourScheme(participant, workspace, colour_scheme)
+
+    requires: workspace.participant = participant
+
+    ensures: workspace.colour_scheme = colour_scheme
+}
+
+rule ApplyCurrentWorkspaceTheme {
+    when: ApplyTheme(participant, workspace)
+
+    requires: workspace.participant = participant
+
+    ensures: ThemeApplication.created(
+        theme: workspace.theme,
+        scheme: workspace.colour_scheme
+    )
+}
+
+rule ParticipantNavigatesToPage {
+    when: NavigateToPage(participant, workspace, page)
+
+    requires: workspace.participant = participant
+    requires: page.graph = workspace.graph
+
+    ensures:
+        workspace.active_page = page
+        workspace.navigation_history = append(workspace.navigation_history, page)
+}
+
+rule ParticipantEditsThemeSource {
+    when: EditThemeSource(participant, workspace, stylesheet_source)
+
+    requires: workspace.participant = participant
+
+    ensures: workspace.theme.stylesheet_source = stylesheet_source
+}
+
+rule ParticipantEditsDesignToken {
+    when: EditDesignToken(participant, workspace, token, light_value, dark_value)
+
+    requires: workspace.participant = participant
+    requires: token.theme = workspace.theme
+
+    ensures:
+        token.light_value = light_value
+        token.dark_value = dark_value
+}
+
+rule ParticipantSearchesGraph {
+    when: SearchGraph(participant, workspace, text)
+
+    requires: workspace.participant = participant
+
+    ensures: SearchResult.created(
+        graph: workspace.graph,
+        text: text,
+        matching_pages: search_pages(workspace.graph, text, participant)
+    )
+}
+
+rule ParticipantQueriesGraph {
+    when: QueryGraph(participant, workspace, expression)
+
+    requires: workspace.participant = participant
+
+    ensures: QueryResult.created(
+        graph: workspace.graph,
+        expression: expression,
+        matching_pages: query_pages(workspace.graph, expression, participant)
+    )
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant WorkspaceUsesThemeFromItsGraph {
+    for workspace in Workspaces:
+        workspace.theme.graph = workspace.graph
+}
+
+invariant ActivePageBelongsToWorkspaceGraph {
+    for workspace in Workspaces:
+        workspace.active_page != null implies workspace.active_page.graph = workspace.graph
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor WorkspaceParticipant {
+    within: Workspace
+    identified_by: core/Participant where core/Membership{graph: within.graph, participant: this}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface VeraWorkspace {
+    facing participant: WorkspaceParticipant
+    context workspace: Workspace
+
+    exposes:
+        workspace.graph.name
+        workspace.active_page
+        workspace.layout
+        workspace.graph_view
+        workspace.colour_scheme
+        workspace.navigation_history
+        workspace.theme
+
+    provides:
+        ChangeWorkspaceLayout(participant, workspace, layout)
+        ChangeGraphView(participant, workspace, graph_view)
+        ChangeColourScheme(participant, workspace, colour_scheme)
+        ApplyTheme(participant, workspace)
+        NavigateToPage(participant, workspace, page)
+        EditThemeSource(participant, workspace, stylesheet_source)
+        EditDesignToken(participant, workspace, token, light_value, dark_value)
+        SearchGraph(participant, workspace, text)
+        QueryGraph(participant, workspace, expression)
+
+    contracts:
+        fulfils GraphQuerySupport
+        fulfils EditablePresentation
+
+    @guarantee NavigableGraphContext
+        -- Text and graph views share the same active page and navigation history.
+        -- Changing layout does not discard the participant's place in the graph.
+
+    @guarantee EditableDesignSystem
+        -- General styles and design tokens are editable from within Vera and
+        -- remain accessible as source rather than opaque application state.
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred GraphRendering.present -- see: graph-rendering.allium
+deferred QueryLanguage.execute   -- see: query-language.allium
+deferred SearchIndex.find        -- see: search-index.allium
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "When edited style source is invalid, should Vera reject it or keep it with the last valid presentation active?"
+open question "Which Logseq query forms must Vera preserve for compatibility with the existing mind graph?"
+open question "Should split layout begin at 50/50 or remember the participant's last divider position per device?"
