@@ -124,6 +124,19 @@ rule RefreshExistingZoteroRecord {
         record.snapshot = snapshot
 }
 
+rule RestoreReappearingZoteroRecord {
+    when: ZoteroRecordAvailable(participant, library, source_key, source_version, snapshot, page)
+
+    let record = BibliographicRecord{library, source: zotero, source_key}
+
+    requires: exists record
+    requires: record.presence = orphaned_from_source
+
+    ensures:
+        record.presence = present_in_source
+        record.orphaned_at = null
+}
+
 rule MarkMissingZoteroRecordAsOrphaned {
     when: ZoteroRecordMissing(participant, library, source_key)
 
