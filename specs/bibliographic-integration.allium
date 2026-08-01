@@ -9,6 +9,7 @@
 --   - Citation style rendering and word-processor integration
 --   - Zotero authentication, API transport and local database access
 --   - Conflict handling for future bidirectional synchronization
+--   - Importing or tracking Zotero collections and subcollections
 
 use "./core.allium" as core
 
@@ -268,5 +269,4 @@ surface BibliographicAggregation {
 ------------------------------------------------------------
 
 open question "When Herbert explicitly deletes an orphaned bibliographic record, what happens to its attachments, annotations, citable fragments and incoming links?"
-open question "Are Zotero collections projected as Vera pages, tags, semantic types or a distinct collection entity?"
 open question "Should attachment binaries be copied into Vera storage or referenced from Zotero storage?"
