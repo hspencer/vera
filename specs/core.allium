@@ -1,9 +1,10 @@
 -- allium: 3
 -- core.allium
 
--- Scope: Participation, provenance, semantic graph changes and selective publication
+-- Scope: Participation, provenance, semantic graph changes and personal publishing
 -- Includes: Human and agent participants, authenticated submissions, revisions,
---   canonical human voice evidence, and public/private page visibility
+--   canonical human voice evidence, public/private page visibility, and projection
+--   of public graph pages as a personal website
 -- Excludes:
 --   - Storage engine, file layout and database schema
 --   - Network protocol and client implementation
@@ -62,6 +63,14 @@ entity Page {
     revisions: Revision with page = this
 }
 
+entity PersonalSite {
+    graph: Graph
+    owner: Participant
+    title: String
+    canonical_domain: String
+    publications: Publication with site = this
+}
+
 entity Block {
     page: Page
     content: String
@@ -100,8 +109,10 @@ entity Revision {
 }
 
 entity Publication {
+    site: PersonalSite
     page: Page
     revision: Revision
+    path: String
     published_at: Timestamp
 }
 
@@ -143,18 +154,23 @@ rule AcceptParticipantSubmission {
 }
 
 rule PublishVisiblePageRevision {
-    when: PublishPage(participant, page, revision)
+    when: PublishPage(participant, site, page, revision, path)
 
     let membership = Membership{graph: page.graph, participant: participant}
 
     requires: exists membership
     requires: membership.status = active
+    requires: participant.kind = human
+    requires: site.owner = participant
+    requires: site.graph = page.graph
     requires: page.visibility = public
     requires: revision.page = page
 
     ensures: Publication.created(
+        site: site,
         page: page,
         revision: revision,
+        path: path,
         published_at: now
     )
 }
@@ -173,6 +189,16 @@ invariant PrivatePagesAreNeverPublished {
         publication.page.visibility = public
 }
 
+invariant OnlySiteOwnerPublishes {
+    for publication in Publications:
+        publication.site.owner.kind = human
+}
+
+invariant PublicationBelongsToSiteGraph {
+    for publication in Publications:
+        publication.page.graph = publication.site.graph
+}
+
 invariant RevisionParticipantBelongsToGraph {
     for revision in Revisions:
         exists Membership{graph: revision.graph, participant: revision.authored_by}
@@ -185,6 +211,11 @@ invariant RevisionParticipantBelongsToGraph {
 actor VeraParticipant {
     within: Graph
     identified_by: Participant where Membership{participant: this, graph: within}.status = active
+}
+
+actor PersonalSiteOwner {
+    within: PersonalSite
+    identified_by: Participant where this = within.owner
 }
 
 ------------------------------------------------------------
@@ -211,17 +242,25 @@ surface GraphParticipation {
         -- and contribution channel.
 }
 
-surface PagePublication {
-    facing participant: VeraParticipant
-    context page: Page
+surface PersonalSitePublication {
+    facing owner: PersonalSiteOwner
+    context site: PersonalSite
 
     exposes:
-        page.title
-        page.visibility
-        page.revisions
+        site.title
+        site.canonical_domain
+        site.publications
 
     provides:
-        PublishPage(participant, page, revision) when page.visibility = public
+        PublishPage(owner, site, page, revision, path) when page.visibility = public
+
+    @guarantee HumanPublicationAuthority
+        -- Only the human owner of the personal site authorizes publication.
+        -- Agents may prepare public-ready pages but cannot publish them.
+
+    @guarantee StablePublicAddress
+        -- A publication has an explicit path under the site's canonical domain,
+        -- independent of the technology used to render or deploy the site.
 }
 
 ------------------------------------------------------------
@@ -231,13 +270,14 @@ surface PagePublication {
 deferred ChangeApplication.apply       -- see: change-application.allium
 deferred GraphNavigation.present       -- see: graph-navigation.allium
 deferred OfflineSubmission.reconcile   -- see: offline-reconciliation.allium
+deferred PersonalSiteProjection.render -- see: personal-site-projection.allium
 
 ------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
 
 open question "What is the smallest semantic change vocabulary needed for the first usable Vera?"
-open question "May an agent publish a page, or must publication require explicit human authorization?"
 open question "Can a participant revise another participant's contribution without preserving both voices visibly?"
 open question "How should conflicting offline submissions be presented and resolved?"
 open question "Are pages and blocks sufficient as Vera's canonical content model, or are typed nodes needed?"
+open question "Which historical URL, metadata and asset behaviours from herbertspencer.net must Vera preserve exactly?"
