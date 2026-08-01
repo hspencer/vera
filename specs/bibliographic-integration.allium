@@ -1,0 +1,235 @@
+-- allium: 3
+-- bibliographic-integration.allium
+
+-- Scope: One-way aggregation of Zotero bibliographic material into Vera
+-- Includes: Bibliographic records, attachments, annotations, notes, citable
+--   fragments, provenance and repeat synchronization from Zotero to Vera
+-- Excludes:
+--   - Writing metadata, tags, notes or annotations back to Zotero
+--   - Citation style rendering and word-processor integration
+--   - Zotero authentication, API transport and local database access
+--   - Conflict handling for future bidirectional synchronization
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Value Types
+------------------------------------------------------------
+
+value BibliographicSnapshot {
+    title: String
+    item_type: String
+    creators: List<String>
+    publication_date: String?
+    publisher: String?
+    doi: String?
+    isbn: String?
+    url: String?
+}
+
+value AnnotationLocation {
+    page_label: String?
+    position: String?
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum BibliographicSource { zotero }
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity BibliographicLibrary {
+    graph: core/Graph
+    records: BibliographicRecord with library = this
+}
+
+entity BibliographicRecord {
+    library: BibliographicLibrary
+    source: BibliographicSource
+    source_key: String
+    source_version: Integer
+    snapshot: BibliographicSnapshot
+    page: core/Page
+    attachments: BibliographicAttachment with record = this
+    annotations: BibliographicAnnotation with record = this
+    notes: ResearchNote with record = this
+}
+
+entity BibliographicAttachment {
+    record: BibliographicRecord
+    source_key: String
+    media_reference: String
+}
+
+entity BibliographicAnnotation {
+    record: BibliographicRecord
+    source_key: String
+    text: String
+    comment: String?
+    location: AnnotationLocation
+}
+
+entity ResearchNote {
+    record: BibliographicRecord
+    source_key: String
+    content: String
+}
+
+entity CitableFragment {
+    annotation: BibliographicAnnotation
+    quotation: String
+    locator: String?
+    source_record: BibliographicRecord
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule ImportNewZoteroRecord {
+    when: ZoteroRecordAvailable(participant, library, source_key, source_version, snapshot, page)
+
+    requires: not exists BibliographicRecord{library, source: zotero, source_key}
+    requires: page.graph = library.graph
+
+    ensures: BibliographicRecord.created(
+        library: library,
+        source: zotero,
+        source_key: source_key,
+        source_version: source_version,
+        snapshot: snapshot,
+        page: page
+    )
+}
+
+rule RefreshExistingZoteroRecord {
+    when: ZoteroRecordAvailable(participant, library, source_key, source_version, snapshot, page)
+
+    let record = BibliographicRecord{library, source: zotero, source_key}
+
+    requires: exists record
+    requires: source_version > record.source_version
+
+    ensures:
+        record.source_version = source_version
+        record.snapshot = snapshot
+}
+
+rule ImportZoteroAttachment {
+    when: ZoteroAttachmentAvailable(participant, record, source_key, media_reference)
+
+    requires: not exists BibliographicAttachment{record, source_key}
+
+    ensures: BibliographicAttachment.created(
+        record: record,
+        source_key: source_key,
+        media_reference: media_reference
+    )
+}
+
+rule ImportZoteroAnnotation {
+    when: ZoteroAnnotationAvailable(participant, record, source_key, text, comment?, location)
+
+    requires: not exists BibliographicAnnotation{record, source_key}
+
+    ensures: BibliographicAnnotation.created(
+        record: record,
+        source_key: source_key,
+        text: text,
+        comment: comment,
+        location: location
+    )
+}
+
+rule ImportZoteroResearchNote {
+    when: ZoteroNoteAvailable(participant, record, source_key, content)
+
+    requires: not exists ResearchNote{record, source_key}
+
+    ensures: ResearchNote.created(
+        record: record,
+        source_key: source_key,
+        content: content
+    )
+}
+
+rule PreserveCitableFragment {
+    when: PreserveAsCitableFragment(participant, annotation, quotation, locator?)
+
+    ensures: CitableFragment.created(
+        annotation: annotation,
+        quotation: quotation,
+        locator: locator,
+        source_record: annotation.record
+    )
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant ZoteroRecordIdentityIsUniqueWithinLibrary {
+    for a in BibliographicRecords:
+        for b in BibliographicRecords:
+            a != b implies
+                a.library != b.library or
+                a.source != b.source or
+                a.source_key != b.source_key
+}
+
+invariant CitableFragmentsRetainBibliographicSource {
+    for fragment in CitableFragments:
+        fragment.source_record = fragment.annotation.record
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor ResearchParticipant {
+    within: BibliographicLibrary
+    identified_by: core/Participant where core/Membership{participant: this, graph: within.graph}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface BibliographicAggregation {
+    facing participant: ResearchParticipant
+    context library: BibliographicLibrary
+
+    exposes:
+        library.records
+
+    provides:
+        ZoteroRecordAvailable(participant, library, source_key, source_version, snapshot, page)
+        ZoteroAttachmentAvailable(participant, record, source_key, media_reference) when record.library = library
+        ZoteroAnnotationAvailable(participant, record, source_key, text, comment?, location) when record.library = library
+        ZoteroNoteAvailable(participant, record, source_key, content) when record.library = library
+        PreserveAsCitableFragment(participant, annotation, quotation, locator?) when annotation.record.library = library
+
+    @guarantee ZoteroRemainsBibliographicAuthority
+        -- Bibliographic metadata, Zotero tags, notes and annotations flow from
+        -- Zotero into Vera. This surface provides no operation that writes them
+        -- back to Zotero.
+
+    @guarantee VeraAggregatesResearchContext
+        -- Imported records may participate in Vera links, ontology assignments,
+        -- projects, ideas, searches and queries without changing their Zotero source.
+
+    @guarantee CitationProvenance
+        -- Every citable fragment retains its source record and locator when known.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "When a Zotero item is deleted, should Vera archive its imported record or remove it?"
+open question "Are Zotero collections projected as Vera pages, tags, semantic types or a distinct collection entity?"
+open question "Should attachment binaries be copied into Vera storage or referenced from Zotero storage?"
