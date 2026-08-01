@@ -1,0 +1,152 @@
+-- allium: 3
+-- logseq-block-identity-reference.allium
+
+-- Distilled behavioural reference from the local Logseq codebase.
+-- Scope: The DB-graph block identity model and Markdown Mirror boundary.
+-- Includes: Stable block identity, editing and moving without identity loss,
+--   copyable block references, and clean Markdown projection.
+-- Excludes:
+--   - Legacy file-graph parsing and compatibility behaviour
+--   - Database engine, schema and UUID generation algorithm
+--   - Remote sync, conflict resolution and transaction transport
+--   - General editor UI, plugins, queries and graph visualisation
+--   - Importing edits from Markdown Mirror (the mirror is derived output)
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity KnowledgeGraph {
+    name: String
+    pages: KnowledgePage with graph = this
+}
+
+entity KnowledgePage {
+    graph: KnowledgeGraph
+    title: String
+    blocks: KnowledgeBlock with page = this
+    projections: MarkdownProjection with page = this
+}
+
+entity KnowledgeBlock {
+    stable_address: String
+    page: KnowledgePage
+    parent: KnowledgeBlock?
+    content: String
+}
+
+entity MarkdownProjection {
+    page: KnowledgePage
+    content: String
+    generated_at: Timestamp
+}
+
+entity GraphUser {
+    name: String
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule CreateKnowledgeBlock {
+    when: CreateBlock(user, page, parent?, content)
+
+    ensures: KnowledgeBlock.created(
+        stable_address: new_stable_address(),
+        page: page,
+        parent: parent,
+        content: content
+    )
+}
+
+rule EditKnowledgeBlock {
+    when: EditBlock(user, block, content)
+
+    ensures: block.content = content
+}
+
+rule MoveKnowledgeBlock {
+    when: MoveBlock(user, block, page, parent?)
+
+    requires: page.graph = block.page.graph
+
+    ensures:
+        block.page = page
+        block.parent = parent
+}
+
+rule CopyKnowledgeBlockAddress {
+    when: CopyBlockAddress(user, block)
+
+    ensures: BlockAddressCopied(
+        block: block,
+        address: block.stable_address
+    )
+}
+
+rule ProjectKnowledgePageAsMarkdown {
+    when: ProjectPageAsMarkdown(user, page)
+
+    ensures: MarkdownProjection.created(
+        page: page,
+        content: render_page_without_block_identity_metadata(page),
+        generated_at: now
+    )
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant KnowledgeBlockAddressIsUnique {
+    for a in KnowledgeBlocks:
+        for b in KnowledgeBlocks:
+            a != b implies a.stable_address != b.stable_address
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor KnowledgeGraphUser {
+    within: KnowledgeGraph
+    identified_by: GraphUser
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface KnowledgeGraphEditing {
+    facing user: KnowledgeGraphUser
+    context graph: KnowledgeGraph
+
+    exposes:
+        graph.name
+        graph.pages
+
+    provides:
+        CreateBlock(user, page, parent?, content) when page.graph = graph
+        EditBlock(user, block, content) when block.page.graph = graph
+        MoveBlock(user, block, page, parent?) when block.page.graph = graph
+        CopyBlockAddress(user, block) when block.page.graph = graph
+        ProjectPageAsMarkdown(user, page) when page.graph = graph
+
+    @guarantee StableBlockAddress
+        -- Editing or moving a block does not change its address.
+
+    @guarantee HiddenImplementationIdentity
+        -- Normal rendered content does not expose internal block identity.
+
+    @guarantee CleanMarkdownProjection
+        -- Projected block lines contain user content and structure, not
+        -- generated block identity metadata.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Which parts of Logseq's implementation can Vera reuse directly without inheriting unrelated application coupling?"
+open question "Must Vera's Markdown projection remain one-way, or will Vera later support importing external Markdown edits?"
