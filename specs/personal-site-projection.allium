@@ -91,7 +91,7 @@ entity LegacyMigration {
     page: core/Page
     imported_by: core/Participant
     imported_at: Timestamp
-    original_url_preserved: Boolean
+    preserved_public_url: String
 }
 
 ------------------------------------------------------------
@@ -161,7 +161,7 @@ rule ImportHistoricalContentIntoGraph {
         page: page,
         imported_by: participant,
         imported_at: now,
-        original_url_preserved: true
+        preserved_public_url: legacy_content.public_url
     )
 }
 
@@ -181,7 +181,7 @@ invariant MetadataUsesCanonicalDocumentUrl {
 
 invariant HistoricalUrlsArePreserved {
     for migration in LegacyMigrations:
-        migration.original_url_preserved = true
+        migration.preserved_public_url = migration.legacy_content.public_url
 }
 
 invariant SearchReturnsOnlyPublicPages {

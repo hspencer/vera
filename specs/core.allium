@@ -282,4 +282,4 @@ open question "What is the smallest semantic change vocabulary needed for the fi
 open question "Can a participant revise another participant's contribution without preserving both voices visibly?"
 open question "How should conflicting offline submissions be presented and resolved?"
 open question "Are pages and blocks sufficient as Vera's canonical content model, or are typed nodes needed?"
-open question "Which historical URL, metadata and asset behaviours from herbertspencer.net must Vera preserve exactly?"
+open question "Which historical metadata and asset behaviours from herbertspencer.net must Vera preserve exactly?"
