@@ -280,6 +280,7 @@ deferred OfflineSubmission.reconcile   -- see: offline-reconciliation.allium
 deferred PersonalSiteProjection.render -- see: personal-site-projection.allium
 deferred ContentMedia.present           -- see: content-media.allium
 deferred WorkspaceInterface.present     -- see: workspace-interface.allium
+deferred ControlledOntology.curate      -- see: controlled-ontology.allium
 
 ------------------------------------------------------------
 -- Open Questions

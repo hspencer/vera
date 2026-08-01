@@ -1,0 +1,191 @@
+-- allium: 3
+-- controlled-ontology.allium
+
+-- Scope: Centrally governed semantic types for Vera content
+-- Includes: Composable types, pending classification suggestions, curator
+--   confirmation, human correction, and a deliberately small starter ontology
+-- Excludes:
+--   - Automated classification models and confidence algorithms
+--   - Free-form tags
+--   - Query syntax and visual presentation
+--   - Domain-specific lifecycle rules for individual semantic types
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum AssignmentStatus { suggested | confirmed | rejected }
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity Ontology {
+    graph: core/Graph
+    types: SemanticType with ontology = this
+    assignments: TypeAssignment with ontology = this
+}
+
+entity SemanticType {
+    ontology: Ontology
+    name: String
+    description: String
+    property_definitions: PropertyDefinition with semantic_type = this
+}
+
+entity PropertyDefinition {
+    semantic_type: SemanticType
+    name: String
+    description: String
+    required: Boolean
+}
+
+entity TypeAssignment {
+    ontology: Ontology
+    semantic_type: SemanticType
+    page: core/Page?
+    block: core/Block?
+    status: AssignmentStatus
+    rationale: String
+    suggested_by: core/Participant
+    decided_by: core/Participant?
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule SuggestPageSemanticType {
+    when: SuggestPageType(participant, ontology, semantic_type, page, rationale)
+
+    requires: semantic_type.ontology = ontology
+    requires: page.graph = ontology.graph
+
+    ensures: TypeAssignment.created(
+        ontology: ontology,
+        semantic_type: semantic_type,
+        page: page,
+        block: null,
+        status: suggested,
+        rationale: rationale,
+        suggested_by: participant,
+        decided_by: null
+    )
+}
+
+rule SuggestBlockSemanticType {
+    when: SuggestBlockType(participant, ontology, semantic_type, block, rationale)
+
+    requires: semantic_type.ontology = ontology
+    requires: block.page.graph = ontology.graph
+
+    ensures: TypeAssignment.created(
+        ontology: ontology,
+        semantic_type: semantic_type,
+        page: null,
+        block: block,
+        status: suggested,
+        rationale: rationale,
+        suggested_by: participant,
+        decided_by: null
+    )
+}
+
+rule CuratorConfirmsSemanticType {
+    when: ConfirmTypeAssignment(participant, assignment)
+
+    requires: assignment.status = suggested
+
+    ensures:
+        assignment.status = confirmed
+        assignment.decided_by = participant
+}
+
+rule CuratorRejectsSemanticType {
+    when: RejectTypeAssignment(participant, assignment)
+
+    requires: assignment.status = suggested
+
+    ensures:
+        assignment.status = rejected
+        assignment.decided_by = participant
+}
+
+rule HumanCorrectsSemanticTypeDecision {
+    when: CorrectTypeAssignment(participant, assignment, status)
+
+    requires: participant.kind = human
+    requires: status = confirmed or status = rejected
+
+    ensures:
+        assignment.status = status
+        assignment.decided_by = participant
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant AssignmentTargetsOneContentEntity {
+    for assignment in TypeAssignments:
+        (assignment.page != null or assignment.block != null) and
+        not (assignment.page != null and assignment.block != null)
+}
+
+invariant MultipleTypesMayDescribeOnePage {
+    for assignment in TypeAssignments:
+        assignment.page != null implies assignment.semantic_type.ontology = assignment.ontology
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor OntologyParticipant {
+    within: Ontology
+    identified_by: core/Participant where core/Membership{participant: this, graph: within.graph}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface OntologyCuration {
+    facing participant: OntologyParticipant
+    context ontology: Ontology
+
+    exposes:
+        ontology.types
+        ontology.assignments
+
+    provides:
+        SuggestPageType(participant, ontology, semantic_type, page, rationale)
+        SuggestBlockType(participant, ontology, semantic_type, block, rationale)
+        ConfirmTypeAssignment(participant, assignment) when assignment.ontology = ontology
+        RejectTypeAssignment(participant, assignment) when assignment.ontology = ontology
+        CorrectTypeAssignment(participant, assignment, status) when assignment.ontology = ontology
+
+    @guarantee SuggestionsAreNotSilentAssignments
+        -- Automated classification creates a visible pending suggestion.
+        -- It does not silently classify content as confirmed.
+
+    @guarantee ComposableTypes
+        -- A page or block may have multiple confirmed semantic types.
+
+    @guarantee HumanFinalAuthority
+        -- A human participant can correct a confirmed or rejected assignment.
+
+    @guarantee SmallStarterOntology
+        -- A new ontology starts with only Persona, Organizacion, Lugar,
+        -- Proyecto, Tarea, Idea, Evento, Fuente and Publicacion.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Which ontology changes may an agent curator apply without prior human confirmation?"
+open question "What happens when two composed semantic types define incompatible properties or lifecycles?"
+open question "Are semantic types assigned to pages and blocks equally, or do some types permit only one target kind?"
