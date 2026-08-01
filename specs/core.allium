@@ -1,0 +1,243 @@
+-- allium: 3
+-- core.allium
+
+-- Scope: Participation, provenance, semantic graph changes and selective publication
+-- Includes: Human and agent participants, authenticated submissions, revisions,
+--   canonical human voice evidence, and public/private page visibility
+-- Excludes:
+--   - Storage engine, file layout and database schema
+--   - Network protocol and client implementation
+--   - Graph visual layout (specified separately, informed by logseq-constel)
+--   - Authentication mechanism
+--   - Git commit and deployment mechanics
+
+------------------------------------------------------------
+-- Value Types
+------------------------------------------------------------
+
+value OriginEvidence {
+    reference: String
+    captured_at: Timestamp
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum ParticipantKind { human | agent }
+enum ParticipantStatus { active | suspended }
+enum ContributionChannel { typed_text | authenticated_voice | agent_generation | import }
+enum Visibility { private | public }
+enum ChangeKind { create_page | rename_page | create_block | edit_block | move_block | remove_block | set_property | link_pages }
+enum SubmissionStatus { submitted | accepted | rejected }
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity Participant {
+    name: String
+    kind: ParticipantKind
+    status: ParticipantStatus
+    memberships: Membership with participant = this
+}
+
+entity Graph {
+    name: String
+    memberships: Membership with graph = this
+    pages: Page with graph = this
+}
+
+entity Membership {
+    graph: Graph
+    participant: Participant
+    status: ParticipantStatus
+}
+
+entity Page {
+    graph: Graph
+    title: String
+    visibility: Visibility
+    blocks: Block with page = this
+    revisions: Revision with page = this
+}
+
+entity Block {
+    page: Page
+    content: String
+    revisions: Revision with block = this
+}
+
+entity Change {
+    kind: ChangeKind
+    page: Page?
+    block: Block?
+    content: String?
+}
+
+entity Submission {
+    graph: Graph
+    submitted_by: Participant
+    change: Change
+    channel: ContributionChannel
+    evidence: OriginEvidence?
+    submitted_at: Timestamp
+    status: SubmissionStatus
+    rejection_reason: String?
+}
+
+entity Revision {
+    graph: Graph
+    page: Page?
+    block: Block?
+    change: Change
+    authored_by: Participant
+    channel: ContributionChannel
+    evidence: OriginEvidence?
+    recorded_at: Timestamp
+
+    origin_is_canonical: channel = authenticated_voice and evidence != null
+}
+
+entity Publication {
+    page: Page
+    revision: Revision
+    published_at: Timestamp
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule AcceptParticipantSubmission {
+    when: ParticipantSubmits(participant, graph, change, channel, evidence?)
+
+    let membership = Membership{graph, participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: channel != authenticated_voice or evidence != null
+
+    ensures:
+        let submission = Submission.created(
+            graph: graph,
+            submitted_by: participant,
+            change: change,
+            channel: channel,
+            evidence: evidence,
+            submitted_at: now,
+            status: accepted,
+            rejection_reason: null
+        )
+        Revision.created(
+            graph: graph,
+            page: change.page,
+            block: change.block,
+            change: change,
+            authored_by: participant,
+            channel: channel,
+            evidence: evidence,
+            recorded_at: now
+        )
+        SubmissionAccepted(submission: submission)
+}
+
+rule PublishVisiblePageRevision {
+    when: PublishPage(participant, page, revision)
+
+    let membership = Membership{graph: page.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: page.visibility = public
+    requires: revision.page = page
+
+    ensures: Publication.created(
+        page: page,
+        revision: revision,
+        published_at: now
+    )
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant VoiceCanonicalityRequiresEvidence {
+    for revision in Revisions:
+        revision.origin_is_canonical implies revision.evidence != null
+}
+
+invariant PrivatePagesAreNeverPublished {
+    for publication in Publications:
+        publication.page.visibility = public
+}
+
+invariant RevisionParticipantBelongsToGraph {
+    for revision in Revisions:
+        exists Membership{graph: revision.graph, participant: revision.authored_by}
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor VeraParticipant {
+    within: Graph
+    identified_by: Participant where Membership{participant: this, graph: within}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface GraphParticipation {
+    facing participant: VeraParticipant
+    context graph: Graph
+
+    exposes:
+        graph.name
+        graph.pages
+
+    provides:
+        ParticipantSubmits(participant, graph, change, channel, evidence?)
+
+    @guarantee EqualMutationPath
+        -- Human and agent participants submit changes through this same boundary.
+        -- Participant kind does not grant a privileged write path.
+
+    @guarantee AttributedHistory
+        -- Every accepted change produces a revision attributed to its participant
+        -- and contribution channel.
+}
+
+surface PagePublication {
+    facing participant: VeraParticipant
+    context page: Page
+
+    exposes:
+        page.title
+        page.visibility
+        page.revisions
+
+    provides:
+        PublishPage(participant, page, revision) when page.visibility = public
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred ChangeApplication.apply       -- see: change-application.allium
+deferred GraphNavigation.present       -- see: graph-navigation.allium
+deferred OfflineSubmission.reconcile   -- see: offline-reconciliation.allium
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "What is the smallest semantic change vocabulary needed for the first usable Vera?"
+open question "May an agent publish a page, or must publication require explicit human authorization?"
+open question "Can a participant revise another participant's contribution without preserving both voices visibly?"
+open question "How should conflicting offline submissions be presented and resolved?"
+open question "Are pages and blocks sufficient as Vera's canonical content model, or are typed nodes needed?"
