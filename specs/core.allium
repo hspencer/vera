@@ -72,6 +72,7 @@ entity PersonalSite {
 }
 
 entity Block {
+    stable_id: String
     page: Page
     content: String
     revisions: Revision with block = this
@@ -202,6 +203,12 @@ invariant PublicationBelongsToSiteGraph {
 invariant RevisionParticipantBelongsToGraph {
     for revision in Revisions:
         exists Membership{graph: revision.graph, participant: revision.authored_by}
+}
+
+invariant BlockStableIdentityIsUnique {
+    for a in Blocks:
+        for b in Blocks:
+            a != b implies a.stable_id != b.stable_id
 }
 
 ------------------------------------------------------------
