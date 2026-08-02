@@ -74,6 +74,29 @@ contract NativeMarkdownEditing {
         -- the Markdown renderer.
 }
 
+contract BlockManipulation {
+    copy_reference: (block: core/Block) -> BlockReference
+    discard_empty: (participant: core/Participant, block: core/Block) -> core/Page
+
+    @invariant ReferenceNamesStableIdentity
+        -- A copied reference names the block's stable_id, so it keeps pointing at
+        -- the same block after that block is edited, moved to another parent, or
+        -- its page is renamed.
+
+    @invariant ReferenceResolvesToItsBlock
+        -- A reference presented in the workspace can be followed to the block it
+        -- names. A reference that cannot be followed is not a reference.
+
+    @invariant OnlyEmptyBlocksAreDiscarded
+        -- Discarding by emptying removes a block only when its content is empty.
+        -- Text is never lost to a keystroke that was meant to delete a character.
+
+    @invariant DiscardingIsAnOrdinaryChange
+        -- Removing a block from the workspace submits the same remove_block
+        -- operation as any other participant would, with the same provenance and
+        -- the same ordering. The interface has no shorter path to the graph.
+}
+
 contract ResponsiveWorkspace {
     select_mobile_view: (workspace: Workspace, layout: WorkspaceLayout) -> Workspace
     open_mobile_graph_node: (workspace: Workspace, page: core/Page) -> Workspace
@@ -164,6 +187,14 @@ entity ThemeApplication {
     scheme: ColourScheme
 }
 
+-- What copying a reference puts in the participant's hands. It names the block's
+-- stable identity rather than its page or its position, which are exactly the two
+-- things liable to change underneath it.
+entity BlockReference {
+    block: core/Block
+    address: String
+}
+
 ------------------------------------------------------------
 -- Rules
 ------------------------------------------------------------
@@ -209,6 +240,34 @@ rule ApplyCurrentWorkspaceTheme {
         theme: workspace.theme,
         scheme: workspace.colour_scheme
     )
+}
+
+rule ParticipantCopiesBlockReference {
+    when: CopyBlockReference(participant, workspace, block)
+
+    requires: workspace.participant = participant
+
+    ensures: BlockReference.created(
+        block: block,
+        address: block.stable_id
+    )
+}
+
+rule ParticipantDiscardsEmptyBlock {
+    when: DiscardEmptyBlock(participant, workspace, block)
+
+    requires: workspace.participant = participant
+    requires: block.content = ""
+    requires: block.children.count = 0
+
+    ensures: not exists block
+
+    @guidance
+        -- Emptying a block and then pressing delete once more is how a participant
+        -- discards it. The block must already be empty, so the keystroke can never
+        -- take text with it, and it must be a leaf, which is the same condition
+        -- remove_block carries in change-application.allium. A block with children
+        -- stays until its children are gone.
 }
 
 rule ParticipantNavigatesToPage {
@@ -335,6 +394,7 @@ surface VeraWorkspace {
         fulfils GraphQuerySupport
         fulfils EditablePresentation
         fulfils NativeMarkdownEditing
+        fulfils BlockManipulation
         fulfils ResponsiveWorkspace
         fulfils InstallableWebApplication
 
