@@ -24,6 +24,10 @@ contract GraphQuerySupport {
     @invariant CurrentGraphOnly
         -- Search and query results contain only information the participant
         -- is authorized to read from the current graph.
+
+    @invariant VeraNativeQuerySemantics
+        -- Vera's query language is chosen for clarity and current graph needs.
+        -- It is not constrained to preserve Logseq query syntax.
 }
 
 contract EditablePresentation {
@@ -260,5 +264,5 @@ deferred SearchIndex.find        -- see: search-index.allium
 ------------------------------------------------------------
 
 open question "When edited style source is invalid, should Vera reject it or keep it with the last valid presentation active?"
-open question "Which Logseq query forms must Vera preserve for compatibility with the existing mind graph?"
+open question "During mind migration, should existing Logseq queries be translated when possible, imported as inert source text, or reported as unsupported?"
 open question "Should split layout begin at 50/50 or remember the participant's last divider position per device?"
