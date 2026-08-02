@@ -1,0 +1,10 @@
+{
+  "name": "@vera/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dominio de Vera: tipos, reglas e invariantes derivados de specs/*.allium",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

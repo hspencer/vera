@@ -1,0 +1,290 @@
+// Propagated from specs/graph-navigation.allium.
+//
+// The priority here is @invariant EdgesAreDerivedFromContent: no link outlives
+// the text that produced it.
+
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import fc from 'fast-check';
+
+import {
+  OWNER,
+  applied,
+  inhabitedGraph,
+  intents,
+  makeBlock,
+  makePage,
+  runIntents,
+  submit,
+} from './helpers.ts';
+
+const linksFrom = (graph: ReturnType<typeof inhabitedGraph>, block: string) =>
+  graph.links().filter((l) => l.sourceBlock === block);
+
+describe('links derived from block content', () => {
+  it('creates a resolved link when a block references an existing page', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    const target = makePage(graph, 'Destino');
+    const block = makeBlock(graph, source, 'ver [[Destino]] para el detalle');
+
+    const links = linksFrom(graph, block);
+    assert.equal(links.length, 1);
+    assert.equal(links[0]?.targetTitle, 'Destino');
+    assert.equal(links[0]?.target, target);
+  });
+
+  it('preserves a reference to a page that does not exist as an unresolved link', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    const block = makeBlock(graph, source, 'pendiente: [[Nunca escrita]]');
+
+    const links = linksFrom(graph, block);
+    assert.equal(links.length, 1, '@guarantee IntentToLinkSurvivesTheMissingPage');
+    assert.equal(links[0]?.targetTitle, 'Nunca escrita');
+    assert.equal(links[0]?.target, null);
+  });
+
+  it('does not silently create the page a dangling reference names', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    makeBlock(graph, source, '[[Nunca escrita]]');
+
+    assert.equal(
+      graph.pages().find((p) => p.title === 'Nunca escrita'),
+      undefined,
+    );
+  });
+
+  it('discards a link when the sentence that produced it is rewritten', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    makePage(graph, 'Destino');
+    const block = makeBlock(graph, source, 'ver [[Destino]]');
+    assert.equal(linksFrom(graph, block).length, 1);
+
+    applied(submit(graph, { kind: 'edit_block', block, content: 'ya no dice nada' }));
+
+    assert.equal(linksFrom(graph, block).length, 0);
+  });
+
+  it('discards a link when the block that produced it is removed', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    makePage(graph, 'Destino');
+    const block = makeBlock(graph, source, 'ver [[Destino]]');
+
+    applied(submit(graph, { kind: 'remove_block', block }));
+
+    assert.equal(linksFrom(graph, block).length, 0);
+  });
+
+  it('resolves waiting links when the page they named is finally written', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    const block = makeBlock(graph, source, 'algun dia [[Tardia]]');
+    assert.equal(linksFrom(graph, block)[0]?.target, null);
+
+    const target = makePage(graph, 'Tardia');
+
+    assert.equal(linksFrom(graph, block)[0]?.target, target);
+  });
+
+  it('orphans links back to unresolved when their target page is removed', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    const target = makePage(graph, 'Efimera');
+    const block = makeBlock(graph, source, 'ver [[Efimera]]');
+    assert.equal(linksFrom(graph, block)[0]?.target, target);
+
+    applied(submit(graph, { kind: 'remove_page', page: target }));
+
+    const link = linksFrom(graph, block)[0];
+    assert.equal(link?.target, null);
+    assert.equal(link?.targetTitle, 'Efimera', 'the sentence keeps naming what it named');
+  });
+
+  it('never holds a link whose source block has gone', () => {
+    fc.assert(
+      fc.property(intents, (list) => {
+        const graph = runIntents(list);
+        for (const link of graph.links()) {
+          assert.notEqual(graph.block(link.sourceBlock), undefined);
+        }
+      }),
+    );
+  });
+
+  it('never holds a resolved link pointing at a page that has gone', () => {
+    fc.assert(
+      fc.property(intents, (list) => {
+        const graph = runIntents(list);
+        for (const link of graph.links()) {
+          if (link.target !== null) assert.notEqual(graph.page(link.target), undefined);
+        }
+      }),
+    );
+  });
+
+  it('agrees with the current content of every block', () => {
+    fc.assert(
+      fc.property(intents, (list) => {
+        const graph = runIntents(list);
+        for (const block of graph.allBlocks()) {
+          const titles = [...block.content.matchAll(/\[\[([^\]]+)\]\]/g)].map((m) => m[1]);
+          const linked = linksFrom(graph, block.stableId).map((l) => l.targetTitle);
+          assert.deepEqual([...linked].sort(), [...new Set(titles)].sort());
+        }
+      }),
+    );
+  });
+});
+
+describe('backlinks', () => {
+  it('reports the blocks that reference a page', () => {
+    const graph = inhabitedGraph();
+    const a = makePage(graph, 'A');
+    const b = makePage(graph, 'B');
+    const target = makePage(graph, 'Centro');
+    const fromA = makeBlock(graph, a, 'cita [[Centro]]');
+    const fromB = makeBlock(graph, b, 'tambien [[Centro]]');
+
+    const backlinks = graph.backlinks(target);
+
+    assert.deepEqual(
+      backlinks.map((l) => l.sourceBlock).sort(),
+      [fromA, fromB].sort(),
+    );
+  });
+
+  it('excludes references to a page that does not exist', () => {
+    const graph = inhabitedGraph();
+    const a = makePage(graph, 'A');
+    makeBlock(graph, a, '[[Fantasma]]');
+
+    assert.deepEqual(graph.backlinks('page:missing'), []);
+  });
+});
+
+describe('neighbourhood traversal', () => {
+  it('places the centre alone at distance zero', () => {
+    const graph = inhabitedGraph();
+    const centre = makePage(graph, 'Centro');
+    const near = makePage(graph, 'Cerca');
+    makeBlock(graph, centre, 'ver [[Cerca]]');
+
+    const hood = graph.neighbourhood({ centre, depth: 1, participant: OWNER });
+
+    const zero = hood.nodes.filter((n) => n.distance === 0);
+    assert.equal(zero.length, 1);
+    assert.equal(zero[0]?.page, centre);
+    assert.ok(hood.nodes.some((n) => n.page === near && n.distance === 1));
+  });
+
+  it('follows links in both directions', () => {
+    const graph = inhabitedGraph();
+    const centre = makePage(graph, 'Centro');
+    const inbound = makePage(graph, 'Entrante');
+    makeBlock(graph, inbound, 'apunta a [[Centro]]');
+
+    const hood = graph.neighbourhood({ centre, depth: 1, participant: OWNER });
+
+    assert.ok(
+      hood.nodes.some((n) => n.page === inbound),
+      '@invariant TraversalIsUndirected',
+    );
+  });
+
+  it('returns only the centre at depth zero', () => {
+    const graph = inhabitedGraph();
+    const centre = makePage(graph, 'Centro');
+    makePage(graph, 'Cerca');
+    makeBlock(graph, centre, 'ver [[Cerca]]');
+
+    const hood = graph.neighbourhood({ centre, depth: 0, participant: OWNER });
+
+    assert.equal(hood.nodes.length, 1);
+    assert.equal(hood.edges.length, 0);
+  });
+
+  it('excludes unresolved references from the nodes it returns', () => {
+    const graph = inhabitedGraph();
+    const centre = makePage(graph, 'Centro');
+    makeBlock(graph, centre, 'ver [[Inexistente]]');
+
+    const hood = graph.neighbourhood({ centre, depth: 2, participant: OWNER });
+
+    assert.equal(hood.nodes.length, 1, '@invariant UnresolvedLinksAreNotNodes');
+    assert.equal(hood.edges.length, 0);
+  });
+
+  it('terminates on a cyclic graph and respects the depth bound', () => {
+    const graph = inhabitedGraph();
+    const a = makePage(graph, 'A');
+    const b = makePage(graph, 'B');
+    makeBlock(graph, a, 'ver [[B]]');
+    makeBlock(graph, b, 'ver [[A]]');
+
+    const hood = graph.neighbourhood({ centre: a, depth: 5, participant: OWNER });
+
+    assert.equal(hood.nodes.length, 2, '@invariant DepthBoundsTheResult');
+    for (const node of hood.nodes) assert.ok(node.distance <= 5);
+  });
+
+  it('lists each page once and each edge once regardless of direction', () => {
+    const graph = inhabitedGraph();
+    const a = makePage(graph, 'A');
+    const b = makePage(graph, 'B');
+    makeBlock(graph, a, 'ver [[B]] y otra vez [[B]]');
+    makeBlock(graph, b, 'de vuelta [[A]]');
+
+    const hood = graph.neighbourhood({ centre: a, depth: 2, participant: OWNER });
+
+    assert.equal(new Set(hood.nodes.map((n) => n.page)).size, hood.nodes.length);
+    assert.equal(hood.edges.length, 1, '@invariant EdgeAppearsOnceRegardlessOfDirection');
+  });
+
+  it('draws no self edge for a page that links to itself', () => {
+    const graph = inhabitedGraph();
+    const solo = makePage(graph, 'Solo');
+    makeBlock(graph, solo, 'ver [[Solo]]');
+
+    const hood = graph.neighbourhood({ centre: solo, depth: 2, participant: OWNER });
+
+    assert.equal(hood.edges.length, 0, '@invariant NeighbourhoodHasNoSelfEdge');
+  });
+
+  it('counts degree as the edges incident within the neighbourhood', () => {
+    const graph = inhabitedGraph();
+    const centre = makePage(graph, 'Centro');
+    const one = makePage(graph, 'Uno');
+    const two = makePage(graph, 'Dos');
+    makeBlock(graph, centre, 'ver [[Uno]] y [[Dos]]');
+    makeBlock(graph, one, 'ver [[Dos]]');
+
+    const hood = graph.neighbourhood({ centre, depth: 1, participant: OWNER });
+
+    for (const node of hood.nodes) {
+      const incident = hood.edges.filter(
+        (e) => e.source === node.page || e.target === node.page,
+      ).length;
+      assert.equal(node.degree, incident);
+    }
+  });
+
+  it('keeps both endpoints of every edge among its own nodes', () => {
+    fc.assert(
+      fc.property(intents, (list) => {
+        const graph = runIntents(list);
+        const centre = graph.pages()[0];
+        if (!centre) return;
+        const hood = graph.neighbourhood({ centre: centre.id, depth: 2, participant: OWNER });
+        const pages = new Set(hood.nodes.map((n) => n.page));
+        for (const edge of hood.edges) {
+          assert.ok(pages.has(edge.source));
+          assert.ok(pages.has(edge.target));
+        }
+      }),
+    );
+  });
+});
