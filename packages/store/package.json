@@ -1,0 +1,12 @@
+{
+  "name": "@vera/store",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Persistencia de Vera sobre SQLite: log canónico y estado materializado",
+  "exports": {
+    ".": "./src/store.ts",
+    "./projection": "./src/projection.ts"
+  },
+  "dependencies": { "@vera/core": "*" }
+}

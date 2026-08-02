@@ -1,0 +1,296 @@
+-- Vera: esquema canónico.
+--
+-- Un único archivo aplicado igual en el servidor (node:sqlite) y en la copia de
+-- trabajo del cliente (SQLite WASM + OPFS, todavía sin construir), para que las
+-- consultas de grafo y de texto se escriban una sola vez.
+--
+-- Correspondencia con las specs:
+--   participants, graphs, memberships, pages, blocks, revisions  core.allium
+--   property_assignments, publications, personal_sites           core.allium
+--   instances                                                    identity-access.allium
+--   operations                                                   change-application.allium
+--   page_links                                                   graph-navigation.allium
+--   unported_queries                                             query-language.allium
+--   blocks_fts, pages_fts                                        search-index.allium
+--
+-- Falta `properties_fts`. search-index.allium declara `property_value` como campo
+-- buscable y su @guarantee OneSearchReachesEverySearchableField exige que una sola
+-- búsqueda cubra títulos, contenido y valores de propiedad. Hoy cubre los dos
+-- primeros. Ver docs/test-obligations.md.
+--
+-- Regla que gobierna todo lo demás: `operations` es el registro canónico. Las
+-- tablas de estado son su materialización y los índices derivados son
+-- reconstruibles. Nada fuera de submitOperation() escribe en ellas.
+
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
+------------------------------------------------------------
+-- Participación e instancia
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS participants (
+    id      TEXT PRIMARY KEY,
+    name    TEXT NOT NULL,
+    kind    TEXT NOT NULL CHECK (kind IN ('human', 'agent')),
+    status  TEXT NOT NULL CHECK (status IN ('active', 'suspended'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS graphs (
+    id    TEXT PRIMARY KEY,
+    name  TEXT NOT NULL
+) STRICT;
+
+-- invariant OneInstanceServesOneGraph
+CREATE TABLE IF NOT EXISTS instances (
+    id        TEXT PRIMARY KEY,
+    graph_id  TEXT NOT NULL UNIQUE REFERENCES graphs (id),
+    owner_id  TEXT NOT NULL REFERENCES participants (id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS memberships (
+    graph_id        TEXT NOT NULL REFERENCES graphs (id),
+    participant_id  TEXT NOT NULL REFERENCES participants (id),
+    status          TEXT NOT NULL CHECK (status IN ('active', 'suspended')),
+    PRIMARY KEY (graph_id, participant_id)
+) STRICT;
+
+------------------------------------------------------------
+-- Contenido
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS pages (
+    id          TEXT PRIMARY KEY,
+    graph_id    TEXT NOT NULL REFERENCES graphs (id),
+    title       TEXT NOT NULL,
+    title_key   TEXT NOT NULL,
+    visibility  TEXT NOT NULL CHECK (visibility IN ('private', 'public')),
+    created_at  INTEGER NOT NULL
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS pages_title_key ON pages (graph_id, title_key);
+
+-- blocks.id ES el stable_id de core.allium. No se regenera al editar ni al mover:
+-- esa ausencia de UPDATE sobre la clave es la garantía StableBlockAddress.
+CREATE TABLE IF NOT EXISTS blocks (
+    id          TEXT PRIMARY KEY,
+    page_id     TEXT NOT NULL REFERENCES pages (id),
+    parent_id   TEXT REFERENCES blocks (id),
+    position    INTEGER NOT NULL,
+    content     TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS blocks_by_page ON blocks (page_id, parent_id, position);
+CREATE INDEX IF NOT EXISTS blocks_by_parent ON blocks (parent_id);
+
+-- invariant PropertyTargetsOneSubject y PropertyKeyIsUniquePerSubject
+CREATE TABLE IF NOT EXISTS property_assignments (
+    id        TEXT PRIMARY KEY,
+    graph_id  TEXT NOT NULL REFERENCES graphs (id),
+    page_id   TEXT REFERENCES pages (id),
+    block_id  TEXT REFERENCES blocks (id),
+    key       TEXT NOT NULL,
+    value     TEXT NOT NULL,
+    CHECK ((page_id IS NULL) <> (block_id IS NULL))
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS property_unique_per_page
+    ON property_assignments (page_id, key) WHERE page_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS property_unique_per_block
+    ON property_assignments (block_id, key) WHERE block_id IS NOT NULL;
+
+------------------------------------------------------------
+-- Registro de cambios: la fuente de verdad
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS change_logs (
+    graph_id       TEXT PRIMARY KEY REFERENCES graphs (id),
+    last_sequence  INTEGER NOT NULL DEFAULT 0
+) STRICT;
+
+-- origin_id lo genera el dispositivo que envía: es la clave de idempotencia.
+-- sequence lo asigna el servidor: es el orden total dentro del grafo.
+CREATE TABLE IF NOT EXISTS operations (
+    id                     TEXT PRIMARY KEY,
+    graph_id               TEXT NOT NULL REFERENCES graphs (id),
+    origin_id              TEXT NOT NULL,
+    sequence               INTEGER NOT NULL,
+    participant_id         TEXT NOT NULL REFERENCES participants (id),
+    change_kind            TEXT NOT NULL,
+    change_payload         TEXT NOT NULL,
+    subject_id             TEXT NOT NULL,
+    channel                TEXT NOT NULL CHECK (
+                               channel IN ('typed_text', 'authenticated_voice',
+                                           'agent_generation', 'import')),
+    evidence_reference     TEXT,
+    evidence_captured_at   INTEGER,
+    submitted_at           INTEGER NOT NULL,
+    applied_at             INTEGER NOT NULL,
+    CHECK (channel <> 'authenticated_voice' OR evidence_reference IS NOT NULL)
+) STRICT;
+
+-- invariant OperationOriginIsUniqueWithinLog: reenviar no aplica dos veces
+CREATE UNIQUE INDEX IF NOT EXISTS operations_origin ON operations (graph_id, origin_id);
+-- invariant OperationSequenceIsUniqueWithinLog
+CREATE UNIQUE INDEX IF NOT EXISTS operations_sequence ON operations (graph_id, sequence);
+
+CREATE TABLE IF NOT EXISTS revisions (
+    id              TEXT PRIMARY KEY,
+    operation_id    TEXT NOT NULL UNIQUE REFERENCES operations (id),
+    graph_id        TEXT NOT NULL REFERENCES graphs (id),
+    page_id         TEXT,
+    block_id        TEXT,
+    authored_by     TEXT NOT NULL REFERENCES participants (id),
+    channel         TEXT NOT NULL,
+    recorded_at     INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS revisions_by_block ON revisions (block_id);
+CREATE INDEX IF NOT EXISTS revisions_by_page ON revisions (page_id);
+
+------------------------------------------------------------
+-- Índices derivados: reconstruibles, nunca fuente de verdad
+------------------------------------------------------------
+
+-- target_id nulo = la página nombrada todavía no existe. La referencia se
+-- conserva porque es intención de escribirla, no basura.
+CREATE TABLE IF NOT EXISTS page_links (
+    id            TEXT PRIMARY KEY,
+    graph_id      TEXT NOT NULL REFERENCES graphs (id),
+    source_page   TEXT NOT NULL REFERENCES pages (id),
+    source_block  TEXT NOT NULL REFERENCES blocks (id) ON DELETE CASCADE,
+    target_title  TEXT NOT NULL,
+    target_key    TEXT NOT NULL,
+    target_id     TEXT REFERENCES pages (id)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS links_by_source ON page_links (source_block);
+CREATE INDEX IF NOT EXISTS links_by_target ON page_links (target_id);
+CREATE INDEX IF NOT EXISTS links_waiting ON page_links (graph_id, target_key)
+    WHERE target_id IS NULL;
+
+CREATE TABLE IF NOT EXISTS block_tags (
+    block_id  TEXT NOT NULL REFERENCES blocks (id) ON DELETE CASCADE,
+    page_id   TEXT NOT NULL REFERENCES pages (id),
+    tag       TEXT NOT NULL,
+    PRIMARY KEY (block_id, tag)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS tags_by_name ON block_tags (tag);
+
+-- Las 32 {{query}} del corpus. Se preserva el texto literal: el invariante
+-- NoSilentTranslation prohíbe traducirlas a máquina.
+CREATE TABLE IF NOT EXISTS unported_queries (
+    id           TEXT PRIMARY KEY,
+    graph_id     TEXT NOT NULL REFERENCES graphs (id),
+    block_id     TEXT NOT NULL UNIQUE REFERENCES blocks (id) ON DELETE CASCADE,
+    source_text  TEXT NOT NULL,
+    ported_to    TEXT,
+    ported_by    TEXT REFERENCES participants (id),
+    ported_at    INTEGER,
+    CHECK (ported_to IS NULL OR ported_by IS NOT NULL)
+) STRICT;
+
+------------------------------------------------------------
+-- Búsqueda de texto completo
+------------------------------------------------------------
+
+CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5 (
+    content,
+    content = 'blocks',
+    content_rowid = 'rowid',
+    tokenize = 'unicode61 remove_diacritics 2'
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5 (
+    title,
+    content = 'pages',
+    content_rowid = 'rowid',
+    tokenize = 'unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS blocks_fts_insert AFTER INSERT ON blocks BEGIN
+    INSERT INTO blocks_fts (rowid, content) VALUES (new.rowid, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS blocks_fts_delete AFTER DELETE ON blocks BEGIN
+    INSERT INTO blocks_fts (blocks_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS blocks_fts_update AFTER UPDATE OF content ON blocks BEGIN
+    INSERT INTO blocks_fts (blocks_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+    INSERT INTO blocks_fts (rowid, content) VALUES (new.rowid, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS pages_fts_insert AFTER INSERT ON pages BEGIN
+    INSERT INTO pages_fts (rowid, title) VALUES (new.rowid, new.title);
+END;
+
+CREATE TRIGGER IF NOT EXISTS pages_fts_delete AFTER DELETE ON pages BEGIN
+    INSERT INTO pages_fts (pages_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
+END;
+
+CREATE TRIGGER IF NOT EXISTS pages_fts_update AFTER UPDATE OF title ON pages BEGIN
+    INSERT INTO pages_fts (pages_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
+    INSERT INTO pages_fts (rowid, title) VALUES (new.rowid, new.title);
+END;
+
+------------------------------------------------------------
+-- Medios y publicación
+------------------------------------------------------------
+
+-- Los binarios viven en el almacén de objetos direccionado por hash; aquí sólo
+-- su metadata y sus relaciones.
+CREATE TABLE IF NOT EXISTS media (
+    hash           TEXT PRIMARY KEY,
+    media_type     TEXT NOT NULL,
+    byte_size      INTEGER NOT NULL,
+    custody        TEXT NOT NULL CHECK (custody IN ('internal', 'external_reference')),
+    original_name  TEXT,
+    created_at     INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS personal_sites (
+    id                TEXT PRIMARY KEY,
+    graph_id          TEXT NOT NULL REFERENCES graphs (id),
+    owner_id          TEXT NOT NULL REFERENCES participants (id),
+    title             TEXT NOT NULL,
+    canonical_domain  TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS publications (
+    id            TEXT PRIMARY KEY,
+    site_id       TEXT NOT NULL REFERENCES personal_sites (id),
+    page_id       TEXT NOT NULL REFERENCES pages (id),
+    path          TEXT NOT NULL,
+    published_at  INTEGER NOT NULL
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS publications_path ON publications (site_id, path);
+
+------------------------------------------------------------
+-- Preferencias de sesión (RememberedSessionPresentation)
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS workspaces (
+    participant_id          TEXT NOT NULL REFERENCES participants (id),
+    graph_id                TEXT NOT NULL REFERENCES graphs (id),
+    active_page             TEXT REFERENCES pages (id),
+    layout                  TEXT NOT NULL DEFAULT 'split'
+                                CHECK (layout IN ('text_only', 'graph_only', 'split')),
+    split_divider_position  REAL NOT NULL DEFAULT 0.5,
+    graph_view              TEXT NOT NULL DEFAULT 'graph_2d'
+                                CHECK (graph_view IN ('graph_2d', 'graph_3d')),
+    colour_scheme           TEXT NOT NULL DEFAULT 'light'
+                                CHECK (colour_scheme IN ('light', 'dark')),
+    PRIMARY KEY (participant_id, graph_id)
+) STRICT;
+
+-- collapsed:: del corpus importado es estado de interfaz, no contenido.
+CREATE TABLE IF NOT EXISTS block_collapse_state (
+    participant_id  TEXT NOT NULL REFERENCES participants (id),
+    block_id        TEXT NOT NULL REFERENCES blocks (id) ON DELETE CASCADE,
+    collapsed       INTEGER NOT NULL CHECK (collapsed IN (0, 1)),
+    PRIMARY KEY (participant_id, block_id)
+) STRICT;
