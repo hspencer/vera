@@ -1,0 +1,13 @@
+node_modules/
+packages/web/dist/
+*.tsbuildinfo
+
+# La base canónica y sus archivos WAL nunca se versionan: git recibe la
+# proyección Markdown determinista, no el motor de almacenamiento.
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+data/
+
+# Almacén de objetos direccionado por hash
+objects/

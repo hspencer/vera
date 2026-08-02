@@ -1,0 +1,28 @@
+{
+  "name": "vera",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Memoria personal soberana: corpus versionado, editable, replicable y auditable",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "spec": "allium check specs/",
+    "spec:analyse": "allium analyse specs/",
+    "test": "node --test \"packages/*/test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/web",
+    "build": "npm run build --workspace @vera/web",
+    "import": "node packages/importer/src/persist.ts",
+    "serve": "node packages/server/src/main.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "fast-check": "^4.1.1",
+    "typescript": "^5.9.0"
+  }
+}
