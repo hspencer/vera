@@ -275,6 +275,10 @@ function wireTheme(): void {
     session.setScheme(workspace.scheme);
     applyTokens(tokens, workspace.scheme);
     void refreshGraph();
+    // El texto sigue al tema por variables CSS, pero un diagrama Mermaid ya
+    // está dibujado con los colores del tema anterior y no puede repintarse:
+    // hay que volver a dibujarlo.
+    if (workspace.activePage !== null) void openPage(workspace.activePage);
   });
 
   const panel = $('#tokens');

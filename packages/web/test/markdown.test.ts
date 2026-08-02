@@ -295,6 +295,21 @@ describe('renderMarkdown', () => {
     it('cierra un cercado sin cerrar al terminar el bloque', () => {
       assert.equal(renderMarkdown('```\nabierto'), '<pre><code>abierto</code></pre>');
     });
+
+    // Contrato con mermaid.ts: busca exactamente esta clase para sustituir el
+    // cercado por el diagrama. Si la clase cambia, los 34 diagramas del corpus
+    // se quedan como código sin que falle nada más.
+    it('marca el cercado mermaid con la clase que busca el dibujante', () => {
+      const html = renderMarkdown('```mermaid\ngraph TD\nA-->B\n```');
+      assert.match(html, /<code class="language-mermaid">/);
+      assert.match(html, /graph TD\nA--&gt;B/);
+    });
+
+    it('el diagrama no deja de ser texto en la fuente', () => {
+      // Lo que se guarda sigue siendo el cercado; dibujarlo es cosa del DOM.
+      const source = '```mermaid\ngraph TD\nA-->B\n```';
+      assert.ok(renderMarkdown(source).includes('graph TD'));
+    });
   });
 
   describe('tablas', () => {

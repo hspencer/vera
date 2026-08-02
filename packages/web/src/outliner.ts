@@ -13,6 +13,7 @@
 
 import { api, type BlockView, type PageView } from './api.ts';
 import { renderMarkdown, type RenderOptions } from './markdown.ts';
+import { renderMermaid } from './mermaid.ts';
 
 export interface OutlinerCallbacks {
   onNavigate(title: string): void;
@@ -211,6 +212,10 @@ export function renderOutliner(
 
   for (const root of buildTree(page.blocks)) drawBlock(root, 0);
 
+  // Los diagramas se dibujan después del texto: la biblioteca se carga sola y
+  // la página no espera por ella para poder leerse.
+  void renderMermaid(list);
+
   if (page.backlinks.length > 0) {
     const section = document.createElement('section');
     section.className = 'backlinks';
@@ -259,16 +264,42 @@ function startEditing(
   const editor = document.createElement('textarea');
   editor.className = 'editor';
   editor.value = original;
-  editor.rows = Math.max(1, original.split('\n').length);
+  editor.rows = 1;
 
   body.innerHTML = '';
   body.append(editor);
+
+  /**
+   * El alto sigue al contenido.
+   *
+   * Contar los saltos de línea no alcanza: una línea larga se reparte en varias
+   * al ajustarse al ancho de la columna, y el bloque más común del corpus es
+   * justamente eso, un párrafo sin un solo salto. `scrollHeight` mide el texto
+   * ya ajustado, así que vale para los dos casos.
+   *
+   * El `auto` previo es necesario: sin él, `scrollHeight` nunca baja de la
+   * altura que ya tiene el campo, y borrar líneas dejaría un hueco.
+   *
+   * Al borde hay que sumarlo aparte. Con `box-sizing: border-box` la altura que
+   * se fija lo incluye, pero `scrollHeight` no, así que asignar `scrollHeight`
+   * a secas deja el contenido dos píxeles corto y el campo se desplaza.
+   */
+  const autosize = (): void => {
+    editor.style.height = 'auto';
+    const border = editor.offsetHeight - editor.clientHeight;
+    editor.style.height = `${editor.scrollHeight + border}px`;
+  };
+
+  autosize();
+  editor.addEventListener('input', autosize);
+
   editor.focus();
   editor.setSelectionRange(editor.value.length, editor.value.length);
 
   const render = (content: string): void => {
     body.innerHTML = renderMarkdown(content, options);
     markMissingImages(body);
+    void renderMermaid(body);
   };
 
   const save = async (content: string): Promise<void> => {

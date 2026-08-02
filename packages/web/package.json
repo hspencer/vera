@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "3d-force-graph": "^1.79.1",
-    "d3": "^7.9.0"
+    "d3": "^7.9.0",
+    "mermaid": "^11.16.0"
   },
   "devDependencies": {
     "@types/d3": "^7.4.3",

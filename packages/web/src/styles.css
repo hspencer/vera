@@ -311,7 +311,13 @@ input {
   padding: 0.25rem 0.4rem;
   font-family: var(--font-mono);
   font-size: 0.9rem;
-  resize: vertical;
+  line-height: 1.5;
+  /* El alto lo fija el contenido. Con `overflow` visible, `scrollHeight` mediría
+     la barra de desplazamiento en vez del texto, y el campo crecería solo. */
+  overflow-y: hidden;
+  /* Redimensionar a mano dejó de tener sentido: el siguiente carácter escrito
+     devolvería el campo al alto de su contenido. */
+  resize: none;
 }
 
 .wiki {
@@ -465,6 +471,37 @@ code {
   border-radius: 3px;
   display: block;
   margin: 0.5em 0;
+}
+
+/* Diagramas Mermaid. Se dibujan dentro de un iframe aislado, así que el alto lo
+   fija la propia biblioteca y aquí sólo se le da sitio y un margen por donde
+   alcanzar el bloque. */
+.mermaid-figure {
+  margin: 0.6em 0;
+  padding: 0.4rem 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.mermaid-figure iframe {
+  border: none;
+  max-width: 100%;
+  /* El diagrama es una imagen del texto, no un control. Sin esto los clics se
+     quedarían dentro del iframe y el bloque no se podría abrir para editarlo,
+     que es justamente lo que hace falta para corregir un diagrama. */
+  pointer-events: none;
+}
+
+.mermaid-figure svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-error {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  color: var(--warm);
+  margin: 0.2em 0 0.6em;
 }
 
 /* Un medio que Vera guarda pero no presenta dentro de la página —un PDF, o un
