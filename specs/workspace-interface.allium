@@ -2,14 +2,15 @@
 -- workspace-interface.allium
 
 -- Scope: Vera's navigable reading, editing and graph workspace
--- Includes: Native Markdown editing, text/graph/split layouts, 2D/3D graph
---   modes, breadcrumbs, search, internal queries, editable style sources and
---   tokens, light/dark themes
+-- Includes: Installable progressive web application, responsive navigation,
+--   native Markdown editing, text/graph/split layouts, 2D/3D graph modes,
+--   breadcrumbs, search, internal queries, editable style sources and tokens,
+--   light/dark themes
 -- Excludes:
 --   - CSS framework and component implementation
 --   - D3 force simulation parameters
 --   - Search index implementation and query execution engine
---   - Device-specific responsive layout
+--   - Device-specific visual styling beyond observable responsive behaviour
 -- References: Logseq and logseq-constel are implementation and interaction references
 
 use "./core.allium" as core
@@ -54,6 +55,27 @@ contract NativeMarkdownEditing {
     @invariant FootnotesRemainEditable
         -- Footnote references and definitions can be authored and revised as
         -- part of the page's Markdown source.
+}
+
+contract ResponsiveWorkspace {
+    select_mobile_view: (workspace: Workspace, layout: WorkspaceLayout) -> Workspace
+    open_mobile_graph_node: (workspace: Workspace, page: core/Page) -> Workspace
+
+    @invariant SinglePaneOnNarrowScreens
+        -- On a phone-sized viewport the workspace presents either text or the
+        -- graph, never the split layout.
+
+    @invariant GraphNodeOpensTextPage
+        -- Selecting a graph node on a phone-sized viewport navigates to that
+        -- node's page and changes the workspace to the text view.
+}
+
+contract InstallableWebApplication {
+    install: () -> Workspace
+
+    @invariant ProgressiveInstallation
+        -- Vera can be installed from a supporting browser and launched as an
+        -- application without losing access to its web form.
 }
 
 ------------------------------------------------------------
@@ -169,6 +191,18 @@ rule ParticipantNavigatesToPage {
         workspace.navigation_history = append(workspace.navigation_history, page)
 }
 
+rule ParticipantOpensGraphNodeOnPhone {
+    when: OpenMobileGraphNode(participant, workspace, page)
+
+    requires: workspace.participant = participant
+    requires: page.graph = workspace.graph
+
+    ensures:
+        workspace.active_page = page
+        workspace.layout = text_only
+        workspace.navigation_history = append(workspace.navigation_history, page)
+}
+
 rule ParticipantEditsThemeSource {
     when: EditThemeSource(participant, workspace, stylesheet_source)
 
@@ -260,6 +294,7 @@ surface VeraWorkspace {
         ChangeColourScheme(participant, workspace, colour_scheme)
         ApplyTheme(participant, workspace)
         NavigateToPage(participant, workspace, page)
+        OpenMobileGraphNode(participant, workspace, page)
         EditThemeSource(participant, workspace, stylesheet_source)
         EditDesignToken(participant, workspace, token, light_value, dark_value)
         SearchGraph(participant, workspace, text)
@@ -269,6 +304,8 @@ surface VeraWorkspace {
         fulfils GraphQuerySupport
         fulfils EditablePresentation
         fulfils NativeMarkdownEditing
+        fulfils ResponsiveWorkspace
+        fulfils InstallableWebApplication
 
     @guarantee NavigableGraphContext
         -- Text and graph views share the same active page and navigation history.
@@ -282,6 +319,10 @@ surface VeraWorkspace {
     @guarantee EditableDesignSystem
         -- General styles and design tokens are editable from within Vera and
         -- remain accessible as source rather than opaque application state.
+
+    @guarantee ResponsiveSinglePaneNavigation
+        -- Narrow screens offer text or graph as exclusive views. Choosing a
+        -- graph node opens its page in the text view.
 }
 
 ------------------------------------------------------------
@@ -298,3 +339,4 @@ deferred SearchIndex.find        -- see: search-index.allium
 
 open question "When edited style source is invalid, should Vera reject it or keep it with the last valid presentation active?"
 open question "Which native Markdown editing behaviours are required in v0 beyond direct source editing, including shortcuts, preview, autocomplete and footnote assistance?"
+open question "Which reading and editing capabilities must remain available when the installable PWA has no network connection?"
