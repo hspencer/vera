@@ -20,12 +20,24 @@ export interface BlockView {
   content: string;
 }
 
+/**
+ * Una ruta del Markdown y el objeto al que resuelve. El bloque sigue diciendo
+ * `../assets/foo.png`; la traducción ocurre al presentar, así que la fuente no
+ * se toca y la proyección Markdown sigue siendo portable fuera de Vera.
+ */
+export interface AssetView {
+  path: string;
+  url: string;
+  mediaType: string;
+}
+
 export interface PageView {
   id: string;
   title: string;
   visibility: 'private' | 'public';
   properties: { key: string; value: string }[];
   blocks: BlockView[];
+  assets: AssetView[];
   backlinks: Backlink[];
 }
 

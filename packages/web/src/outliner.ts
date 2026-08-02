@@ -12,7 +12,7 @@
 // que pueda divergir del grafo.
 
 import { api, type BlockView, type PageView } from './api.ts';
-import { renderMarkdown } from './markdown.ts';
+import { renderMarkdown, type RenderOptions } from './markdown.ts';
 
 export interface OutlinerCallbacks {
   onNavigate(title: string): void;
@@ -61,11 +61,13 @@ export function editSession(original: string) {
 }
 
 /**
- * El corpus trae imágenes que apuntan a `../assets/`, y esos binarios todavía no
- * viven en Vera: ingerirlos es content-media.allium, sin implementar. Hasta
- * entonces una imagen que no carga se declara como lo que es —una fuente que
- * falta, con su ruta a la vista— en vez de dejar el icono roto del navegador,
- * que no dice si el error es del archivo, de la ruta o de Vera.
+ * Los binarios del corpus ya viven dentro de Vera, pero una referencia puede
+ * seguir sin resolver: el corpus nombra archivos que no están en `assets/`, y
+ * una imagen remota depende de un servidor ajeno.
+ *
+ * Cuando eso pasa se declara lo que es —una fuente que falta, con su ruta a la
+ * vista— en vez de dejar el icono roto del navegador, que no dice si el error
+ * es del archivo, de la ruta o de Vera.
  */
 function markMissingImages(root: HTMLElement): void {
   for (const image of root.querySelectorAll('img')) {
@@ -111,12 +113,36 @@ export function buildTree(blocks: BlockView[]): Node[] {
   return roots;
 }
 
+/**
+ * Traduce las rutas del corpus a los objetos que Vera guarda.
+ *
+ * La página trae ya resueltas las suyas, así que no hay una petición por
+ * imagen ni el cliente tiene que saber cómo se direcciona el almacén.
+ */
+export function assetResolver(page: PageView): RenderOptions['resolveAsset'] {
+  if (page.assets.length === 0) return undefined;
+  const byPath = new Map(page.assets.map((asset) => [asset.path, asset]));
+  return (path) => {
+    const found = byPath.get(path);
+    if (found !== undefined) return { url: found.url, mediaType: found.mediaType };
+    // El corpus escribe algunas rutas con caracteres codificados y otras no.
+    try {
+      const decoded = byPath.get(decodeURIComponent(path));
+      return decoded === undefined ? null : { url: decoded.url, mediaType: decoded.mediaType };
+    } catch {
+      return null;
+    }
+  };
+}
+
 export function renderOutliner(
   container: HTMLElement,
   page: PageView,
   callbacks: OutlinerCallbacks,
 ): void {
   container.innerHTML = '';
+  const resolve = assetResolver(page);
+  const options: RenderOptions = resolve === undefined ? {} : { resolveAsset: resolve };
 
   const header = document.createElement('header');
   header.className = 'page-header';
@@ -162,7 +188,7 @@ export function renderOutliner(
 
     const body = document.createElement('div');
     body.className = 'body';
-    body.innerHTML = renderMarkdown(node.block.content);
+    body.innerHTML = renderMarkdown(node.block.content, options);
     markMissingImages(body);
 
     // Al enfocar, el bloque muestra su Markdown; al salir, su render.
@@ -175,7 +201,7 @@ export function renderOutliner(
         return;
       }
       if (target.tagName === 'A') return;
-      startEditing(node.block, body, callbacks);
+      startEditing(node.block, body, callbacks, options);
     });
 
     row.append(bullet, body);
@@ -220,7 +246,12 @@ export function renderOutliner(
   }
 }
 
-function startEditing(block: BlockView, body: HTMLElement, callbacks: OutlinerCallbacks): void {
+function startEditing(
+  block: BlockView,
+  body: HTMLElement,
+  callbacks: OutlinerCallbacks,
+  options: RenderOptions,
+): void {
   if (body.querySelector('textarea') !== null) return;
   const original = block.content;
   const session = editSession(original);
@@ -236,7 +267,7 @@ function startEditing(block: BlockView, body: HTMLElement, callbacks: OutlinerCa
   editor.setSelectionRange(editor.value.length, editor.value.length);
 
   const render = (content: string): void => {
-    body.innerHTML = renderMarkdown(content);
+    body.innerHTML = renderMarkdown(content, options);
     markMissingImages(body);
   };
 

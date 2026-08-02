@@ -13,6 +13,7 @@ const { vera } = listen({
   databasePath,
   host,
   webRoot: 'packages/web/dist',
+  objectsRoot: 'objects',
 });
 
 console.log(`Vera escucha en http://localhost:${port}`);

@@ -54,6 +54,32 @@ function decorate(html: string): string {
 const SLOT = '\u0000';
 
 /**
+ * Cómo se resuelve una ruta del corpus a algo que el navegador pueda pedir.
+ *
+ * El bloque conserva su `../assets/foo.png` y aquí se traduce al objeto que
+ * Vera guarda. Sin resolvedor, la ruta se emite tal cual y la presentación
+ * degrada sola: es lo que ocurre mientras los binarios no se hayan ingerido.
+ */
+export interface RenderOptions {
+  resolveAsset?: (path: string) => { url: string; mediaType: string } | null;
+}
+
+/** Un medio que no es imagen se ofrece como archivo, no se finge presentado. */
+function mediaElement(
+  resolved: { url: string; mediaType: string },
+  alt: string,
+  fallbackLabel: string,
+): string {
+  if (resolved.mediaType.startsWith('image/')) {
+    return `<img src="${quoteAttribute(resolved.url)}" alt="${quoteAttribute(alt)}" loading="lazy">`;
+  }
+  return (
+    `<a class="media-file" href="${quoteAttribute(resolved.url)}" ` +
+    `data-media-type="${quoteAttribute(resolved.mediaType)}">${alt === '' ? fallbackLabel : alt}</a>`
+  );
+}
+
+/**
  * Marcas que viven dentro de una línea. Recibe texto crudo y devuelve HTML
  * seguro: escapa antes de cualquier otra cosa.
  *
@@ -69,7 +95,7 @@ const SLOT = '\u0000';
  * llevaría; y la nota al pie va antes por la misma razón, porque `[^3]` es un
  * corchete.
  */
-export function inlineMarkdown(source: string): string {
+export function inlineMarkdown(source: string, options: RenderOptions = {}): string {
   // El separador tiene que ser un carácter que el contenido no pueda traer.
   let html = escapeHtml(source.replace(/\u0000/g, ''));
 
@@ -82,6 +108,11 @@ export function inlineMarkdown(source: string): string {
   html = html.replace(
     /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
     (whole, alt: string, src: string) => {
+      // Si Vera tiene el objeto, la ruta del corpus se traduce a él. Si no, se
+      // emite tal cual y la presentación degrada sola.
+      const resolved = options.resolveAsset?.(src) ?? null;
+      if (resolved !== null) return hold(mediaElement(resolved, alt, src));
+
       const url = safeUrl(src);
       if (url === null) return alt === '' ? whole : alt;
       return hold(`<img src="${url}" alt="${quoteAttribute(alt)}" loading="lazy">`);
@@ -101,6 +132,16 @@ export function inlineMarkdown(source: string): string {
   html = html.replace(
     /\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
     (whole, label: string, href: string) => {
+      // El corpus también enlaza assets sin la marca de imagen —PDF, sobre
+      // todo—, y esos apuntan al mismo objeto.
+      const resolved = options.resolveAsset?.(href) ?? null;
+      if (resolved !== null) {
+        return hold(
+          `<a class="media-file" href="${quoteAttribute(resolved.url)}" ` +
+            `data-media-type="${quoteAttribute(resolved.mediaType)}">${decorate(label)}</a>`,
+        );
+      }
+
       const url = safeUrl(href);
       if (url === null) return whole;
       const external = /^https?:/i.test(url);
@@ -141,7 +182,7 @@ interface ListItem {
 }
 
 /** Anida por sangría. Una lista dentro de un bloque rara vez pasa de dos niveles. */
-function renderList(items: ListItem[]): string {
+function renderList(items: ListItem[], options: RenderOptions): string {
   let html = '';
   // Cada nivel abierto recuerda con qué etiqueta se abrió: una lista ordenada
   // dentro de una con viñetas tiene que cerrar con </ol>, no con </ul>.
@@ -168,7 +209,7 @@ function renderList(items: ListItem[]): string {
       html += '</li>';
     }
 
-    html += `<li>${inlineMarkdown(item.text)}`;
+    html += `<li>${inlineMarkdown(item.text, options)}`;
   }
 
   while (open.length > 0) html += `</li></${open.pop()?.tag}>`;
@@ -191,14 +232,14 @@ function cells(row: string): string[] {
  * marcado, y ninguna rama emite atributos provenientes del contenido sin
  * escaparlos.
  */
-export function renderMarkdown(source: string): string {
+export function renderMarkdown(source: string, options: RenderOptions = {}): string {
   const lines = source.split('\n');
   let html = '';
   let at = 0;
 
   const flushParagraph = (buffer: string[]): void => {
     if (buffer.length === 0) return;
-    html += `<p>${inlineMarkdown(buffer.join('\n'))}</p>`;
+    html += `<p>${inlineMarkdown(buffer.join('\n'), options)}</p>`;
     buffer.length = 0;
   };
 
@@ -253,7 +294,7 @@ export function renderMarkdown(source: string): string {
     if (heading !== null) {
       flushParagraph(paragraph);
       const level = Math.min(6, (heading[1] ?? '#').length + 1);
-      html += `<h${level}>${inlineMarkdown(heading[2] ?? '')}</h${level}>`;
+      html += `<h${level}>${inlineMarkdown(heading[2] ?? '', options)}</h${level}>`;
       at += 1;
       continue;
     }
@@ -265,7 +306,7 @@ export function renderMarkdown(source: string): string {
       html +=
         `<div class="footnote" id="fn-${encodeURIComponent(id)}">` +
         `<span class="footnote-id">${escapeHtml(id)}</span>` +
-        `<span class="footnote-body">${inlineMarkdown(footnote[2] ?? '')}</span></div>`;
+        `<span class="footnote-body">${inlineMarkdown(footnote[2] ?? '', options)}</span></div>`;
       at += 1;
       continue;
     }
@@ -279,7 +320,7 @@ export function renderMarkdown(source: string): string {
         body.push(quoted[1] ?? '');
         at += 1;
       }
-      html += `<blockquote>${inlineMarkdown(body.join('\n'))}</blockquote>`;
+      html += `<blockquote>${inlineMarkdown(body.join('\n'), options)}</blockquote>`;
       continue;
     }
 
@@ -294,9 +335,9 @@ export function renderMarkdown(source: string): string {
         body.push(cells(lines[at] ?? ''));
         at += 1;
       }
-      const headRow = head.map((cell) => `<th>${inlineMarkdown(cell)}</th>`).join('');
+      const headRow = head.map((cell) => `<th>${inlineMarkdown(cell, options)}</th>`).join('');
       const rows = body
-        .map((row) => `<tr>${row.map((cell) => `<td>${inlineMarkdown(cell)}</td>`).join('')}</tr>`)
+        .map((row) => `<tr>${row.map((cell) => `<td>${inlineMarkdown(cell, options)}</td>`).join('')}</tr>`)
         .join('');
       html += `<div class="table-scroll"><table><thead><tr>${headRow}</tr></thead><tbody>${rows}</tbody></table></div>`;
       continue;
@@ -318,7 +359,7 @@ export function renderMarkdown(source: string): string {
         });
         at += 1;
       }
-      html += renderList(items);
+      html += renderList(items, options);
       continue;
     }
 

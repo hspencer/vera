@@ -136,6 +136,75 @@ describe('inlineMarkdown', () => {
     });
   });
 
+  describe('resolución de medios', () => {
+    // El bloque conserva su `../assets/foo.png`; lo que cambia es a dónde
+    // apunta la presentación. La fuente no se toca nunca.
+    const resolver = {
+      resolveAsset: (path: string) =>
+        path === '../assets/foto.png'
+          ? { url: '/media/' + 'a'.repeat(64), mediaType: 'image/png' }
+          : path === '../assets/informe.pdf'
+            ? { url: '/media/' + 'b'.repeat(64), mediaType: 'application/pdf' }
+            : null,
+    };
+
+    it('una imagen del corpus apunta al objeto guardado', () => {
+      const html = inlineMarkdown('![retrato](../assets/foto.png)', resolver);
+      assert.match(html, new RegExp(`<img src="/media/${'a'.repeat(64)}" alt="retrato"`));
+    });
+
+    it('lo que no es imagen se ofrece como archivo, no se finge presentado', () => {
+      const html = inlineMarkdown('[el informe](../assets/informe.pdf)', resolver);
+      assert.match(html, /class="media-file"/);
+      assert.match(html, /data-media-type="application\/pdf"/);
+      assert.ok(!html.includes('<img'), `un PDF no es una imagen: ${html}`);
+    });
+
+    it('una ruta que Vera no tiene se emite tal cual y degrada sola', () => {
+      const html = inlineMarkdown('![x](../assets/ausente.png)', resolver);
+      assert.match(html, /<img src="\.\.\/assets\/ausente\.png"/);
+    });
+
+    it('sin resolvedor se comporta igual que antes', () => {
+      assert.equal(
+        inlineMarkdown('![x](../assets/foto.png)'),
+        '<img src="../assets/foto.png" alt="x" loading="lazy">',
+      );
+    });
+
+    it('un enlace externo no pasa por el resolvedor', () => {
+      const html = inlineMarkdown('[fuera](https://x.cl/a.png)', resolver);
+      assert.match(html, /href="https:\/\/x\.cl\/a\.png"/);
+      assert.ok(!html.includes('media-file'));
+    });
+
+    it('la URL resuelta se escapa como atributo', () => {
+      const html = inlineMarkdown('![x](../assets/foto.png)', {
+        resolveAsset: () => ({ url: '/media/a" onerror="alert(1)', mediaType: 'image/png' }),
+      });
+      const open = /^<img ([^>]*)>/.exec(html)?.[1] ?? '';
+      const names = [...open.matchAll(/([a-z-]+)="/g)].map((match) => match[1]);
+      assert.deepEqual(names, ['src', 'alt', 'loading'], `atributos: ${open}`);
+    });
+
+    it('renderMarkdown propaga el resolvedor a un bloque entero', () => {
+      const html = renderMarkdown('# Título\n\n![f](../assets/foto.png)', resolver);
+      assert.match(html, /<h2>Título<\/h2>/);
+      assert.match(html, new RegExp(`src="/media/${'a'.repeat(64)}"`));
+    });
+
+    it('lo propaga también dentro de una lista y de una tabla', () => {
+      assert.match(
+        renderMarkdown('- ![f](../assets/foto.png)', resolver),
+        new RegExp(`<ul><li><img src="/media/${'a'.repeat(64)}"`),
+      );
+      assert.match(
+        renderMarkdown('| a |\n| --- |\n| ![f](../assets/foto.png) |', resolver),
+        new RegExp(`<td><img src="/media/${'a'.repeat(64)}"`),
+      );
+    });
+  });
+
   describe('notas al pie', () => {
     it('convierte la referencia en un salto al destino', () => {
       assert.equal(

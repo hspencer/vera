@@ -467,6 +467,25 @@ code {
   margin: 0.5em 0;
 }
 
+/* Un medio que Vera guarda pero no presenta dentro de la página —un PDF, o un
+   archivo cuya extensión mentía— se ofrece como lo que es. Fingir que se
+   presenta sería peor que decir que hay que abrirlo aparte. */
+.media-file {
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  color: var(--accent);
+  text-decoration: none;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.1rem 0.45rem;
+  display: inline-block;
+}
+
+.media-file::before {
+  content: '↓ ';
+  color: var(--text-dim);
+}
+
 /* Una fuente que falta se dice, no se insinúa con un icono roto. */
 .media-missing {
   font-family: var(--font-ui);

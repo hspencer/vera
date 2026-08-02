@@ -11,7 +11,16 @@ import { extname, join, normalize, resolve } from 'node:path';
 
 import { VeraGraph, checkInvariants } from '@vera/core';
 import type { Change, ContributionChannel, OriginEvidence, ParticipantId } from '@vera/core';
-import { loadGraph, openStore, recordOperation, saveParticipant, type Store } from '@vera/store';
+import {
+  loadGraph,
+  mediaByHash,
+  mediaReferences,
+  openStore,
+  recordOperation,
+  saveParticipant,
+  type Store,
+} from '@vera/store';
+import { HASH, objectPath } from '@vera/store/objects';
 
 const CHANGE_KINDS = new Set([
   'create_page',
@@ -43,6 +52,8 @@ export interface ServerOptions {
   databasePath: string;
   /** Raíz de archivos estáticos del cliente. */
   webRoot?: string;
+  /** Almacén de objetos direccionado por hash, donde viven los binarios. */
+  objectsRoot?: string;
   owner?: { id: ParticipantId; name: string };
 }
 
@@ -126,6 +137,11 @@ export function createVeraServer(options: ServerOptions): VeraServer {
   }
 
   const webRoot = options.webRoot === undefined ? null : resolve(options.webRoot);
+  const objectsRoot = options.objectsRoot === undefined ? null : resolve(options.objectsRoot);
+
+  // Las rutas del grafo y su objeto. Se leen una vez: el mapa cambia cuando se
+  // ingiere un medio, no cuando se lee una página.
+  const media = mediaReferences(store);
 
   const send = (response: ServerResponse, status: number, payload: unknown): void => {
     const body = JSON.stringify(payload);
@@ -261,6 +277,22 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             .sort((a, b) => a.position - b.position),
           // Las referencias viajan ya nombradas: el cliente no puede resolver
           // mil títulos de página con mil peticiones más.
+          // Sólo los medios que esta página nombra. El bloque conserva su
+          // `../assets/foo.png` —lo que mantiene portable la proyección
+          // Markdown— y aquí viaja a qué objeto resuelve.
+          assets: (() => {
+            const text = graph
+              .blocksOf(page.id)
+              .map((block) => block.content)
+              .join('\n');
+            return media
+              .filter((entry) => text.includes(entry.path))
+              .map((entry) => ({
+                path: entry.path,
+                url: `/media/${entry.hash}`,
+                mediaType: entry.mediaType,
+              }));
+          })(),
           backlinks: graph.backlinks(page.id).map((link) => {
             const source = graph.page(link.sourcePage);
             const block = link.sourceBlock === null ? undefined : graph.block(link.sourceBlock);
@@ -272,6 +304,35 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             };
           }),
         });
+        return;
+      }
+
+      // Un objeto se nombra por el hash de su contenido, así que su respuesta
+      // nunca cambia: se puede cachear para siempre.
+      if (path.startsWith('/media/')) {
+        const hash = path.slice('/media/'.length);
+        if (objectsRoot === null || !HASH.test(hash)) {
+          send(response, 404, { error: 'no such media' });
+          return;
+        }
+        const record = mediaByHash(store, hash);
+        const file = objectPath(objectsRoot, hash);
+        if (record === null || !existsSync(file)) {
+          send(response, 404, { error: 'no such media' });
+          return;
+        }
+        response.writeHead(200, {
+          'content-type': record.mediaType,
+          'content-length': record.byteSize,
+          'cache-control': 'public, max-age=31536000, immutable',
+          // @invariant ExecutableContentIsolation. Un SVG servido desde este
+          // mismo origen es un documento que puede ejecutar guiones y leer lo
+          // que el origen tenga. Estas dos cabeceras se lo impiden: sin fuentes
+          // permitidas y en un origen opaco, no alcanza nada del grafo.
+          'content-security-policy': "default-src 'none'; sandbox",
+          'x-content-type-options': 'nosniff',
+        });
+        createReadStream(file).pipe(response);
         return;
       }
 
