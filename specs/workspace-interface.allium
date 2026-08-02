@@ -29,6 +29,10 @@ contract GraphQuerySupport {
     @invariant VeraNativeQuerySemantics
         -- Vera's query language is chosen for clarity and current graph needs.
         -- It is not constrained to preserve Logseq query syntax.
+
+    @invariant LogseqQueriesAreRebuilt
+        -- Migration does not translate or import existing Logseq queries.
+        -- Required queries are authored again using Vera's native semantics.
 }
 
 contract EditablePresentation {
@@ -293,5 +297,4 @@ deferred SearchIndex.find        -- see: search-index.allium
 ------------------------------------------------------------
 
 open question "When edited style source is invalid, should Vera reject it or keep it with the last valid presentation active?"
-open question "During mind migration, should existing Logseq queries be translated when possible, imported as inert source text, or reported as unsupported?"
 open question "Which native Markdown editing behaviours are required in v0 beyond direct source editing, including shortcuts, preview, autocomplete and footnote assistance?"
