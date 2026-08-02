@@ -1,8 +1,10 @@
-# Arquitectura tecnológica inicial
+# Arquitectura tecnológica
 
-> **Estado:** propuesta inicial revisable. Las especificaciones Allium definen el
-> comportamiento de Vera; este documento registra una implementación capaz de
-> satisfacerlo sin convertir decisiones técnicas en requisitos del producto.
+> **Estado:** mixto, y conviene leerlo así. Las secciones marcadas **construido**
+> registran lo que v0 efectivamente usa. Las marcadas **propuesta** siguen siendo
+> revisables y no comprometen a nada. Las especificaciones Allium definen el
+> comportamiento de Vera; este documento no convierte decisiones técnicas en
+> requisitos del producto.
 
 ## Criterios
 
@@ -11,92 +13,164 @@ desde varios dispositivos, Markdown portable, medios nativos, despliegue en un
 Linux personal y una ruta de migración simple. La concurrencia masiva y el
 multi-tenant no son objetivos de v0.
 
-## Lenguaje y repositorio
+## Lo que v0 corrigió de la propuesta inicial
+
+La propuesta original de este documento eligió un stack convencional de
+aplicación web. Al construir el primer recorrido, casi todas esas piezas
+resultaron innecesarias para un grafo personal de un solo escritor, y cada una
+habría costado superficie de dependencia, tiempo de build y una capa más entre
+la spec y el comportamiento observable. El resultado es deliberado:
+
+| Se propuso | Se usó | Por qué |
+| --- | --- | --- |
+| pnpm | npm workspaces | una dependencia menos que instalar antes de instalar |
+| React | TypeScript y DOM directo | la interfaz es un outliner y dos lienzos; no hay estado de componente que justifique un framework |
+| vite-plugin-pwa / Workbox | `sw.js` escrito a mano | 40 líneas legibles contra un generador cuya política de caché habría que auditar igual |
+| TanStack Query | `fetch` directo | el estado remoto es una página a la vez |
+| CodeMirror 6 | `<textarea>` | v0 edita el texto de un bloque, no un documento |
+| Radix UI | elementos nativos | `<button>`, `<nav>` y `<input type="search">` ya son accesibles |
+| Fastify | `node:http` | ocho rutas |
+| better-sqlite3 | `node:sqlite` | está en la biblioteca estándar; no compila nada |
+| Drizzle | SQL explícito | el esquema es un archivo legible y las queries de grafo son CTE recursivos que el ORM no expresaría mejor |
+| Vitest | `node --test` | ejecuta TypeScript directamente, sin build intermedio |
+| unified/remark/rehype | renderizador propio | v0 sólo necesita Markdown en línea, y el sanitizado es escapar primero |
+| D3 y 3d-force-graph | igual | única propuesta que se conservó tal cual |
+| FTS5 | igual | igual |
+
+Las dependencias de ejecución de v0 son tres: `d3`, `3d-force-graph` y el
+`three` que este último arrastra. Todas viven en la PWA. `@vera/core`,
+`@vera/store`, `@vera/importer` y `@vera/server` no tienen ninguna.
+
+Nada de esto descarta las piezas descartadas para siempre. CodeMirror vuelve a
+la mesa cuando haya que editar código y sketches; remark, cuando la proyección
+pública necesite el mismo pipeline que el HTML. La regla que se aplicó fue no
+adoptarlas antes de tener el problema que resuelven.
+
+## Lenguaje y repositorio — construido
 
 - **TypeScript** en cliente, servidor y herramientas de importación/exportación.
-- **Node.js LTS** como runtime del servidor.
-- **pnpm workspaces** para un monorepo con aplicaciones y paquetes compartidos.
+- **Node.js 24** o superior como runtime, por `node:sqlite` y por la ejecución
+  directa de TypeScript.
+- **npm workspaces** para un monorepo con paquetes compartidos.
 
-TypeScript permite reutilizar directamente componentes de `logseq-constel` y
-compartir contratos, validación y tipos entre la PWA, la API y los procesos de
-migración.
+Fuera de la PWA no hay paso de compilación: Node ejecuta los `.ts` tal como
+están, y `tsc --noEmit` verifica sin emitir. Esto elimina la clase entera de
+errores en que lo que corre no es lo que se leyó.
 
-## PWA
+## PWA — construido
 
-- **React** y **Vite**.
-- **vite-plugin-pwa/Workbox** para manifest, service worker, actualización y
-  caché de la aplicación.
-- **SQLite WASM**, ejecutado en un Web Worker y persistido con OPFS, para la
-  copia local consultable del grafo y la cola de operaciones offline.
-- **TanStack Query** para el estado remoto y la revalidación. La base local, no
-  un store global de componentes, conserva el estado duradero.
-- **CodeMirror 6** para edición Markdown y código.
-- Componentes accesibles propios sobre primitivas de **Radix UI**, con tokens y
-  custom properties CSS editables. No se adopta un tema visual prefabricado.
+- **Vite** para el build y el servidor de desarrollo, que hace proxy de las
+  rutas de la API al servidor local.
+- TypeScript sobre el DOM, sin framework. `outliner.ts` construye el árbol de
+  bloques, `graph/render.ts` la vista 2D y `graph/render3d.ts` la 3D.
+- **CSS custom properties** como tokens editables en `tokens.ts`, con esquema
+  claro y oscuro. No se adopta un tema visual prefabricado.
+- `manifest.webmanifest` y un service worker propio que cachea el armazón de la
+  aplicación y nada más.
 
-La interfaz aplica cambios optimistas a su SQLite local. Al recuperar conexión,
-envía operaciones pendientes y recibe cambios posteriores a su último cursor.
+La decisión explícita del service worker de v0: **no** cachea respuestas de
+`/operations` ni lecturas del grafo. Servir grafo viejo sin poder escribir sería
+peor que declarar que no hay red.
 
-## Servidor
+## Cliente offline — propuesta
 
-- **Fastify** sobre Node.js para API HTTP, carga de archivos y canal de eventos.
-- **TypeBox/JSON Schema** para validar contratos y generar OpenAPI.
-- **WebSocket o Server-Sent Events** sólo para notificar cambios; las escrituras
-  siguen pasando por operaciones HTTP autenticadas e idempotentes.
-- **Pino** para registros estructurados.
+**SQLite WASM** en un Web Worker, persistido con **OPFS**, para la copia local
+consultable del grafo y la cola de operaciones pendientes. La interfaz aplicaría
+cambios optimistas a esa base y, al recuperar conexión, enviaría lo encolado y
+pediría los cambios posteriores a su cursor.
 
-No se necesita GraphQL, Redis, una cola distribuida ni microservicios en v0.
+No está construido. v0 escribe contra el servidor de forma síncrona. Por eso
+`schema/schema.sql` es un solo archivo: está escrito para aplicarse igual en el
+servidor y en esa copia de trabajo del cliente cuando exista.
 
-## Persistencia canónica
+## Servidor — construido
+
+- **`node:http`** para la API HTTP y para servir la PWA construida.
+- Rutas: `GET /health`, `/pages`, `/pages/:id`, `/search`, `/graph/:id`, `/ops`,
+  `/invariants`, y `POST /operations`.
+- Validación explícita en el borde, sin generador de esquemas.
+
+`GET /invariants` expone la verificación de invariantes de `@vera/core` sobre el
+grafo cargado. Sobre el corpus real devuelve `[]`.
+
+Quedan pendientes de v0 y sin implementar: el canal de eventos para notificar
+cambios, los registros estructurados y OpenAPI. No se necesita GraphQL, Redis,
+una cola distribuida ni microservicios.
+
+## Persistencia canónica — construido
 
 - **SQLite** en modo WAL como base canónica del servidor.
-- **better-sqlite3** como adaptador del proceso Node.
-- **Drizzle** para esquema tipado y migraciones; SQL explícito para recorridos y
-  consultas que el ORM no exprese con claridad.
-- **FTS5** para búsqueda textual.
-- Tablas relacionales para páginas, bloques, aristas, tags, propiedades, tipos,
-  permisos, fuentes y operaciones. Los recorridos usan CTE recursivos.
+- **`node:sqlite`** como adaptador, desde la biblioteca estándar de Node.
+- **`schema/schema.sql`**, un único archivo explícito, con la correspondencia
+  entre cada tabla y la spec que la gobierna anotada en el encabezado.
+- **FTS5** para búsqueda textual sobre títulos y contenido de bloques.
+- Tablas relacionales para páginas, bloques, links, tags, propiedades, permisos,
+  fuentes y operaciones. Los recorridos usan CTE recursivos.
+
+La regla que gobierna todo lo demás: `operations` es el registro canónico. Las
+tablas de estado son su materialización y los índices derivados son
+reconstruibles. Nada fuera de `submitOperation()` escribe en ellas.
+
+No hay migraciones todavía. El esquema se aplica completo sobre una base nueva y
+el corpus se reimporta. Eso deja de alcanzar en cuanto exista estado que no
+provenga de `mind`.
 
 PostgreSQL queda como ruta de escalamiento si una futura Vera necesita muchos
 escritores simultáneos o alojamiento multi-tenant. No es requisito de v0.
 
-## Sincronización
+## Sincronización — parte construida
 
-Vera usa un registro monotónico de operaciones, no replicación del archivo
-SQLite:
+El registro monotónico de operaciones existe, no la replicación entre
+dispositivos:
 
-1. cada dispositivo genera una clave idempotente por operación;
-2. el servidor autentica, autoriza y aplica la operación en una transacción;
-3. el servidor asigna una secuencia canónica;
-4. cada dispositivo solicita operaciones posteriores a su cursor;
+1. cada operación lleva una clave idempotente de origen — **construido**;
+2. el servidor autoriza y aplica la operación en una transacción — **construido**;
+3. el servidor asigna una secuencia canónica — **construido**;
+4. cada dispositivo solicita operaciones posteriores a su cursor — `GET /ops`
+   sirve el registro, pero ningún cliente mantiene un cursor;
 5. dos ediciones offline del mismo bloque se presentan como conflicto para
-   resolución humana.
+   resolución humana — **no construido**; hoy no hay segunda escritura posible.
 
-No se incorpora un CRDT en v0. La colaboración carácter por carácter no es un
-requisito y añadirla complicaría identidad, procedencia y borrado. Yjs o
-Automerge sólo se evaluarían si ese comportamiento se vuelve necesario.
+Vera sincroniza el registro, nunca el archivo SQLite. No se incorpora un CRDT en
+v0: la colaboración carácter por carácter no es un requisito y añadirla
+complicaría identidad, procedencia y borrado. Yjs o Automerge sólo se evaluarían
+si ese comportamiento se vuelve necesario.
 
-## Grafo y queries
+## Grafo y queries — construido
 
-- Modelo persistente relacional con nodos y aristas explícitos.
-- Lenguaje de queries propio de Vera, compilado a SQL parametrizado.
-- **D3** para navegación 2D y **3d-force-graph** para la vista 3D, reutilizando
-  componentes y conducta probada de con§tel.
-- **Mermaid** para diagramas declarativos.
+- Modelo persistente relacional con nodos y aristas explícitos. Los links se
+  derivan del contenido del bloque: existen exactamente mientras el texto los
+  diga, y ningún participante los envía como operación propia.
+- Lenguaje de queries propio, construido como expresiones componibles en
+  `core/query.ts`: términos de título, contenido, tag, propiedad y dirección de
+  link, con `and`, `or` y `not`.
+- **D3** para la navegación 2D y **3d-force-graph** para la 3D, reutilizando
+  conducta probada de con§tel.
 
-No se adopta Neo4j: para un grafo personal, SQLite ya ofrece integridad,
-recorridos recursivos y una operación mucho más simple.
+Del corpus de `mind`, 30 queries de Logseq no se pudieron portar y quedaron
+registradas en `unported_queries` con su texto original, en lugar de
+desaparecer en silencio.
 
-## Markdown e hipermedia
+Falta la sintaxis de superficie y su parser: hoy las queries se construyen desde
+código, no se escriben en un bloque. **Mermaid** para diagramas declarativos
+sigue siendo propuesta.
 
-- Pipeline **unified/remark/rehype** para parsear y renderizar Markdown.
-- **DOMPurify** y políticas CSP para sanitización.
-- **PDF.js** para PDF; Mermaid para diagramas; SVG y sketches se presentan en
-  contextos aislados.
-- El mismo pipeline genera la proyección Markdown y el HTML público para evitar
-  semánticas divergentes.
+## Markdown e hipermedia — parte construida
 
-## Audio y transcripción
+- `outliner.ts` renderiza Markdown en línea —enlaces wiki, tags, negrita,
+  cursiva, código y enlaces externos— escapando el HTML antes que nada.
+- `store/projection.ts` proyecta la base a Markdown en una sola dirección, con
+  determinismo como requisito duro: proyectar dos veces el mismo estado produce
+  bytes idénticos, o el `git diff` deja de significar nada.
+- La correspondencia entre `stable_id` y ruta vive en un manifiesto, fuera del
+  texto. Los archivos proyectados no llevan UUID técnicos.
+
+Propuesta para las fases siguientes: **unified/remark/rehype** cuando el mismo
+pipeline deba generar la proyección Markdown y el HTML público, **DOMPurify** y
+CSP para sanitización de contenido rico, **PDF.js** para PDF, y contextos
+aislados para SVG y sketches.
+
+## Audio y transcripción — propuesta
 
 - **MediaRecorder** en el navegador para captura.
 - **FFmpeg** en el servidor para inspección, normalización y derivados.
@@ -105,17 +179,18 @@ recorridos recursivos y una operación mucho más simple.
 - La validación humana y el borrado posterior del audio son operaciones de Vera,
   no efectos automáticos del transcriptor.
 
-## Archivos y respaldo
+## Archivos y respaldo — propuesta
 
 - Audio, imágenes, PDF y otros binarios viven fuera de SQLite en un almacén
   local direccionado por **SHA-256**.
-- SQLite conserva identidad, hash, MIME, tamaño, procedencia y relaciones.
+- SQLite conserva identidad, hash, MIME, tamaño, procedencia y relaciones. Las
+  tablas `media` existen en el esquema y están vacías.
 - Backups consistentes usan la API de backup de SQLite; los binarios se respaldan
   con **restic** hacia un destino independiente de Alexei.
 - Git recibe Markdown y manifiestos deterministas. El archivo SQLite activo y
-  sus WAL no se usan como historial Git.
+  sus WAL no se usan como historial Git — ya está en `.gitignore`.
 
-## Identidad y seguridad
+## Identidad y seguridad — propuesta
 
 - **Passkeys/WebAuthn** para humanos, implementadas con SimpleWebAuthn.
 - Tokens revocables, con alcance y hash almacenado, para agentes y dispositivos.
@@ -124,24 +199,31 @@ recorridos recursivos y una operación mucho más simple.
 - Autorización aplicada en el servidor para toda lectura, escritura y
   publicación. La interfaz nunca constituye la frontera de seguridad.
 
-## Publicación
+v0 no autentica. Corre en `localhost` con un único participante propietario
+sembrado por el importador. Esto es aceptable mientras la instancia no escuche
+fuera de la máquina, y deja de serlo el día que lo haga.
+
+## Publicación — propuesta
 
 - Un generador estático dentro del monorepo proyecta páginas públicas a HTML.
-- **Astro** se usa como capa de plantillas y construcción del sitio estático.
+- **Astro** como capa de plantillas y construcción del sitio estático.
 - GitHub Actions puede desplegar la salida en **GitHub Pages**, conservando las
   URLs históricas de `herbertspencer.net`.
 - El sitio público no accede a la base privada en tiempo de lectura.
 
-## Pruebas y calidad
+## Pruebas y calidad — parte construida
 
-- **Vitest** para unidades e integración.
-- **fast-check** para propiedades e invariantes derivadas de Allium.
-- **Playwright** para recorridos completos, responsive, instalación PWA y
-  escenarios offline/sincronización.
-- Pruebas de migración con una copia representativa de `mind`.
-- ESLint, TypeScript estricto y formateo automático en CI.
+- **`node --test`** para unidades e integración: 184 tests, sin paso de build.
+- **fast-check** para propiedades e invariantes derivadas de Allium, sobre
+  secuencias de hasta 40 operaciones.
+- TypeScript estricto, verificado con `tsc --noEmit` en la raíz y en la PWA.
 
-## Despliegue inicial
+Pendientes: **Playwright** para recorridos completos, responsive, instalación
+PWA y escenarios offline; pruebas de migración automatizadas contra una copia
+representativa de `mind`; ESLint, formateo automático y CI. Lo que cubre y lo
+que no cubre la suite actual está en [test-obligations.md](test-obligations.md).
+
+## Despliegue inicial — propuesta
 
 - Un contenedor de Vera y volúmenes explícitos para SQLite, objetos y
   proyecciones.
@@ -151,28 +233,33 @@ recorridos recursivos y una operación mucho más simple.
 - GitHub Actions para validación y publicación estática, no para operar la base
   privada.
 
-## Estructura prevista
+Hoy Vera se ejecuta con `npm run serve` sobre la máquina de trabajo.
+
+## Estructura
+
+La que existe:
 
 ```text
-apps/
-  web/          PWA React
-  server/       API Fastify y sincronización
-  site/         proyección pública Astro
 packages/
-  domain/       tipos, operaciones e invariantes
-  db/           esquema, migraciones y queries
-  markdown/     parser, renderer y proyección
-  media/        ingestión, hashes y derivados
-  sync/         protocolo, cursores y conflictos
-  importers/    Logseq, Jekyll y Zotero
-  graph-ui/     componentes derivados de con§tel
+  core/         tipos, reglas e invariantes derivados de las specs
+  store/        SQLite canónico, registro de operaciones y proyección Markdown
+  importer/     ingesta de un grafo Logseq con reporte de pérdida
+  server/       API HTTP local
+  web/          el espacio de trabajo: outliner, grafo 2D y 3D, búsqueda, PWA
+schema/         schema.sql, el esquema canónico
 specs/          comportamiento Allium
+docs/           arquitectura, benchmark y obligaciones de prueba
 ```
+
+Los paquetes previstos para las fases siguientes —medios, sincronización,
+importadores de Jekyll y Zotero, y el sitio público— se agregarán cuando exista
+el comportamiento que los justifique, no antes.
 
 ## Decisiones deliberadamente diferidas
 
-- lenguaje definitivo de queries de Vera;
-- granularidad exacta de sincronización y conflictos;
+- sintaxis de superficie del lenguaje de queries y su parser;
+- granularidad exacta de sincronización y presentación de conflictos;
+- migraciones de esquema sobre una base con estado propio;
 - proveedor alternativo de transcripción;
 - migración de SQLite a PostgreSQL;
 - empaquetado nativo mediante Capacitor, si la PWA resulta insuficiente.
