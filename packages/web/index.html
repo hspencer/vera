@@ -7,6 +7,14 @@
     <meta name="description" content="Memoria personal soberana: versionable, editable, replicable y auditable." />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#16181c" />
+
+    <!-- iOS no lee los iconos del manifiesto ni acepta SVG para la pantalla de
+         inicio: sin este PNG usaría una miniatura de la captura de pantalla.
+         Las esquinas las redondea el sistema, así que la imagen va a sangre. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Vera" />
+    <!-- Junto con viewport-fit=cover, deja que el fondo llegue hasta el notch. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   </head>
   <body>
     <div id="vera-root" data-layout="split">
