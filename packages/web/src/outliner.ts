@@ -19,6 +19,116 @@ export interface OutlinerCallbacks {
   onNavigate(title: string): void;
   onOpen(page: string): void;
   onChanged(): void;
+  /** Seguir una referencia hasta el bloque que nombra. */
+  onOpenBlock?(page: string, block: string): void;
+}
+
+/**
+ * El menú de un bloque. Sólo puede haber uno abierto: el segundo clic en otro
+ * bullet cierra el primero, y un clic en cualquier otro sitio los cierra todos.
+ */
+let openMenu: HTMLElement | null = null;
+
+function closeMenu(): void {
+  openMenu?.remove();
+  openMenu = null;
+}
+
+let dismissalBound = false;
+
+/**
+ * Los oyentes que cierran el menú se registran al abrir el primero, no al
+ * importar el módulo. Importar no debe hacer nada: con estas dos líneas en el
+ * cuerpo del archivo, cargar el outliner fuera de un navegador —como hacen sus
+ * propias pruebas— fallaba antes de llegar a ninguna función.
+ */
+function bindDismissal(): void {
+  if (dismissalBound) return;
+  dismissalBound = true;
+
+  document.addEventListener('click', (event) => {
+    if (openMenu === null) return;
+    const target = event.target as HTMLElement;
+    if (!openMenu.contains(target) && !target.classList.contains('bullet')) closeMenu();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeMenu();
+  });
+}
+
+interface MenuAction {
+  label: string;
+  /** Por qué no se puede, cuando no se puede. La acción se muestra igual. */
+  blocked?: string;
+  run(): void | Promise<void>;
+}
+
+function openBlockMenu(anchor: HTMLElement, actions: MenuAction[]): void {
+  bindDismissal();
+  closeMenu();
+
+  const menu = document.createElement('div');
+  menu.className = 'block-menu';
+  menu.setAttribute('role', 'menu');
+
+  for (const action of actions) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'block-menu-item';
+    item.textContent = action.label;
+    item.setAttribute('role', 'menuitem');
+    if (action.blocked !== undefined) {
+      item.disabled = true;
+      item.title = action.blocked;
+    }
+    item.addEventListener('click', () => {
+      closeMenu();
+      void action.run();
+    });
+    menu.append(item);
+  }
+
+  const at = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.round(at.left + window.scrollX)}px`;
+  menu.style.top = `${Math.round(at.bottom + window.scrollY + 4)}px`;
+
+  document.body.append(menu);
+  openMenu = menu;
+  menu.querySelector('button')?.focus();
+}
+
+let toastTimer: number | undefined;
+
+/** Un aviso breve. Nunca lleva marcado: el corpus no dicta la interfaz. */
+function toast(message: string): void {
+  let element = document.querySelector<HTMLElement>('.toast');
+  if (element === null) {
+    element = document.createElement('div');
+    element.className = 'toast';
+    element.setAttribute('role', 'status');
+    document.body.append(element);
+  }
+  element.textContent = message;
+  element.hidden = false;
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    if (element !== null) element.hidden = true;
+  }, 3000);
+}
+
+/**
+ * Copiar al portapapeles exige contexto seguro. En `localhost` y bajo el HTTPS
+ * de Tailscale lo hay; si algún día no, se dice en vez de fallar en silencio y
+ * dejar al participante creyendo que copió.
+ */
+async function copyText(text: string, notify: (message: string) => void): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    notify(`copiado: ${text.length > 40 ? `${text.slice(0, 40)}…` : text}`);
+  } catch {
+    notify(`no se pudo copiar. El texto es: ${text}`);
+  }
 }
 
 export type LeaveAction =
@@ -88,6 +198,36 @@ function markMissingImages(root: HTMLElement): void {
   }
 }
 
+/**
+ * Elimina un bloque del grafo.
+ *
+ * @invariant DiscardingIsAnOrdinaryChange: sale la misma operación
+ * `remove_block` que enviaría cualquier participante, con la misma procedencia
+ * y el mismo orden. La interfaz no tiene un camino más corto hasta el grafo.
+ */
+async function removeBlock(
+  block: BlockView,
+  row: HTMLElement,
+  callbacks: OutlinerCallbacks,
+): Promise<void> {
+  let result;
+  try {
+    result = await api.submit({ kind: 'remove_block', block: block.stableId });
+  } catch {
+    toast('no se pudo eliminar: sin conexión con el servidor');
+    return;
+  }
+
+  if (result.status === 'rejected') {
+    // El dominio manda. Si dice que no, se dice por qué y no se toca la vista.
+    toast(`rechazado: ${result.reason}`);
+    return;
+  }
+
+  row.remove();
+  callbacks.onChanged();
+}
+
 export interface Node {
   block: BlockView;
   children: Node[];
@@ -136,14 +276,27 @@ export function assetResolver(page: PageView): RenderOptions['resolveAsset'] {
   };
 }
 
+/** @invariant ReferenceResolvesToItsBlock: la página trae ya resuelto a quién nombra. */
+export function blockResolver(page: PageView): RenderOptions['resolveBlock'] {
+  if (page.blockRefs.length === 0) return undefined;
+  const byId = new Map(page.blockRefs.map((ref) => [ref.id, ref]));
+  return (stableId) => {
+    const found = byId.get(stableId);
+    return found === undefined ? null : { page: found.page, excerpt: found.excerpt };
+  };
+}
+
 export function renderOutliner(
   container: HTMLElement,
   page: PageView,
   callbacks: OutlinerCallbacks,
 ): void {
   container.innerHTML = '';
-  const resolve = assetResolver(page);
-  const options: RenderOptions = resolve === undefined ? {} : { resolveAsset: resolve };
+  const options: RenderOptions = {};
+  const asset = assetResolver(page);
+  if (asset !== undefined) options.resolveAsset = asset;
+  const block = blockResolver(page);
+  if (block !== undefined) options.resolveBlock = block;
 
   const header = document.createElement('header');
   header.className = 'page-header';
@@ -182,15 +335,45 @@ export function renderOutliner(
     row.style.paddingLeft = `${depth * 1.25}rem`;
     row.dataset['id'] = node.block.stableId;
 
-    const bullet = document.createElement('span');
+    const bullet = document.createElement('button');
+    bullet.type = 'button';
     bullet.className = 'bullet';
     bullet.title = node.block.stableId;
     bullet.textContent = '•';
+    bullet.setAttribute('aria-haspopup', 'menu');
+    bullet.setAttribute('aria-label', 'acciones del bloque');
 
     const body = document.createElement('div');
     body.className = 'body';
     body.innerHTML = renderMarkdown(node.block.content, options);
     markMissingImages(body);
+
+    bullet.addEventListener('click', (event) => {
+      event.stopPropagation();
+      // Un bloque con hijos no es hoja, y remove_block sólo acepta hojas. Se
+      // muestra igual, con el motivo: ocultarla dejaría al participante sin
+      // saber por qué no puede borrar esto y sí lo de al lado.
+      const leaf = node.children.length === 0;
+      openBlockMenu(bullet, [
+        {
+          label: 'Copiar referencia',
+          run: () => copyText(`((${node.block.stableId}))`, toast),
+        },
+        {
+          label: 'Copiar identificador',
+          run: () => copyText(node.block.stableId, toast),
+        },
+        {
+          label: 'Copiar el Markdown del bloque',
+          run: () => copyText(node.block.content, toast),
+        },
+        {
+          label: 'Eliminar bloque',
+          ...(leaf ? {} : { blocked: 'un bloque con hijos no se puede eliminar todavía' }),
+          run: () => removeBlock(node.block, row, callbacks),
+        },
+      ]);
+    });
 
     // Al enfocar, el bloque muestra su Markdown; al salir, su render.
     body.tabIndex = 0;
@@ -201,8 +384,22 @@ export function renderOutliner(
         callbacks.onNavigate(target.dataset['page'] ?? '');
         return;
       }
+      if (target.classList.contains('block-ref')) {
+        event.preventDefault();
+        const id = target.dataset['block'] ?? '';
+        const ref = page.blockRefs.find((candidate) => candidate.id === id);
+        if (ref === undefined) {
+          toast('esa referencia no nombra ningún bloque de este grafo');
+          return;
+        }
+        // No sirve `a?.() ?? b()`: la primera devuelve void, así que el `??`
+        // dispararía también la segunda y se navegaría dos veces.
+        if (callbacks.onOpenBlock === undefined) callbacks.onOpen(ref.page);
+        else callbacks.onOpenBlock(ref.page, ref.id);
+        return;
+      }
       if (target.tagName === 'A') return;
-      startEditing(node.block, body, callbacks, options);
+      startEditing(node.block, body, callbacks, options, row);
     });
 
     row.append(bullet, body);
@@ -256,6 +453,7 @@ function startEditing(
   body: HTMLElement,
   callbacks: OutlinerCallbacks,
   options: RenderOptions,
+  row: HTMLElement,
 ): void {
   if (body.querySelector('textarea') !== null) return;
   const original = block.content;
@@ -344,6 +542,17 @@ function startEditing(
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       editor.blur();
+    }
+
+    // @invariant OnlyEmptyBlocksAreDiscarded: sólo se elimina un bloque que ya
+    // está vacío, así que esta tecla nunca puede llevarse texto por delante.
+    // Vaciarlo y pulsar una vez más es la forma de descartarlo.
+    if (event.key === 'Backspace' && editor.value === '') {
+      event.preventDefault();
+      // Se resuelve la sesión antes de retirar el campo: si no, el `blur` que
+      // provoca quitarlo del DOM intentaría guardar el bloque recién eliminado.
+      session.cancel();
+      void removeBlock(block, row, callbacks);
     }
   });
 }

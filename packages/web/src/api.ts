@@ -31,6 +31,13 @@ export interface AssetView {
   mediaType: string;
 }
 
+/** Una referencia `((stable_id))` ya resuelta al bloque que nombra. */
+export interface BlockRefView {
+  id: string;
+  page: string;
+  excerpt: string;
+}
+
 export interface PageView {
   id: string;
   title: string;
@@ -38,6 +45,7 @@ export interface PageView {
   properties: { key: string; value: string }[];
   blocks: BlockView[];
   assets: AssetView[];
+  blockRefs: BlockRefView[];
   backlinks: Backlink[];
 }
 

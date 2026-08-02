@@ -310,11 +310,108 @@ input {
   padding: 0.05rem 0;
 }
 
+/* El bullet es el asa del bloque: abre sus acciones. Es un `button` para que
+   el teclado llegue a él, pero no debe parecer uno. */
 .bullet {
   color: var(--text-dim);
   font-size: 0.7rem;
   flex: none;
-  cursor: help;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0 0.15rem;
+  line-height: 1.6;
+  border-radius: 50%;
+}
+
+.bullet:hover,
+.bullet:focus-visible {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  outline: none;
+}
+
+/* El bloque al que acaba de llegar una referencia. Se apaga solo. */
+.block.landed {
+  background: color-mix(in srgb, var(--warm) 16%, transparent);
+  border-radius: 4px;
+  transition: background 0.6s ease-out;
+}
+
+.block-menu {
+  position: absolute;
+  z-index: 40;
+  min-width: 14rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 0.2rem;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 22%);
+  display: flex;
+  flex-direction: column;
+}
+
+.block-menu-item {
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 0.35rem 0.6rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.block-menu-item:hover:not(:disabled),
+.block-menu-item:focus-visible:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  outline: none;
+}
+
+/* Una acción imposible se muestra igual, atenuada y con su motivo en el título:
+   ocultarla dejaría sin saber por qué aquí no se puede y al lado sí. */
+.block-menu-item:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+/* Referencia a otro bloque. Se lee como el texto al que apunta, no como su
+   identificador, que no le dice nada a nadie. */
+.block-ref {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 2px;
+  padding: 0 0.2em;
+}
+
+/* Una referencia que no nombra ningún bloque del grafo lo declara en vez de
+   parecer un enlace que simplemente no lleva a ninguna parte. */
+.block-ref[data-dangling='true'] {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  border-bottom-style: dashed;
+  background: none;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.6rem;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: min(32rem, 90vw);
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 0.5rem 0.9rem;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 22%);
 }
 
 .body {

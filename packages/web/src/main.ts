@@ -109,10 +109,30 @@ async function openPage(id: string): Promise<void> {
     onNavigate: (title) => void openTitle(title),
     onOpen: (target) => void openPage(target),
     onChanged: () => void refreshGraph(),
+    // @invariant ReferenceResolvesToItsBlock: seguir una referencia deja al
+    // participante en el bloque que nombra, no sólo en su página. Llegar a una
+    // página de cien bloques y tener que buscarlo no es haberla seguido.
+    onOpenBlock: (target, block) => {
+      void openPage(target).then(() => revealBlock(block));
+    },
   });
 
   drawBreadcrumbs();
   if (!isPhone() && workspace.layout !== 'text_only') void drawGraph();
+}
+
+/**
+ * Lleva a la vista el bloque que una referencia nombra y lo señala un momento.
+ *
+ * El destello es lo que convierte «esta es la página» en «este es el bloque».
+ * Se retira solo, porque un resalte permanente se confundiría con estado.
+ */
+function revealBlock(stableId: string): void {
+  const row = document.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(stableId)}"]`);
+  if (row === null) return;
+  row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  row.classList.add('landed');
+  window.setTimeout(() => row.classList.remove('landed'), 2000);
 }
 
 /** Un aviso a la vez, en texto plano: el corpus no dicta marcado. */

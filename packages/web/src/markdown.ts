@@ -62,6 +62,14 @@ const SLOT = '\u0000';
  */
 export interface RenderOptions {
   resolveAsset?: (path: string) => { url: string; mediaType: string } | null;
+  /**
+   * Qué bloque nombra una referencia `((stable_id))`.
+   *
+   * @invariant ReferenceResolvesToItsBlock: una referencia que no se puede
+   * seguir no es una referencia. Sin resolvedor se emite el identificador tal
+   * cual, que es la forma honesta de decir que aún no se sabe a qué apunta.
+   */
+  resolveBlock?: (stableId: string) => { page: string; excerpt: string } | null;
 }
 
 /** Un medio que no es imagen se ofrece como archivo, no se finge presentado. */
@@ -124,6 +132,17 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
   html = html.replace(/\[\^([^\]\s]+)\]/g, (_whole, id: string) =>
     hold(`<sup class="fnref"><a href="#fn-${encodeURIComponent(id)}">${id}</a></sup>`),
   );
+
+  // Referencia a bloque. El identificador no lleva espacios ni paréntesis, de
+  // modo que un texto con paréntesis anidados no se confunde con una.
+  html = html.replace(/\(\(([^()\s]+)\)\)/g, (whole, id: string) => {
+    const target = options.resolveBlock?.(id) ?? null;
+    const label = target === null ? id : target.excerpt;
+    return hold(
+      `<a class="block-ref" data-block="${quoteAttribute(id)}" href="#"` +
+        `${target === null ? ' data-dangling="true"' : ''}>${label}</a>`,
+    );
+  });
 
   html = html.replace(/\[\[([^\]]+)\]\]/g, (_whole, title: string) =>
     hold(`<a class="wiki" data-page="${quoteAttribute(title)}" href="#">${decorate(title)}</a>`),
