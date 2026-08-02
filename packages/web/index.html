@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Vera</title>
+    <meta name="description" content="Memoria personal soberana: versionable, editable, replicable y auditable." />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#16181c" />
+  </head>
+  <body>
+    <div id="vera-root" data-layout="split">
+      <header id="bar">
+        <span id="brand">Vera</span>
+        <nav id="breadcrumbs"></nav>
+        <div id="search-wrap">
+          <input id="search" type="search" placeholder="buscar en el grafo" autocomplete="off" />
+          <div id="results" hidden></div>
+        </div>
+        <div id="controls">
+          <button data-layout="text_only" title="Sólo texto">texto</button>
+          <button data-layout="split" title="Texto y grafo">ambos</button>
+          <button data-layout="graph_only" title="Sólo grafo">grafo</button>
+          <span class="sep"></span>
+          <button data-view="graph_2d" title="Grafo en dos dimensiones">2D</button>
+          <button data-view="graph_3d" title="Grafo en tres dimensiones">3D</button>
+          <span class="sep"></span>
+          <button id="scheme" title="Claro u oscuro">◐</button>
+          <button id="edit-tokens" title="Editar los tokens de diseño">tokens</button>
+        </div>
+      </header>
+
+      <aside id="sidebar">
+        <div id="status"></div>
+        <div id="index"></div>
+      </aside>
+
+      <main id="text"></main>
+      <div id="divider" role="separator" aria-orientation="vertical" tabindex="0"></div>
+      <section id="graph"></section>
+      <div id="tokens" hidden></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

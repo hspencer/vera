@@ -1,0 +1,12 @@
+{
+  "name": "Vera",
+  "short_name": "Vera",
+  "description": "Memoria personal soberana: versionable, editable, replicable y auditable.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#16181c",
+  "theme_color": "#16181c",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

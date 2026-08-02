@@ -1,0 +1,516 @@
+/* Hoja de estilo de Vera.
+ *
+ * Los colores y las familias tipográficas no se escriben aquí: se leen de las
+ * variables que tokens.ts inyecta, para que sigan siendo editables desde dentro
+ * de la aplicación (@guarantee EditableDesignSystem).
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+/* --- Armazón ----------------------------------------------------------- */
+
+#vera-root {
+  --divider: 0.5;
+  display: grid;
+  grid-template-columns: 15rem 1fr auto 1fr;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    'bar bar bar bar'
+    'sidebar text divider graph';
+  height: 100vh;
+  overflow: hidden;
+}
+
+#vera-root[data-layout='split'] {
+  grid-template-columns:
+    15rem
+    calc((100vw - 15rem) * var(--divider))
+    6px
+    1fr;
+}
+
+#vera-root[data-layout='text_only'] {
+  grid-template-columns: 15rem 1fr 0 0;
+}
+
+#vera-root[data-layout='graph_only'] {
+  grid-template-columns: 15rem 0 0 1fr;
+}
+
+#vera-root[data-layout='text_only'] #graph,
+#vera-root[data-layout='text_only'] #divider,
+#vera-root[data-layout='graph_only'] #text,
+#vera-root[data-layout='graph_only'] #divider {
+  display: none;
+}
+
+/* --- Barra ------------------------------------------------------------- */
+
+#bar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-raised);
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+}
+
+#brand {
+  font-family: var(--font-body);
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+#breadcrumbs {
+  display: flex;
+  gap: 0.35rem;
+  overflow: hidden;
+  flex: 0 1 auto;
+}
+
+.crumb {
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crumb:hover {
+  color: var(--accent);
+}
+
+#search-wrap {
+  position: relative;
+  margin-left: auto;
+}
+
+#search {
+  width: 18rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+#results {
+  position: absolute;
+  top: 2.2rem;
+  right: 0;
+  width: 28rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  z-index: 20;
+}
+
+.hit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: none;
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+}
+
+.hit:hover {
+  background: var(--bg);
+}
+
+.hit-page {
+  display: block;
+  color: var(--accent);
+  font-size: 0.8rem;
+}
+
+.hit-excerpt {
+  display: block;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+#controls {
+  display: flex;
+  gap: 0.2rem;
+  align-items: center;
+}
+
+#controls button {
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-dim);
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+#controls button[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--rule);
+  background: var(--bg);
+}
+
+.sep {
+  width: 1px;
+  height: 1.1rem;
+  background: var(--rule);
+  margin: 0 0.3rem;
+}
+
+/* --- Índice lateral ---------------------------------------------------- */
+
+#sidebar {
+  grid-area: sidebar;
+  border-right: 1px solid var(--rule);
+  overflow-y: auto;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+}
+
+#status {
+  padding: 0.6rem 0.8rem;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--rule);
+}
+
+.index-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 0.3rem 0.8rem;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.index-item:hover {
+  background: var(--bg-raised);
+  color: var(--accent);
+}
+
+.index-item .count {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Texto ------------------------------------------------------------- */
+
+#text {
+  grid-area: text;
+  overflow-y: auto;
+  padding: 2rem 2.5rem 6rem;
+}
+
+.page-header h1 {
+  font-size: 1.7rem;
+  font-weight: 400;
+  margin: 0 0 0.4rem;
+}
+
+.properties {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.6rem;
+  margin: 0 0 0.6rem;
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.properties dt {
+  color: var(--accent);
+}
+
+.properties dd {
+  margin: 0;
+}
+
+.visibility {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--text-dim);
+}
+
+.visibility.public {
+  color: var(--warm);
+  border-color: var(--warm);
+}
+
+.blocks {
+  margin-top: 1.4rem;
+}
+
+.block {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.05rem 0;
+}
+
+.bullet {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  flex: none;
+  cursor: help;
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+  outline: none;
+  border-radius: 3px;
+  padding: 0.1rem 0.25rem;
+}
+
+.body:hover {
+  background: var(--bg-raised);
+}
+
+.editor {
+  width: 100%;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--bg-raised);
+  padding: 0.25rem 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  resize: vertical;
+}
+
+.wiki {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.tag {
+  color: var(--warm);
+  font-family: var(--font-ui);
+  font-size: 0.85em;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--bg-raised);
+  padding: 0.05rem 0.25rem;
+  border-radius: 3px;
+}
+
+.notice {
+  color: var(--warm);
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  border-left: 2px solid var(--warm);
+  padding-left: 0.6rem;
+}
+
+.backlinks {
+  margin-top: 3rem;
+  border-top: 1px solid var(--rule);
+  padding-top: 0.8rem;
+}
+
+.backlinks h2 {
+  font-size: 0.85rem;
+  font-weight: 400;
+  font-family: var(--font-ui);
+  color: var(--text-dim);
+}
+
+.backlinks ul {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+}
+
+.backlink {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  padding: 0.35rem 0 0.35rem 0.6rem;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.backlink:hover {
+  border-left-color: var(--accent);
+  background: var(--bg-raised);
+}
+
+.backlink-page {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+.backlink-excerpt {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+/* Una edición que no pudo guardarse sigue ahí, visible, sin perderse. */
+.editor.failed {
+  outline: 2px solid var(--warm);
+}
+
+/* --- Divisor y grafo --------------------------------------------------- */
+
+#divider {
+  grid-area: divider;
+  background: var(--rule);
+  cursor: col-resize;
+}
+
+#divider:hover {
+  background: var(--accent);
+}
+
+#graph {
+  grid-area: graph;
+  position: relative;
+  overflow: hidden;
+  border-left: 1px solid var(--rule);
+}
+
+/* --- Panel de tokens --------------------------------------------------- */
+
+#tokens {
+  position: fixed;
+  right: 1rem;
+  top: 3.4rem;
+  width: 22rem;
+  max-height: 75vh;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 0.8rem;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  z-index: 30;
+}
+
+#tokens h2 {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+  font-weight: 400;
+}
+
+.token {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+
+.token span {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.token input {
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--bg);
+  padding: 0.15rem 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+/* --- Teléfono ----------------------------------------------------------
+ * @guarantee ResponsiveSinglePaneNavigation: un solo panel, nunca dividido.
+ */
+
+@media (max-width: 640px) {
+  #vera-root,
+  #vera-root[data-layout='split'],
+  #vera-root[data-layout='text_only'],
+  #vera-root[data-layout='graph_only'] {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      'bar'
+      'text';
+  }
+
+  #sidebar,
+  #divider {
+    display: none;
+  }
+
+  #vera-root[data-layout='graph_only'] {
+    grid-template-areas:
+      'bar'
+      'graph';
+  }
+
+  #vera-root[data-layout='graph_only'] #text {
+    display: none;
+  }
+
+  #vera-root[data-layout='graph_only'] #graph {
+    display: block;
+  }
+
+  #vera-root:not([data-layout='graph_only']) #graph {
+    display: none;
+  }
+
+  #text {
+    padding: 1rem 1rem 5rem;
+  }
+
+  #search {
+    width: 9rem;
+  }
+
+  #breadcrumbs {
+    display: none;
+  }
+}
