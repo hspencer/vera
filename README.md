@@ -54,6 +54,11 @@ en [docs/benchmark.md](docs/benchmark.md). No sostiene que Vera sea hoy un
 producto superior: explica por qué su **diseño objetivo** cubre mejor este caso
 de uso particular.
 
+La propuesta de implementación completa está en
+[docs/architecture.md](docs/architecture.md). Se mantiene separada de las specs:
+Allium define el comportamiento; la arquitectura registra una forma revisable
+de implementarlo.
+
 ## Principios ya acordados
 
 - Cada cambio conserva participante, canal, instante y evidencia de origen
