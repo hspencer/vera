@@ -29,10 +29,20 @@ contract NativeMediaSupport {
         -- Every declared media variant can be presented within a Vera page
         -- without requiring the reader to export it to another application.
 
+    @invariant DirectIngestionIsSovereign
+        -- Binary media dragged, pasted, attached or sent directly by a participant
+        -- is stored inside Vera. Explicit external references remain permitted.
+
     @invariant ExecutableContentIsolation
         -- Presenting SVG, Mermaid or JavaScript canvas content cannot grant that
         -- content access to private graph data not explicitly supplied to it.
 }
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum MediaCustody { internal | external_reference }
 
 ------------------------------------------------------------
 -- Entities and Variants
@@ -41,6 +51,7 @@ contract NativeMediaSupport {
 entity MediaResource {
     kind: Markdown | Audio | RasterImage | Pdf | Svg | Mermaid | CanvasSketch
     title: String?
+    custody: MediaCustody
     created_by: core/Participant
     created_at: Timestamp
 }
@@ -119,6 +130,25 @@ rule AttachMediaToPage {
     )
 }
 
+rule IngestBinaryIntoVera {
+    when: ParticipantIngestsBinary(participant, page, resource)
+
+    let membership = core/Membership{graph: page.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: resource.created_by = participant
+
+    ensures:
+        resource.custody = internal
+        PageEmbedding.created(
+            page: page,
+            resource: resource,
+            attached_by: participant,
+            attached_at: now
+        )
+}
+
 rule StoreCanonicalMediaSource {
     when: StoreMedia(resource)
 
@@ -174,6 +204,7 @@ surface PageMedia {
 
     provides:
         ParticipantAttachesMedia(participant, page, resource)
+        ParticipantIngestsBinary(participant, page, resource)
         StoreMedia(resource)
         PresentMedia(resource)
 
@@ -192,6 +223,5 @@ deferred AudioTranscription.create         -- see: audio-transcription.allium
 -- Open Questions
 ------------------------------------------------------------
 
-open question "Are binary media files canonical members of the Vera corpus, or may a resource be only an external reference?"
 open question "Which media types must Vera edit directly, rather than only store and present?"
 open question "May a canvas sketch receive an explicit read-only projection of graph data as input?"
