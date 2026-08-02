@@ -334,13 +334,17 @@ export function createVeraServer(options: ServerOptions): VeraServer {
   return { handle, graph, store, close: () => store.close() };
 }
 
-export function listen(options: ServerOptions & { port: number }): {
+export function listen(options: ServerOptions & { port: number; host?: string }): {
   close(): Promise<void>;
   vera: VeraServer;
 } {
   const vera = createVeraServer(options);
   const http = createServer((request, response) => vera.handle(request, response));
-  http.listen(options.port);
+  // Loopback por defecto: Vera no autentica y `POST /operations` muta el grafo,
+  // así que escuchar en todas las interfaces la deja escribible por cualquiera
+  // en la red física. Quien la publique elige el frente (p. ej. tailscale serve,
+  // que termina TLS y reenvía desde esta misma máquina).
+  http.listen(options.port, options.host ?? '127.0.0.1');
   return {
     vera,
     close: () =>
