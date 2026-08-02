@@ -355,6 +355,10 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
     }
 
     case 'remove_page': {
+      // Igual que con el bloque: una página sólo se puede quitar cuando ya no
+      // quedan bloques suyos, pero la página misma puede llevar propiedades, y
+      // esas sí impiden borrarla.
+      db.prepare('DELETE FROM property_assignments WHERE page_id = ?').run(subjectId);
       db.prepare('UPDATE page_links SET target_id = NULL WHERE target_id = ?').run(subjectId);
       db.prepare('DELETE FROM pages WHERE id = ?').run(subjectId);
       return;
@@ -394,6 +398,11 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
     }
 
     case 'remove_block': {
+      // Las propiedades del bloque van primero. Su clave foránea no declara
+      // ON DELETE, así que mientras exista una el borrado del bloque falla; y
+      // como el bloque en memoria ya se había quitado, el fallo llegaba después
+      // de que el dominio hubiera aceptado la operación.
+      db.prepare('DELETE FROM property_assignments WHERE block_id = ?').run(subjectId);
       db.prepare('DELETE FROM page_links WHERE source_block = ?').run(subjectId);
       db.prepare('DELETE FROM block_tags WHERE block_id = ?').run(subjectId);
       db.prepare('DELETE FROM unported_queries WHERE block_id = ?').run(subjectId);

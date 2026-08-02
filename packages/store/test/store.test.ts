@@ -169,6 +169,54 @@ describe('persistencia', () => {
     store.close();
   });
 
+  // Este caso tumbaba el servidor. La clave foránea de property_assignments no
+  // declara ON DELETE, así que mientras quedara una propiedad el borrado del
+  // bloque fallaba; y en el corpus real casi ningún bloque de bibliografía está
+  // sin propiedades. El test anterior no lo veía porque su bloque no tenía.
+  it('borra un bloque que lleva propiedades', () => {
+    const { store, write } = freshStore();
+    const page = write({ kind: 'create_page', title: 'P', visibility: 'private' });
+    const block = write({
+      kind: 'create_block',
+      page,
+      parent: null,
+      position: 0,
+      content: 'con propiedades',
+    });
+    write({ kind: 'set_property', block, propertyKey: 'tipo', propertyValue: 'nota' });
+    write({ kind: 'set_property', block, propertyKey: 'año', propertyValue: '2001' });
+
+    const cuenta = (): number =>
+      (
+        store.db
+          .prepare('SELECT count(*) c FROM property_assignments WHERE block_id = ?')
+          .get(block) as { c: number }
+      ).c;
+    assert.equal(cuenta(), 2);
+
+    write({ kind: 'remove_block', block });
+
+    assert.equal(cuenta(), 0, 'las propiedades del bloque se van con él');
+    assert.equal(searchStore(store, 'propiedades').length, 0);
+    store.close();
+  });
+
+  it('borra una página que lleva propiedades', () => {
+    const { store, write } = freshStore();
+    const page = write({ kind: 'create_page', title: 'P', visibility: 'private' });
+    write({ kind: 'set_property', page, propertyKey: 'estado', propertyValue: 'borrador' });
+
+    write({ kind: 'remove_page', page });
+
+    const quedan = (
+      store.db
+        .prepare('SELECT count(*) c FROM property_assignments WHERE page_id = ?')
+        .get(page) as { c: number }
+    ).c;
+    assert.equal(quedan, 0, 'las propiedades de la página se van con ella');
+    store.close();
+  });
+
   it('recorre la vecindad con una consulta recursiva', () => {
     const { store, write } = freshStore();
     const a = write({ kind: 'create_page', title: 'A', visibility: 'private' });

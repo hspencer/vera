@@ -202,7 +202,20 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           return;
         }
 
-        recordOperation(store, graph, outcome.operation);
+        // Persistir puede fallar por algo que el dominio no vio venir. La
+        // transacción revierte sola, pero sin este intento la excepción subía
+        // hasta el proceso y se llevaba el servidor por delante: una operación
+        // que no se puede guardar tiene que devolver un error, no un reinicio.
+        try {
+          recordOperation(store, graph, outcome.operation);
+        } catch (error) {
+          send(response, 500, {
+            error: 'no se pudo persistir la operación',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+
         send(response, 201, {
           status: 'applied',
           sequence: outcome.operation.sequence,
@@ -292,6 +305,25 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 url: `/media/${entry.hash}`,
                 mediaType: entry.mediaType,
               }));
+          })(),
+          // @invariant ReferenceResolvesToItsBlock. Las referencias que esta
+          // página nombra viajan resueltas: quién es el bloque, en qué página
+          // vive y qué dice. Sin esto el cliente tendría que pedir una por una
+          // y una referencia sería más cara de mostrar que de escribir.
+          blockRefs: (() => {
+            const seen = new Set<string>();
+            const found: { id: string; page: string; excerpt: string }[] = [];
+            for (const block of graph.blocksOf(page.id)) {
+              for (const match of block.content.matchAll(/\(\(([^()\s]+)\)\)/g)) {
+                const id = match[1] ?? '';
+                if (id === '' || seen.has(id)) continue;
+                seen.add(id);
+                const target = graph.block(id);
+                if (target === undefined) continue;
+                found.push({ id, page: target.page, excerpt: excerpt(target.content) });
+              }
+            }
+            return found;
           })(),
           backlinks: graph.backlinks(page.id).map((link) => {
             const source = graph.page(link.sourcePage);
