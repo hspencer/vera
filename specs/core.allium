@@ -29,7 +29,14 @@ enum ParticipantKind { human | agent }
 enum ParticipantStatus { active | suspended }
 enum ContributionChannel { typed_text | authenticated_voice | agent_generation | import }
 enum Visibility { private | public }
-enum ChangeKind { create_page | rename_page | create_block | edit_block | move_block | remove_block | set_property | link_pages }
+-- The change vocabulary of the first usable Vera. Links between pages are not a
+-- change kind: they are derived from block content and therefore a consequence of
+-- edit_block, never an operation a participant submits on its own.
+enum ChangeKind {
+    create_page | rename_page | set_page_visibility | remove_page |
+    create_block | edit_block | move_block | remove_block |
+    set_property | remove_property
+}
 enum SubmissionStatus { submitted | accepted | rejected }
 
 ------------------------------------------------------------
@@ -61,6 +68,11 @@ entity Page {
     visibility: Visibility
     blocks: Block with page = this
     revisions: Revision with page = this
+
+    -- Dos títulos que sólo difieren en mayúsculas o acentos nombran la misma
+    -- página. El corpus escribe [[LogSeq]] y [[Logseq]] para una sola, y
+    -- resolverlas por separado partiría el grafo en pedazos falsos.
+    title_key: title_key(title)
 }
 
 entity PersonalSite {
@@ -71,22 +83,42 @@ entity PersonalSite {
     publications: Publication with site = this
 }
 
+-- A block's stable_id is the identity that survives editing and moving. The distilled
+-- Logseq reference calls the same concept KnowledgeBlock.stable_address; Vera's own
+-- name is stable_id and the reference's guarantees apply to it unchanged.
 entity Block {
     stable_id: String
     page: Page
+    parent: Block?
+    position: Integer
     content: String
     revisions: Revision with block = this
+    children: Block with parent = this
 }
 
+-- page and block name the subject of the change, which is what a revision is attributed
+-- to. The remaining fields carry the payload each kind needs. Which fields a given kind
+-- requires is specified in change-application.allium, not restated here.
 entity Change {
     kind: ChangeKind
     page: Page?
     block: Block?
     content: String?
+    parent: Block?
+    position: Integer?
+    -- Una identidad propuesta por quien envía. Sólo la usa la importación, para
+    -- adoptar los identificadores que el corpus ya traía en vez de inventar otros
+    -- y romper las referencias que existían fuera de Vera.
+    stable_id: String?
+    title: String?
+    visibility: Visibility?
+    property_key: String?
+    property_value: String?
 }
 
 entity Submission {
     graph: Graph
+    origin_id: String
     submitted_by: Participant
     change: Change
     channel: ContributionChannel
@@ -109,6 +141,17 @@ entity Revision {
     origin_is_canonical: channel = authenticated_voice and evidence != null
 }
 
+-- Properties are canonical content: the imported corpus carries them on almost every
+-- page and Vera's queries select on them. What a property may mean is governed by
+-- controlled-ontology.allium; that a page or block carries one is governed here.
+entity PropertyAssignment {
+    graph: Graph
+    page: Page?
+    block: Block?
+    key: String
+    value: String
+}
+
 entity Publication {
     site: PersonalSite
     page: Page
@@ -122,17 +165,19 @@ entity Publication {
 ------------------------------------------------------------
 
 rule AcceptParticipantSubmission {
-    when: ParticipantSubmits(participant, graph, change, channel, evidence?)
+    when: ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
 
     let membership = Membership{graph, participant}
 
     requires: exists membership
     requires: membership.status = active
     requires: channel != authenticated_voice or evidence != null
+    requires: not exists Submission{graph: graph, origin_id: origin_id}
 
     ensures:
         let submission = Submission.created(
             graph: graph,
+            origin_id: origin_id,
             submitted_by: participant,
             change: change,
             channel: channel,
@@ -143,7 +188,9 @@ rule AcceptParticipantSubmission {
         )
         Revision.created(
             graph: graph,
-            page: change.page,
+            -- A change to a block is attributed to the page that block sits on, so
+            -- a page's history reads whole rather than only its page-level edits.
+            page: subject_page(change),
             block: change.block,
             change: change,
             authored_by: participant,
@@ -205,10 +252,41 @@ invariant RevisionParticipantBelongsToGraph {
         exists Membership{graph: revision.graph, participant: revision.authored_by}
 }
 
+-- A page title is what a [[reference]] names, so two pages sharing one would make
+-- every link to it ambiguous.
+invariant PageTitleIsUniqueWithinGraph {
+    for a in Pages:
+        for b in Pages:
+            a != b implies a.graph != b.graph or a.title_key != b.title_key
+}
+
 invariant BlockStableIdentityIsUnique {
     for a in Blocks:
         for b in Blocks:
             a != b implies a.stable_id != b.stable_id
+}
+
+invariant SubmissionOriginIsUniqueWithinGraph {
+    for a in Submissions:
+        for b in Submissions:
+            a != b implies a.graph != b.graph or a.origin_id != b.origin_id
+}
+
+invariant BlockParentBelongsToSamePage {
+    for block in Blocks:
+        block.parent != null implies block.parent.page = block.page
+}
+
+invariant PropertyTargetsOneSubject {
+    for assignment in PropertyAssignments:
+        (assignment.page != null or assignment.block != null) and
+        not (assignment.page != null and assignment.block != null)
+}
+
+invariant PropertyKeyIsUniquePerSubject {
+    for a in PropertyAssignments:
+        for b in PropertyAssignments:
+            a != b and a.key = b.key implies a.page != b.page or a.block != b.block
 }
 
 ------------------------------------------------------------
@@ -238,7 +316,11 @@ surface GraphParticipation {
         graph.pages
 
     provides:
-        ParticipantSubmits(participant, graph, change, channel, evidence?)
+        ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    @guarantee IdempotentSubmission
+        -- The submitting participant names each change with an origin_id. Resubmitting
+        -- an origin_id the graph has already accepted changes nothing.
 
     @guarantee EqualMutationPath
         -- Human and agent participants submit changes through this same boundary.
@@ -275,6 +357,7 @@ surface PersonalSitePublication {
 ------------------------------------------------------------
 
 deferred ChangeApplication.apply       -- see: change-application.allium
+deferred GraphNavigation.traverse      -- see: graph-navigation.allium
 deferred GraphNavigation.present       -- see: graph-navigation.allium
 deferred OfflineSubmission.reconcile   -- see: offline-reconciliation.allium
 deferred PersonalSiteProjection.render -- see: personal-site-projection.allium
@@ -288,7 +371,11 @@ deferred IdentityAccess.authorize        -- see: identity-access.allium
 -- Open Questions
 ------------------------------------------------------------
 
-open question "What is the smallest semantic change vocabulary needed for the first usable Vera?"
+-- The smallest change vocabulary is now settled in ChangeKind and applied in
+-- change-application.allium. What remains open is whether media attachment and
+-- ontology assignment are change kinds or separate submission paths.
+open question "Are attaching media and assigning a semantic type change kinds, or do they reach the graph by their own paths?"
+open question "Which participant and which precondition produce a rejected submission, given that no rule sets that status today?"
 open question "Can a participant revise another participant's contribution without preserving both voices visibly?"
 open question "When the exceptional case occurs and two devices changed the same block offline, which changes may Vera merge automatically and which require explicit human resolution?"
 open question "Are pages and blocks sufficient as Vera's canonical content model, or are typed nodes needed?"

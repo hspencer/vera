@@ -1,0 +1,339 @@
+-- allium: 3
+-- graph-navigation.allium
+
+-- Scope: The traversal that turns a Vera graph into a navigable neighbourhood
+-- Includes: Links and tags derived from block content, backlinks, links to pages that
+--   do not exist yet, depth-bounded neighbourhoods around a centre page, node distance
+--   and degree, and the exclusion of self-edges and duplicate edges
+-- Excludes:
+--   - Force simulation parameters, layout and visual styling (see graph-rendering)
+--   - Choice between the two-dimensional and three-dimensional presentations
+--   - Treating a shared tag or property as an edge, which this version does not do
+--   - Selection of content by expression (see query-language.allium)
+-- Dependencies: Graph, Page, Block and Participant are governed by core.allium.
+--   BlockContentSettled and PageRemoved are emitted by change-application.allium.
+
+use "./core.allium" as core
+use "./change-application.allium" as change
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract NeighbourhoodTraversal {
+    neighbourhood: (centre: core/Page, depth: Integer) -> GraphNeighbourhood
+    backlinks: (target: core/Page) -> Set<PageLink>
+
+    @invariant EdgesAreDerivedFromContent
+        -- An edge exists because a block currently references a page. No participant
+        -- creates an edge directly, and no edge outlives the text that produced it.
+
+    @invariant TraversalIsUndirected
+        -- Expanding a neighbourhood follows links in both directions. A page that only
+        -- links to the centre is as near to it as a page the centre only links to.
+
+    @invariant UnresolvedLinksAreNotNodes
+        -- A reference to a page that does not exist is preserved on its block and
+        -- readable there, but contributes no node and no edge to the neighbourhood.
+
+    @invariant DepthBoundsTheResult
+        -- Every node in a neighbourhood lies within the requested depth of its centre.
+        -- Traversal terminates on a graph of any shape, including a cyclic one.
+}
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+-- A reference found in block content. target_title is what the text said; target is
+-- the page it resolves to, absent while no page carries that title. The imported
+-- corpus links to pages that were never written, and losing those references would
+-- lose Herbert's intent to write them.
+entity PageLink {
+    graph: core/Graph
+    source_page: core/Page
+    source_block: core/Block
+    target_title: String
+    target: core/Page?
+}
+
+-- A free tag written in block content. Derived exactly like a link, and for the same
+-- reason: query-language.allium can select on a tag, so something must say where tags
+-- come from and when they stop existing.
+entity BlockTag {
+    graph: core/Graph
+    page: core/Page
+    block: core/Block
+    tag: String
+}
+
+entity GraphNeighbourhood {
+    graph: core/Graph
+    centre: core/Page
+    depth: Integer
+    requested_by: core/Participant
+    computed_at: Timestamp
+    nodes: NeighbourhoodNode with neighbourhood = this
+    edges: NeighbourhoodEdge with neighbourhood = this
+}
+
+entity NeighbourhoodNode {
+    neighbourhood: GraphNeighbourhood
+    page: core/Page
+    distance: Integer
+    degree: Integer
+    block_count: Integer
+}
+
+entity NeighbourhoodEdge {
+    neighbourhood: GraphNeighbourhood
+    source: core/Page
+    target: core/Page
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule RecomputeLinksForSettledBlock {
+    when: change/BlockContentSettled(block)
+
+    ensures:
+        for stale in PageLinks where source_block = block:
+            not exists stale
+        for title in referenced_titles(block.content):
+            PageLink.created(
+                graph: block.page.graph,
+                source_page: block.page,
+                source_block: block,
+                target_title: title,
+                target: page_titled(block.page.graph, title)
+            )
+        for outdated in BlockTags where block = block:
+            not exists outdated
+        for name in referenced_tags(block.content):
+            BlockTag.created(
+                graph: block.page.graph,
+                page: block.page,
+                block: block,
+                tag: name
+            )
+
+    @guidance
+        -- Recomputing the whole block's links and tags rather than diffing them is
+        -- what keeps the index honest: there is no path by which a link survives the
+        -- sentence that created it.
+        -- A block settles when its content changes and also when it moves, because a
+        -- link records the page its source block sits on.
+}
+
+rule RelinkAroundRenamedPage {
+    when: change/PageRenamed(page)
+
+    ensures:
+        for named in PageLinks where target = page and target_title != page.title:
+            named.target = null
+        for waiting in PageLinks where target = null and target_title = page.title and graph = page.graph:
+            waiting.target = page
+
+    @guidance
+        -- Renaming is the one operation that both breaks and makes connections. A
+        -- sentence that named the old title has not changed, so it goes back to
+        -- waiting; one that named the new title has been waiting all along.
+}
+
+rule ResolveWaitingLinksToNewPage {
+    when: page: core/Page.created
+
+    ensures:
+        for waiting in PageLinks where target = null and target_title = page.title and graph = page.graph:
+            waiting.target = page
+
+    @guidance
+        -- Writing a page that others already pointed at connects it to them at once,
+        -- without revisiting the blocks that named it.
+}
+
+rule OrphanLinksWhenTargetPageRemoved {
+    when: change/PageRemoved(page)
+
+    ensures:
+        for link in PageLinks where target = page:
+            link.target = null
+
+    @guidance
+        -- The reference survives its target. A removed page leaves the sentences that
+        -- named it intact and waiting, exactly as a page never written does.
+}
+
+rule BuildNeighbourhoodAroundPage {
+    when: RequestNeighbourhood(participant, graph, centre, depth)
+
+    let membership = core/Membership{graph, participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: centre.graph = graph
+    requires: depth >= 0
+
+    ensures:
+        let neighbourhood = GraphNeighbourhood.created(
+            graph: graph,
+            centre: centre,
+            depth: depth,
+            requested_by: participant,
+            computed_at: now
+        )
+        for node in reachable_nodes(centre, depth, participant):
+            NeighbourhoodNode.created(
+                neighbourhood: neighbourhood,
+                page: node.page,
+                distance: node.distance,
+                degree: node.degree,
+                block_count: node.block_count
+            )
+        for edge in connecting_edges(centre, depth, participant):
+            NeighbourhoodEdge.created(
+                neighbourhood: neighbourhood,
+                source: edge.source,
+                target: edge.target
+            )
+
+    @guidance
+        -- reachable_nodes and connecting_edges are a bounded breadth-first expansion
+        -- over resolved links in both directions. They are black boxes because their
+        -- cost model belongs to the store, which can answer them with one recursive
+        -- query rather than one lookup per node.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant LinkSourceBlockBelongsToSourcePage {
+    for link in PageLinks:
+        link.source_block.page = link.source_page
+}
+
+invariant TagBelongsToItsBlocksPage {
+    for held in BlockTags:
+        held.block.page = held.page
+}
+
+invariant TagAppearsOncePerBlock {
+    for a in BlockTags:
+        for b in BlockTags:
+            a != b and a.block = b.block implies a.tag != b.tag
+}
+
+invariant LinkBelongsToItsSourceGraph {
+    for link in PageLinks:
+        link.source_page.graph = link.graph
+}
+
+invariant ResolvedLinkStaysWithinOneGraph {
+    for link in PageLinks:
+        link.target != null implies link.target.graph = link.graph
+}
+
+invariant ResolvedLinkMatchesTheTitleItNamed {
+    for link in PageLinks:
+        link.target != null implies link.target.title_key = title_key(link.target_title)
+}
+
+invariant CentreIsTheOnlyNodeAtDistanceZero {
+    for node in NeighbourhoodNodes:
+        node.distance = 0 implies node.page = node.neighbourhood.centre
+}
+
+invariant EveryNodeLiesWithinTheRequestedDepth {
+    for node in NeighbourhoodNodes:
+        node.distance >= 0 and node.distance <= node.neighbourhood.depth
+}
+
+invariant PageAppearsOnceInANeighbourhood {
+    for a in NeighbourhoodNodes:
+        for b in NeighbourhoodNodes:
+            a != b and a.neighbourhood = b.neighbourhood implies a.page != b.page
+}
+
+invariant NeighbourhoodHasNoSelfEdge {
+    for edge in NeighbourhoodEdges:
+        edge.source != edge.target
+}
+
+invariant EdgeEndpointsAreNodesOfTheSameNeighbourhood {
+    for edge in NeighbourhoodEdges:
+        edge.neighbourhood.nodes.any(n => n.page = edge.source) and
+        edge.neighbourhood.nodes.any(n => n.page = edge.target)
+}
+
+invariant EdgeAppearsOnceRegardlessOfDirection {
+    for a in NeighbourhoodEdges:
+        for b in NeighbourhoodEdges:
+            a != b and a.neighbourhood = b.neighbourhood implies
+                not (a.source = b.source and a.target = b.target) and
+                not (a.source = b.target and a.target = b.source)
+}
+
+invariant NodesBelongToTheTraversedGraph {
+    for node in NeighbourhoodNodes:
+        node.page.graph = node.neighbourhood.graph
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor NavigatingParticipant {
+    within: core/Graph
+    identified_by: core/Participant where core/Membership{graph: within, participant: this}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface GraphNavigation {
+    facing participant: NavigatingParticipant
+    context graph: core/Graph
+
+    exposes:
+        graph.name
+        graph.pages
+
+    provides:
+        RequestNeighbourhood(participant, graph, centre, depth)
+
+    contracts:
+        fulfils NeighbourhoodTraversal
+
+    @guarantee OneNeighbourhoodServesEveryPresentation
+        -- The nodes and edges a traversal produces are the same whether the workspace
+        -- draws them in two dimensions or three. Presentation chooses how to show the
+        -- neighbourhood, never which pages are in it.
+
+    @guarantee DegreeCountsIncidentEdges
+        -- A node's degree is the number of distinct edges touching it within the
+        -- neighbourhood, so a node's prominence reflects what the reader can see
+        -- rather than a hidden global count.
+
+    @guarantee IntentToLinkSurvivesTheMissingPage
+        -- A reference to a page that does not exist stays legible on its block. Vera
+        -- neither discards it nor silently creates the page it names.
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred GraphRendering.present -- see: graph-rendering.allium
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Should a shared tag or a shared property value produce an edge, or does that turn the corpus's near-universal status and lang properties into a hairball?"
+open question "Does a neighbourhood cap its node count before depth is exhausted, and if so how does it choose which pages to drop?"
+open question "Should the two thousand journal and page nodes of the imported corpus ever be presented as one whole-graph view, or is the neighbourhood the only graph Vera draws?"
+open question "When a block is removed, its links go with it; should the workspace warn the author that a page is about to lose its last inbound reference?"

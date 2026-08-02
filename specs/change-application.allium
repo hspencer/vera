@@ -1,0 +1,389 @@
+-- allium: 3
+-- change-application.allium
+
+-- Scope: How an accepted change becomes durable, ordered state in a Vera graph
+-- Includes: Operation identity, idempotent resubmission, total ordering within one
+--   graph, replay from a known position, and the application of every change kind to
+--   pages, blocks and property assignments
+-- Excludes:
+--   - Storage engine, sequence allocation mechanism and transaction transport
+--   - Offline queueing and multi-device reconciliation (see offline-reconciliation)
+--   - Merging divergent histories and resolving concurrent edits
+--   - Maintenance of derived indexes: links, tags and search
+--   - Rejecting a submission, which core.allium governs
+-- Dependencies: Participant, Graph, Page, Block, Change, Submission, Revision and
+--   PropertyAssignment are governed by core.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract IdempotentOrderedApplication {
+    admit: (origin_id: String, change: core/Change) -> Operation
+    replay: (log: ChangeLog, after: Integer) -> Set<Operation>
+
+    @invariant OriginIdentityIsTheIdempotencyKey
+        -- The submitting device names each change with an origin_id before sending it.
+        -- Admitting an origin_id the graph already holds produces no second operation
+        -- and no second revision, however many times it arrives.
+
+    @invariant TotalOrderWithinOneGraph
+        -- Every admitted operation receives a sequence number unique and increasing
+        -- within its graph. Two operations in the same graph are always comparable.
+
+    @invariant ReplayReconstructsState
+        -- Applying a graph's operations in sequence order from an empty graph yields
+        -- the same pages, blocks and property assignments as the live graph. The
+        -- materialised state is a consequence of the log, never an independent record.
+
+    @invariant ApplicationIsAllOrNothing
+        -- An operation either applies completely or leaves the graph untouched. A
+        -- partially applied operation is never observable and never receives a sequence.
+}
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity ChangeLog {
+    graph: core/Graph
+    last_sequence: Integer
+    operations: Operation with log = this
+}
+
+entity Operation {
+    log: ChangeLog
+    origin_id: String
+    submission: core/Submission
+    sequence: Integer
+    applied_at: Timestamp
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule RecordAcceptedSubmission {
+    when: core/SubmissionAccepted(submission)
+
+    let log = ChangeLog{graph: submission.graph}
+
+    requires: exists log
+    requires: submission.status = accepted
+
+    ensures:
+        log.last_sequence = log.last_sequence + 1
+        Operation.created(
+            log: log,
+            origin_id: submission.origin_id,
+            submission: submission,
+            sequence: log.last_sequence,
+            applied_at: now
+        )
+
+    @guidance
+        -- core.allium already refuses a submission whose origin_id the graph holds,
+        -- so a duplicate never reaches this rule and never consumes a sequence number.
+}
+
+rule ApplyCreatePage {
+    when: operation: Operation.created
+
+    let change = operation.submission.change
+
+    requires: change.kind = create_page
+    requires: change.title != null
+    requires: change.visibility != null
+    requires: not exists core/Page{graph: operation.submission.graph, title: change.title}
+
+    ensures: core/Page.created(
+        graph: operation.submission.graph,
+        title: change.title,
+        visibility: change.visibility
+    )
+}
+
+rule ApplyRenamePage {
+    when: operation: Operation.created
+
+    let change = operation.submission.change
+
+    requires: change.kind = rename_page
+    requires: change.page != null
+    requires: change.title != null
+    requires: not exists core/Page{graph: change.page.graph, title: change.title}
+
+    ensures:
+        change.page.title = change.title
+        PageRenamed(page: change.page)
+
+    @guidance
+        -- Renaming does not touch any block, so every stable_id on the page survives.
+        -- Inbound references do not all survive, though: a link that named the old
+        -- title stops resolving, and one that was waiting for the new title starts.
+        -- graph-navigation.allium listens to PageRenamed and settles that.
+}
+
+rule ApplySetPageVisibility {
+    when: operation: Operation.created
+
+    let change = operation.submission.change
+
+    requires: change.kind = set_page_visibility
+    requires: change.page != null
+    requires: change.visibility != null
+
+    ensures: change.page.visibility = change.visibility
+}
+
+rule ApplyRemovePage {
+    when: operation: Operation.created
+
+    let change = operation.submission.change
+
+    requires: change.kind = remove_page
+    requires: change.page != null
+    requires: change.page.blocks.count = 0
+
+    ensures:
+        PageRemoved(page: change.page)
+        not exists change.page
+
+    @guidance
+        -- A page is removable only once it is empty. Emptying it is a sequence of
+        -- remove_block operations, each separately ordered and separately auditable.
+}
+
+rule ApplyCreateBlock {
+    when: operation: Operation.created
+
+    let change = operation.submission.change
+
+    requires: change.kind = create_block
+    requires: change.page != null
+    requires: change.content != null
+    requires: change.position != null
+    requires: change.parent = null or change.parent.page = change.page
+    requires: change.stable_id = null or not exists core/Block{stable_id: change.stable_id}
+
+    ensures:
+        let block = core/Block.created(
+            stable_id: change.stable_id ?? new_stable_id(),
+            page: change.page,
+            parent: change.parent,
+            position: change.position,
+            content: change.content
+        )
+        BlockContentSettled(block: block)
+}
+
+rule ApplyEditBlock {
+    when: operation: Operation.created
+
+    let change = operation.submission.change
+
+    requires: change.kind = edit_block
+    requires: change.block != null
+    requires: change.content != null
+
+    ensures:
+        change.block.content = change.content
+        BlockContentSettled(block: change.block)
+
+    @guidance
+        -- Editing replaces content and nothing else. stable_id, page, parent and
+        -- position are deliberately absent from this rule's ensures clause: that
+        -- absence is what makes a block reference survive rewriting.
+}
+
+rule ApplyMoveBlock {
+    when: operation: Operation.created
+
+    let change = operation.submission.change
+
+    requires: change.kind = move_block
+    requires: change.block != null
+    requires: change.page != null
+    requires: change.position != null
+    requires: change.page.graph = change.block.page.graph
+    requires: change.parent = null or change.parent.page = change.page
+    requires: change.parent != change.block
+    requires: change.parent not in descendants_of(change.block)
+
+    ensures:
+        change.block.page = change.page
+        change.block.parent = change.parent
+        change.block.position = change.position
+        BlockContentSettled(block: change.block)
+        for descendant in descendants_of(change.block):
+            descendant.page = change.page
+            BlockContentSettled(block: descendant)
+
+    @guidance
+        -- Moving rewrites placement and nothing else. stable_id is untouched, so a
+        -- block that travels to another page keeps every reference pointing at it,
+        -- and so does every block beneath it.
+        -- The subtree travels with its root because a block's parent must live on the
+        -- same page: moving only the root would strand its children on the old one.
+}
+
+rule ApplyRemoveBlock {
+    when: operation: Operation.created
+
+    let change = operation.submission.change
+
+    requires: change.kind = remove_block
+    requires: change.block != null
+    requires: change.block.children.count = 0
+
+    ensures: not exists change.block
+
+    @guidance
+        -- Only a leaf is removable, so no block is ever orphaned by a parent that
+        -- disappeared. Removing a subtree is a sequence of leaf removals, which also
+        -- makes each removed block individually recoverable from the log.
+}
+
+rule ApplySetProperty {
+    when: operation: Operation.created
+
+    let change = operation.submission.change
+    let existing = core/PropertyAssignment{
+        page: change.page,
+        block: change.block,
+        key: change.property_key
+    }
+
+    requires: change.kind = set_property
+    requires: change.property_key != null
+    requires: change.property_value != null
+    requires: change.page != null or change.block != null
+    requires: not (change.page != null and change.block != null)
+
+    ensures:
+        if exists existing:
+            existing.value = change.property_value
+        else:
+            core/PropertyAssignment.created(
+                graph: operation.submission.graph,
+                page: change.page,
+                block: change.block,
+                key: change.property_key,
+                value: change.property_value
+            )
+}
+
+rule ApplyRemoveProperty {
+    when: operation: Operation.created
+
+    let change = operation.submission.change
+    let existing = core/PropertyAssignment{
+        page: change.page,
+        block: change.block,
+        key: change.property_key
+    }
+
+    requires: change.kind = remove_property
+    requires: change.property_key != null
+    requires: exists existing
+
+    ensures: not exists existing
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant OneChangeLogPerGraph {
+    for a in ChangeLogs:
+        for b in ChangeLogs:
+            a != b implies a.graph != b.graph
+}
+
+invariant OperationSequenceIsUniqueWithinLog {
+    for a in Operations:
+        for b in Operations:
+            a != b implies a.log != b.log or a.sequence != b.sequence
+}
+
+invariant OperationOriginIsUniqueWithinLog {
+    for a in Operations:
+        for b in Operations:
+            a != b implies a.log != b.log or a.origin_id != b.origin_id
+}
+
+invariant SequenceNeverExceedsLogPosition {
+    for operation in Operations:
+        operation.sequence >= 1 and operation.sequence <= operation.log.last_sequence
+}
+
+invariant OperationRecordsItsSubmissionOrigin {
+    for operation in Operations:
+        operation.origin_id = operation.submission.origin_id
+}
+
+invariant OperationBelongsToItsSubmissionGraph {
+    for operation in Operations:
+        operation.log.graph = operation.submission.graph
+}
+
+invariant AppliedOperationsAreAccepted {
+    for operation in Operations:
+        operation.submission.status = accepted
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor ChangeLogReader {
+    within: ChangeLog
+    identified_by: core/Participant where core/Membership{graph: within.graph, participant: this}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface GraphChangeHistory {
+    facing reader: ChangeLogReader
+    context log: ChangeLog
+
+    exposes:
+        log.last_sequence
+        log.operations
+
+    contracts:
+        fulfils IdempotentOrderedApplication
+
+    @guarantee OrderedAuditableHistory
+        -- Every change that ever reached the graph is readable in the order it was
+        -- applied, with the participant and contribution channel that produced it.
+
+    @guarantee StableIdentityAcrossApplication
+        -- No application rule assigns a stable_id to an existing block. Editing,
+        -- moving and renaming preserve the identity a block was created with.
+
+    @guarantee DerivedIndexesFollowContent
+        -- Links, tags and search entries are recomputed from the content an operation
+        -- leaves behind. No operation writes them directly, so they cannot disagree
+        -- with the blocks they describe. Applying content emits BlockContentSettled;
+        -- what listens to it is specified in graph-navigation.allium.
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred OfflineSubmission.reconcile -- see: offline-reconciliation.allium
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "When Herbert removes a subtree in one gesture, does the workspace emit one leaf removal per block, or does Vera need a compound operation that is ordered and reversed as a unit?"
+open question "Does an operation carry the block position of its siblings, or does Vera renumber the remaining siblings after every insertion and removal?"
+open question "How far back must the log be replayable: from the first import forever, or from a periodic compacted checkpoint?"
+open question "Can a participant undo an applied operation, and is undo a new operation or a removal from the log?"

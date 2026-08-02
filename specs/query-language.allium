@@ -1,0 +1,278 @@
+-- allium: 3
+-- query-language.allium
+
+-- Scope: What a Vera query can express and what it selects from the current graph
+-- Includes: The term vocabulary, composition and negation, evaluation scoped to one
+--   graph and one participant, and the fate of the Logseq queries found in the corpus
+-- Excludes:
+--   - Concrete surface syntax, its grammar and its parser
+--   - Index structures and evaluation strategy
+--   - Free text matching and result ranking (see search-index.allium)
+--   - Presentation of results in the workspace
+--   - Saving, naming and sharing queries
+-- Dependencies: Graph, Page, Block, Participant and PropertyAssignment are governed by
+--   core.allium. workspace-interface.allium projects an evaluation to its page subset.
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract NativeGraphQuery {
+    evaluate: (graph: core/Graph, expression: QueryExpression) -> QueryEvaluation
+    port: (unported: UnportedQuery, expression: QueryExpression) -> UnportedQuery
+
+    @invariant CurrentGraphOnly
+        -- An evaluation selects only from the graph it names, and only what the
+        -- evaluating participant is authorised to read. There is no expression that
+        -- reaches another graph.
+
+    @invariant DeterministicEvaluation
+        -- The same graph state and the same expression select the same pages and the
+        -- same blocks. Evaluation does not depend on who asks, beyond what they may read.
+
+    @invariant NegationIsGraphScoped
+        -- Negating a term selects the pages and blocks of the current graph that the
+        -- term does not match. It never selects an empty universe or content the
+        -- participant cannot read.
+
+    @invariant NoSilentTranslation
+        -- A Logseq query is preserved as literal text and never machine-translated into
+        -- a Vera expression. Only a participant authoring an expression ports it, and
+        -- the original text survives that porting.
+}
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+-- The vocabulary of the first usable Vera. Each term selects pages, blocks or both;
+-- composition is expressed by the three combining variants rather than by precedence
+-- rules in a surface syntax.
+entity QueryExpression {
+    kind: TitleTerm | ContentTerm | TagTerm | PropertyTerm
+        | LinksToTerm | LinkedFromTerm
+        | AndTerm | OrTerm | NotTerm
+}
+
+variant TitleTerm : QueryExpression {
+    text: String
+}
+
+variant ContentTerm : QueryExpression {
+    text: String
+}
+
+variant TagTerm : QueryExpression {
+    tag: String
+}
+
+-- value absent means "carries this property at all", which the imported corpus needs:
+-- almost every page declares status, lang and type, and asking which ones lack one is
+-- as useful as asking which ones hold a given value.
+variant PropertyTerm : QueryExpression {
+    key: String
+    value: String?
+}
+
+variant LinksToTerm : QueryExpression {
+    target: core/Page
+}
+
+variant LinkedFromTerm : QueryExpression {
+    origin: core/Page
+}
+
+variant AndTerm : QueryExpression {
+    operands: List<QueryExpression>
+}
+
+variant OrTerm : QueryExpression {
+    operands: List<QueryExpression>
+}
+
+variant NotTerm : QueryExpression {
+    operand: QueryExpression
+}
+
+entity QueryEvaluation {
+    graph: core/Graph
+    expression: QueryExpression
+    evaluated_by: core/Participant
+    evaluated_at: Timestamp
+    matching_pages: Set<core/Page>
+    matching_blocks: Set<core/Block>
+}
+
+-- A Logseq query carried in from the imported corpus. It is content, not behaviour:
+-- Vera preserves its text and refuses to guess what it meant.
+entity UnportedQuery {
+    graph: core/Graph
+    block: core/Block
+    source_text: String
+    ported_to: QueryExpression?
+    ported_by: core/Participant?
+    ported_at: Timestamp?
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule EvaluateQueryAgainstGraph {
+    when: EvaluateQuery(participant, graph, expression)
+
+    let membership = core/Membership{graph, participant}
+
+    requires: exists membership
+    requires: membership.status = active
+
+    ensures: QueryEvaluation.created(
+        graph: graph,
+        expression: expression,
+        evaluated_by: participant,
+        evaluated_at: now,
+        matching_pages: select_pages(graph, expression, participant),
+        matching_blocks: select_blocks(graph, expression, participant)
+    )
+
+    @guidance
+        -- select_pages and select_blocks are the recursive evaluation of the term tree.
+        -- They are black boxes here because their cost model belongs to the store, not
+        -- to the contract: what this spec fixes is the vocabulary and the scope.
+}
+
+rule PreserveUnportedLegacyQuery {
+    when: LegacyQueryEncountered(participant, graph, block, source_text)
+
+    requires: block.page.graph = graph
+    requires: not exists UnportedQuery{graph: graph, block: block}
+
+    ensures: UnportedQuery.created(
+        graph: graph,
+        block: block,
+        source_text: source_text,
+        ported_to: null,
+        ported_by: null,
+        ported_at: null
+    )
+
+    @guidance
+        -- The importer raises this for every Logseq query macro it reads. The corpus
+        -- holds thirty-two of them, and each one is a page Herbert must decide about
+        -- rather than a translation Vera should attempt.
+}
+
+rule PortLegacyQueryToVeraExpression {
+    when: PortLegacyQuery(participant, unported, expression)
+
+    let membership = core/Membership{graph: unported.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: unported.ported_to = null
+
+    ensures:
+        unported.ported_to = expression
+        unported.ported_by = participant
+        unported.ported_at = now
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant EvaluationSelectsFromItsOwnGraph {
+    for evaluation in QueryEvaluations:
+        evaluation.matching_pages.all(p => p.graph = evaluation.graph)
+}
+
+invariant EvaluationBlocksBelongToItsOwnGraph {
+    for evaluation in QueryEvaluations:
+        evaluation.matching_blocks.all(b => b.page.graph = evaluation.graph)
+}
+
+invariant CombiningTermsNeedTwoOperands {
+    for expression in QueryExpressions:
+        expression.kind = AndTerm implies expression.operands.count >= 2
+}
+
+invariant DisjunctionNeedsTwoOperands {
+    for expression in QueryExpressions:
+        expression.kind = OrTerm implies expression.operands.count >= 2
+}
+
+invariant LinkTermsStayWithinOneGraph {
+    for evaluation in QueryEvaluations:
+        evaluation.expression.kind = LinksToTerm
+            implies evaluation.expression.target.graph = evaluation.graph
+}
+
+invariant PortedQueryKeepsItsSourceText {
+    for unported in UnportedQueries:
+        unported.ported_to != null implies unported.source_text != ""
+}
+
+invariant PortingIsAttributed {
+    for unported in UnportedQueries:
+        unported.ported_to != null implies unported.ported_by != null
+}
+
+invariant OneUnportedRecordPerBlock {
+    for a in UnportedQueries:
+        for b in UnportedQueries:
+            a != b implies a.block != b.block
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor QueryingParticipant {
+    within: core/Graph
+    identified_by: core/Participant where core/Membership{graph: within, participant: this}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface GraphQuerying {
+    facing participant: QueryingParticipant
+    context graph: core/Graph
+
+    exposes:
+        graph.name
+        graph.pages
+
+    provides:
+        EvaluateQuery(participant, graph, expression)
+        PortLegacyQuery(participant, unported, expression) when unported.graph = graph
+
+    contracts:
+        fulfils NativeGraphQuery
+
+    @guarantee ExpressibleWithoutSyntaxLuck
+        -- Every term Vera supports is enumerated in QueryExpression. A participant can
+        -- discover what is askable without reading a grammar or guessing at a dialect.
+
+    @guarantee LegacyQueriesAreVisibleWork
+        -- An imported Logseq query reads as a preserved fragment awaiting a decision,
+        -- never as a broken Vera query and never as a silently guessed translation.
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred SearchIndex.find -- see: search-index.allium
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Should a query be able to select on a confirmed semantic type once controlled-ontology.allium is implemented, and does that make the ontology a query dependency?"
+open question "Do property terms compare values as text only, or does Vera need typed comparison for dates and numbers to make the corpus's date properties useful?"
+open question "Can a participant save a query under a name and embed it in a page, the way the imported corpus embeds Logseq query macros?"
+open question "Does a query select blocks whose page the participant may read but whose own content is restricted, once permissions are finer than graph membership?"

@@ -1,0 +1,222 @@
+-- allium: 3
+-- search-index.allium
+
+-- Scope: What free text search finds in a Vera graph and how it presents it
+-- Includes: Which content is searchable, what a hit is, ordering and its stability,
+--   the excerpt that justifies a hit, and the index's obligation to follow content
+-- Excludes:
+--   - Index structure, tokenizer, stemming and matching algorithm
+--   - The relevance formula that produces the ordering
+--   - Structured selection by tag, property and link (see query-language.allium)
+--   - Public search over the projected personal website
+--   - Presentation of results in the workspace
+-- Dependencies: Graph, Page, Block, Participant and PropertyAssignment are governed by
+--   core.allium. workspace-interface.allium projects an outcome to its page subset.
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract GraphSearch {
+    find: (graph: core/Graph, text: String) -> SearchOutcome
+
+    @invariant DerivedFromCurrentContent
+        -- A hit exists exactly when the content it points at currently matches. The
+        -- index is a derived view of pages, blocks and property assignments; it is
+        -- never a second record that can disagree with them.
+
+    @invariant IndexFollowsAppliedChange
+        -- Once an operation has been applied, the next search reflects it. Content
+        -- Herbert just wrote is findable; content he just removed is not.
+
+    @invariant CurrentGraphOnly
+        -- Search reaches only the graph it names and only what the searching
+        -- participant is authorised to read.
+
+    @invariant StableOrdering
+        -- The same graph state and the same text produce the same hits in the same
+        -- order. Equally relevant hits are separated by a deterministic tie-break, so
+        -- the ordering does not shift between two identical searches.
+
+    @invariant ExcerptShowsWhyItMatched
+        -- Every hit carries a fragment of the content that matched, so a reader can
+        -- judge relevance without opening the page.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+-- The content Vera indexes. audio_transcript is declared here because a corrected
+-- transcript participates in search as ordinary text; it becomes reachable when
+-- content-media.allium is implemented, and it never displaces its audio source.
+enum SearchableField { page_title | block_content | property_value | audio_transcript }
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity SearchOutcome {
+    graph: core/Graph
+    text: String
+    searched_by: core/Participant
+    searched_at: Timestamp
+    hits: SearchHit with outcome = this
+}
+
+entity SearchHit {
+    outcome: SearchOutcome
+    page: core/Page
+    block: core/Block?
+    field: SearchableField
+    excerpt: String
+    rank: Integer
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule SearchGraphContent {
+    when: SearchGraph(participant, graph, text)
+
+    let membership = core/Membership{graph, participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: text != ""
+
+    ensures:
+        let outcome = SearchOutcome.created(
+            graph: graph,
+            text: text,
+            searched_by: participant,
+            searched_at: now
+        )
+        for hit in ranked_hits(graph, text, participant):
+            SearchHit.created(
+                outcome: outcome,
+                page: hit.page,
+                block: hit.block,
+                field: hit.field,
+                excerpt: hit.excerpt,
+                rank: hit.rank
+            )
+
+    @guidance
+        -- ranked_hits is a black box because the relevance formula belongs to the
+        -- store. What this spec fixes is that its output is ordered, deterministic,
+        -- scoped to the graph and accompanied by the evidence for each hit.
+}
+
+rule EmptySearchSelectsNothing {
+    when: SearchGraph(participant, graph, text)
+
+    let membership = core/Membership{graph, participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: text = ""
+
+    ensures: SearchOutcome.created(
+        graph: graph,
+        text: text,
+        searched_by: participant,
+        searched_at: now
+    )
+
+    @guidance
+        -- An empty search box selects nothing rather than the whole corpus. Six
+        -- hundred pages arriving unbidden is not a useful answer to no question.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant HitsBelongToSearchedGraph {
+    for hit in SearchHits:
+        hit.page.graph = hit.outcome.graph
+}
+
+invariant HitBlockBelongsToHitPage {
+    for hit in SearchHits:
+        hit.block != null implies hit.block.page = hit.page
+}
+
+invariant RankIsUniqueWithinOutcome {
+    for a in SearchHits:
+        for b in SearchHits:
+            a != b and a.outcome = b.outcome implies a.rank != b.rank
+}
+
+invariant RankIsPositive {
+    for hit in SearchHits:
+        hit.rank >= 1
+}
+
+invariant HitCarriesItsEvidence {
+    for hit in SearchHits:
+        hit.excerpt != ""
+}
+
+invariant PageTitleHitsHaveNoBlock {
+    for hit in SearchHits:
+        hit.field = page_title implies hit.block = null
+}
+
+invariant BlockContentHitsNameTheirBlock {
+    for hit in SearchHits:
+        hit.field = block_content implies hit.block != null
+}
+
+invariant EmptyTextFindsNothing {
+    for outcome in SearchOutcomes:
+        outcome.text = "" implies outcome.hits.count = 0
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor SearchingParticipant {
+    within: core/Graph
+    identified_by: core/Participant where core/Membership{graph: within, participant: this}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface GraphSearchAccess {
+    facing participant: SearchingParticipant
+    context graph: core/Graph
+
+    exposes:
+        graph.name
+
+    provides:
+        SearchGraph(participant, graph, text)
+
+    contracts:
+        fulfils GraphSearch
+
+    @guarantee OneSearchReachesEverySearchableField
+        -- A single text search covers page titles, block content and property values
+        -- together. Herbert does not choose in advance which of them to look in.
+
+    @guarantee HitsCarryTheirLocation
+        -- Every hit names the page it belongs to, and the block when the match was in
+        -- one, so a result is navigable rather than merely informative.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Does search cover the imported corpus's Logseq macro text, or is preserved legacy markup excluded from the index as noise?"
+open question "How are results paginated, and does the deterministic tie-break survive a change applied between two pages of the same search?"
+open question "Should a hit in a property value be attributed to the page that carries the property or presented as its own kind of result?"
+open question "Does Vera index the corpus's non-Spanish content differently, given that almost every page declares a lang property?"
