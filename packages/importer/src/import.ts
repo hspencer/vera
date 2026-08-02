@@ -9,7 +9,7 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 
 import { VeraGraph } from '@vera/core';
 import type { Change, ParticipantId } from '@vera/core';
@@ -55,6 +55,21 @@ export interface LossReport {
   assetsMissing: string[];
   assetBytes: number;
 
+  /**
+   * Cada ruta encontrada y el archivo al que resuelve, para que quien persista
+   * los ingiera. El importador dice qué hay y dónde está; llevar los bytes al
+   * almacén es trabajo del store, y así esto se puede probar sin uno.
+   */
+  assetFiles: { path: string; file: string }[];
+
+  /**
+   * Archivos que están en el directorio de assets del origen y que ningún
+   * bloque nombra. No se ingieren, porque nada en el grafo los alcanzaría, pero
+   * se declaran: son exactamente lo que una migración pierde en silencio si
+   * nadie los cuenta.
+   */
+  assetsUnreferenced: string[];
+
   macrosPreserved: Record<string, number>;
   unportedQueries: number;
   queryMacrosBeyondFirstPerBlock: number;
@@ -95,6 +110,8 @@ function emptyReport(): LossReport {
     assetsFound: 0,
     assetsMissing: [],
     assetBytes: 0,
+    assetFiles: [],
+    assetsUnreferenced: [],
     macrosPreserved: {},
     unportedQueries: 0,
     queryMacrosBeyondFirstPerBlock: 0,
@@ -122,6 +139,30 @@ function markdownFilesIn(root: string): string[] {
       }
       if (stats.isDirectory()) walk(full);
       else if (entry.endsWith('.md')) found.push(full);
+    }
+  };
+  walk(root);
+  return found;
+}
+
+/** Todo archivo bajo el directorio de assets, sin filtrar por extensión. */
+function everyFileIn(root: string): string[] {
+  const found: string[] = [];
+  const walk = (dir: string): void => {
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const entry of entries.sort()) {
+      const full = join(dir, entry);
+      try {
+        if (statSync(full).isDirectory()) walk(full);
+        else found.push(full);
+      } catch {
+        continue;
+      }
     }
   };
   walk(root);
@@ -158,6 +199,7 @@ export function importLogseqGraph(options: ImportOptions): LossReport {
   };
 
   const assetSizes = new Map<string, number>();
+  const resolvedAssets = new Map<string, string>();
 
   for (const file of files) {
     let source: string;
@@ -306,16 +348,34 @@ export function importLogseqGraph(options: ImportOptions): LossReport {
       }
       for (const asset of referencedAssets(block.content)) {
         report.assetsReferenced += 1;
-        const full = join(assetsRoot, asset.replace(/^\.\.\/assets\//, ''));
-        if (assetSizes.has(full)) {
+        const relative = asset.replace(/^\.\.\/assets\//, '');
+        const full = join(assetsRoot, relative);
+
+        // Una ruta que se escape del directorio de assets no se sigue: el
+        // corpus es de confianza, pero esto lee del disco y no hace falta que
+        // un `..` de más pueda alcanzar cualquier archivo de la máquina.
+        if (!resolve(full).startsWith(resolve(assetsRoot))) {
+          report.assetsMissing.push(asset);
+          continue;
+        }
+
+        // La resolución es por ruta escrita, así que la lista se indexa por
+        // ella: dos rutas distintas pueden nombrar el mismo archivo, y ambas
+        // tienen que poder resolverse. Los bytes, en cambio, se cuentan una vez
+        // por archivo.
+        if (resolvedAssets.has(asset)) {
           report.assetsFound += 1;
           continue;
         }
         try {
           const stats = statSync(full);
-          assetSizes.set(full, stats.size);
           report.assetsFound += 1;
-          report.assetBytes += stats.size;
+          if (!assetSizes.has(full)) {
+            assetSizes.set(full, stats.size);
+            report.assetBytes += stats.size;
+          }
+          resolvedAssets.set(asset, full);
+          report.assetFiles.push({ path: asset, file: full });
         } catch {
           report.assetsMissing.push(asset);
         }
@@ -336,6 +396,14 @@ export function importLogseqGraph(options: ImportOptions): LossReport {
   // eso hay que decirlo en vez de dejar cuadrar el informe por casualidad.
   report.queryMacrosBeyondFirstPerBlock =
     (report.macrosPreserved['query'] ?? 0) - report.unportedQueries;
+
+  // Lo que estaba en el directorio de assets y ningún bloque nombra. No entra al
+  // grafo porque nada lo alcanzaría, pero queda dicho: una migración que no
+  // cuenta esto pierde archivos sin que nadie se entere.
+  const referenced = new Set(resolvedAssets.values());
+  report.assetsUnreferenced = everyFileIn(assetsRoot)
+    .filter((file) => !referenced.has(file))
+    .map((file) => relative(assetsRoot, file));
 
   return report;
 }
