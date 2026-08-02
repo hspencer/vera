@@ -22,12 +22,55 @@ given {
 }
 
 ------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract ParticipantAdministration {
+    invite: (participant: core/Participant) -> core/Membership
+    remove: (participant: core/Participant) -> core/Membership
+
+    @invariant SovereignOwnerOnly
+        -- Only the instance's founding human owner may create access for,
+        -- invite or remove human and agent participants.
+}
+
+------------------------------------------------------------
 -- Entities and Variants
 ------------------------------------------------------------
 
 entity VeraInstance {
     graph: core/Graph
     owner: core/Participant
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule OwnerInvitesParticipant {
+    when: InviteParticipant(owner, participant)
+
+    requires: instance.owner = owner
+    requires: not exists core/Membership{graph: instance.graph, participant: participant}
+
+    ensures: core/Membership.created(
+        graph: instance.graph,
+        participant: participant,
+        status: active
+    )
+}
+
+rule OwnerRemovesParticipant {
+    when: RemoveParticipant(owner, participant)
+
+    let membership = core/Membership{graph: instance.graph, participant: participant}
+
+    requires: instance.owner = owner
+    requires: participant != owner
+    requires: exists membership
+    requires: membership.status = active
+
+    ensures: membership.status = suspended
 }
 
 ------------------------------------------------------------
@@ -46,12 +89,43 @@ invariant InstanceOwnerIsHuman {
 }
 
 ------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor SovereignOwner {
+    within: VeraInstance
+    identified_by: core/Participant where this = within.owner and this.kind = human
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface InstanceParticipantAdministration {
+    facing owner: SovereignOwner
+    context instance: VeraInstance
+
+    exposes:
+        instance.graph.memberships
+
+    provides:
+        InviteParticipant(owner, participant)
+        RemoveParticipant(owner, participant)
+
+    contracts:
+        fulfils ParticipantAdministration
+
+    @guarantee OwnerCannotBeRemoved
+        -- Participant administration cannot remove or suspend the sovereign owner.
+}
+
+------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
 
 open question "How does Herbert authenticate to the first Vera instance?"
 open question "How does Herbert authorize, identify and revoke each agent?"
 open question "Are collaborator permissions role-based, capability-based or individually granted per operation and resource?"
-open question "Who may invite or remove another human collaborator?"
 open question "When do sessions expire, and what happens to pending agent operations after revocation?"
 open question "How does Herbert recover ownership if every authentication credential is lost?"
+open question "After access is removed, which participant profile fields remain visible with historical revisions and audit records?"
