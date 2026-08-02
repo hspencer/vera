@@ -1,9 +1,12 @@
 # Vera
 
-Vera es un grafo personal soberano, asistido y publicable. Reúne en un mismo
-corpus el PKM cotidiano, la investigación, los medios nativos y la publicación
-personal. Personas y agentes participan mediante los mismos contratos, con
-identidad, permisos y procedencia explícitos.
+**Vera** significa **versionable, editable, replicable y auditable**.
+
+Vera es una memoria personal soberana: un corpus versionado y distribuido,
+habitado por personas y agentes, con procedencia explícita y publicación
+selectiva. Reúne en un mismo grafo el PKM cotidiano, la investigación, los
+medios nativos y la publicación personal. Personas y agentes participan
+mediante los mismos contratos, con identidad y permisos explícitos.
 
 > **Estado:** Vera está en fase de especificación. Este repositorio describe el
 > producto que queremos construir; todavía no constituye una aplicación usable.
