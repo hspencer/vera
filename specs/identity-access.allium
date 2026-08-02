@@ -1,0 +1,56 @@
+-- allium: 3
+-- identity-access.allium
+
+-- Scope: Identity and access boundaries for one Vera instance and its graph
+-- Includes: Single-graph instance ownership and the boundary for human and
+--   agent participation
+-- Excludes:
+--   - Hosting several private graphs inside one Vera instance
+--   - Authentication protocol and credential storage implementation
+--   - Public anonymous access to the projected personal website
+-- Dependencies: Participant, Graph and Membership are governed by core.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Given
+------------------------------------------------------------
+
+given {
+    instance: VeraInstance
+}
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity VeraInstance {
+    graph: core/Graph
+    owner: core/Participant
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant OneInstanceServesOneGraph {
+    for a in VeraInstances:
+        for b in VeraInstances:
+            a != b implies a.graph != b.graph
+}
+
+invariant InstanceOwnerIsHuman {
+    for instance in VeraInstances:
+        instance.owner.kind = human
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "How does Herbert authenticate to the first Vera instance?"
+open question "How does Herbert authorize, identify and revoke each agent?"
+open question "Are collaborator permissions role-based, capability-based or individually granted per operation and resource?"
+open question "Who may invite or remove another human collaborator?"
+open question "When do sessions expire, and what happens to pending agent operations after revocation?"
+open question "How does Herbert recover ownership if every authentication credential is lost?"
