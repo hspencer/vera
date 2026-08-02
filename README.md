@@ -1,6 +1,6 @@
 # Vera
 
-**Vera** significa **versionable, editable, replicable y auditable**.
+**Vera** — _versionable, editable, replicable y auditable_.
 
 Vera es una memoria personal soberana: un corpus versionado y distribuido,
 habitado por personas y agentes, con procedencia explícita y publicación
