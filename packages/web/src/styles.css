@@ -334,6 +334,212 @@ code {
   border-radius: 3px;
 }
 
+/* ------------------------------------------------------------------ */
+/* Markdown renderizado dentro de un bloque.                           */
+/*                                                                     */
+/* Un bloque es una línea de un esquema, no un documento. Por eso lo    */
+/* primero y lo último no llevan margen propio: sin esto cada bloque    */
+/* empuja al siguiente y el esquema deja de leerse como lista.          */
+/* ------------------------------------------------------------------ */
+
+/* Una URL sin espacios no debe poder ensanchar la columna: el corpus
+   está lleno de enlaces largos y basta uno para romper el ancho. */
+.body {
+  overflow-wrap: anywhere;
+}
+
+.body > :first-child {
+  margin-top: 0;
+}
+
+.body > :last-child {
+  margin-bottom: 0;
+}
+
+.body p {
+  margin: 0.5em 0;
+}
+
+/* Encabezados. El renderizador baja un nivel —el título de la página ya
+   es el h1— así que h2 es el mayor que aparece aquí. La escala es corta
+   a propósito: seis tamaños distintos dentro de un esquema compiten con
+   la jerarquía que ya expresa la sangría. */
+.body h2,
+.body h3,
+.body h4,
+.body h5,
+.body h6 {
+  font-family: var(--font-ui);
+  line-height: 1.25;
+  margin: 0.6em 0 0.3em;
+  font-weight: 600;
+}
+
+.body h2 {
+  font-size: 1.3rem;
+}
+.body h3 {
+  font-size: 1.12rem;
+}
+.body h4 {
+  font-size: 1rem;
+}
+.body h5,
+.body h6 {
+  font-size: 0.92rem;
+  color: var(--text-dim);
+}
+
+.body ul,
+.body ol {
+  margin: 0.4em 0;
+  padding-left: 1.4rem;
+}
+
+.body li {
+  margin: 0.15em 0;
+}
+
+.body blockquote {
+  margin: 0.5em 0;
+  padding: 0.1rem 0 0.1rem 0.9rem;
+  border-left: 2px solid var(--rule);
+  color: var(--text-dim);
+}
+
+.body hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 0.9em 0;
+}
+
+/* Código en bloque: desborda dentro de su caja y no estira la columna.
+   Sin `background: none` heredaría la píldora del código en línea. */
+.body pre {
+  margin: 0.5em 0;
+  padding: 0.6rem 0.8rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.body pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+/* La tabla se desborda sola: si empujara el ancho de la página, el
+   esquema entero se rompería por una sola tabla ancha. */
+.table-scroll {
+  overflow-x: auto;
+  margin: 0.6em 0;
+  max-width: 100%;
+}
+
+.body table {
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+}
+
+.body th,
+.body td {
+  border: 1px solid var(--rule);
+  padding: 0.3rem 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.body th {
+  background: var(--bg-raised);
+  font-weight: 600;
+}
+
+.body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 3px;
+  display: block;
+  margin: 0.5em 0;
+}
+
+/* Una fuente que falta se dice, no se insinúa con un icono roto. */
+.media-missing {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  border: 1px dashed var(--rule);
+  border-radius: 3px;
+  padding: 0.15rem 0.45rem;
+  cursor: help;
+}
+
+.media-missing::before {
+  content: '⃠ ';
+  color: var(--warm);
+}
+
+.body del {
+  color: var(--text-dim);
+}
+
+.body mark {
+  background: color-mix(in srgb, var(--warm) 28%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 0.15em;
+}
+
+/* Notas al pie. El corpus tiene 1752 bloques que las usan, así que la
+   referencia tiene que ser pequeña pero alcanzable con el dedo. */
+.fnref {
+  font-size: 0.7em;
+  line-height: 0;
+}
+
+.fnref a {
+  color: var(--accent);
+  text-decoration: none;
+  padding: 0 0.15em;
+}
+
+.footnote {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  color: var(--text-dim);
+  margin: 0.25em 0;
+}
+
+.footnote-id {
+  flex: none;
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+}
+
+/* Un ítem flex no baja de su ancho intrínseco mientras conserve el
+   `min-width: auto` que trae por omisión. Las notas al pie del corpus
+   traen URLs sin espacios, y una sola de ellas estiraba la columna
+   entera hasta 1250px dentro de un panel de 825. */
+.footnote-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* El salto desde una referencia deja la nota justo bajo la barra
+   superior; sin esto queda tapada por ella. */
+.footnote:target,
+.body .footnote:target {
+  scroll-margin-top: 4rem;
+  background: color-mix(in srgb, var(--warm) 14%, transparent);
+  border-radius: 3px;
+}
+
 .notice {
   color: var(--warm);
   font-family: var(--font-ui);

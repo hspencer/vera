@@ -1,13 +1,18 @@
 // Outliner de bloques con edición Markdown nativa.
 //
 // @invariant SourceRemainsMarkdown: al editar se ve y se guarda el Markdown del
-// bloque, no un formato opaco. Al salir del bloque se renderiza una vista
-// mínima y el original sigue siendo la fuente.
+// bloque, no un formato opaco.
+//
+// @invariant EditingRevealsTheSource: enfocar un bloque reemplaza su
+// presentación renderizada por la fuente exacta que la produjo. Lo renderizado
+// nunca se guarda, así que ninguna edición pasa de ida y vuelta por el
+// renderizador.
 //
 // Cada edición emite una operación. No hay guardado implícito ni estado local
 // que pueda divergir del grafo.
 
 import { api, type BlockView, type PageView } from './api.ts';
+import { renderMarkdown } from './markdown.ts';
 
 export interface OutlinerCallbacks {
   onNavigate(title: string): void;
@@ -55,21 +60,29 @@ export function editSession(original: string) {
   };
 }
 
-/** Render mínimo de Markdown en línea. La fuente nunca se pierde. */
-export function inlineMarkdown(source: string): string {
-  const escaped = source
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-
-  return escaped
-    .replace(/\[\[([^\]]+)\]\]/g, '<a class="wiki" data-page="$1" href="#">$1</a>')
-    .replace(/(^|\s)#([\p{L}\p{N}_-]+)/gu, '$1<span class="tag">#$2</span>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
-    .replace(/\[([^\]]*)\]\((https?:[^)]+)\)/g, '<a href="$2" rel="noreferrer">$1</a>')
-    .replace(/\n/g, '<br>');
+/**
+ * El corpus trae imágenes que apuntan a `../assets/`, y esos binarios todavía no
+ * viven en Vera: ingerirlos es content-media.allium, sin implementar. Hasta
+ * entonces una imagen que no carga se declara como lo que es —una fuente que
+ * falta, con su ruta a la vista— en vez de dejar el icono roto del navegador,
+ * que no dice si el error es del archivo, de la ruta o de Vera.
+ */
+function markMissingImages(root: HTMLElement): void {
+  for (const image of root.querySelectorAll('img')) {
+    image.addEventListener(
+      'error',
+      () => {
+        const missing = document.createElement('span');
+        missing.className = 'media-missing';
+        const label = image.getAttribute('alt');
+        missing.textContent =
+          label === null || label === '' ? image.getAttribute('src') ?? 'imagen' : label;
+        missing.title = `no se pudo cargar: ${image.getAttribute('src') ?? ''}`;
+        image.replaceWith(missing);
+      },
+      { once: true },
+    );
+  }
 }
 
 export interface Node {
@@ -149,7 +162,8 @@ export function renderOutliner(
 
     const body = document.createElement('div');
     body.className = 'body';
-    body.innerHTML = inlineMarkdown(node.block.content);
+    body.innerHTML = renderMarkdown(node.block.content);
+    markMissingImages(body);
 
     // Al enfocar, el bloque muestra su Markdown; al salir, su render.
     body.tabIndex = 0;
@@ -222,7 +236,8 @@ function startEditing(block: BlockView, body: HTMLElement, callbacks: OutlinerCa
   editor.setSelectionRange(editor.value.length, editor.value.length);
 
   const render = (content: string): void => {
-    body.innerHTML = inlineMarkdown(content);
+    body.innerHTML = renderMarkdown(content);
+    markMissingImages(body);
   };
 
   const save = async (content: string): Promise<void> => {

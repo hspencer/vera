@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildTree, editSession, inlineMarkdown } from '../src/outliner.ts';
+import { buildTree, editSession } from '../src/outliner.ts';
 import type { BlockView } from '../src/api.ts';
 
 const block = (stableId: string, parent: string | null, position: number): BlockView => ({
@@ -42,47 +42,6 @@ describe('buildTree', () => {
     const count = (nodes: ReturnType<typeof buildTree>): number =>
       nodes.reduce((n, node) => n + 1 + count(node.children), 0);
     assert.equal(count(buildTree(blocks)), blocks.length);
-  });
-});
-
-describe('inlineMarkdown', () => {
-  it('escapa el HTML antes de cualquier otra cosa', () => {
-    const rendered = inlineMarkdown('<script>alert(1)</script>');
-    assert.ok(!rendered.includes('<script>'));
-    assert.ok(rendered.includes('&lt;script&gt;'));
-  });
-
-  it('convierte un enlace wiki en algo navegable', () => {
-    const rendered = inlineMarkdown('ver [[Amereida]]');
-    assert.ok(rendered.includes('data-page="Amereida"'));
-    assert.ok(rendered.includes('>Amereida<'));
-  });
-
-  it('marca las etiquetas', () => {
-    assert.ok(inlineMarkdown('algo #accesibilidad').includes('class="tag"'));
-  });
-
-  it('no confunde una almohadilla pegada a una palabra', () => {
-    assert.ok(!inlineMarkdown('color#fff').includes('class="tag"'));
-  });
-
-  it('respeta negrita, cursiva y código', () => {
-    assert.ok(inlineMarkdown('**fuerte**').includes('<strong>fuerte</strong>'));
-    assert.ok(inlineMarkdown('*suave*').includes('<em>suave</em>'));
-    assert.ok(inlineMarkdown('`codigo`').includes('<code>codigo</code>'));
-  });
-
-  it('no toma la negrita por cursiva', () => {
-    assert.ok(!inlineMarkdown('**fuerte**').includes('<em>'));
-  });
-
-  it('conserva los saltos de línea del bloque', () => {
-    assert.ok(inlineMarkdown('una\notra').includes('<br>'));
-  });
-
-  it('deja pasar un enlace externo', () => {
-    const rendered = inlineMarkdown('[sitio](https://herbertspencer.net)');
-    assert.ok(rendered.includes('href="https://herbertspencer.net"'));
   });
 });
 
