@@ -6,7 +6,10 @@
   "description": "Persistencia de Vera sobre SQLite: log canónico y estado materializado",
   "exports": {
     ".": "./src/store.ts",
-    "./projection": "./src/projection.ts"
+    "./projection": "./src/projection.ts",
+    "./objects": "./src/objects.ts"
   },
-  "dependencies": { "@vera/core": "*" }
+  "dependencies": {
+    "@vera/core": "*"
+  }
 }

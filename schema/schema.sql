@@ -12,6 +12,7 @@
 --   page_links                                                   graph-navigation.allium
 --   unported_queries                                             query-language.allium
 --   blocks_fts, pages_fts                                        search-index.allium
+--   media, media_references                                      content-media.allium
 --
 -- Falta `properties_fts`. search-index.allium declara `property_value` como campo
 -- buscable y su @guarantee OneSearchReachesEverySearchableField exige que una sola
@@ -250,6 +251,23 @@ CREATE TABLE IF NOT EXISTS media (
     original_name  TEXT,
     created_at     INTEGER NOT NULL
 ) STRICT;
+
+-- La ruta tal como está escrita en el Markdown, y el objeto al que resuelve.
+--
+-- Vive aparte de `media` por dos razones. La primera es que `media` está
+-- indexada por contenido: dos rutas distintas con los mismos bytes son un solo
+-- objeto, y no cabrían en una columna de `media`. La segunda es que el texto del
+-- bloque no se toca. El bloque sigue diciendo `../assets/foo.png` —que es lo que
+-- mantiene la proyección Markdown portable y legible fuera de Vera— y la
+-- resolución ocurre al presentar, no al guardar.
+CREATE TABLE IF NOT EXISTS media_references (
+    graph_id  TEXT NOT NULL REFERENCES graphs (id),
+    path      TEXT NOT NULL,
+    hash      TEXT NOT NULL REFERENCES media (hash),
+    PRIMARY KEY (graph_id, path)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS media_references_by_hash ON media_references (hash);
 
 CREATE TABLE IF NOT EXISTS personal_sites (
     id                TEXT PRIMARY KEY,

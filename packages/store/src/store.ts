@@ -629,3 +629,72 @@ export function neighbourhoodFromStore(
     )
     .all(store.graphId, centre, depth) as { page: string; distance: number }[];
 }
+
+// ---------------------------------------------------------------------------
+// Medios
+// ---------------------------------------------------------------------------
+
+export interface MediaRecord {
+  hash: string;
+  mediaType: string;
+  byteSize: number;
+  originalName: string | null;
+}
+
+/**
+ * Registra un objeto ya guardado y la ruta por la que el Markdown lo nombra.
+ *
+ * `media` está indexada por contenido, así que dos rutas con los mismos bytes
+ * comparten fila: el `INSERT OR IGNORE` es la deduplicación, no un descuido.
+ */
+export function recordMedia(
+  store: Store,
+  reference: { path: string; hash: string; mediaType: string; byteSize: number; at: number },
+): void {
+  store.db
+    .prepare(
+      `INSERT OR IGNORE INTO media (hash, media_type, byte_size, custody, original_name, created_at)
+       VALUES (?, ?, ?, 'internal', ?, ?)`,
+    )
+    .run(
+      reference.hash,
+      reference.mediaType,
+      reference.byteSize,
+      reference.path,
+      reference.at,
+    );
+
+  store.db
+    .prepare(
+      'INSERT OR REPLACE INTO media_references (graph_id, path, hash) VALUES (?, ?, ?)',
+    )
+    .run(store.graphId, reference.path, reference.hash);
+}
+
+export function mediaByHash(store: Store, hash: string): MediaRecord | null {
+  const row = store.db
+    .prepare('SELECT hash, media_type, byte_size, original_name FROM media WHERE hash = ?')
+    .get(hash) as
+    | { hash: string; media_type: string; byte_size: number; original_name: string | null }
+    | undefined;
+
+  if (row === undefined) return null;
+  return {
+    hash: row.hash,
+    mediaType: row.media_type,
+    byteSize: row.byte_size,
+    originalName: row.original_name,
+  };
+}
+
+/** Resolución de las rutas de este grafo: lo que la presentación necesita. */
+export function mediaReferences(store: Store): { path: string; hash: string; mediaType: string }[] {
+  return store.db
+    .prepare(
+      `SELECT r.path AS path, r.hash AS hash, m.media_type AS mediaType
+         FROM media_references r JOIN media m ON m.hash = r.hash
+        WHERE r.graph_id = ?
+        ORDER BY r.path`,
+    )
+    .all(store.graphId) as { path: string; hash: string; mediaType: string }[];
+}
