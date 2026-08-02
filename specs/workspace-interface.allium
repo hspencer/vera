@@ -2,8 +2,9 @@
 -- workspace-interface.allium
 
 -- Scope: Vera's navigable reading, editing and graph workspace
--- Includes: Text/graph/split layouts, 2D/3D graph modes, breadcrumbs, search,
---   internal queries, editable style sources and tokens, light/dark themes
+-- Includes: Native Markdown editing, text/graph/split layouts, 2D/3D graph
+--   modes, breadcrumbs, search, internal queries, editable style sources and
+--   tokens, light/dark themes
 -- Excludes:
 --   - CSS framework and component implementation
 --   - D3 force simulation parameters
@@ -38,6 +39,17 @@ contract EditablePresentation {
 
     @invariant DualColourScheme
         -- Every theme provides both light and dark colour schemes.
+}
+
+contract NativeMarkdownEditing {
+    edit: (page: core/Page, source: String) -> core/Page
+
+    @invariant SourceRemainsMarkdown
+        -- Editing produces portable Markdown rather than an opaque editor format.
+
+    @invariant FootnotesRemainEditable
+        -- Footnote references and definitions can be authored and revised as
+        -- part of the page's Markdown source.
 }
 
 ------------------------------------------------------------
@@ -252,6 +264,7 @@ surface VeraWorkspace {
     contracts:
         fulfils GraphQuerySupport
         fulfils EditablePresentation
+        fulfils NativeMarkdownEditing
 
     @guarantee NavigableGraphContext
         -- Text and graph views share the same active page and navigation history.
@@ -281,3 +294,4 @@ deferred SearchIndex.find        -- see: search-index.allium
 
 open question "When edited style source is invalid, should Vera reject it or keep it with the last valid presentation active?"
 open question "During mind migration, should existing Logseq queries be translated when possible, imported as inert source text, or reported as unsupported?"
+open question "Which native Markdown editing behaviours are required in v0 beyond direct source editing, including shortcuts, preview, autocomplete and footnote assistance?"
