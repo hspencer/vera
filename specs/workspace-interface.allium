@@ -55,6 +55,23 @@ contract NativeMarkdownEditing {
     @invariant FootnotesRemainEditable
         -- Footnote references and definitions can be authored and revised as
         -- part of the page's Markdown source.
+
+    @invariant RenderedPresentationIsFaithful
+        -- Content not currently being edited is presented as rendered Markdown:
+        -- headings, lists, quotations, code, tables, images, horizontal rules and
+        -- footnote references read as themselves rather than as their marks.
+
+    @invariant EditingRevealsTheSource
+        -- Beginning to edit replaces the rendered presentation with the exact
+        -- Markdown source that produced it. Rendering is a view onto the source
+        -- and never becomes the stored content, so no edit round-trips through
+        -- the renderer and no rendering step can rewrite what was written.
+
+    @invariant EmbeddedMarkupIsInert
+        -- Markup written inside content is presented as text, not as markup.
+        -- Media that Vera presents natively is governed by content-media.allium
+        -- and reaches the page under that contract's isolation, never by way of
+        -- the Markdown renderer.
 }
 
 contract ResponsiveWorkspace {
@@ -352,4 +369,7 @@ deferred SearchIndex.find        -- see: search-index.allium
 ------------------------------------------------------------
 
 open question "When edited style source is invalid, should Vera reject it or keep it with the last valid presentation active?"
-open question "Which native Markdown editing behaviours are required in v0 beyond direct source editing, including shortcuts, preview, autocomplete and footnote assistance?"
+-- Preview is no longer open: rendered presentation is required, and its shape is
+-- fixed by RenderedPresentationIsFaithful and EditingRevealsTheSource above.
+open question "Which native Markdown editing behaviours are required beyond direct source editing and rendered presentation, including shortcuts, autocomplete and footnote assistance?"
+open question "Should a footnote reference resolve to its definition within the workspace, given that a definition may live in a different block from the reference that names it?"
