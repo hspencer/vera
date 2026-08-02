@@ -290,6 +290,6 @@ deferred IdentityAccess.authorize        -- see: identity-access.allium
 
 open question "What is the smallest semantic change vocabulary needed for the first usable Vera?"
 open question "Can a participant revise another participant's contribution without preserving both voices visibly?"
-open question "How should conflicting offline submissions be presented and resolved?"
+open question "When the exceptional case occurs and two devices changed the same block offline, which changes may Vera merge automatically and which require explicit human resolution?"
 open question "Are pages and blocks sufficient as Vera's canonical content model, or are typed nodes needed?"
 open question "Which historical metadata and asset behaviours from herbertspencer.net must Vera preserve exactly?"

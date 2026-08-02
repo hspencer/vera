@@ -72,10 +72,24 @@ contract ResponsiveWorkspace {
 
 contract InstallableWebApplication {
     install: () -> Workspace
+    synchronise: (workspace: Workspace) -> Workspace
 
     @invariant ProgressiveInstallation
         -- Vera can be installed from a supporting browser and launched as an
         -- application without losing access to its web form.
+
+    @invariant OfflineReadingAndWriting
+        -- An authenticated participant can read available graph content and
+        -- create or edit pages and blocks while the device has no connection.
+
+    @invariant DeferredSynchronisation
+        -- Changes made offline remain pending on that device and synchronise
+        -- after connectivity returns, preserving their author and provenance.
+
+    @invariant SingleParticipantMultiDeviceDefault
+        -- The ordinary synchronisation path is optimized for one participant
+        -- using the same graph from multiple devices. Concurrent conflicts are
+        -- exceptional and must not burden conflict-free synchronisation.
 }
 
 ------------------------------------------------------------
@@ -339,4 +353,3 @@ deferred SearchIndex.find        -- see: search-index.allium
 
 open question "When edited style source is invalid, should Vera reject it or keep it with the last valid presentation active?"
 open question "Which native Markdown editing behaviours are required in v0 beyond direct source editing, including shortcuts, preview, autocomplete and footnote assistance?"
-open question "Which reading and editing capabilities must remain available when the installable PWA has no network connection?"
