@@ -9,6 +9,32 @@
   box-sizing: border-box;
 }
 
+/*
+ * Un control de formulario no hereda el color del documento: usa el del
+ * sistema, que es negro. Con un tema oscuro eso deja el texto que se escribe
+ * en negro sobre fondo oscuro, ilegible justo donde más importa.
+ *
+ * Va aquí y no en cada control para que el próximo campo que se agregue nazca
+ * con el color del tema en vez de repetir el mismo error.
+ */
+input,
+textarea,
+select {
+  color: var(--text);
+  /* Sin esto el cursor de texto también se queda con el color del sistema. */
+  caret-color: var(--accent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-dim);
+  opacity: 1;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
 html,
 body {
   margin: 0;
