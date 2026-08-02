@@ -6,6 +6,7 @@
 --   agent participation
 -- Excludes:
 --   - Hosting several private graphs inside one Vera instance
+--   - Closing the current graph and opening or switching to another graph
 --   - Authentication protocol and credential storage implementation
 --   - Public anonymous access to the projected personal website
 -- Dependencies: Participant, Graph and Membership are governed by core.allium
