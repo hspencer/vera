@@ -20,7 +20,7 @@ contract PersonalWebsiteProjection {
     render: (publication: core/Publication) -> PublicDocument
     metadata: (publication: core/Publication) -> HtmlMetadata
     search: (site: core/PersonalSite, text: String) -> PublicSearchResult
-    citation: (publication: core/Publication) -> PublicationCitation
+    citation: (publication: core/Publication, style: String) -> PublicationCitation
 
     @invariant SameCorpus
         -- Every public document is projected from a page in Vera's graph.
@@ -36,6 +36,10 @@ contract PersonalWebsiteProjection {
     @invariant FootnoteFidelity
         -- Markdown footnote references and definitions remain correctly linked
         -- and readable when projected to public HTML.
+
+    @invariant HumanSelectableCitationStyle
+        -- A reader chooses the desired citation style, such as APA or Chicago,
+        -- and receives a human-readable citation ready to copy.
 
     @invariant ReproducibleOutput
         -- The same publication revision and presentation configuration produce
@@ -70,8 +74,8 @@ entity PublicSearchResult {
 
 entity PublicationCitation {
     publication: core/Publication
+    style: String
     human_readable: String
-    machine_readable: String
     stable_url: String
 }
 
@@ -134,14 +138,14 @@ rule SearchPublicSite {
 }
 
 rule GeneratePublicationCitation {
-    when: CitePublication(publication)
+    when: CitePublication(publication, style)
 
     requires: publication.page.visibility = public
 
     ensures: PublicationCitation.created(
         publication: publication,
-        human_readable: human_citation(publication),
-        machine_readable: machine_citation(publication),
+        style: style,
+        human_readable: human_citation(publication, style),
         stable_url: canonical_url(publication.site, publication.path)
     )
 }
@@ -218,7 +222,7 @@ surface PersonalWebsite {
 
     provides:
         SearchPublishedPages(site, text)
-        CitePublication(publication)
+        CitePublication(publication, style)
 
     contracts:
         fulfils PersonalWebsiteProjection
@@ -256,6 +260,5 @@ deferred JekyllMigration.ingest    -- see: jekyll-migration.allium
 -- Open Questions
 ------------------------------------------------------------
 
-open question "Which citation styles and machine-readable citation formats must Vera provide?"
 open question "Which current HTML metadata fields and structured data must be preserved exactly?"
 open question "Should the first migration preserve the existing visual design exactly or reproduce its editorial character with Vera's token system?"
