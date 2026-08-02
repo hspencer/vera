@@ -32,6 +32,10 @@ contract ParticipantAdministration {
     @invariant SovereignOwnerOnly
         -- Only the instance's founding human owner may create access for,
         -- invite or remove human and agent participants.
+
+    @invariant HistoricalIdentitySurvivesRemoval
+        -- Removing access preserves the participant's identity on historical
+        -- revisions and audit records while preventing further graph access.
 }
 
 ------------------------------------------------------------
@@ -88,6 +92,11 @@ invariant InstanceOwnerIsHuman {
         instance.owner.kind = human
 }
 
+invariant SuspendedMembershipCannotParticipate {
+    for membership in core/Memberships:
+        membership.status = suspended implies membership.participant != instance.owner
+}
+
 ------------------------------------------------------------
 -- Actor Declarations
 ------------------------------------------------------------
@@ -128,4 +137,3 @@ open question "How does Herbert authorize, identify and revoke each agent?"
 open question "Are collaborator permissions role-based, capability-based or individually granted per operation and resource?"
 open question "When do sessions expire, and what happens to pending agent operations after revocation?"
 open question "How does Herbert recover ownership if every authentication credential is lost?"
-open question "After access is removed, which participant profile fields remain visible with historical revisions and audit records?"
