@@ -23,7 +23,9 @@ contract NativeMediaSupport {
 
     @invariant SourceFidelity
         -- Vera preserves the canonical source or original file for every resource.
-        -- Presentation does not replace or destructively transcode that source.
+        -- Presentation and transcription do not replace or destructively
+        -- transcode that source. An audio source may be deleted only by an
+        -- explicit participant action after its transcript has been validated.
 
     @invariant NativePresentation
         -- Every declared media variant can be presented within a Vera page
@@ -61,9 +63,12 @@ variant Markdown : MediaResource {
 }
 
 variant Audio : MediaResource {
-    original_file: String
+    original_file: String?
     media_type: String
     transcript: String?
+    transcript_status: none | generated | validated
+    source_deleted_by: core/Participant?
+    source_deleted_at: Timestamp?
     is_authenticated_voice: Boolean
 }
 
@@ -107,6 +112,12 @@ entity PresentedMedia {
     resource: MediaResource
     source_preserved: Boolean
     presented_natively: Boolean
+}
+
+entity AudioArtifact {
+    audio: Audio
+    playback_available: Boolean
+    automatic_transcription_available: Boolean
 }
 
 ------------------------------------------------------------
@@ -168,6 +179,60 @@ rule PresentMediaWithinPage {
     )
 }
 
+rule PresentAudioArtifact {
+    when: PresentAudio(audio)
+
+    ensures: AudioArtifact.created(
+        audio: audio,
+        playback_available: audio.original_file != null,
+        automatic_transcription_available: audio.original_file != null
+    )
+}
+
+rule AutomaticallyTranscribeAudio {
+    when: TranscribeAudio(participant, page, audio, transcript)
+
+    let membership = core/Membership{graph: page.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: audio.original_file != null
+    requires: audio.transcript_status = none
+
+    ensures:
+        audio.transcript = transcript
+        audio.transcript_status = generated
+}
+
+rule ParticipantValidatesAudioTranscript {
+    when: ValidateAudioTranscript(participant, page, audio)
+
+    let membership = core/Membership{graph: page.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: audio.transcript != null
+    requires: audio.transcript_status = generated
+
+    ensures: audio.transcript_status = validated
+}
+
+rule ParticipantDeletesValidatedAudioSource {
+    when: DeleteAudioSource(participant, page, audio)
+
+    let membership = core/Membership{graph: page.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: audio.transcript_status = validated
+    requires: audio.original_file != null
+
+    ensures:
+        audio.original_file = null
+        audio.source_deleted_by = participant
+        audio.source_deleted_at = now
+}
+
 ------------------------------------------------------------
 -- Invariants
 ------------------------------------------------------------
@@ -179,7 +244,12 @@ invariant StoredSourceIsPreserved {
 
 invariant NativePresentationPreservesSource {
     for presentation in PresentedMedias:
-        presentation.presented_natively = true and presentation.source_preserved = true
+        presentation.presented_natively = true
+}
+
+invariant DeletedAudioHasValidatedTranscript {
+    for audio in Audios:
+        audio.original_file = null implies audio.transcript_status = validated and audio.transcript != null
 }
 
 ------------------------------------------------------------
@@ -207,6 +277,10 @@ surface PageMedia {
         ParticipantIngestsBinary(participant, page, resource)
         StoreMedia(resource)
         PresentMedia(resource)
+        PresentAudio(audio)
+        TranscribeAudio(participant, page, audio, transcript)
+        ValidateAudioTranscript(participant, page, audio)
+        DeleteAudioSource(participant, page, audio)
 
     contracts:
         fulfils NativeMediaSupport
@@ -217,7 +291,6 @@ surface PageMedia {
 ------------------------------------------------------------
 
 deferred ExecutableContentSandbox.present -- see: executable-content-sandbox.allium
-deferred AudioTranscription.create         -- see: audio-transcription.allium
 
 ------------------------------------------------------------
 -- Open Questions
