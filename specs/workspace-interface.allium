@@ -57,6 +57,7 @@ entity Workspace {
     participant: core/Participant
     active_page: core/Page?
     layout: WorkspaceLayout
+    split_divider_position: Decimal
     graph_view: GraphViewMode
     colour_scheme: ColourScheme
     navigation_history: List<core/Page>
@@ -104,6 +105,14 @@ rule ParticipantChangesWorkspaceLayout {
     requires: workspace.participant = participant
 
     ensures: workspace.layout = layout
+}
+
+rule ParticipantMovesSplitDivider {
+    when: MoveSplitDivider(participant, workspace, position)
+
+    requires: workspace.participant = participant
+
+    ensures: workspace.split_divider_position = position
 }
 
 rule ParticipantChangesGraphView {
@@ -222,6 +231,7 @@ surface VeraWorkspace {
         workspace.graph.name
         workspace.active_page
         workspace.layout
+        workspace.split_divider_position
         workspace.graph_view
         workspace.colour_scheme
         workspace.navigation_history
@@ -229,6 +239,7 @@ surface VeraWorkspace {
 
     provides:
         ChangeWorkspaceLayout(participant, workspace, layout)
+        MoveSplitDivider(participant, workspace, position)
         ChangeGraphView(participant, workspace, graph_view)
         ChangeColourScheme(participant, workspace, colour_scheme)
         ApplyTheme(participant, workspace)
@@ -245,6 +256,11 @@ surface VeraWorkspace {
     @guarantee NavigableGraphContext
         -- Text and graph views share the same active page and navigation history.
         -- Changing layout does not discard the participant's place in the graph.
+
+    @guarantee RememberedSessionPresentation
+        -- Split view begins evenly divided for a participant with no saved
+        -- preference. Subsequent divider position and light or dark colour
+        -- scheme are retained in that participant's session.
 
     @guarantee EditableDesignSystem
         -- General styles and design tokens are editable from within Vera and
@@ -265,4 +281,3 @@ deferred SearchIndex.find        -- see: search-index.allium
 
 open question "When edited style source is invalid, should Vera reject it or keep it with the last valid presentation active?"
 open question "During mind migration, should existing Logseq queries be translated when possible, imported as inert source text, or reported as unsupported?"
-open question "Should split layout begin at 50/50 or remember the participant's last divider position per device?"
