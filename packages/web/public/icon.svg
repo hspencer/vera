@@ -1,26 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Vera">
   <!--
-    La marca de Vera: el icono `share-2` de Feather (Cole Bemis, MIT) girado un
-    cuarto de vuelta a la izquierda. Los tres nodos quedan en V, y el dibujo
-    dice lo que Vera es: cosas y los vínculos entre ellas.
+    La marca de Vera: tres nodos en V y los vínculos entre ellos. Dice lo que
+    Vera es — cosas, y lo que las une.
 
-    El trazo va escrito aquí y no importado de icons.ts porque este archivo lo
-    lee el sistema operativo al instalar la aplicación, no el navegador: no
-    puede depender de que ningún guion llegue a ejecutarse.
+    El dibujo es el de `assets/vera_vera-logo.svg`, en su lienzo original de 64
+    para que no pase por ninguna conversión. El trazo va escrito aquí y no
+    importado de icons.ts porque este archivo lo leen el sistema operativo al
+    instalar la aplicación y el navegador al dibujar la pestaña: no puede
+    depender de que ningún guion llegue a ejecutarse.
 
-    El lienzo de Feather mide 24 y el del icono 64: el `scale(2)` con margen de
-    8 deja la marca centrada y con aire suficiente para que el sistema le
-    redondee las esquinas sin comerse un nodo.
+    Fondo negro y trazo blanco, y no los colores del tema. Un icono se ve sobre
+    el escritorio, el dock y la pestaña —fondos que Vera no controla y que
+    cambian con el tema del sistema— y el máximo contraste es lo único que se
+    sostiene en todos. El radio deja que el sistema redondee las esquinas sin
+    comerse un nodo.
   -->
-  <rect width="64" height="64" rx="12" fill="#16181c"/>
-  <g transform="translate(8 8) scale(2)" fill="none" stroke="#4a9ade" stroke-width="2"
-     stroke-linecap="round" stroke-linejoin="round">
-    <g transform="rotate(-90 12 12)">
-      <circle cx="18" cy="5" r="3"/>
-      <circle cx="6" cy="12" r="3"/>
-      <circle cx="18" cy="19" r="3"/>
-      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-    </g>
+  <rect width="64" height="64" rx="12" fill="#000"/>
+  <g fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="18" cy="20" r="6"/>
+    <circle cx="32" cy="44" r="6"/>
+    <circle cx="46" cy="20" r="6"/>
+    <line x1="35" y1="38.8" x2="43" y2="25.2"/>
+    <line x1="21" y1="25.2" x2="29" y2="38.8"/>
   </g>
 </svg>

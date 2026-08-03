@@ -8,6 +8,14 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#16181c" />
 
+    <!-- La pestaña y la aplicación instalada llevan la misma marca. Sin estas
+         dos líneas el navegador buscaba `/favicon.ico`, no lo encontraba y
+         dejaba la pestaña con el icono genérico: Vera tenía icono para el
+         sistema operativo y ninguno para el navegador. El SVG es el que manda;
+         el PNG está para quien no lo acepte. -->
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/icon-192.png" sizes="192x192" type="image/png" />
+
     <!-- iOS no lee los iconos del manifiesto ni acepta SVG para la pantalla de
          inicio: sin este PNG usaría una miniatura de la captura de pantalla.
          Las esquinas las redondea el sistema, así que la imagen va a sangre. -->
@@ -42,9 +50,17 @@
           <div id="results" hidden></div>
         </div>
         <div id="controls">
-          <button data-layout="text_only" title="Sólo texto">texto</button>
-          <button data-layout="split" title="Texto y grafo">ambos</button>
-          <button data-layout="graph_only" title="Sólo grafo">grafo</button>
+          <!--
+            El switch de la vista, de tres posiciones y en el orden del espacio
+            que gobierna: mapa a la izquierda, texto a la derecha, y en medio los
+            dos. Mover el switch a la derecha es acercarse; a la izquierda,
+            alejarse. Los dibujos los pone icons.ts.
+          -->
+          <div id="view-switch" role="group" aria-label="Vista">
+            <button data-layout="graph_only" aria-label="Sólo el mapa" title="Sólo el mapa"></button>
+            <button data-layout="split" aria-label="Mapa y texto" title="Mapa y texto"></button>
+            <button data-layout="text_only" aria-label="Sólo el texto" title="Sólo el texto"></button>
+          </div>
           <span class="sep"></span>
           <button data-view="graph_2d" title="Grafo en dos dimensiones">2D</button>
           <button data-view="graph_3d" title="Grafo en tres dimensiones">3D</button>
@@ -62,14 +78,18 @@
         </div>
       </header>
 
-      <aside id="sidebar">
-        <div id="status"></div>
-        <div id="index"></div>
-      </aside>
+      <!--
+        De izquierda a derecha, de lo general a lo particular.
 
-      <main id="text"></main>
-      <div id="divider" role="separator" aria-orientation="vertical" tabindex="0"></div>
+        El mapa es el «ante»: el total, desde donde uno se ubica y filtra. El
+        texto es el «dentro». La lectura occidental va en ese sentido, así que
+        entrar en un documento es un movimiento hacia la derecha y salir a mirar
+        el conjunto es uno hacia la izquierda. Invertirlo obligaría a leer al
+        revés lo que se está haciendo.
+      -->
       <section id="graph"></section>
+      <div id="divider" role="separator" aria-orientation="vertical" tabindex="0"></div>
+      <main id="text"></main>
       <div id="tokens" hidden></div>
       <div id="voice" hidden></div>
     </div>

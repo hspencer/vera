@@ -18,16 +18,25 @@ import {
   type DesignToken,
 } from './tokens.ts';
 
-export type Section = 'teclado' | 'apariencia';
+export type Section = 'memoria' | 'teclado' | 'apariencia';
 
 export interface SettingsHandlers {
   scheme(): ColourScheme;
   onTokenChange(token: DesignToken, value: string): void;
   onReset(): void;
   onClose(): void;
+  /**
+   * Dibuja el estado del corpus y su índice.
+   *
+   * Lo pone quien tiene los datos —main.ts, que ya los pide al servidor— en vez
+   * de que esta página los pida por su cuenta: abrir los ajustes no debería
+   * costar una petición más.
+   */
+  drawMemory?(host: HTMLElement): void;
 }
 
 const SECTIONS: { id: Section; label: string }[] = [
+  { id: 'memoria', label: 'Memoria' },
   { id: 'teclado', label: 'Teclado' },
   { id: 'apariencia', label: 'Apariencia' },
 ];
@@ -96,8 +105,28 @@ export function renderSettings(
   body.className = 'settings-body';
   host.append(body);
 
-  if (active === 'teclado') drawKeyboard(body);
+  if (active === 'memoria') drawMemory(body, handlers);
+  else if (active === 'teclado') drawKeyboard(body);
   else drawAppearance(body, tokens, handlers);
+}
+
+/**
+ * Memoria: qué hay en el corpus y cómo está compuesto.
+ *
+ * Vivía en un panel lateral permanente, ocupando ancho en cada pantalla para
+ * decir algo que se consulta de vez en cuando. Aquí se consulta cuando se
+ * quiere, y el ancho vuelve al mapa y al texto.
+ */
+function drawMemory(host: HTMLElement, handlers: SettingsHandlers): void {
+  const intro = document.createElement('p');
+  intro.className = 'settings-note';
+  intro.textContent =
+    'Lo que hay en este grafo y de qué está hecho. El índice ordena por lo que ' +
+    'las páginas son —categorías y atributos—, no por sus títulos.';
+  host.append(intro);
+
+  if (handlers.drawMemory === undefined) return;
+  handlers.drawMemory(host);
 }
 
 function drawKeyboard(host: HTMLElement): void {

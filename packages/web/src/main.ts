@@ -10,7 +10,7 @@ import { renderOutliner, speakInto } from './outliner.ts';
 import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
 import { renderVoicePanel } from './voice-panel.ts';
-import { brandMark, icon } from './icons.ts';
+import { brandMark, icon, type IconName } from './icons.ts';
 import { renderGraph } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D } from './graph/render3d.ts';
 import {
@@ -50,6 +50,42 @@ const workspace: Workspace = {
 
 let tokens = loadTokens();
 let pages: PageSummary[] = [];
+/** Lo que el grafo tiene. Se pide una vez al arrancar y se enseña en Memoria. */
+let corpus: { graph: string; pages: number; blocks: number; lastSequence: number } | null = null;
+
+/**
+ * Memoria: el estado del corpus y su índice.
+ *
+ * Vivía en un panel lateral permanente que gastaba 15rem de cada pantalla para
+ * decir algo que se mira de vez en cuando. Ese ancho es ahora del mapa y del
+ * texto, que es lo que se está haciendo cuando se usa Vera.
+ */
+function drawMemory(host: HTMLElement): void {
+  const status = document.createElement('div');
+  status.id = 'status';
+  status.textContent =
+    corpus === null
+      ? 'todavía sin datos del grafo'
+      : `${corpus.pages} páginas · ${corpus.blocks} bloques · secuencia ${corpus.lastSequence}`;
+  host.append(status);
+
+  const index = document.createElement('div');
+  index.id = 'index';
+  for (const page of pages.slice(0, 200)) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'index-item';
+    const name = document.createElement('span');
+    name.textContent = page.title;
+    const count = document.createElement('span');
+    count.className = 'count';
+    count.textContent = String(page.linkCount);
+    item.append(name, count);
+    item.addEventListener('click', () => void openPage(page.id));
+    index.append(item);
+  }
+  host.append(index);
+}
 
 const $ = <T extends HTMLElement>(selector: string): T =>
   document.querySelector<T>(selector) as T;
@@ -70,10 +106,11 @@ function applyLayout(): void {
   root.style.setProperty('--divider', String(workspace.divider));
 
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-layout]')) {
-    button.setAttribute(
-      'aria-pressed',
-      String(button.dataset['layout'] === workspace.layout),
-    );
+    const here = button.dataset['layout'] === workspace.layout;
+    button.setAttribute('aria-pressed', String(here));
+    // El switch marca su posición con la clase; `aria-pressed` sigue siendo lo
+    // que se lee en voz alta.
+    button.classList.toggle('selected', here);
   }
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-view]')) {
     button.setAttribute('aria-pressed', String(button.dataset['view'] === workspace.graphView));
@@ -386,6 +423,17 @@ function wireTheme(): void {
   $('#insert-voice').innerHTML = icon('mic');
   $('#settings').innerHTML = icon('settings');
 
+  // El switch de la vista, en el orden del espacio que gobierna.
+  const SWITCH: Record<string, IconName> = {
+    graph_only: 'map',
+    split: 'spread',
+    text_only: 'text',
+  };
+  for (const button of document.querySelectorAll<HTMLButtonElement>('#view-switch [data-layout]')) {
+    const shape = SWITCH[button.dataset['layout'] ?? ''];
+    if (shape !== undefined) button.innerHTML = icon(shape);
+  }
+
   // El botón muestra a dónde lleva, no dónde se está: con el tema oscuro
   // puesto ofrece el sol, que es lo que se obtiene al pulsarlo.
   const scheme = $('#scheme');
@@ -420,6 +468,7 @@ function wireTheme(): void {
 
   const openSettings = (): void => {
     renderSettings(panel, tokens, section, {
+      drawMemory,
       scheme: () => workspace.scheme,
       onTokenChange: (token, value) => {
         // Cada token guarda su valor por esquema, así que editar el oscuro no
@@ -542,8 +591,9 @@ async function start(): Promise<void> {
     resizeTimer = window.setTimeout(() => applyLayout(), 150);
   });
 
-  const health = await api.health();
-  $('#status').textContent = `${health.pages} páginas · ${health.blocks} bloques · secuencia ${health.lastSequence}`;
+  // El estado del corpus se guarda, no se dibuja: ahora vive en Ajustes →
+  // Memoria y se pinta cuando alguien lo abre.
+  corpus = await api.health();
 
   // Ordenadas por conectividad y no por tamaño: la página más grande del
   // corpus es una transcripción sin un solo enlace, y abrirla de entrada
@@ -551,24 +601,6 @@ async function start(): Promise<void> {
   pages = (await api.pages()).sort(
     (a, b) => b.linkCount - a.linkCount || b.blockCount - a.blockCount,
   );
-
-  const byConnection = pages;
-
-  const index = $('#index');
-  // Reintentar el arranque no puede duplicar la lateral.
-  index.innerHTML = '';
-  for (const page of byConnection.slice(0, 200)) {
-    const item = document.createElement('button');
-    item.className = 'index-item';
-    const name = document.createElement('span');
-    name.textContent = page.title;
-    const count = document.createElement('span');
-    count.className = 'count';
-    count.textContent = String(page.linkCount);
-    item.append(name, count);
-    item.addEventListener('click', () => void openPage(page.id));
-    index.append(item);
-  }
 
   applyLayout();
   await applyRoute();
