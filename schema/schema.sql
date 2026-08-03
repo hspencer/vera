@@ -13,6 +13,7 @@
 --   unported_queries                                             query-language.allium
 --   blocks_fts, pages_fts                                        search-index.allium
 --   media, media_references                                      content-media.allium
+--   recordings, spoken_origins                                   voice-capture.allium
 --
 -- Falta `properties_fts`. search-index.allium declara `property_value` como campo
 -- buscable y su @guarantee OneSearchReachesEverySearchableField exige que una sola
@@ -251,6 +252,42 @@ CREATE TABLE IF NOT EXISTS media (
     original_name  TEXT,
     created_at     INTEGER NOT NULL
 ) STRICT;
+
+-- La cascada de validación que va de una grabación al contenido.
+--
+-- Lo canónico es la cadena, no ninguno de sus eslabones. Vive fuera del registro
+-- de operaciones por la misma razón que `media`: una grabación es un activo con
+-- ciclo de vida, no un cambio del grafo. Lo que sí pasa por el registro son los
+-- bloques que se asientan de ella, con canal `authenticated_voice` y su evidencia.
+CREATE TABLE IF NOT EXISTS recordings (
+    id                    TEXT PRIMARY KEY,
+    graph_id              TEXT NOT NULL REFERENCES graphs (id),
+    -- Nulo cuando se descartó el audio, que sólo se puede hacer al final.
+    audio_hash            TEXT REFERENCES media (hash),
+    media_type            TEXT NOT NULL,
+    duration_ms           INTEGER,
+    stage                 TEXT NOT NULL CHECK (
+                            stage IN ('captured', 'transcribed', 'transcript_validated', 'content_settled')
+                          ),
+    transcript            TEXT,
+    -- Quien habla y cuándo. Sin autenticación todavía, se asume el propietario,
+    -- y queda dicho en la referencia en vez de fingir que está probado.
+    evidence_reference    TEXT NOT NULL,
+    evidence_captured_at  INTEGER NOT NULL,
+    captured_by           TEXT NOT NULL REFERENCES participants (id),
+    captured_at           INTEGER NOT NULL,
+    validated_by          TEXT REFERENCES participants (id),
+    validated_at          INTEGER
+) STRICT;
+
+-- La denominación de origen de un bloque. Va aparte del bloque porque el
+-- contenido cambia y el origen no: reescribir lo dicho no cambia que se dijo.
+CREATE TABLE IF NOT EXISTS spoken_origins (
+    block_id      TEXT PRIMARY KEY REFERENCES blocks (id) ON DELETE CASCADE,
+    recording_id  TEXT NOT NULL REFERENCES recordings (id)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS spoken_origins_by_recording ON spoken_origins (recording_id);
 
 -- La ruta tal como está escrita en el Markdown, y el objeto al que resuelve.
 --

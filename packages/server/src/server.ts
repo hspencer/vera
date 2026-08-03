@@ -6,23 +6,32 @@
 // pasar por ahí.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 
 import { VeraGraph, checkInvariants } from '@vera/core';
 import type { Change, ContributionChannel, OriginEvidence, ParticipantId } from '@vera/core';
 import {
+  advanceRecording,
+  correctTranscript,
+  createRecording,
   foldedOnPage,
   loadGraph,
   mediaByHash,
   mediaReferences,
   openStore,
   recordOperation,
+  recordMedia,
+  recordingById,
+  recordings,
   saveParticipant,
   setFold,
+  setSpokenOrigin,
+  spokenOriginsOnPage,
   type Store,
 } from '@vera/store';
-import { HASH, objectPath } from '@vera/store/objects';
+import { HASH, objectPath, putObject } from '@vera/store/objects';
+import { transcribeAudio } from './transcribe.ts';
 import { renderPage } from '@vera/store/projection';
 
 const CHANGE_KINDS = new Set([
@@ -235,6 +244,193 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       return;
     }
 
+    // -----------------------------------------------------------------------
+    // La cascada de validación desde la voz
+    // -----------------------------------------------------------------------
+    //
+    // Cada ruta mueve la grabación un eslabón, y sólo uno. El orden lo impone
+    // `advanceRecording`, así que el contenido no se puede asentar desde una
+    // transcripción que nadie validó ni saltándose la transcripción entera.
+
+    if (request.method === 'POST' && path === '/recordings') {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        const audio = Buffer.concat(chunks);
+        if (audio.byteLength === 0) {
+          send(response, 400, { error: 'no llegó audio' });
+          return;
+        }
+        if (objectsRoot === null) {
+          send(response, 500, { error: 'esta instancia no tiene almacén de objetos' });
+          return;
+        }
+
+        const mediaType = String(request.headers['content-type'] ?? 'audio/webm').split(';')[0] ?? 'audio/webm';
+        const duration = Number(request.headers['x-duration-ms'] ?? '');
+
+        // El audio entra al mismo almacén direccionado por contenido que todo
+        // lo demás: grabar dos veces lo mismo no lo guarda dos veces.
+        const stored = putObject(objectsRoot, audio);
+        const at = Date.now();
+        recordMedia(store, {
+          path: `recording/${stored.hash}`,
+          hash: stored.hash,
+          mediaType,
+          byteSize: stored.byteSize,
+          at,
+        });
+
+        // Quien habla y cuándo. Sin autenticación se asume el propietario, y la
+        // referencia lo dice en vez de fingir que está probado.
+        const recording = createRecording(store, {
+          audioHash: stored.hash,
+          mediaType,
+          durationMs: Number.isFinite(duration) && duration > 0 ? Math.round(duration) : null,
+          evidence: {
+            reference: `speaker:${owner.id} (asumido, sin autenticación)`,
+            capturedAt: at,
+          },
+          capturedBy: owner.id,
+        });
+
+        send(response, 201, recording);
+      });
+      return;
+    }
+
+    if (request.method === 'POST' && /^\/recordings\/[^/]+\/transcribe$/.test(path)) {
+      const id = decodeURIComponent(path.split('/')[2] ?? '');
+      const held = recordingById(store, id);
+      if (held === null) {
+        send(response, 404, { error: 'no such recording' });
+        return;
+      }
+      if (held.audioHash === null || objectsRoot === null) {
+        send(response, 422, { error: 'la grabación ya no tiene audio que transcribir' });
+        return;
+      }
+
+      const audio = readFileSync(objectPath(objectsRoot, held.audioHash));
+      void transcribeAudio(audio).then((outcome) => {
+        if ('error' in outcome) {
+          send(response, 502, outcome);
+          return;
+        }
+        // Queda propuesta, nunca validada: eso lo hace una persona.
+        const moved = advanceRecording(store, id, 'transcribed', { transcript: outcome.text });
+        send(response, 'error' in moved ? 422 : 200, moved);
+      });
+      return;
+    }
+
+    if (request.method === 'POST' && /^\/recordings\/[^/]+\/(transcript|validate|settle)$/.test(path)) {
+      const parts = path.split('/');
+      const id = decodeURIComponent(parts[2] ?? '');
+      const action = parts[3] ?? '';
+
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { text?: unknown; page?: unknown } = {};
+        if (chunks.length > 0) {
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+          } catch {
+            send(response, 400, { error: 'the body must be JSON' });
+            return;
+          }
+        }
+
+        if (action === 'transcript') {
+          const outcome = correctTranscript(store, id, String(body.text ?? ''));
+          send(response, 'error' in outcome ? 422 : 200, outcome);
+          return;
+        }
+
+        if (action === 'validate') {
+          const outcome = advanceRecording(store, id, 'transcript_validated', {
+            validatedBy: owner.id,
+          });
+          send(response, 'error' in outcome ? 422 : 200, outcome);
+          return;
+        }
+
+        // Asentar: la transcripción validada se vuelve bloques, y cada uno nace
+        // nombrando la grabación. Es el único momento en que puede recibir su
+        // denominación de origen.
+        const held = recordingById(store, id);
+        const page = typeof body.page === 'string' ? body.page : '';
+        if (held === null) {
+          send(response, 404, { error: 'no such recording' });
+          return;
+        }
+        if (held.stage !== 'transcript_validated') {
+          send(response, 422, { error: 'la transcripción todavía no está validada' });
+          return;
+        }
+        if (graph.page(page) === undefined) {
+          send(response, 404, { error: 'no such page' });
+          return;
+        }
+
+        const fragments = held.transcript
+          ?.split(/\n{2,}/)
+          .map((fragment) => fragment.trim())
+          .filter((fragment) => fragment !== '') ?? [];
+        if (fragments.length === 0) {
+          send(response, 422, { error: 'la transcripción no tiene contenido que asentar' });
+          return;
+        }
+
+        const created: string[] = [];
+        const at = graph.blocksOf(page).filter((block) => block.parent === null).length;
+
+        try {
+          for (const [n, fragment] of fragments.entries()) {
+            // Canal `authenticated_voice` con su evidencia: es lo que el
+            // registro guardará de por vida sobre estos bloques.
+            const outcome = graph.submitOperation({
+              originId: `voice:${id}:${n}`,
+              participant: owner.id,
+              channel: 'authenticated_voice',
+              evidence: held.evidence,
+              change: { kind: 'create_block', page, parent: null, position: at + n, content: fragment },
+            });
+            if (outcome.status !== 'applied') continue;
+            recordOperation(store, graph, outcome.operation);
+            setSpokenOrigin(store, outcome.subjectId, id);
+            created.push(outcome.subjectId);
+          }
+        } catch (error) {
+          send(response, 500, {
+            error: 'no se pudo asentar el contenido',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+
+        const moved = advanceRecording(store, id, 'content_settled');
+        send(response, 200, { recording: moved, blocks: created });
+      });
+      return;
+    }
+
+    if (request.method === 'GET' && path === '/recordings') {
+      send(response, 200, recordings(store));
+      return;
+    }
+
+    if (request.method === 'GET' && /^\/recordings\/[^/]+$/.test(path)) {
+      const held = recordingById(store, decodeURIComponent(path.split('/')[2] ?? ''));
+      if (held === null) {
+        send(response, 404, { error: 'no such recording' });
+        return;
+      }
+      send(response, 200, held);
+      return;
+    }
+
     // Plegar no es un cambio del grafo, así que no pasa por /operations: no
     // genera operación ni revisión, y por eso tiene su propia ruta.
     if (request.method === 'POST' && path === '/folds') {
@@ -373,6 +569,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 mediaType: entry.mediaType,
               }));
           })(),
+          // La denominación de origen de los bloques hablados de esta página.
+          spokenOrigins: spokenOriginsOnPage(store, page.id),
           // @invariant FoldingIsNotAChange: qué tiene plegado ESTE participante.
           // No sale del registro de operaciones porque nunca entró en él.
           folded: foldedOnPage(store, participant, page.id),

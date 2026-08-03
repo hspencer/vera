@@ -1,0 +1,312 @@
+-- allium: 3
+-- voice-capture.allium
+
+-- Scope: How spoken words become content in Vera, and what that content keeps saying
+--   about where it came from
+-- Includes: The chain from a recording to a transcript to blocks, the human validation
+--   at each link, the evidence a recording carries, and the appellation of origin that
+--   survives everything done to the content afterwards
+-- Excludes:
+--   - Capture, encoding and playback mechanics
+--   - The transcription engine, its language and its accuracy
+--   - Speaker authentication, which does not exist yet (see identity-access.allium)
+--   - How blocks are edited once they exist (see block-editing.allium)
+--   - Storage of the recording itself (see content-media.allium)
+-- Dependencies: Page, Block, Participant and OriginEvidence are governed by core.allium;
+--   the recording is a MediaResource governed by content-media.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- The whole point, stated once.
+--
+-- What is canonical in Vera is not the recording, and not the transcript, and not
+-- the blocks. It is the chain that joins them: a recording, a transcript a human
+-- confirmed says what was said, and content a human confirmed means what was
+-- meant. Each link is validated by a person, and every link keeps naming the one
+-- before it. That is what lets a sentence edited months later still answer the
+-- question of where it came from.
+contract ValidationCascade {
+    capture: (participant: core/Participant, evidence: core/OriginEvidence) -> Recording
+    transcribe: (recording: Recording, text: String) -> Recording
+    validate_transcript: (participant: core/Participant, recording: Recording) -> Recording
+    settle_content: (participant: core/Participant, recording: Recording, page: core/Page) -> Set<core/Block>
+
+    @invariant EveryLinkIsHumanlyConfirmed
+        -- A machine may propose a transcript. Only a participant may declare it
+        -- says what was said, and only a participant may declare the content
+        -- means what was meant. Nothing advances down the chain on its own.
+
+    @invariant TheChainIsOrdered
+        -- Content cannot be settled from a transcript that was never validated,
+        -- and a transcript cannot be validated before one exists. Skipping a link
+        -- would leave content claiming an origin nobody checked.
+
+    @invariant TheRecordingOutlivesItsTranscript
+        -- Transcribing never replaces the recording, and correcting a transcript
+        -- never rewrites it. The recording is the head of the chain; a derivative
+        -- cannot overwrite what it derives from.
+
+    @invariant SpokenContentNamesItsRecording
+        -- Every block settled from a recording names it. This is the appellation
+        -- of origin: the block does not merely happen to have come from somewhere,
+        -- it says where.
+}
+
+contract AppellationOfOrigin {
+    trace: (block: core/Block) -> Recording?
+
+    @invariant OriginSurvivesEditing
+        -- Rewriting a block does not change where it came from. What was spoken
+        -- was spoken, whatever the words become afterwards.
+
+    @invariant OriginSurvivesFragmentation
+        -- Splitting a block leaves both halves naming the same recording, and
+        -- merging two blocks of the same origin keeps it. Content divides; its
+        -- provenance does not.
+
+    @invariant OriginIsNeverInherited
+        -- A block written by hand next to spoken content has no origin, and never
+        -- acquires one by proximity. An appellation that spread by contact would
+        -- be worth nothing.
+
+    @invariant OriginIsNeverAsserted
+        -- Only settling a validated transcript gives a block its origin. No
+        -- participant and no agent can declare that a block came from a recording
+        -- it did not come from.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+-- Where a recording stands in the chain. It only ever moves forward, and only
+-- because a participant moved it.
+enum CascadeStage { captured | transcribed | transcript_validated | content_settled }
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity Recording {
+    graph: core/Graph
+    -- The stored audio, addressed by the hash of its content.
+    audio: String
+    media_type: String
+    duration_ms: Integer?
+
+    stage: CascadeStage
+
+    transitions stage {
+        captured -> transcribed
+        transcribed -> transcript_validated
+        transcript_validated -> content_settled
+    }
+
+    -- What the machine proposed, and what the participant left after correcting
+    -- it. One field: correcting the transcript is editing it, not annotating it.
+    transcript: String?
+
+    -- Who spoke and when. Without authentication the speaker is the instance's
+    -- owner by assumption, and the specification says so rather than pretending
+    -- the claim is proven.
+    evidence: core/OriginEvidence
+
+    captured_by: core/Participant
+    captured_at: Timestamp
+    validated_by: core/Participant?
+    validated_at: Timestamp?
+}
+
+-- What a block says about where it came from. It is a separate thing from the
+-- block's content because content changes and origin does not.
+entity SpokenOrigin {
+    block: core/Block
+    recording: Recording
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule ParticipantRecordsVoice {
+    when: CaptureVoice(participant, graph, audio, media_type, evidence)
+
+    let membership = core/Membership{graph: graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    -- @invariant VoiceCanonicalityRequiresEvidence, from core: a recording that
+    -- claims to be someone's voice arrives with what backs the claim.
+    requires: evidence != null
+
+    ensures: Recording.created(
+        graph: graph,
+        audio: audio,
+        media_type: media_type,
+        stage: captured,
+        transcript: null,
+        evidence: evidence,
+        captured_by: participant,
+        captured_at: now,
+        validated_by: null,
+        validated_at: null
+    )
+}
+
+-- The machine proposes. Note what this rule does not ensure: it does not touch
+-- `audio`, and it does not set `validated_by`.
+rule TranscriptionIsProposed {
+    when: ProposeTranscript(recording, text)
+
+    requires: recording.stage = captured
+
+    ensures:
+        recording.transcript = text
+        recording.stage = transcribed
+}
+
+rule ParticipantCorrectsTranscript {
+    when: CorrectTranscript(participant, recording, text)
+
+    requires: recording.stage = transcribed
+
+    ensures: recording.transcript = text
+
+    @guidance
+        -- Correcting is allowed only while the transcript is still proposed.
+        -- Afterwards the transcript is what a person declared was said, and
+        -- changing that would be changing the record rather than the reading.
+}
+
+rule ParticipantValidatesTranscript {
+    when: ValidateTranscript(participant, recording)
+
+    let membership = core/Membership{graph: recording.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: recording.stage = transcribed
+    requires: recording.transcript != null
+    requires: recording.transcript != ""
+
+    ensures:
+        recording.stage = transcript_validated
+        recording.validated_by = participant
+        recording.validated_at = now
+}
+
+-- The last link. The validated transcript becomes blocks, and each one is given
+-- its appellation of origin at birth — the only moment at which it can be given.
+rule ParticipantSettlesContent {
+    when: SettleContent(participant, recording, page)
+
+    let membership = core/Membership{graph: recording.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: recording.stage = transcript_validated
+
+    ensures:
+        for fragment in fragments_of(recording.transcript):
+            let block = core/Block.created(
+                page: page,
+                parent: null,
+                content: fragment
+            )
+            SpokenOrigin.created(block: block, recording: recording)
+        recording.stage = content_settled
+}
+
+-- Splitting spoken content leaves both halves spoken. This is the rule that
+-- makes @invariant OriginSurvivesFragmentation more than a wish.
+rule OriginFollowsASplit {
+    when: block/BlockSplit(from, into)
+
+    let origin = SpokenOrigin{block: from}
+
+    requires: exists origin
+
+    ensures: SpokenOrigin.created(block: into, recording: origin.recording)
+}
+
+-- Deleting the audio is a separate, explicit act, and only once the chain has
+-- been walked to its end. Until then the recording is the only thing that can
+-- settle a disagreement about what was said.
+rule ParticipantDiscardsRecording {
+    when: DiscardRecording(participant, recording)
+
+    requires: recording.stage = content_settled
+
+    ensures: recording.audio = null
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant ValidatedTranscriptHasAValidator {
+    for r in Recordings:
+        r.stage = transcript_validated implies r.validated_by != null
+}
+
+invariant EveryRecordingCarriesItsEvidence {
+    for r in Recordings:
+        r.evidence != null
+}
+
+invariant NoOriginWithoutARecording {
+    for o in SpokenOrigins:
+        exists o.recording
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor Speaker {
+    within: Recording
+    identified_by: core/Participant
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface VoiceCapture {
+    facing speaker: Speaker
+    context recording: Recording
+
+    exposes:
+        recording.stage
+        recording.transcript
+        recording.evidence
+        recording.captured_at
+
+    provides:
+        CaptureVoice(speaker, recording.graph, recording.audio, recording.media_type, recording.evidence)
+        CorrectTranscript(speaker, recording, recording.transcript)
+        ValidateTranscript(speaker, recording)
+        SettleContent(speaker, recording, page)
+
+    contracts:
+        fulfils ValidationCascade
+        fulfils AppellationOfOrigin
+
+    @guarantee TheRecordingIsAlwaysReachable
+        -- While the audio exists, it can be played from wherever its transcript
+        -- or its content is being read. A chain whose head cannot be reached is
+        -- a claim, not a provenance.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "How is a transcript cut into blocks: by pause, by sentence, by paragraph, or by the participant's own hand before settling?"
+open question "Should correcting a transcript after validation be possible at all, and if so does it return the recording to the proposed stage?"
+open question "When authentication exists, does an unauthenticated recording keep the origin it was given under the assumption that the owner spoke?"
+open question "Does a block whose spoken content was wholly rewritten still deserve to name the recording, or is there a point at which the appellation should lapse?"

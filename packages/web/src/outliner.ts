@@ -506,6 +506,8 @@ export function renderOutliner(
   /** Dónde quedó dibujado cada bloque, para poder devolverle el cursor. */
   const editors = new Map<string, { node: Node; body: HTMLElement }>();
   const folded = new Set(page.folded);
+  // @invariant SpokenContentNamesItsRecording: un bloque hablado lo dice.
+  const spoken = new Map((page.spokenOrigins ?? []).map((o) => [o.block, o.recording]));
   const options: RenderOptions = {};
   const asset = assetResolver(page);
   if (asset !== undefined) options.resolveAsset = asset;
@@ -702,8 +704,15 @@ export function renderOutliner(
 
     const bullet = document.createElement('button');
     bullet.type = 'button';
-    bullet.className = shut ? 'bullet folded' : 'bullet';
-    bullet.title = node.block.stableId;
+    const origin = spoken.get(node.block.stableId);
+    bullet.className = [
+      'bullet',
+      shut ? 'folded' : '',
+      origin === undefined ? '' : 'spoken',
+    ].filter((part) => part !== '').join(' ');
+    if (origin !== undefined) {
+      bullet.title = `${node.block.stableId} · dicho en voz: ${origin}`;
+    }
     bullet.textContent = '•';
     bullet.setAttribute('aria-haspopup', 'menu');
     bullet.setAttribute('aria-label', 'acciones del bloque');

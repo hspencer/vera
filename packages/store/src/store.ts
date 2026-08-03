@@ -800,3 +800,204 @@ export function foldedOnPage(store: Store, participant: string, page: string): s
       .all(participant, page) as { block: string }[]
   ).map((row) => row.block);
 }
+
+// ---------------------------------------------------------------------------
+// La cascada de validación desde la voz
+// ---------------------------------------------------------------------------
+//
+// Lo canónico es la cadena: grabación → transcripción validada → contenido
+// validado. Cada eslabón lo confirma una persona, y cada uno nombra al anterior.
+// Eso es lo que permite que una frase editada meses después siga pudiendo
+// responder de dónde vino.
+
+export type CascadeStage =
+  | 'captured'
+  | 'transcribed'
+  | 'transcript_validated'
+  | 'content_settled';
+
+export interface Recording {
+  id: string;
+  audioHash: string | null;
+  mediaType: string;
+  durationMs: number | null;
+  stage: CascadeStage;
+  transcript: string | null;
+  evidence: { reference: string; capturedAt: number };
+  capturedBy: string;
+  capturedAt: number;
+  validatedBy: string | null;
+  validatedAt: number | null;
+}
+
+interface RecordingRow {
+  id: string;
+  audio_hash: string | null;
+  media_type: string;
+  duration_ms: number | null;
+  stage: CascadeStage;
+  transcript: string | null;
+  evidence_reference: string;
+  evidence_captured_at: number;
+  captured_by: string;
+  captured_at: number;
+  validated_by: string | null;
+  validated_at: number | null;
+}
+
+function toRecording(row: RecordingRow): Recording {
+  return {
+    id: row.id,
+    audioHash: row.audio_hash,
+    mediaType: row.media_type,
+    durationMs: row.duration_ms,
+    stage: row.stage,
+    transcript: row.transcript,
+    evidence: { reference: row.evidence_reference, capturedAt: row.evidence_captured_at },
+    capturedBy: row.captured_by,
+    capturedAt: row.captured_at,
+    validatedBy: row.validated_by,
+    validatedAt: row.validated_at,
+  };
+}
+
+export function createRecording(
+  store: Store,
+  input: {
+    audioHash: string;
+    mediaType: string;
+    durationMs: number | null;
+    evidence: { reference: string; capturedAt: number };
+    capturedBy: string;
+  },
+): Recording {
+  const id = `recording:${input.audioHash.slice(0, 16)}`;
+  const at = Date.now();
+  store.db
+    .prepare(
+      `INSERT INTO recordings (
+         id, graph_id, audio_hash, media_type, duration_ms, stage, transcript,
+         evidence_reference, evidence_captured_at, captured_by, captured_at
+       ) VALUES (?, ?, ?, ?, ?, 'captured', NULL, ?, ?, ?, ?)
+       ON CONFLICT (id) DO NOTHING`,
+    )
+    .run(
+      id,
+      store.graphId,
+      input.audioHash,
+      input.mediaType,
+      input.durationMs,
+      input.evidence.reference,
+      input.evidence.capturedAt,
+      input.capturedBy,
+      at,
+    );
+  return recordingById(store, id) as Recording;
+}
+
+export function recordingById(store: Store, id: string): Recording | null {
+  const row = store.db.prepare('SELECT * FROM recordings WHERE id = ?').get(id) as
+    | RecordingRow
+    | undefined;
+  return row === undefined ? null : toRecording(row);
+}
+
+export function recordings(store: Store, limit = 50): Recording[] {
+  return (
+    store.db
+      .prepare('SELECT * FROM recordings WHERE graph_id = ? ORDER BY captured_at DESC LIMIT ?')
+      .all(store.graphId, limit) as unknown as RecordingRow[]
+  ).map(toRecording);
+}
+
+/**
+ * Avanza la cascada. El orden es la garantía: una transición que no esté
+ * declarada aquí no ocurre, así que el contenido no puede asentarse desde una
+ * transcripción que nadie validó.
+ */
+const ALLOWED: Record<CascadeStage, CascadeStage | null> = {
+  captured: 'transcribed',
+  transcribed: 'transcript_validated',
+  transcript_validated: 'content_settled',
+  content_settled: null,
+};
+
+export function advanceRecording(
+  store: Store,
+  id: string,
+  to: CascadeStage,
+  extra: { transcript?: string; validatedBy?: string } = {},
+): Recording | { error: string } {
+  const held = recordingById(store, id);
+  if (held === null) return { error: 'no such recording' };
+  if (ALLOWED[held.stage] !== to) {
+    return { error: `no se puede pasar de ${held.stage} a ${to}` };
+  }
+
+  if (to === 'transcript_validated') {
+    if (held.transcript === null || held.transcript.trim() === '') {
+      return { error: 'no hay transcripción que validar' };
+    }
+    store.db
+      .prepare('UPDATE recordings SET stage = ?, validated_by = ?, validated_at = ? WHERE id = ?')
+      .run(to, extra.validatedBy ?? null, Date.now(), id);
+    return recordingById(store, id) as Recording;
+  }
+
+  store.db
+    .prepare('UPDATE recordings SET stage = ?, transcript = COALESCE(?, transcript) WHERE id = ?')
+    .run(to, extra.transcript ?? null, id);
+  return recordingById(store, id) as Recording;
+}
+
+/** Corregir sólo se puede mientras la transcripción sigue propuesta. */
+export function correctTranscript(
+  store: Store,
+  id: string,
+  text: string,
+): Recording | { error: string } {
+  const held = recordingById(store, id);
+  if (held === null) return { error: 'no such recording' };
+  if (held.stage !== 'transcribed') {
+    return { error: 'la transcripción ya no se puede corregir en esta etapa' };
+  }
+  store.db.prepare('UPDATE recordings SET transcript = ? WHERE id = ?').run(text, id);
+  return recordingById(store, id) as Recording;
+}
+
+/**
+ * La denominación de origen de un bloque.
+ *
+ * @invariant OriginIsNeverAsserted: sólo se escribe al asentar contenido de una
+ * transcripción validada y al seguir una partición. No hay ruta que permita
+ * declarar que un bloque vino de una grabación de la que no vino.
+ */
+export function setSpokenOrigin(store: Store, block: string, recording: string): void {
+  store.db
+    .prepare(
+      `INSERT INTO spoken_origins (block_id, recording_id) VALUES (?, ?)
+       ON CONFLICT (block_id) DO NOTHING`,
+    )
+    .run(block, recording);
+}
+
+export function spokenOriginOf(store: Store, block: string): string | null {
+  const row = store.db
+    .prepare('SELECT recording_id AS recording FROM spoken_origins WHERE block_id = ?')
+    .get(block) as { recording: string } | undefined;
+  return row?.recording ?? null;
+}
+
+/** Los orígenes de los bloques de una página, para poder decirlo al presentar. */
+export function spokenOriginsOnPage(
+  store: Store,
+  page: string,
+): { block: string; recording: string }[] {
+  return store.db
+    .prepare(
+      `SELECT o.block_id AS block, o.recording_id AS recording
+         FROM spoken_origins o JOIN blocks b ON b.id = o.block_id
+        WHERE b.page_id = ?`,
+    )
+    .all(page) as { block: string; recording: string }[];
+}

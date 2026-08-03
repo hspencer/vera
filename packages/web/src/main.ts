@@ -9,6 +9,7 @@ import { api, type PageSummary } from './api.ts';
 import { renderOutliner } from './outliner.ts';
 import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
+import { renderVoicePanel } from './voice-panel.ts';
 import { renderGraph } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D } from './graph/render3d.ts';
 import {
@@ -392,6 +393,33 @@ function wireTheme(): void {
       });
     });
   };
+
+  // Insertar voz. Vive en su propio panel: es una cascada de varios pasos, no
+  // una acción suelta.
+  const voicePanel = $('#voice');
+  $('#insert-voice').addEventListener('click', () => {
+    if (!voicePanel.hidden) {
+      voicePanel.hidden = true;
+      voicePanel.innerHTML = '';
+      return;
+    }
+    renderVoicePanel(voicePanel, null, {
+      page: () => {
+        if (workspace.activePage === null) return null;
+        const found = pages.find((p) => p.id === workspace.activePage);
+        return found === undefined ? null : { id: found.id, title: found.title };
+      },
+      onSettled: (blocks) => {
+        notice(`Asentados ${blocks.length} bloques desde la voz.`);
+        if (workspace.activePage !== null) void openPage(workspace.activePage);
+      },
+      notify: (message) => notice(message),
+      onClose: () => {
+        voicePanel.hidden = true;
+        voicePanel.innerHTML = '';
+      },
+    });
+  });
 
   $('#edit-tokens').addEventListener('click', () => {
     if (panel.hidden) openSettings();

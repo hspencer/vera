@@ -1471,3 +1471,160 @@ code {
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* --- Insertar voz ------------------------------------------------------- */
+
+#voice {
+  position: fixed;
+  right: 1rem;
+  top: calc(3.4rem + env(safe-area-inset-top));
+  width: 30rem;
+  max-width: calc(100vw - 2rem);
+  max-height: 78vh;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 10px 34px rgb(0 0 0 / 26%);
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  z-index: 32;
+}
+
+/* La escalera de la cascada. Se ve entera desde el primer paso, para que el
+   camino sea evidente antes de empezar a recorrerlo. */
+.cascade {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.cascade-step {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.25rem 0.5rem;
+  border-left: 2px solid var(--rule);
+  color: var(--text-dim);
+}
+
+.cascade-step.done {
+  border-left-color: var(--accent);
+  color: var(--text);
+}
+
+.cascade-step.here {
+  border-left-color: var(--warm);
+  background: color-mix(in srgb, var(--warm) 12%, transparent);
+  color: var(--text);
+}
+
+.cascade-what {
+  color: var(--text-dim);
+  font-size: 0.74rem;
+}
+
+.voice-record {
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  color: var(--text);
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 0.7rem;
+  cursor: pointer;
+}
+
+.voice-record:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Grabando: se nota sin ambigüedad, porque el micrófono está abierto. */
+.voice-record.recording {
+  color: var(--warm);
+  border-color: var(--warm);
+  background: color-mix(in srgb, var(--warm) 12%, transparent);
+}
+
+.voice-audio {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.voice-evidence {
+  margin: 0 0 0.9rem;
+  color: var(--text-dim);
+  font-size: 0.74rem;
+  font-family: var(--font-mono);
+}
+
+.voice-transcript {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.voice-settled {
+  white-space: pre-wrap;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.voice-row {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.voice-action {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+.voice-action:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.voice-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* El paso que cierra un eslabón de la cadena pesa más que los otros. */
+.voice-action.primary {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.voice-action.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* Un bloque que vino de la voz lo dice con una marca discreta en su viñeta. */
+.bullet.spoken {
+  color: var(--warm);
+}

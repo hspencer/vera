@@ -48,6 +48,8 @@ export interface PageView {
   blockRefs: BlockRefView[];
   /** Los bloques que este participante tiene plegados. No es contenido. */
   folded: string[];
+  /** La denominación de origen: qué bloques vinieron de qué grabación. */
+  spokenOrigins: { block: string; recording: string }[];
   backlinks: Backlink[];
 }
 
