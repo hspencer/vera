@@ -1004,6 +1004,21 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             }
             return found;
           })(),
+          // Qué páginas nombradas desde aquí existen ya y cuáles todavía no.
+          //
+          // Un enlace a una página que aún no está no es un enlace roto: es la
+          // intención de escribirla, y el corpus está lleno de ellas a propósito.
+          // Pero leerlo igual que uno que lleva a alguna parte hace que el
+          // lector descubra la diferencia sólo al pulsarlo.
+          pendingLinks: (() => {
+            const pending = new Set<string>();
+            for (const block of graph.blocksOf(page.id)) {
+              for (const link of graph.linksOf(block.stableId)) {
+                if (link.target === null) pending.add(link.targetTitle);
+              }
+            }
+            return [...pending];
+          })(),
           backlinks: graph.backlinks(page.id).map((link) => {
             const source = graph.page(link.sourcePage);
             const block = link.sourceBlock === null ? undefined : graph.block(link.sourceBlock);

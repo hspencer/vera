@@ -70,6 +70,13 @@ export interface RenderOptions {
    * cual, que es la forma honesta de decir que aún no se sabe a qué apunta.
    */
   resolveBlock?: (stableId: string) => { page: string; excerpt: string } | null;
+  /**
+   * ¿Existe ya la página que este enlace nombra?
+   *
+   * Sin resolvedor se asume que sí, que es lo que hacía antes: un enlace sin
+   * marca de pendiente no promete nada falso, sólo dice menos.
+   */
+  pageExists?: (title: string) => boolean;
 }
 
 /** Un medio que no es imagen se ofrece como archivo, no se finge presentado. */
@@ -145,7 +152,10 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
   });
 
   html = html.replace(/\[\[([^\]]+)\]\]/g, (_whole, title: string) =>
-    hold(`<a class="wiki" data-page="${quoteAttribute(title)}" href="#">${decorate(title)}</a>`),
+    hold(
+      `<a class="wiki${options.pageExists?.(title) === false ? ' pending' : ''}" ` +
+        `data-page="${quoteAttribute(title)}" href="#">${decorate(title)}</a>`,
+    ),
   );
 
   html = html.replace(

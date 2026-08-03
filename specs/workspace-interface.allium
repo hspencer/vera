@@ -455,7 +455,19 @@ surface VeraWorkspace {
     @guarantee TheMapCanStepAside
         -- The map can be collapsed and brought back without losing where one is.
         -- A pane that is always there is furniture; one that can leave is a
-        -- tool.
+        -- tool. It returns at the width it had and looking at what it was
+        -- looking at.
+
+    @guarantee TheMapHoldsItsPositions
+        -- Where a node sits is computed when the set of nodes changes, and not
+        -- again. Collapsing the map, resizing it, changing pages within the same
+        -- neighbourhood or repainting leave every node where it was.
+        --
+        -- This is not only about cost, though the cost is real and shows up as
+        -- lag on a corpus of this size. A map that rearranges itself while one
+        -- looks at it cannot be remembered, and a map one cannot remember is a
+        -- picture rather than a place. Recognising a region by its shape is the
+        -- whole reason for drawing it.
 
     @guarantee TheTrailIsWhereOneIsLocated
         -- Where a participant has been accumulates visibly, and any step of it
@@ -467,6 +479,22 @@ surface VeraWorkspace {
         -- the neighbours of the page in focus outward. A map of everything at
         -- once shows nothing: the corpus is large enough that the whole of it is
         -- a texture, not a picture.
+        --
+        -- The unit is hops: distance along the links, literally. Not a count of
+        -- nodes and not a strength — those would answer "how much fits" and the
+        -- question a reader is asking is "how far from here", which is a fact
+        -- about the graph rather than about the screen.
+
+    @guarantee OneCompletionOverEverythingNamed
+        -- What the search field completes against is titles, blocks and tags
+        -- together, ranked as one list. A participant looking for something
+        -- knows what they are looking for, not which of Vera's indexes holds it,
+        -- and three separate fields would make them guess.
+        --
+        -- Completing inside a block is a different act and stays different:
+        -- there the vocabulary is already settled by the delimiter typed —
+        -- `[[` names a page, `#` a tag, `((` a block — and offering everything
+        -- would undo a choice the participant already made.
 
     @guarantee GraphNodesAreTheirNames
         -- A node in the map is the text of what it names, not a circle beside
@@ -493,6 +521,8 @@ open question "When edited style source is invalid, should Vera reject it or kee
 -- fixed by RenderedPresentationIsFaithful and EditingRevealsTheSource above.
 open question "Which native Markdown editing behaviours are required beyond direct source editing and rendered presentation, including shortcuts, autocomplete and footnote assistance?"
 open question "Should a footnote reference resolve to its definition within the workspace, given that a definition may live in a different block from the reference that names it?"
-open question "What does the search field complete against as one types — page titles, blocks, tags, all of them ranked together — and does completing a search differ from completing a link inside a block, where the vocabulary is already settled?"
-open question "When the map is bounded by reach, is the unit hops from the page in focus, number of nodes shown, or strength of connection — and does moving to another page keep the reach that was set or return to a default?"
-open question "Does collapsing the map remember its width for when it returns, or does it come back evenly divided?"
+-- Contestadas: la unidad del alcance son los saltos, el autocompletado va contra
+-- todo junto y ordenado, y el mapa vuelve como estaba. Ver las garantías
+-- TheMapIsBoundedByReach, OneCompletionOverEverythingNamed y TheMapHoldsItsPositions.
+open question "Does moving to another page keep the reach that was set, or return to a default — and if it keeps it, what happens when the new page's neighbourhood at that reach is far larger than the last one's?"
+open question "A block with no text keeps the height of one line so it can be aimed at. Does an empty block also deserve to be visible as such in the map and in the Markdown mirror, or is an empty block a thing that only the editor should know about?"

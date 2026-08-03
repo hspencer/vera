@@ -25,12 +25,11 @@ const SHAPES = {
   'chevron-down': '<polyline points="6 9 12 15 18 9"/>',
   'chevron-left': '<polyline points="15 18 9 12 15 6"/>',
 
-  // «Hoy» es un calendario y no una casa: lo que hay al otro lado del botón es
-  // el día en curso, no un tablero ni una portada.
-  calendar:
-    '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>' +
-    '<line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>' +
-    '<line x1="3" y1="10" x2="21" y2="10"/>',
+  // La casa es el día en curso. Que la fecha vaya escrita al lado es lo que
+  // evita el equívoco: se ve a dónde lleva sin tener que pulsarlo.
+  home:
+    '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
+    '<polyline points="9 22 9 12 15 12 15 22"/>',
 
   settings:
     '<circle cx="12" cy="12" r="3"/>' +
@@ -58,6 +57,9 @@ const SHAPES = {
     '<line x1="8" y1="23" x2="16" y2="23"/>',
 
   x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+
+  'more-horizontal':
+    '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
 
   eye:
     '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',

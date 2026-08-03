@@ -349,6 +349,18 @@ input {
   height: 1.05rem;
 }
 
+/* El botón de hoy lleva la fecha dentro, así que es más ancho que sus vecinos. */
+#home {
+  gap: 0.35rem;
+  padding-right: 0.5rem;
+}
+
+#hoy {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+}
+
 /* --- El switch de la vista --------------------------------------------- */
 
 /*
@@ -440,10 +452,17 @@ input {
   padding: 2rem 2.5rem 6rem;
 }
 
+/* El menú de la página se ancla a la esquina de la cabecera. */
+.page-header {
+  position: relative;
+}
+
 .page-header h1 {
   font-size: 1.7rem;
   font-weight: 400;
   margin: 0 0 0.4rem;
+  /* Sitio para el menú, para que un título largo no se le meta debajo. */
+  padding-right: 2rem;
 }
 
 .properties {
@@ -872,6 +891,14 @@ input {
   outline: none;
   border-radius: 3px;
   padding: 0.1rem 0.25rem;
+  /*
+   * Un bloque vacío no renderiza nada, así que medía cero de alto y quedaba como
+   * una rendija imposible de acertar con el cursor — justo el bloque que uno
+   * acaba de crear y quiere escribir. Guarda el alto de un renglón, que es lo
+   * que va a ocupar en cuanto tenga texto: el sitio donde se pulsa es el mismo
+   * donde aparecerá lo escrito.
+   */
+  min-height: calc(1.55em + 0.2rem);
 }
 
 .body:hover {
@@ -918,6 +945,29 @@ input {
 /* Visitado tampoco lo cambia: el morado del navegador es del navegador. */
 .body a[href]:not([class]):visited {
   color: var(--accent);
+}
+
+/*
+ * Un enlace a una página que todavía no existe.
+ *
+ * No es un enlace roto: es la intención de escribirla, y el corpus está lleno de
+ * ellas a propósito. Por eso va en el mismo acento y no en otro color — otro
+ * color diría que es otra cosa, y es la misma cosa en otro estado. Lo que cambia
+ * es la presencia: menos saturado y con el subrayado punteado, que es lo que
+ * dice «aquí todavía no hay nada» sin necesidad de pulsarlo para averiguarlo.
+ *
+ * Mezclado sobre el acento y no un token nuevo: así sigue al tema que se elija,
+ * sin un valor más que mantener a mano en Ajustes.
+ */
+.wiki.pending {
+  color: color-mix(in srgb, var(--accent) 55%, var(--text-dim));
+  border-bottom-style: dotted;
+  border-bottom-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.wiki.pending:hover {
+  color: var(--accent);
+  border-bottom-color: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 .wiki:hover,
@@ -1604,6 +1654,35 @@ code {
   flex-wrap: wrap;
   gap: 0.4rem;
   margin-top: 0.5rem;
+}
+
+/*
+ * Lo que se hace con la página entera, arriba a la derecha.
+ *
+ * Sacar cosas del documento —copiarlo, descargarlo, y más adelante un PDF— es
+ * una familia que va a crecer, y cada miembro puesto a la vista le quita sitio a
+ * lo que la página dice.
+ */
+.page-more {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  padding: 0.25rem;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.page-more:hover {
+  color: var(--accent);
+}
+
+.page-more .icon {
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
 .page-action {

@@ -614,7 +614,22 @@ function wireTheme(): void {
   // dos ideas de dónde se estuvo.
   $('#back').innerHTML = icon('chevron-left');
   $('#forward').innerHTML = icon('chevron-right');
-  $('#home').innerHTML = icon('calendar');
+
+  // La casa lleva al día en curso, y la fecha va escrita al lado para que se vea
+  // a qué día, sin pulsarla. En números y en el orden en que se dice —día, mes,
+  // año— y no en el ISO del título: el título es identidad y esto es lectura.
+  const stamp = $('#hoy');
+  const drawToday = (): void => {
+    const now = new Date();
+    const pad = (n: number): string => String(n).padStart(2, '0');
+    stamp.textContent = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()}`;
+    stamp.setAttribute('datetime', today());
+  };
+  drawToday();
+  // Una sesión abierta pasada la medianoche seguiría enseñando el día de ayer, y
+  // el botón llevaría a otro sitio del que dice.
+  window.setInterval(drawToday, 60_000);
+  $('#home').insertAdjacentHTML('afterbegin', icon('home'));
   $('#back').addEventListener('click', () => window.history.back());
   $('#forward').addEventListener('click', () => window.history.forward());
   $('#home').addEventListener('click', () => void openToday());

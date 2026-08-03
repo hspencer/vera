@@ -562,6 +562,8 @@ export function renderOutliner(
   if (asset !== undefined) options.resolveAsset = asset;
   const block = blockResolver(page);
   if (block !== undefined) options.resolveBlock = block;
+  const pending = new Set(page.pendingLinks ?? []);
+  if (pending.size > 0) options.pageExists = (title) => !pending.has(title);
 
   const header = document.createElement('header');
   header.className = 'page-header';
@@ -680,41 +682,41 @@ export function renderOutliner(
 
   header.append(properties, add);
 
-  // Acciones de la página. Van aquí y no en la barra superior porque son de la
-  // página que se está mirando, no del espacio de trabajo.
-  const actions = document.createElement('div');
-  actions.className = 'page-actions';
-
-  const nueva = document.createElement('button');
-  nueva.type = 'button';
-  nueva.className = 'page-action';
-  nueva.textContent = '+ página';
-  nueva.title = 'Crear una página nueva y abrirla';
-  nueva.addEventListener('click', () => void createPage(callbacks));
-  actions.append(nueva);
-
-  const copiar = document.createElement('button');
-  copiar.type = 'button';
-  copiar.className = 'page-action';
-  copiar.textContent = 'copiar Markdown';
-  copiar.title = 'Copiar la página entera como Markdown';
-  copiar.addEventListener('click', () => void copyPageMarkdown(page.id));
-  actions.append(copiar);
-
-  const exportar = document.createElement('button');
-  exportar.type = 'button';
-  exportar.className = 'page-action';
-  exportar.textContent = 'exportar .md';
-  exportar.title = 'Descargar la página como archivo Markdown';
-  exportar.addEventListener('click', () => void downloadPage(page));
-  actions.append(exportar);
-
-  header.append(actions);
-
   const badge = document.createElement('span');
   badge.className = `visibility ${page.visibility}`;
   badge.textContent = page.visibility === 'public' ? 'pública' : 'privada';
   header.append(badge);
+
+  /*
+   * Lo que se puede hacer con la página entera, en un menú.
+   *
+   * Sacar algo del documento —copiarlo, descargarlo, y mañana un PDF— es una
+   * familia que va a crecer, y cada miembro puesto a la vista le quita sitio a
+   * lo que la página dice. Lo que queda fuera del menú es `+ propiedad`, que no
+   * saca nada sino que escribe, y la marca de visibilidad, que no es una acción
+   * sino un estado y por eso se lee de un vistazo.
+   */
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'page-more';
+  more.setAttribute('aria-label', 'Más de esta página');
+  more.setAttribute('aria-haspopup', 'menu');
+  more.title = 'Más de esta página';
+  more.innerHTML = icon('more-horizontal');
+  more.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openBlockMenu(more, [
+      {
+        label: 'Copiar el Markdown de la página',
+        run: () => void copyPageMarkdown(page.id),
+      },
+      {
+        label: 'Descargar como .md',
+        run: () => void downloadPage(page),
+      },
+    ]);
+  });
+  header.append(more);
 
   container.append(header);
 
