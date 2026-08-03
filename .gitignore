@@ -11,3 +11,10 @@ data/
 
 # Almacén de objetos direccionado por hash
 objects/
+
+# Los secretos de esta instancia. `.env.example` sí se versiona: dice qué hay que
+# llenar sin decir con qué. Un secreto en git no se borra borrándolo — queda en
+# el historial, en cada clon y en cada fork.
+.env
+.env.*
+!.env.example
