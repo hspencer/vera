@@ -435,6 +435,11 @@ input {
   cursor: pointer;
 }
 
+/* El nodo señalado. Un clic lo señala; dos abren su página. */
+#graph .selected text {
+  font-weight: 600;
+}
+
 /* --- Los controles del mapa, dentro del mapa --------------------------- */
 
 /*
@@ -531,15 +536,26 @@ input {
 /*
  * El rastro: por dónde se ha pasado, acumulándose.
  *
- * Dentro del panel del mapa y no en la barra: el mapa es la superficie de saber
- * dónde está uno, y el rastro responde a esa misma pregunta.
+ * Al pie del mapa y fuera del panel que se pliega: es lo que uno mira para saber
+ * dónde está, no algo que se abra para consultarlo.
  */
 #map-trail {
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: 0.5rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
   max-height: 5.5rem;
   overflow-y: auto;
+  z-index: 5;
+  /* No captura el ratón donde no hay pastilla: el mapa se sigue arrastrando. */
+  pointer-events: none;
+}
+
+.trail-pill {
+  pointer-events: auto;
 }
 
 .trail-pill {

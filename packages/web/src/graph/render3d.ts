@@ -52,8 +52,12 @@ export function renderGraph3D(
   const colors = {
     nodeCentral: cssVar("--node-central", dark ? "#4a9ade" : "#045591"),
     nodeFill: cssVar("--node-fill", dark ? "#777" : "#999"),
-    linkStroke: cssVar("--link-stroke", dark ? "#555" : "#ccc"),
-    text: cssVar("--text", dark ? "#d4d4d4" : "#333"),
+    linkStroke: cssVar("--link-stroke", dark ? "#333842" : "#d5d7d2"),
+    // Los nombres corrientes van atenuados, igual que en 2D: lo que se busca en
+    // un mapa es lo excepcional, y si todo pesa igual no destaca nada.
+    text: cssVar("--node-fill", dark ? "#6d7480" : "#9aa0ab"),
+    // El fondo de la placa es el fondo de Vera, sin inventar un gris propio.
+    bg: cssVar("--bg", dark ? "#16181c" : "#fbfbf9"),
     accent: cssVar("--accent", dark ? "#4a9ade" : "#045591"),
   };
 
@@ -125,10 +129,18 @@ export function renderGraph3D(
     return lines.length ? lines : [text];
   }
 
-  // Create billboard sprite for each node: centered circle behind text, always facing camera
+  /*
+   * El nodo es su nombre, también en tres dimensiones.
+   *
+   * @guarantee GraphNodesAreTheirNames. La esfera detrás del texto decía lo
+   * mismo que el texto y le quitaba sitio; sin ella el mapa en 3D se lee como el
+   * de 2D y las dos vistas son la misma cosa desde otro ángulo.
+   *
+   * Queda la placa detrás del nombre, que no es decoración: sin ella un nombre
+   * cae sobre otro que está detrás en profundidad y los dos se vuelven ilegibles.
+   * Va del color del fondo y translúcida, para tapar lo justo sin ser una caja.
+   */
   function createNodeSprite(node: any): THREE.Group {
-    const size = nodeSize(node);
-    const color = nodeColor(node);
     const baseFontSize = settings.fontSize ?? 12;
     const spriteFontSize = node.central ? baseFontSize * 4.5 : baseFontSize * 3.3;
     const textColor = node.central ? colors.nodeCentral : colors.text;
@@ -149,12 +161,13 @@ export function renderGraph3D(
     }
 
     const textBlockH = lines.length * lineHeight;
-    const circleRadius = size * dpr * 12;
     const padding = 8 * dpr;
-    const hPad = 36 * dpr;
+    const hPad = 24 * dpr;
 
-    const totalWidth = Math.max(circleRadius * 2, maxLineW + hPad) + padding * 2;
-    const totalHeight = Math.max(circleRadius * 2, textBlockH) + padding * 2;
+    // El lienzo lo decide el texto y nada más: sin esfera no hay un mínimo que
+    // respetar, y una placa más ancha que su nombre tapa vecinos sin motivo.
+    const totalWidth = maxLineW + hPad + padding * 2;
+    const totalHeight = textBlockH + padding * 2;
     canvas.width = totalWidth;
     canvas.height = totalHeight;
 
@@ -166,21 +179,12 @@ export function renderGraph3D(
     ctx.textBaseline = "middle";
     ctx.textAlign = "center";
 
-    // Draw circle behind text if nodes visible
-    if (showNodes) {
-      ctx.globalAlpha = 0.7;
-      ctx.beginPath();
-      ctx.arc(cx, cy, circleRadius, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-    }
-
-    // Draw text with opaque background pill for legibility
     if (showTitles && lines.length > 0) {
       const pillH = textBlockH + 12 * dpr;
       const pillW = maxLineW + hPad;
-      ctx.globalAlpha = 0.95;
-      ctx.fillStyle = dark ? "rgba(30,30,30,0.9)" : "rgba(255,255,255,0.9)";
+      // Translúcida: se ve lo que hay detrás y el nombre se sigue leyendo.
+      ctx.globalAlpha = 0.72;
+      ctx.fillStyle = colors.bg;
       const rx = cx - pillW / 2, ry = cy - pillH / 2, rr = Math.min(pillH / 2, 12 * dpr);
       ctx.beginPath();
       ctx.moveTo(rx + rr, ry);
@@ -226,18 +230,59 @@ export function renderGraph3D(
   const showNodes = settings.showNodes ?? true;
   const showTitles = settings.showTitles ?? true;
 
+  // Para distinguir un doble clic de dos clics sueltos sobre nodos distintos.
+  let lastClick: { id: string | null; at: number } = { id: null, at: 0 };
+
   const graph = new ForceGraph3D(container, { controlType: "orbit" })
     .width(width)
     .height(height)
     .backgroundColor("rgba(0,0,0,0)")
+    // La librería rotula al pie «Left-click: rotate, Mouse-wheel: zoom…». Es una
+    // instrucción de uso permanente sobre el mapa, que se lee una vez y estorba
+    // siempre. Se apaga por su propia API y no tapándola con CSS.
+    .showNavInfo(false)
     .graphData({ nodes: nodes3d, links: links3d })
     .nodeThreeObject((node: any) => createNodeSprite(node))
     .nodeThreeObjectExtend(false)
     .linkColor(() => showEdges ? colors.linkStroke : "rgba(0,0,0,0)")
     .linkOpacity(showEdges ? 0.4 : 0)
     .linkWidth(showEdges ? 0.5 : 0)
+    /*
+     * Un clic señala; dos abren y centran. Igual que en 2D: mirar algo no es
+     * entrar en ello.
+     *
+     * La librería no distingue el doble clic, así que se cuenta el tiempo entre
+     * dos clics sobre el mismo nodo. En una pantalla táctil un toque hace las
+     * dos cosas, porque no hay segundo toque que enseñar.
+     */
     .onNodeClick((node: any) => {
-      if (node?.name) onClickPage(node.name);
+      if (!node?.name) return;
+      const touch = window.matchMedia("(hover: none)").matches;
+      const now = Date.now();
+      const again = lastClick.id === node.id && now - lastClick.at < 400;
+      lastClick = { id: node.id, at: now };
+
+      if (touch || again) {
+        // Centrar sin acercarse ni alejarse: se mantiene la distancia a la que
+        // se estaba mirando y sólo cambia hacia dónde.
+        const camera = graph.cameraPosition();
+        const away = Math.hypot(
+          camera.x - (node.x ?? 0),
+          camera.y - (node.y ?? 0),
+          camera.z - (node.z ?? 0),
+        );
+        const ratio = away === 0 ? 1 : 1 + 120 / away;
+        graph.cameraPosition(
+          {
+            x: (node.x ?? 0) * ratio,
+            y: (node.y ?? 0) * ratio,
+            z: (node.z ?? 0) * ratio,
+          },
+          node,
+          600,
+        );
+        onClickPage(node.name);
+      }
     })
     .onNodeHover((node: any) => {
       container.style.cursor = node ? "pointer" : "default";

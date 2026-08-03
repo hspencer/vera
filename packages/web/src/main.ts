@@ -11,7 +11,7 @@ import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
 import { voice } from './voice.ts';
 import { brandMark, icon, type IconName } from './icons.ts';
-import { forgetPositions, renderGraph } from './graph/render.ts';
+import { forgetPositions, renderGraph, selectNode } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D } from './graph/render3d.ts';
 import {
   applyTokens,
@@ -538,8 +538,13 @@ async function drawGraph(): Promise<void> {
   // Los controles viven dentro del mapa, y el renderizador se lleva por delante
   // lo que haya en su contenedor. Se apartan y se devuelven.
   const controls = $('#map-controls');
+  const trail = $('#map-trail');
   controls.remove();
+  trail.remove();
   const data = await api.graph(workspace.activePage, workspace.depth);
+  // La página que se está leyendo es el nodo señalado: las dos vistas hablan de
+  // lo mismo y deben decirlo a la vez.
+  selectNode(workspace.activePage);
 
   const onClick = (id: string): void => {
     // @invariant GraphNodeOpensTextPage: en un teléfono, tocar un nodo abre su
@@ -570,7 +575,7 @@ async function drawGraph(): Promise<void> {
     cleanupGraph3D();
     renderGraph(container, data, onClick, settings);
   }
-  container.append(controls);
+  container.append(controls, trail);
   drawTrail();
 }
 

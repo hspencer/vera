@@ -86,6 +86,16 @@ export function forgetPositions(): void {
   heldTransform = null;
 }
 
+/** Señala un nodo desde fuera, para que abrir una página lo marque en el mapa. */
+export function selectNode(id: string | null): void {
+  selected = id;
+}
+
+/** El nodo señalado ahora mismo. Se conserva entre dibujos, como las posiciones. */
+let selected: string | null = null;
+/** El último que se llevó al centro, para no volver a hacerlo en cada repintado. */
+let centred: string | null = null;
+
 export function renderGraph(
   container: HTMLElement,
   data: GraphData,
@@ -204,8 +214,11 @@ export function renderGraph(
 
   const fontFamily = settings.fontFamily ?? "system-ui, -apple-system, sans-serif";
 
+  /** El color que le toca a cada nombre por su historia, para poder restaurarlo. */
+  const fills = new Map<string, string>();
+
   if (style === "title") {
-    renderTitleNodes(node, data, dims, historyMap, colors, fontFamily, fontSize);
+    renderTitleNodes(node, data, dims, historyMap, colors, fontFamily, fontSize, fills);
   } else {
     renderCircularNodes(node, data, dims, historyMap, colors, showNodes, showTitles, fontSize);
   }
@@ -216,13 +229,55 @@ export function renderGraph(
     .attr("role", "link")
     .attr("aria-label", (d) => d.name);
 
-  // Click and keyboard navigation
-  node.on("click", (_event, d) => onClickPage(d.name));
-  node.on("keydown", (_event, d) => {
+  /*
+   * Un clic señala; dos abren.
+   *
+   * Es la convención de cualquier mapa y de cualquier escritorio: mirar algo no
+   * es entrar en ello. Señalar deja ver de qué se trata sin perder la página que
+   * se está leyendo, y sólo el segundo clic la cambia.
+   *
+   * En un teléfono no hay segundo clic, así que ahí un toque hace las dos cosas:
+   * exigir un doble toque en una pantalla táctil sería pedir un gesto que el
+   * aparato no enseña.
+   */
+  const touch = window.matchMedia("(hover: none)").matches;
+
+  const draw = (): void => {
+    node.classed("selected", (d) => d.id === selected);
+    node
+      .select<SVGTextElement>("text")
+      .attr("fill", (d: any) =>
+        d.id === selected ? colors.hoverAccent : (fills.get(d.id) ?? colors.textNormal),
+      );
+  };
+
+  const open = (d: any): void => {
+    selected = d.id;
+    draw();
+    // No se centra aquí: abrir la página trae otro grafo, y centrar sobre el
+    // viejo no significa nada. Se centra al dibujar, abajo, cuando la selección
+    // resulta ser distinta de la última que se llevó al centro.
+    onClickPage(d.name);
+  };
+
+  node.on("click", (_event, d: any) => {
+    if (touch) {
+      open(d);
+      return;
+    }
+    selected = d.id;
+    draw();
+  });
+  node.on("dblclick", (event, d: any) => {
+    // Sin esto el doble clic también dispara el zoom por defecto de d3.
+    (event as Event).stopPropagation();
+    open(d);
+  });
+  node.on("keydown", (_event, d: any) => {
     const e = _event as KeyboardEvent;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      onClickPage(d.name);
+      open(d);
     }
   });
 
@@ -403,6 +458,28 @@ export function renderGraph(
    * animación no hay nada que se reacomode mientras uno mira, y lo que aparece
    * ya está en su sitio.
    */
+  /**
+   * Deja el nodo en el centro, sin cambiar cuánto se está acercando.
+   *
+   * De una vez y sin animar. Una transición de d3 vive atada al elemento, y cada
+   * repintado empieza vaciando el contenedor: la transición moría con el SVG que
+   * la esperaba y el nodo se quedaba donde estaba, sin error ni aviso. Además, un
+   * mapa que no se mueve solo es lo que el resto de esta vista ya promete.
+   */
+  const centre = (d: any): void => {
+    const at = heldTransform ?? d3.zoomIdentity;
+    const to = d3.zoomIdentity
+      .translate(width / 2, height / 2)
+      .scale(at.k)
+      .translate(-d.x, -d.y);
+    zoomBehavior.transform(svg as any, to);
+  };
+
+  // Si en este dibujo hay que llevar algo al centro. Local y no global: la
+  // separación de nombres vuelve a correr cuando llega la tipografía y mueve los
+  // nodos, así que centrar una sola vez dejaba el nodo desplazado.
+  const needsCentre = selected !== null && selected !== centred;
+
   const settle = (): void => {
     if (isTitle) {
       remeasure();
@@ -410,6 +487,10 @@ export function renderGraph(
     }
     place();
     remember();
+    if (needsCentre) {
+      const target = (data.nodes as any[]).find((item) => item.id === selected);
+      if (target !== undefined) centre(target);
+    }
   };
 
   sim.stop();
@@ -420,6 +501,17 @@ export function renderGraph(
     for (let step = 0; step < 300; step += 1) sim.tick();
   }
   settle();
+  draw();
+
+  /*
+   * Queda anotado que ya se centró en este nodo.
+   *
+   * Centrar en cada repintado desharía la panorámica que alguien hizo a mano
+   * —colapsar el panel, cambiar de tamaño la ventana— y un mapa que se recoloca
+   * solo deja de poder recorrerse. Se centra al llegar a una página, y después
+   * el mapa es de quien lo mira.
+   */
+  if (selected !== null) centred = selected;
 
   // Y otra vez cuando la tipografía haya llegado: las cajas se miden con la
   // letra que hay en pantalla, y `font-display: swap` enseña la de reserva
@@ -524,7 +616,8 @@ function renderTitleNodes(
   historyMap: Map<string, number>,
   colors: Record<string, string>,
   fontFamily: string,
-  fontSize: number
+  fontSize: number,
+  fills: Map<string, string>
 ) {
   void colors.nodeBorder;
   // History color: nodes in history get orange tint, fading with recency
@@ -556,7 +649,8 @@ function renderTitleNodes(
     const lines = wrapText(d.name, MAX_LABEL_CHARS);
     const lineHeight = fs * 1.25;
     const yOffset = -((lines.length - 1) * lineHeight) / 2;
-    const fill = historyColor(d) ?? (d.central ? colors.nodeCentral : colors.textNormal);
+    const fill = historyColor(d) ?? (d.central ? colors.nodeCentral : colors.textNormal) ?? '#888';
+    fills.set(d.id, fill);
     const textEl = g.append("text")
       .attr("font-size", `${fs}px`)
       .attr("font-weight", d.central ? "bold" : "normal")
