@@ -87,6 +87,7 @@ Lo dibuja `renderOutliner()`. Es la única parte que cambia con la página.
         · dd.property-value ................. editable → set_property
             · button.property-drop .......... quita la propiedad
     · button.property-add ................... agrega una propiedad
+    · div.page-actions ...................... + página · copiar Markdown · exportar .md
     · span.visibility ....................... «privada» / «pública». Sólo lectura
 · div.focused ............................... sólo si la vista está enfocada en un bloque
     · texto del bloque raíz
@@ -124,7 +125,7 @@ sale guardando. `[[` `((` `#` `/` abren el autocompletado.
 
 **Para reestructurar:** el panel scrollea entero, cabecera incluida. No hay
 índice de la página, ni ancho de lectura máximo —el texto se estira con la
-columna—, ni forma de crear el primer bloque en una página vacía.
+columna—. Una página vacía sí ofrece escribir su primer bloque.
 
 ---
 
@@ -172,17 +173,15 @@ cualquier reestructuración de columnas.
 | Tokens de diseño         | `localStorage`           | Este navegador                   |
 | Bloques plegados         | Servidor, por participante | **Todos sus aparatos**          |
 | Historial de navegación  | Memoria                  | Se pierde al recargar            |
-| Página abierta           | Memoria                  | No hay URL por página            |
+| Página abierta           | **La URL**               | Enlazable, con atrás y adelante  |
 
-**El punto más incómodo para reestructurar:** no hay enrutado. La página abierta
-no está en la URL, así que no se puede enlazar a una página de Vera, ni volver
-con el botón de atrás, ni recargar sin perder dónde se estaba.
+**El enrutado ya existe.** La dirección es `/p/<título>?focus=<bloque>#<bloque>`,
+resuelve también por identidad estable, y atrás/adelante funcionan.
 
 ---
 
 ## Lo que la interfaz todavía no ofrece
 
-- Crear una página, o un bloque en una página vacía
 - Borrar una página
 - Cambiar de privada a pública
 - Ver o recorrer el registro de operaciones
