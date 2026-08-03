@@ -9,7 +9,7 @@ import { api, type PageSummary } from './api.ts';
 import { renderOutliner, speakInto } from './outliner.ts';
 import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
-import { STAGES, voice } from './voice.ts';
+import { voice } from './voice.ts';
 import { brandMark, icon, type IconName } from './icons.ts';
 import { forgetPositions, renderGraph } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D } from './graph/render3d.ts';
@@ -82,20 +82,22 @@ function drawMemory(host: HTMLElement): void {
       : `${corpus.pages} páginas · ${corpus.blocks} bloques · secuencia ${corpus.lastSequence}`;
   host.append(status);
 
-  // Lo hablado que no terminó la cascada.
+  // Lo hablado que se quedó sin bloque donde vivir.
   //
-  // Desde que toda grabación nace en un día, ninguna nueva puede quedar sin
-  // sitio; esto es para las que se grabaron antes de que eso fuera cierto, y
-  // para la que se quede a medias por un fallo. Darle lugar es traerla al día de
-  // hoy, que es de donde habría salido si se grabara ahora.
+  // Desde que toda grabación nace pegada a un bloque, ninguna nueva puede quedar
+  // suelta; esto es para las que se grabaron antes de que eso fuera cierto, y
+  // para la que pierda su bloque porque alguien lo borró. Darle lugar es traerla
+  // al día de hoy, que es de donde habría salido si se grabara ahora.
   void voice.list().then((all) => {
     if (!Array.isArray(all)) return;
-    const pending = all.filter((r) => r.stage !== 'content_settled');
+    // Sin lugar en la escritura no hay dónde oírla ni dónde escribir lo que
+    // dice: eso es lo que hay que poder reparar desde aquí.
+    const pending = all.filter((r) => r.placedInBlock === null);
     if (pending.length === 0) return;
 
     const title = document.createElement('h3');
     title.className = 'settings-group';
-    title.textContent = 'Voz sin terminar';
+    title.textContent = 'Voz sin lugar';
     status.after(title);
 
     const list = document.createElement('div');
@@ -107,20 +109,12 @@ function drawMemory(host: HTMLElement): void {
       const name = document.createElement('span');
       name.textContent = (item.transcript ?? '').trim().slice(0, 60) ||
         new Date(item.capturedAt).toLocaleString('es');
-      const stage = document.createElement('span');
-      stage.className = 'count';
-      stage.textContent = STAGES.find((s) => s.id === item.stage)?.label ?? item.stage;
-      row.append(name, stage);
+      const what = document.createElement('span');
+      what.className = 'count';
+      what.textContent = item.transcript === null ? 'sin transcribir' : 'transcrita';
+      row.append(name, what);
       row.addEventListener('click', () => {
         void (async () => {
-          // Si ya tiene lugar, se va a él. Si no, se le da uno en hoy: es de
-          // donde habría salido si se grabara ahora.
-          if (item.placedInPage !== null) {
-            closeSettings();
-            await openPage(item.placedInPage);
-            if (item.placedInBlock !== null) revealBlock(item.placedInBlock);
-            return;
-          }
           closeSettings();
           const block = await startDay(today());
           if (block === null) return;

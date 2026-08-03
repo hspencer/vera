@@ -2007,7 +2007,17 @@ code {
   background: color-mix(in srgb, var(--warm) 12%, transparent);
 }
 
-/* El audio dentro del texto: ocupa el lugar del bloque mientras se habla. */
+/*
+ * El audio dentro del texto.
+ *
+ * Va encima del texto del bloque, no en su lugar: las dos cosas conviven, y
+ * ninguna consume a la otra. Compacto a propósito —un chorizo con su
+ * reproductor y tres botones— para que lo que se lee siga siendo el texto.
+ */
+.body-text {
+  min-height: inherit;
+}
+
 .audio-block {
   display: flex;
   flex-direction: column;
@@ -2053,6 +2063,7 @@ code {
 
 .audio-player {
   width: 100%;
+  max-width: 26rem;
   height: 2rem;
 }
 

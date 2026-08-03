@@ -1,24 +1,18 @@
-// Insertar voz: la cascada, del lado de quien habla.
+// La voz, del lado de quien habla.
 //
-// Grabar → transcribir → corregir → validar → asentar. Cada paso es visible y
-// cada uno lo confirma una persona. La interfaz no puede saltarse ninguno,
-// porque el servidor tampoco la dejaría: el orden lo impone el dominio.
+// Tres cosas: grabar, transcribir —cuantas veces se quiera— y borrar el audio.
+// El texto que la transcripción deja es el del bloque, y se edita como cualquier
+// otro. No hay estado que avanzar ni paso que completar.
 //
-// @invariant EveryLinkIsHumanlyConfirmed: la máquina propone la transcripción;
-// declarar que dice lo que se dijo es de quien habló.
-
-export type CascadeStage =
-  | 'captured'
-  | 'transcribed'
-  | 'transcript_validated'
-  | 'content_settled';
+// @invariant TheMachineNeverPassesForAHand: la transcripción llega escrita por
+// la máquina y firmada como tal; deja de estarlo en cuanto alguien la edita.
 
 export interface Recording {
   id: string;
   audioHash: string | null;
   mediaType: string;
   durationMs: number | null;
-  stage: CascadeStage;
+  /** Lo que la máquina dijo la última vez que se le preguntó. */
   transcript: string | null;
   /** El bloque que le guarda el lugar en la escritura, si se habló dentro de una. */
   placedInBlock: string | null;
@@ -27,22 +21,6 @@ export interface Recording {
   evidence: { reference: string; capturedAt: number };
   capturedBy: string;
   capturedAt: number;
-  validatedBy: string | null;
-  validatedAt: number | null;
-}
-
-/** Qué se puede decir de cada etapa, en el orden en que se recorren. */
-export const STAGES: { id: CascadeStage; label: string; what: string }[] = [
-  { id: 'captured', label: 'grabado', what: 'el audio está guardado' },
-  { id: 'transcribed', label: 'transcrito', what: 'la máquina propuso un texto' },
-  { id: 'transcript_validated', label: 'transcripción validada', what: 'dice lo que se dijo' },
-  { id: 'content_settled', label: 'contenido asentado', what: 'ya vive en la página' },
-];
-
-export interface VoiceHandlers {
-  page(): string;
-  onSettled(blocks: string[]): void;
-  notify(message: string): void;
 }
 
 /**
@@ -122,10 +100,7 @@ async function ask<T>(path: string, options: RequestInit = {}): Promise<T | { er
 
 export const voice = {
   /**
-   * Sube el audio. Nace `captured`: nada se transcribe sin pedirlo.
-   *
-   * Con `inBlock`, la grabación nace con lugar en la escritura: ese bloque le
-   * guarda el sitio hasta que su contenido se asiente ahí mismo.
+   * Sube el audio y lo pega a un bloque. Nada se transcribe sin pedirlo.
    */
   capture: (audio: Blob, durationMs: number, inBlock?: string) =>
     ask<Recording>('/recordings', {
@@ -138,36 +113,19 @@ export const voice = {
       body: audio,
     }),
 
-  transcribe: (id: string) =>
-    ask<Recording>(`/recordings/${encodeURIComponent(id)}/transcribe`, { method: 'POST' }),
-
-  correct: (id: string, text: string) =>
-    ask<Recording>(`/recordings/${encodeURIComponent(id)}/transcript`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text }),
-    }),
-
-  validate: (id: string) =>
-    ask<Recording>(`/recordings/${encodeURIComponent(id)}/validate`, { method: 'POST' }),
-
   /**
-   * Asienta el contenido. Sin página, aterriza en el bloque que le guardaba el
-   * lugar; el servidor sabe cuál es y no acepta que se lo digan.
+   * Transcribe y escribe el texto del bloque. Volver a llamarla lo reemplaza y
+   * no toca el audio.
    */
-  settle: (id: string, page?: string) =>
-    ask<{ recording: Recording; blocks: string[] }>(
-      `/recordings/${encodeURIComponent(id)}/settle`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(page === undefined ? {} : { page }),
-      },
+  transcribe: (id: string) =>
+    ask<{ recording: Recording; block: string; text: string }>(
+      `/recordings/${encodeURIComponent(id)}/transcribe`,
+      { method: 'POST' },
     ),
 
   /**
-   * Borra el audio. Sólo cuando el contenido ya está asentado: hasta entonces la
-   * grabación es lo único que puede zanjar qué se dijo.
+   * Borra el audio. En cualquier momento, transcrito o no: la grabación es de
+   * quien la hizo. Lo escrito sigue escrito y sigue nombrando de dónde vino.
    */
   discardAudio: (id: string) =>
     ask<Recording>(`/recordings/${encodeURIComponent(id)}/audio`, { method: 'DELETE' }),
@@ -183,7 +141,7 @@ export const voice = {
   list: () => ask<Recording[]>('/recordings'),
 };
 
-/** La URL del audio, para poder oírlo mientras se corrige lo que dice. */
+/** La URL del audio, para oírlo desde donde se lee lo que dice. */
 export function audioUrl(recording: Recording): string | null {
   return recording.audioHash === null ? null : `/media/${recording.audioHash}`;
 }

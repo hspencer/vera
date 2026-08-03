@@ -12,8 +12,6 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { VeraGraph, checkInvariants } from '@vera/core';
 import type { Change, ContributionChannel, OriginEvidence, ParticipantId } from '@vera/core';
 import {
-  advanceRecording,
-  correctTranscript,
   createRecording,
   foldedOnPage,
   loadGraph,
@@ -30,6 +28,7 @@ import {
   saveParticipant,
   saveWorkspace,
   setFold,
+  setTranscript,
   setSpokenOrigin,
   spokenOriginsOnPage,
   workspaceOf,
@@ -524,9 +523,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     // La cascada de validación desde la voz
     // -----------------------------------------------------------------------
     //
-    // Cada ruta mueve la grabación un eslabón, y sólo uno. El orden lo impone
-    // `advanceRecording`, así que el contenido no se puede asentar desde una
-    // transcripción que nadie validó ni saltándose la transcripción entera.
+    // Tres cosas y nada más: grabar, transcribir —cuantas veces se quiera— y
+    // borrar el audio. No hay estado que avanzar ni paso que completar; lo demás
+    // es la edición ordinaria de un bloque ordinario.
 
     if (request.method === 'POST' && path === '/recordings') {
       const chunks: Buffer[] = [];
@@ -585,6 +584,17 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       return;
     }
 
+    /*
+     * Transcribir escribe el texto del bloque.
+     *
+     * No deja una propuesta en un cajón que alguien tenga que aceptar: deja el
+     * texto donde el texto va, por una operación ordinaria y firmada como lo que
+     * es. Canal `authenticated_voice` con la evidencia de la grabación, que es lo
+     * que el registro guardará de por vida sobre este texto.
+     *
+     * Volver a transcribir es esta misma ruta otra vez: reemplaza el texto y no
+     * toca el audio.
+     */
     if (request.method === 'POST' && /^\/recordings\/[^/]+\/transcribe$/.test(path)) {
       const id = decodeURIComponent(path.split('/')[2] ?? '');
       const held = recordingById(store, id);
@@ -593,9 +603,14 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         return;
       }
       if (held.audioHash === null || objectsRoot === null) {
-        send(response, 422, { error: 'la grabación ya no tiene audio que transcribir' });
+        send(response, 422, { error: 'esta grabación ya no tiene audio que transcribir' });
         return;
       }
+      if (held.placedInBlock === null) {
+        send(response, 422, { error: 'esta grabación no tiene bloque donde escribir' });
+        return;
+      }
+      const block = held.placedInBlock;
 
       const audio = readFileSync(objectPath(objectsRoot, held.audioHash));
       void transcribeAudio(audio).then((outcome) => {
@@ -603,131 +618,37 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           send(response, 502, outcome);
           return;
         }
-        // Queda propuesta, nunca validada: eso lo hace una persona.
-        const moved = advanceRecording(store, id, 'transcribed', { transcript: outcome.text });
-        send(response, 'error' in moved ? 422 : 200, moved);
-      });
-      return;
-    }
-
-    if (request.method === 'POST' && /^\/recordings\/[^/]+\/(transcript|validate|settle)$/.test(path)) {
-      const parts = path.split('/');
-      const id = decodeURIComponent(parts[2] ?? '');
-      const action = parts[3] ?? '';
-
-      const chunks: Buffer[] = [];
-      request.on('data', (chunk: Buffer) => chunks.push(chunk));
-      request.on('end', () => {
-        let body: { text?: unknown; page?: unknown } = {};
-        if (chunks.length > 0) {
-          try {
-            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
-          } catch {
-            send(response, 400, { error: 'the body must be JSON' });
+        try {
+          const written = graph.submitOperation({
+            // Cada transcripción es una operación distinta: volver a transcribir
+            // no puede confundirse con un reenvío de la anterior.
+            originId: `voice:${id}:${Date.now()}`,
+            participant: owner.id,
+            channel: 'authenticated_voice',
+            evidence: held.evidence,
+            change: { kind: 'edit_block', block, content: outcome.text },
+          });
+          if (written.status !== 'applied') {
+            send(response, 422, { error: `no se pudo escribir la transcripción: ${written.status}` });
             return;
           }
-        }
-
-        if (action === 'transcript') {
-          const outcome = correctTranscript(store, id, String(body.text ?? ''));
-          send(response, 'error' in outcome ? 422 : 200, outcome);
-          return;
-        }
-
-        if (action === 'validate') {
-          const outcome = advanceRecording(store, id, 'transcript_validated', {
-            validatedBy: owner.id,
-          });
-          send(response, 'error' in outcome ? 422 : 200, outcome);
-          return;
-        }
-
-        // Asentar: la transcripción validada se vuelve bloques, y cada uno nace
-        // nombrando la grabación. Es el único momento en que puede recibir su
-        // denominación de origen.
-        const held = recordingById(store, id);
-        if (held === null) {
-          send(response, 404, { error: 'no such recording' });
-          return;
-        }
-        if (held.stage !== 'transcript_validated') {
-          send(response, 422, { error: 'la transcripción todavía no está validada' });
-          return;
-        }
-
-        // Dónde aterriza. Una grabación que se habló dentro de un documento
-        // aterriza en el bloque que le guardaba el lugar; una que existe por sí
-        // sola, al final de la página que se elija.
-        const inPlace = held.placedInBlock === null ? null : graph.block(held.placedInBlock);
-        const page = inPlace?.page ?? (typeof body.page === 'string' ? body.page : '');
-        if (graph.page(page) === undefined) {
-          send(response, 404, { error: 'no such page' });
-          return;
-        }
-
-        const fragments = held.transcript
-          ?.split(/\n{2,}/)
-          .map((fragment) => fragment.trim())
-          .filter((fragment) => fragment !== '') ?? [];
-        if (fragments.length === 0) {
-          send(response, 422, { error: 'la transcripción no tiene contenido que asentar' });
-          return;
-        }
-
-        const created: string[] = [];
-        const place = inPlace ?? null;
-        const parent = place === null ? null : place.parent;
-        const siblings = graph.blocksOf(page).filter((block) => block.parent === parent);
-        // El primer fragmento va donde se guardaba el lugar; el resto, detrás de
-        // él, en orden. Sin lugar guardado, todos al final de la página.
-        const at =
-          place === null
-            ? siblings.length
-            : siblings.findIndex((block) => block.stableId === place.stableId);
-
-        try {
-          for (const [n, fragment] of fragments.entries()) {
-            // Canal `authenticated_voice` con su evidencia: es lo que el
-            // registro guardará de por vida sobre estos bloques.
-            const change =
-              n === 0 && place !== null
-                ? ({ kind: 'edit_block', block: place.stableId, content: fragment } as const)
-                : ({
-                    kind: 'create_block',
-                    page,
-                    parent,
-                    position: at + n,
-                    content: fragment,
-                  } as const);
-            const outcome = graph.submitOperation({
-              originId: `voice:${id}:${n}`,
-              participant: owner.id,
-              channel: 'authenticated_voice',
-              evidence: held.evidence,
-              change,
-            });
-            if (outcome.status !== 'applied') continue;
-            recordOperation(store, graph, outcome.operation);
-            setSpokenOrigin(store, outcome.subjectId, id);
-            created.push(outcome.subjectId);
-          }
+          recordOperation(store, graph, written.operation);
+          setSpokenOrigin(store, block, id);
+          const kept = setTranscript(store, id, outcome.text);
+          send(response, 200, { recording: kept, block, text: outcome.text });
         } catch (error) {
           send(response, 500, {
-            error: 'no se pudo asentar el contenido',
+            error: 'no se pudo escribir la transcripción',
             detail: error instanceof Error ? error.message : String(error),
           });
-          return;
         }
-
-        const moved = advanceRecording(store, id, 'content_settled');
-        send(response, 200, { recording: moved, blocks: created });
       });
       return;
     }
 
-    // Borrar el audio. Es un acto aparte y explícito, y sólo cuando la cadena se
-    // recorrió entera: hasta entonces la grabación es lo único que puede zanjar
-    // un desacuerdo sobre qué se dijo.
+    // Borrar el audio. En cualquier momento, transcrito o no, y sólo cuando se
+    // pide exactamente eso. Exigir haber recorrido una cascada entera hacía a
+    // Vera dueña de una grabación que no es suya.
     if (request.method === 'DELETE' && /^\/recordings\/[^/]+\/audio$/.test(path)) {
       const id = decodeURIComponent(path.split('/')[2] ?? '');
       const outcome = discardAudio(store, id);

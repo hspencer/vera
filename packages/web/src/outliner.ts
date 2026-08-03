@@ -999,19 +999,30 @@ export function renderOutliner(
     const body = document.createElement('div');
     body.className = 'body';
 
-    // Un bloque que le guarda el lugar a una grabación muestra la grabación:
-    // todavía no tiene texto, y lo que hay que ver es en qué eslabón va.
-    const waiting = held.get(node.block.stableId);
+    /*
+     * Un bloque con grabación enseña las dos cosas: el audio arriba y su texto
+     * debajo, editable como cualquier otro.
+     *
+     * Antes el audio *reemplazaba* al bloque hasta que la cascada terminaba, y
+     * terminarla se llevaba el audio por delante. Ahora conviven: el audio se
+     * queda mientras no se borre, y el texto se escribe, se corrige y se parte
+     * sin pedirle permiso a nada.
+     */
+    const attached = held.get(node.block.stableId);
     const speaking = speakingIn === node.block.stableId;
     if (speaking) speakingIn = null;
-    const holding = speaking || (waiting !== undefined && waiting.stage !== 'content_settled');
+
     if (speaking) {
       renderRecorder(body, node.block.stableId, audioHandlers);
-    } else if (waiting !== undefined && waiting.stage !== 'content_settled') {
-      renderAudioBlock(body, waiting, audioHandlers);
     } else {
-      body.innerHTML = renderMarkdown(node.block.content, options);
-      markMissingImages(body);
+      if (attached !== undefined) {
+        renderAudioBlock(body, attached, audioHandlers, node.block.content);
+      }
+      const text = document.createElement('div');
+      text.className = 'body-text';
+      text.innerHTML = renderMarkdown(node.block.content, options);
+      markMissingImages(text);
+      body.append(text);
     }
 
     bullet.addEventListener('click', (event) => {
@@ -1033,33 +1044,6 @@ export function renderOutliner(
           label: 'Copiar el Markdown del bloque',
           run: () => copyText(node.block.content, toast),
         },
-        // @guarantee TheRecordingIsAlwaysReachable: mientras el audio exista, se
-        // llega a él desde el bloque que dice lo que se dijo. Vive en el menú y
-        // no en la página para que leer siga siendo leer.
-        ...(waiting !== undefined && waiting.stage === 'content_settled' && waiting.audioHash !== null
-          ? [
-              {
-                label: 'Oír la grabación',
-                run: () => {
-                  const url = audioUrl(waiting);
-                  if (url !== null) window.open(url, '_blank');
-                },
-              },
-              {
-                label: 'Borrar el audio',
-                run: () => {
-                  void voice.discardAudio(waiting.id).then((next) => {
-                    if ('error' in next) {
-                      toast(next.error);
-                      return;
-                    }
-                    toast('el audio se borró; queda lo que dice y de dónde vino');
-                    callbacks.onReload(null);
-                  });
-                },
-              },
-            ]
-          : []),
         {
           label: 'Subir',
           ...(neighbourhoods.get(node.block.stableId)?.index === 0
@@ -1114,9 +1098,9 @@ export function renderOutliner(
         return;
       }
       if (target.tagName === 'A') return;
-      // Sobre una grabación no se escribe: el bloque le guarda el lugar hasta
-      // que su contenido se asiente, y abrir el editor lo taparía.
-      if (holding) return;
+      // Pulsar el reproductor o sus botones no abre el editor; pulsar el texto
+      // sí, que es lo que se espera de un texto.
+      if (target.closest('.audio-block') !== null) return;
       openEditor(node, body);
     });
 

@@ -420,17 +420,34 @@ describe('borrar el audio', () => {
     capturedBy: OWNER,
   };
 
-  it('no se puede antes de que el contenido esté asentado', () => {
-    // Hasta entonces la grabación es lo único que puede zanjar qué se dijo.
+  it('se puede en cualquier momento, transcrita o no', () => {
+    // @invariant DiscardingIsAlwaysAvailableAndNeverImplied. Antes esto exigía
+    // haber recorrido una cascada entera, lo que hacía a Vera dueña de una
+    // grabación que no es suya. Lo que corresponde es advertir qué se pierde
+    // —cosa de la interfaz— y obedecer.
     const { store } = freshStore();
     withAudio(store, spoken.audioHash);
     const recording = createRecording(store, spoken);
     assert.ok(!('error' in recording));
     if ('error' in recording) return;
-    for (const stage of ['captured', 'transcribed', 'transcript_validated'] as const) {
-      store.db.prepare('UPDATE recordings SET stage = ? WHERE id = ?').run(stage, recording.id);
-      assert.ok('error' in discardAudio(store, recording.id), `no desde ${stage}`);
-    }
+
+    const sinTranscribir = discardAudio(store, recording.id);
+    assert.ok(!('error' in sinTranscribir), 'sin transcripción también se puede');
+    if ('error' in sinTranscribir) return;
+    assert.equal(sinTranscribir.audioHash, null);
+    store.close();
+  });
+
+  it('borrar dos veces no es un error', () => {
+    // Pulsar dos veces, o reenviar la petición, no puede fallar por algo que ya
+    // está como se pidió.
+    const { store } = freshStore();
+    withAudio(store, spoken.audioHash);
+    const recording = createRecording(store, spoken);
+    if ('error' in recording) return;
+    discardAudio(store, recording.id);
+    const otra = discardAudio(store, recording.id);
+    assert.ok(!('error' in otra));
     store.close();
   });
 
@@ -441,7 +458,7 @@ describe('borrar el audio', () => {
     assert.ok(!('error' in recording));
     if ('error' in recording) return;
     store.db
-      .prepare("UPDATE recordings SET stage = 'content_settled', transcript = ? WHERE id = ?")
+      .prepare('UPDATE recordings SET transcript = ? WHERE id = ?')
       .run('lo que se dijo', recording.id);
     const after = discardAudio(store, recording.id);
     assert.ok(!('error' in after));

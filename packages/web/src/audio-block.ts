@@ -1,20 +1,20 @@
-// El audio dentro del texto: un bloque que guarda su lugar mientras se habla.
+// El audio dentro del texto.
 //
-// Es la misma cascada del panel de voz, dibujada donde se estaba escribiendo. La
-// diferencia no es de pasos —son los mismos, y cada uno lo confirma una persona—
-// sino de sitio: el audio se oye donde se dijo, y lo asentado cae ahí mismo.
+// Una grabación pegada a un bloque, y el texto de ese bloque debajo. El audio se
+// oye ahí mismo mientras exista, el texto se edita como cualquier otro texto, y
+// ninguna de las dos cosas consume a la otra.
 //
-// @invariant EveryLinkIsHumanlyConfirmed: ningún botón hace dos eslabones.
-// @guarantee TheRecordingIsAlwaysReachable: mientras el audio exista, se oye
-// desde donde se lee lo que dice.
+// @guarantee ThreeThingsAndNoMore: transcribir, volver a transcribir, borrar el
+// audio. No hay estado que avanzar ni paso que completar antes de poder seguir
+// escribiendo; lo demás es la edición ordinaria de un bloque ordinario.
 
 import { audioUrl, startRecording, voice, type Recording } from './voice.ts';
 
 export interface AudioBlockHandlers {
-  /** Volver a traer la página: lo asentado son bloques del grafo. */
+  /** Volver a traer la página: transcribir escribe el texto del bloque. */
   onSettled(): void;
   notify(message: string): void;
-  /** La grabación cambió de eslabón sin cambiar el árbol. */
+  /** La grabación cambió sin que el árbol se mueva. */
   onChanged(recording: Recording): void;
 }
 
@@ -22,12 +22,6 @@ export interface AudioBlockHandlers {
 function clock(ms: number): string {
   const total = Math.round(ms / 1000);
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-}
-
-function shell(): HTMLElement {
-  const box = document.createElement('div');
-  box.className = 'audio-block';
-  return box;
 }
 
 function action(label: string, kind: 'plain' | 'primary' | 'quiet' = 'plain'): HTMLButtonElement {
@@ -39,18 +33,19 @@ function action(label: string, kind: 'plain' | 'primary' | 'quiet' = 'plain'): H
 }
 
 /**
- * Graba en el sitio, y al detener sube el audio atado a este bloque.
+ * Graba en el sitio, y al detener deja el audio pegado a este bloque.
  *
- * Empieza sola: escribir `/audio` es haber decidido hablar, y pedir un segundo
- * clic para lo ya decidido sólo pone tiempo entre la intención y la voz.
+ * Empieza sola: escribir `/audio` o pulsar el micrófono es haber decidido
+ * hablar, y pedir un segundo clic para lo ya decidido sólo pone tiempo entre la
+ * intención y la voz.
  */
 export function renderRecorder(
   host: HTMLElement,
   block: string,
   handlers: AudioBlockHandlers,
 ): void {
-  const box = shell();
-  box.classList.add('recording');
+  const box = document.createElement('div');
+  box.className = 'audio-block recording';
   host.innerHTML = '';
   host.append(box);
 
@@ -63,7 +58,6 @@ export function renderRecorder(
 
   const stop = action('detener', 'primary');
   const cancel = action('descartar', 'quiet');
-
   box.append(dot, elapsed, stop, cancel);
 
   const began = Date.now();
@@ -82,7 +76,7 @@ export function renderRecorder(
     cancel.addEventListener('click', () => {
       window.clearInterval(tick);
       started.cancel();
-      // Nada que guardar: no hubo grabación, así que no hay eslabón que romper.
+      // Nada que guardar: no llegó a haber grabación.
       host.innerHTML = '';
       handlers.onSettled();
     });
@@ -99,29 +93,31 @@ export function renderRecorder(
           host.innerHTML = '';
           return;
         }
-        renderAudioBlock(host, captured, handlers);
+        handlers.onSettled();
       });
     });
   });
 }
 
 /**
- * El audio y lo que falta para el eslabón siguiente.
+ * El audio de un bloque: reproductor y tres botones.
  *
- * Cada estado ofrece un solo paso. No hay un botón que transcriba, valide y
- * asiente: juntarlos sería fingir que la máquina puede declarar en nombre de
- * quien habló.
+ * Se dibuja *encima* del texto del bloque, no en su lugar. El bloque se sigue
+ * leyendo y editando como cualquier otro, y esto es lo que tiene pegado.
+ *
+ * @invariant TheRecordingStaysUntilItIsDiscarded: nada de aquí consume la
+ * grabación. Sólo la borra el botón que dice que la borra.
  */
 export function renderAudioBlock(
   host: HTMLElement,
   recording: Recording,
   handlers: AudioBlockHandlers,
+  /** Lo que el bloque dice ahora, para saber si alguien lo editó a mano. */
+  blockText = '',
 ): void {
-  const box = shell();
-  host.innerHTML = '';
+  const box = document.createElement('div');
+  box.className = 'audio-block';
   host.append(box);
-
-  const redraw = (next: Recording): void => renderAudioBlock(host, next, handlers);
 
   const fail = (outcome: unknown): boolean => {
     if (outcome !== null && typeof outcome === 'object' && 'error' in outcome) {
@@ -139,7 +135,17 @@ export function renderAudioBlock(
     player.src = url;
     player.className = 'audio-player';
     box.append(player);
+  } else {
+    // El audio se borró. La grabación sigue existiendo y lo dice, en vez de
+    // desaparecer y dejar el bloque sin explicación de por qué está marcado.
+    const gone = document.createElement('span');
+    gone.className = 'audio-meta';
+    gone.textContent = 'el audio se borró · queda lo que dice y de dónde vino';
+    box.append(gone);
   }
+
+  const row = document.createElement('div');
+  row.className = 'audio-row';
 
   const said = document.createElement('span');
   said.className = 'audio-meta';
@@ -147,103 +153,44 @@ export function renderAudioBlock(
     recording.durationMs === null
       ? new Date(recording.capturedAt).toLocaleString('es')
       : `${clock(recording.durationMs)} · ${new Date(recording.capturedAt).toLocaleString('es')}`;
-  box.append(said);
+  row.append(said);
 
-  const row = document.createElement('div');
-  row.className = 'audio-row';
-  box.append(row);
-
-  // ---- Grabado: pedir la transcripción ------------------------------------
-  if (recording.stage === 'captured') {
-    const ask = action('transcribir', 'primary');
-    ask.title = 'whisper.cpp corre en esta máquina; el audio no sale de ella';
+  if (recording.audioHash !== null) {
+    // Transcribir por primera vez, o volver a hacerlo. Es el mismo acto: escribe
+    // el texto del bloque y no toca el audio.
+    const again = recording.transcript !== null;
+    const ask = action(again ? 'retranscribir' : 'transcribir', again ? 'plain' : 'primary');
     ask.addEventListener('click', () => {
+      // @guarantee WhatWillBeLostIsSaidBeforeItIsLost: lo que se pierde al
+      // retranscribir es lo que una persona escribió encima. Sólo se advierte si
+      // de verdad hay algo así: avisar siempre enseña a no leer los avisos.
+      const edited =
+        again && blockText.trim() !== '' && blockText.trim() !== (recording.transcript ?? '').trim();
+      if (edited && !window.confirm('El texto de este bloque se editó a mano. Retranscribir lo reemplaza. ¿Seguir?')) {
+        return;
+      }
       ask.disabled = true;
       ask.textContent = 'transcribiendo…';
       void voice.transcribe(recording.id).then((next) => {
         if (fail(next)) {
           ask.disabled = false;
-          ask.textContent = 'transcribir';
-          return;
-        }
-        redraw(next as Recording);
-      });
-    });
-    row.append(ask);
-    return;
-  }
-
-  // ---- Transcrito: corregir hasta que diga lo que se dijo -------------------
-  if (recording.stage === 'transcribed') {
-    const field = document.createElement('textarea');
-    field.className = 'audio-transcript';
-    field.value = recording.transcript ?? '';
-    field.rows = 6;
-    field.setAttribute('aria-label', 'transcripción propuesta');
-    box.insertBefore(field, row);
-
-    const hint = document.createElement('p');
-    hint.className = 'audio-hint';
-    hint.textContent =
-      'Corrígela hasta que diga lo que dijiste. Una línea en blanco separa un bloque del siguiente.';
-    box.insertBefore(hint, row);
-
-    const save = action('guardar corrección');
-    save.addEventListener('click', () => {
-      void voice.correct(recording.id, field.value).then((next) => {
-        if (fail(next)) return;
-        handlers.notify('corrección guardada');
-        handlers.onChanged(next as Recording);
-      });
-    });
-
-    const confirm = action('dice lo que dije', 'primary');
-    confirm.addEventListener('click', () => {
-      void voice.correct(recording.id, field.value).then(async (saved) => {
-        if (fail(saved)) return;
-        const next = await voice.validate(recording.id);
-        if (fail(next)) return;
-        redraw(next as Recording);
-      });
-    });
-
-    row.append(save, confirm);
-    return;
-  }
-
-  // ---- Validado: asentarlo aquí --------------------------------------------
-  if (recording.stage === 'transcript_validated') {
-    const text = document.createElement('pre');
-    text.className = 'audio-settled';
-    text.textContent = recording.transcript ?? '';
-    box.insertBefore(text, row);
-
-    const settle = action('asentar aquí', 'primary');
-    settle.title = 'el texto pasa a ser este bloque, y nombra esta grabación';
-    settle.addEventListener('click', () => {
-      settle.disabled = true;
-      void voice.settle(recording.id).then((next) => {
-        if (fail(next)) {
-          settle.disabled = false;
+          ask.textContent = again ? 'retranscribir' : 'transcribir';
           return;
         }
         handlers.onSettled();
       });
     });
-    row.append(settle);
-    return;
-  }
+    row.append(ask);
 
-  // ---- Asentado: el audio ya puede irse, si se quiere -----------------------
-  const done = document.createElement('span');
-  done.className = 'audio-meta';
-  done.textContent = 'el contenido ya vive en la página y nombra esta grabación';
-  row.append(done);
-
-  if (recording.audioHash !== null) {
     const drop = action('borrar el audio', 'quiet');
-    drop.title = 'queda la transcripción validada y el contenido, que siguen diciendo de dónde vino';
+    drop.title = 'La grabación deja de poder oírse. Lo escrito sigue escrito.';
     drop.addEventListener('click', () => {
+      // Sin transcripción, borrar el audio no deja nada. Con ella, deja el texto.
+      const nothingKept = recording.transcript === null && blockText.trim() === '';
+      const warning = nothingKept
+        ? 'Este audio no se ha transcrito: al borrarlo no queda nada de lo que se dijo. ¿Seguir?'
+        : 'El audio deja de poder oírse. El texto y su procedencia se quedan. ¿Seguir?';
+      if (!window.confirm(warning)) return;
       drop.disabled = true;
       void voice.discardAudio(recording.id).then((next) => {
         if (fail(next)) {
@@ -255,4 +202,6 @@ export function renderAudioBlock(
     });
     row.append(drop);
   }
+
+  box.append(row);
 }

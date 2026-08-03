@@ -999,13 +999,10 @@ export function createRecording(
     if (taken !== undefined && taken.id !== id) {
       return { error: 'ese bloque ya le guarda el lugar a otra grabación' };
     }
-    // @invariant AHeldBlockHoldsNothingElse: hablar dentro de un bloque escrito
-    // haría que la transcripción cayera encima de palabras que nadie aceptó perder.
     const block = store.db.prepare('SELECT content FROM blocks WHERE id = ?').get(place) as
       | { content: string }
       | undefined;
     if (block === undefined) return { error: 'no such block' };
-    if (block.content.trim() !== '') return { error: 'ese bloque ya tiene texto escrito' };
   }
 
   store.db
@@ -1032,23 +1029,19 @@ export function createRecording(
 }
 
 /**
- * Borra el audio, dejando en pie todo lo demás de la cadena.
+ * Borra el audio, dejando en pie todo lo demás.
  *
- * @invariant TheRecordingOutlivesItsTranscript se lee al revés aquí: la
- * grabación puede irse, pero sólo después de que la cadena se recorrió entera y
- * por un acto explícito de quien habló. Lo que queda —la transcripción validada,
- * los bloques que la nombran, la evidencia— sigue diciendo de dónde vino, y la
- * fila dice que el audio ya no está en vez de fingir que nunca existió.
+ * La grabación no se borra: pierde su audio y lo dice. Lo que quedaba escrito
+ * sigue escrito, sigue nombrando de dónde vino, y la evidencia sigue ahí. La fila
+ * declara que el audio ya no está en vez de fingir que nunca existió.
  */
 export function discardAudio(store: Store, id: string): Recording | { error: string } {
   const held = recordingById(store, id);
   if (held === null) return { error: 'no such recording' };
-  if (held.stage !== 'content_settled') {
-    return {
-      error:
-        'el audio sólo se borra cuando el contenido ya está asentado: hasta entonces es lo único que puede zanjar qué se dijo',
-    };
-  }
+  // @invariant DiscardingIsAlwaysAvailableAndNeverImplied: en cualquier momento,
+  // transcrito o no. Exigir haber recorrido una cascada hacía a Vera dueña de una
+  // grabación que no es suya; lo que corresponde es decir qué se va a perder, y
+  // eso lo dice la interfaz antes de llamar aquí.
   if (held.audioHash === null) return held;
   // Sólo se suelta la referencia. El objeto vive en un almacén direccionado por
   // contenido que puede estar compartido, y recogerlo es cosa de otro barrido.
@@ -1082,8 +1075,12 @@ export function recordingsInPage(store: Store, page: string): Recording[] {
 /**
  * Le da lugar a una grabación que no lo tenía, o se lo cambia.
  *
- * Es lo que repara una grabación que quedó flotando: existe, se puede oír, y no
+ * Es lo que repara una grabación que quedó suelta: existe, se puede oír, y no
  * había dónde encontrarla mientras se lee la página de la que habla.
+ *
+ * El bloque puede tener texto: desde que el audio convive con lo escrito en vez
+ * de reemplazarlo, pegarle una grabación a un bloque que ya dice algo es
+ * perfectamente sensato.
  */
 export function placeRecording(
   store: Store,
@@ -1092,9 +1089,6 @@ export function placeRecording(
 ): Recording | { error: string } {
   const held = recordingById(store, id);
   if (held === null) return { error: 'no such recording' };
-  if (held.stage === 'content_settled') {
-    return { error: 'lo asentado ya tiene su lugar; moverlo sería reescribir de dónde vino' };
-  }
   if (block !== null) {
     const taken = recordingByBlock(store, block);
     if (taken !== null && taken.id !== id) {
@@ -1104,7 +1098,6 @@ export function placeRecording(
       | { content: string }
       | undefined;
     if (found === undefined) return { error: 'no such block' };
-    if (found.content.trim() !== '') return { error: 'ese bloque ya tiene texto escrito' };
   }
   store.db.prepare('UPDATE recordings SET placed_in_block = ? WHERE id = ?').run(block, id);
   return recordingById(store, id) as Recording;
@@ -1126,57 +1119,21 @@ export function recordings(store: Store, limit = 50): Recording[] {
 }
 
 /**
- * Avanza la cascada. El orden es la garantía: una transición que no esté
- * declarada aquí no ocurre, así que el contenido no puede asentarse desde una
- * transcripción que nadie validó.
+ * Guarda lo que la máquina dijo.
+ *
+ * El texto del bloque es lo que el texto es ahora; esto es lo que la máquina
+ * produjo la última vez que se le preguntó. La diferencia entre los dos es
+ * exactamente lo que una persona cambió, y merece poder verse.
+ *
+ * `stage` se mantiene al día porque la columna todavía existe en el esquema, pero
+ * ya no gobierna nada: una grabación tiene transcripción o no la tiene.
  */
-const ALLOWED: Record<CascadeStage, CascadeStage | null> = {
-  captured: 'transcribed',
-  transcribed: 'transcript_validated',
-  transcript_validated: 'content_settled',
-  content_settled: null,
-};
-
-export function advanceRecording(
-  store: Store,
-  id: string,
-  to: CascadeStage,
-  extra: { transcript?: string; validatedBy?: string } = {},
-): Recording | { error: string } {
+export function setTranscript(store: Store, id: string, text: string): Recording | { error: string } {
   const held = recordingById(store, id);
   if (held === null) return { error: 'no such recording' };
-  if (ALLOWED[held.stage] !== to) {
-    return { error: `no se puede pasar de ${held.stage} a ${to}` };
-  }
-
-  if (to === 'transcript_validated') {
-    if (held.transcript === null || held.transcript.trim() === '') {
-      return { error: 'no hay transcripción que validar' };
-    }
-    store.db
-      .prepare('UPDATE recordings SET stage = ?, validated_by = ?, validated_at = ? WHERE id = ?')
-      .run(to, extra.validatedBy ?? null, Date.now(), id);
-    return recordingById(store, id) as Recording;
-  }
-
   store.db
-    .prepare('UPDATE recordings SET stage = ?, transcript = COALESCE(?, transcript) WHERE id = ?')
-    .run(to, extra.transcript ?? null, id);
-  return recordingById(store, id) as Recording;
-}
-
-/** Corregir sólo se puede mientras la transcripción sigue propuesta. */
-export function correctTranscript(
-  store: Store,
-  id: string,
-  text: string,
-): Recording | { error: string } {
-  const held = recordingById(store, id);
-  if (held === null) return { error: 'no such recording' };
-  if (held.stage !== 'transcribed') {
-    return { error: 'la transcripción ya no se puede corregir en esta etapa' };
-  }
-  store.db.prepare('UPDATE recordings SET transcript = ? WHERE id = ?').run(text, id);
+    .prepare("UPDATE recordings SET transcript = ?, stage = 'transcribed' WHERE id = ?")
+    .run(text, id);
   return recordingById(store, id) as Recording;
 }
 
