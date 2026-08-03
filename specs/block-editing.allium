@@ -1,0 +1,625 @@
+-- allium: 3
+-- block-editing.allium
+
+-- Scope: The keystroke-level behaviour that makes Vera's outliner writable
+-- Includes: The edit session and its buffer, saving while typing rather than only
+--   on the way out, splitting a block with Enter, indenting with Tab, merging with
+--   Backspace at the start of a block and the refusals that protect it, moving
+--   between blocks without leaving the editor, delimiter autopairing, and the
+--   autocomplete state machine for references, tags and commands
+-- Excludes:
+--   - Which operation each change becomes, and its ordering (see change-application.allium)
+--   - How a saved block is presented (see workspace-interface.allium)
+--   - Collapsing, zooming into a block, and moving a block among its siblings
+--   - Block types, headings and numbered lists, which Vera does not model yet
+--   - Undo and redo
+--   - What the autocomplete searches and how it ranks (see search-index.allium)
+-- Dependencies: Page, Block and Participant are governed by core.allium
+-- References: ../logseq/specs distils this behaviour from Logseq's editor. Vera keeps
+--   the behaviour and drops the vocabulary: a page is not a block here, and a block's
+--   text is its content.
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Given
+------------------------------------------------------------
+
+-- One session per workspace. A participant edits one block at a time, which is
+-- what lets a single key mean one thing.
+given {
+    session: EditSession
+}
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract FluidBlockEditing {
+    begin: (participant: core/Participant, block: core/Block, at: Integer) -> EditSession
+    settle: (session: EditSession) -> core/Block
+
+    @invariant TypingIsNeverLost
+        -- Text reaches the graph while the participant is still writing, not only
+        -- when they leave the block. Nothing typed depends on remembering to exit.
+
+    @invariant EveryKeystrokeChangeIsAnOperation
+        -- Splitting, merging, indenting and saving all submit ordinary operations
+        -- with the same provenance as any other change. Fluency is an interface
+        -- property; it buys no shortcut into the graph.
+
+    @invariant StructureChangesPreserveIdentity
+        -- Splitting, merging and indenting never re-create a block that already
+        -- existed. The block that keeps its text keeps its stable_id, so its
+        -- references and its children survive the keystroke.
+
+    @invariant RefusalsAreVisible
+        -- A structural keystroke that cannot be honoured says so. Silence would be
+        -- indistinguishable from a key that did not register.
+}
+
+contract EditorAutocomplete {
+    open: (session: EditSession, action: EditorAction) -> EditSession
+    accept: (session: EditSession, choice: String) -> EditSession
+
+    @invariant SearchRegionFollowsTheCaret
+        -- An open autocomplete owns the text between its trigger and the caret.
+        -- Moving the caret out of that region closes it.
+
+    @invariant AutocompleteOwnsItsKeys
+        -- While an autocomplete is open the keys that navigate it belong to it, so
+        -- the same key can indent a block and choose an entry without ambiguity.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum EditorMode { idle | editing }
+
+-- What the editor is doing beyond plain typing. Only one can be open at a time,
+-- which is what lets a single key mean different things without ambiguity.
+enum EditorAction { none | node_search | tag_search | block_search | commands }
+
+enum RefusalReason {
+    no_block_above | ambiguous_child_order | block_has_children | nothing_to_merge
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- What the participant is editing right now. It is interface state and never
+-- reaches the graph: the graph only ever sees the operations it submits.
+entity EditSession {
+    participant: core/Participant
+    block: core/Block?
+    buffer: String?
+    cursor: Integer?
+    selection_start: Integer?
+    selection_end: Integer?
+    mode: EditorMode
+    action: EditorAction
+    -- Where an open autocomplete's query begins. Null when none is open.
+    query_start: Integer?
+    last_input_at: Timestamp?
+    -- True when the buffer differs from the block's saved content.
+    dirty: Boolean
+}
+
+entity StructuralRefusal {
+    block: core/Block
+    reason: RefusalReason
+}
+
+------------------------------------------------------------
+-- Rules: the session
+------------------------------------------------------------
+
+rule ParticipantBeginsEditing {
+    when: BeginEditing(participant, block, at)
+
+    requires: session.mode = idle
+
+    ensures:
+        session.mode = editing
+        session.block = block
+        session.buffer = block.content
+        session.cursor = at
+        session.selection_start = at
+        session.selection_end = at
+        session.action = none
+        session.query_start = null
+        session.dirty = false
+        session.last_input_at = now
+}
+
+-- The buffer reaches the graph once the typing pauses. This is what makes the
+-- editor safe to leave at any moment, including by closing the tab.
+rule SaveWhenTypingRests {
+    when: session: EditSession.last_input_at + editing_pause <= now
+
+    requires: session.mode = editing
+    requires: session.dirty
+    requires: session.action = none
+
+    ensures: SaveBuffer(block: session.block, content: session.buffer)
+}
+
+-- A save with nothing to say writes nothing. Without this the pause timer would
+-- put an operation in the log every time the participant stopped to think.
+rule SaveBuffer {
+    when: SaveBuffer(block, content)
+
+    requires: content != block.content
+
+    ensures:
+        block.content = content
+        session.dirty = false
+        BlockContentSaved(block: block, content: content)
+}
+
+-- Escape leaves the block. It does not discard: by the time it is pressed the
+-- text has already been saved, so pretending otherwise would be a lie.
+rule EscapeLeavesTheBlock {
+    when: PressEscape()
+
+    requires: session.mode = editing
+    requires: session.action = none
+
+    ensures:
+        SaveBuffer(block: session.block, content: session.buffer)
+        session.mode = idle
+        session.block = null
+        session.buffer = null
+        session.cursor = null
+        session.query_start = null
+}
+
+rule EscapeClosesAutocompleteFirst {
+    when: PressEscape()
+
+    requires: session.mode = editing
+    requires: session.action != none
+
+    ensures:
+        session.action = none
+        session.query_start = null
+}
+
+rule ClickingAwayLeavesTheBlock {
+    when: ClickOutside()
+
+    requires: session.mode = editing
+
+    ensures:
+        SaveBuffer(block: session.block, content: session.buffer)
+        session.mode = idle
+        session.block = null
+        session.buffer = null
+        session.action = none
+        session.query_start = null
+}
+
+------------------------------------------------------------
+-- Rules: typing
+------------------------------------------------------------
+
+rule TypeCharacter {
+    when: TypeCharacter(character)
+
+    requires: session.mode = editing
+
+    ensures:
+        session.buffer = splice(session.buffer, session.selection_start, session.selection_end, character)
+        session.cursor = session.selection_start + 1
+        session.dirty = true
+        session.last_input_at = now
+}
+
+-- An opening delimiter brings its partner and parks the caret between the two.
+rule AutopairOpeningDelimiter {
+    when: TypeCharacter(character)
+
+    requires: session.mode = editing
+    requires: character in autopair_openers
+    requires: session.selection_start = session.selection_end
+
+    ensures:
+        session.buffer = splice(
+            session.buffer,
+            session.cursor,
+            session.cursor,
+            character + closing_for(character)
+        )
+        session.cursor = session.cursor + 1
+        session.dirty = true
+        session.last_input_at = now
+}
+
+-- With text selected the same delimiters wrap it instead of replacing it, which
+-- is how a highlighted word becomes bold.
+rule AutopairWrapsSelection {
+    when: TypeCharacter(character)
+
+    requires: session.mode = editing
+    requires: session.selection_start != session.selection_end
+    requires: character in autopair_openers
+
+    let selected = substring(session.buffer, session.selection_start, session.selection_end)
+
+    ensures:
+        session.buffer = splice(
+            session.buffer,
+            session.selection_start,
+            session.selection_end,
+            character + selected + closing_for(character)
+        )
+        session.dirty = true
+}
+
+-- Typing a closing delimiter that already sits under the caret steps over it, so
+-- a pair never becomes three characters.
+rule SkipOverClosingDelimiter {
+    when: TypeCharacter(character)
+
+    requires: session.mode = editing
+    requires: session.selection_start = session.selection_end
+    requires: character = character_at(session.buffer, session.cursor)
+    requires: is_closing_delimiter(character)
+
+    ensures: session.cursor = session.cursor + 1
+}
+
+------------------------------------------------------------
+-- Rules: Enter
+------------------------------------------------------------
+
+-- Enter splits at the caret. The block being edited keeps its stable_id and the
+-- text before the caret; the text after it starts a new block.
+--
+-- An expanded block with children gains a first child, because that is where the
+-- next line belongs when you are writing inside a list. Anything else gains a
+-- next sibling.
+rule EnterSplitsTheBlock {
+    when: PressEnter()
+
+    requires: session.mode = editing
+    requires: session.action = none
+
+    let head = substring(session.buffer, 0, session.selection_start)
+    let tail = substring(session.buffer, session.selection_end, length(session.buffer))
+
+    requires: not (head = "" and tail != "")
+
+    ensures:
+        SaveBuffer(block: session.block, content: head)
+        let created = core/Block.created(
+            page: session.block.page,
+            parent: if session.block.children.count > 0: session.block else: session.block.parent,
+            content: tail
+        )
+        BlockSplit(from: session.block, into: created)
+}
+
+-- Enter with the caret at the very start pushes an empty block above instead of
+-- splitting, so the text keeps its identity, its children and its references.
+rule EnterAtStartInsertsAbove {
+    when: PressEnter()
+
+    requires: session.mode = editing
+    requires: session.action = none
+
+    let head = substring(session.buffer, 0, session.selection_start)
+    let tail = substring(session.buffer, session.selection_end, length(session.buffer))
+
+    requires: head = ""
+    requires: tail != ""
+
+    ensures:
+        core/Block.created(
+            page: session.block.page,
+            parent: session.block.parent,
+            content: ""
+        )
+}
+
+------------------------------------------------------------
+-- Rules: Tab
+------------------------------------------------------------
+
+-- Tab makes the block a child of the sibling above it. A block with no sibling
+-- above has nowhere to go, which is the whole of the rule.
+rule TabIndentsBlock {
+    when: PressTab(forward)
+
+    requires: session.mode = editing
+    requires: session.action = none
+    requires: forward
+
+    let target = previous_sibling(session.block)
+
+    requires: exists target
+
+    ensures: session.block.parent = target
+}
+
+rule ShiftTabOutdentsBlock {
+    when: PressTab(forward)
+
+    requires: session.mode = editing
+    requires: session.action = none
+    requires: not forward
+    requires: session.block.parent != null
+
+    ensures: session.block.parent = session.block.parent.parent
+}
+
+------------------------------------------------------------
+-- Rules: Backspace at the start of a block
+--
+-- At position zero Backspace stops editing text and starts editing structure.
+-- The refusals come first: each protects something a merge would destroy or
+-- leave ambiguous.
+------------------------------------------------------------
+
+rule RefuseMergeWithNothingAbove {
+    when: BackspaceAtStart()
+
+    requires: session.mode = editing
+
+    let target = previous_visible(session.block)
+
+    requires: not exists target
+    requires: session.buffer != ""
+
+    ensures: StructuralRefusal.created(block: session.block, reason: no_block_above)
+}
+
+-- Merging two blocks that both have children would have to decide whose children
+-- come first. Rather than guess, the editor refuses.
+rule RefuseMergeWhenBothSidesHaveChildren {
+    when: BackspaceAtStart()
+
+    requires: session.mode = editing
+
+    let target = previous_visible(session.block)
+
+    requires: exists target
+    requires: session.block.children.count > 0
+    requires: target.children.count > 0
+
+    ensures: StructuralRefusal.created(block: session.block, reason: ambiguous_child_order)
+}
+
+-- When the block above is empty it is the one that disappears. The block being
+-- edited keeps its identity, so its references and children survive.
+rule BackspaceDiscardsEmptyBlockAbove {
+    when: BackspaceAtStart()
+
+    requires: session.mode = editing
+
+    let target = previous_visible(session.block)
+
+    requires: exists target
+    requires: target.content = ""
+    requires: target.children.count = 0
+    requires: target != session.block.parent
+
+    ensures: not exists target
+}
+
+-- The general case: this block's text is appended to the one above, its children
+-- are re-parented there, and it is removed. The caret lands exactly at the seam,
+-- which is what makes the merge feel like deleting one character.
+rule BackspaceMergesIntoBlockAbove {
+    when: BackspaceAtStart()
+
+    requires: session.mode = editing
+
+    let target = previous_visible(session.block)
+
+    requires: exists target
+    requires: target.content != ""
+    requires: not (session.block.children.count > 0 and target.children.count > 0)
+
+    ensures:
+        for child in session.block.children:
+            child.parent = target
+        target.content = target.content + session.buffer
+        not exists session.block
+        session.block = target
+        session.cursor = length(target.content)
+}
+
+------------------------------------------------------------
+-- Rules: moving between blocks
+------------------------------------------------------------
+
+-- The caret leaves the block through its edges and lands in the neighbour still
+-- in edit mode. Having to click every block would undo the point of the outliner.
+rule ArrowUpMovesToPreviousBlock {
+    when: PressArrow(up)
+
+    requires: session.mode = editing
+    requires: session.action = none
+    requires: up
+    requires: on_first_line(session.buffer, session.cursor)
+
+    let target = previous_visible(session.block)
+
+    requires: exists target
+
+    ensures:
+        SaveBuffer(block: session.block, content: session.buffer)
+        BeginEditing(participant: session.participant, block: target, at: length(target.content))
+}
+
+rule ArrowDownMovesToNextBlock {
+    when: PressArrow(up)
+
+    requires: session.mode = editing
+    requires: session.action = none
+    requires: not up
+    requires: on_last_line(session.buffer, session.cursor)
+
+    let target = next_visible(session.block)
+
+    requires: exists target
+
+    ensures:
+        SaveBuffer(block: session.block, content: session.buffer)
+        BeginEditing(participant: session.participant, block: target, at: 0)
+}
+
+------------------------------------------------------------
+-- Rules: autocomplete
+------------------------------------------------------------
+
+rule DoubleBracketOpensNodeSearch {
+    when: TypeBracketTrigger()
+
+    requires: session.mode = editing
+    requires: session.action = none
+
+    ensures:
+        session.action = node_search
+        session.query_start = session.cursor
+}
+
+rule HashOpensTagSearch {
+    when: TypeCharacter(character)
+
+    requires: session.mode = editing
+    requires: character = "#"
+    requires: session.action = none
+
+    ensures:
+        session.action = tag_search
+        session.query_start = session.cursor + 1
+}
+
+rule DoubleParenOpensBlockSearch {
+    when: TypeParenTrigger()
+
+    requires: session.mode = editing
+    requires: session.action = none
+
+    ensures:
+        session.action = block_search
+        session.query_start = session.cursor
+}
+
+rule SlashOpensCommands {
+    when: TypeCharacter(character)
+
+    requires: session.mode = editing
+    requires: character = "/"
+    requires: session.action = none
+
+    ensures:
+        session.action = commands
+        session.query_start = session.cursor + 1
+}
+
+-- @invariant SearchRegionFollowsTheCaret made operational: the query is the text
+-- between the trigger and the caret, so leaving that span ends the search.
+rule CaretLeavingSearchRegionClosesAutocomplete {
+    when: MoveCaret(to)
+
+    requires: session.mode = editing
+    requires: session.action != none
+    requires: to < session.query_start
+
+    ensures:
+        session.action = none
+        session.query_start = null
+}
+
+-- A query that stops matching anything closes rather than hanging open over text
+-- the participant has moved on from.
+rule ExhaustedQueryClosesAutocomplete {
+    when: QueryMatchedNothing()
+
+    requires: session.mode = editing
+    requires: session.action != none
+
+    ensures:
+        session.action = none
+        session.query_start = null
+}
+
+rule AcceptingAChoiceClosesAutocomplete {
+    when: AcceptChoice(choice)
+
+    requires: session.mode = editing
+    requires: session.action != none
+
+    ensures:
+        session.buffer = splice(
+            session.buffer,
+            session.query_start,
+            session.cursor,
+            completion_for(session.action, choice)
+        )
+        session.action = none
+        session.query_start = null
+        session.dirty = true
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant OneAutocompleteAtATime {
+    for s in EditSessions:
+        s.action != none implies s.query_start != null
+}
+
+invariant AnIdleSessionHoldsNothing {
+    for s in EditSessions:
+        s.mode = idle implies s.block = null and s.buffer = null
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+actor EditingParticipant {
+    within: EditSession
+    identified_by: core/Participant
+}
+
+surface BlockEditor {
+    facing participant: EditingParticipant
+    context session: EditSession
+
+    exposes:
+        session.mode
+        session.action
+
+    provides:
+        BeginEditing(participant, block, at)
+        PressEnter()
+        PressTab(forward)
+        BackspaceAtStart()
+        PressEscape()
+        AcceptChoice(choice)
+
+    contracts:
+        fulfils FluidBlockEditing
+        fulfils EditorAutocomplete
+
+    @guarantee KeystrokesReadAsOneGesture
+        -- Splitting a block, merging two, or indenting one is a single keystroke
+        -- and a single change, however many blocks the graph has to renumber to
+        -- honour it.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "How long is the pause that triggers a save, and should it be the same on a phone as on a keyboard?"
+open question "Should merging two blocks that both have children be offered with a choice of child order rather than refused?"
+open question "Does Escape leaving without a way to discard require an undo before the editor can be considered finished?"
