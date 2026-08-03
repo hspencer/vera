@@ -7,6 +7,7 @@ import './styles.css';
 
 import { api, type PageSummary } from './api.ts';
 import { renderOutliner } from './outliner.ts';
+import { renderSettings, type Section } from './settings.ts';
 import { renderGraph } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D } from './graph/render3d.ts';
 import {
@@ -320,40 +321,54 @@ function wireTheme(): void {
     if (workspace.activePage !== null) void openPage(workspace.activePage);
   });
 
+  // La configuración vive en su propia superficie, no en un panel suelto: son
+  // varias secciones y van a ser más.
   const panel = $('#tokens');
-  $('#edit-tokens').addEventListener('click', () => {
-    panel.hidden = !panel.hidden;
-    if (panel.hidden) return;
+  let section: Section = 'teclado';
 
-    panel.innerHTML = '<h2>Tokens de diseño</h2>';
-    for (const token of tokens) {
-      const row = document.createElement('label');
-      row.className = 'token';
-      const name = document.createElement('span');
-      name.textContent = token.name;
-      const field = document.createElement('input');
-      field.value = workspace.scheme === 'dark' ? token.dark : token.light;
-      field.addEventListener('change', () => {
-        if (workspace.scheme === 'dark') token.dark = field.value;
-        else token.light = field.value;
+  const closeSettings = (): void => {
+    panel.hidden = true;
+    panel.innerHTML = '';
+  };
+
+  const openSettings = (): void => {
+    renderSettings(panel, tokens, section, {
+      scheme: () => workspace.scheme,
+      onTokenChange: (token, value) => {
+        // Cada token guarda su valor por esquema, así que editar el oscuro no
+        // puede pisar el claro.
+        if (workspace.scheme === 'dark') token.dark = value;
+        else token.light = value;
         saveTokens(tokens);
         applyTokens(tokens, workspace.scheme);
         void refreshGraph();
-      });
-      row.append(name, field);
-      panel.append(row);
-    }
-
-    const reset = document.createElement('button');
-    reset.textContent = 'Restituir';
-    reset.addEventListener('click', () => {
-      localStorage.removeItem('vera.tokens');
-      tokens = loadTokens();
-      applyTokens(tokens, workspace.scheme);
-      panel.hidden = true;
+      },
+      onReset: () => {
+        localStorage.removeItem('vera.tokens');
+        tokens = loadTokens();
+        applyTokens(tokens, workspace.scheme);
+        openSettings();
+      },
+      onClose: closeSettings,
     });
-    panel.append(reset);
+    // Recordar la sección entre aperturas: se vuelve a la misma que se dejó.
+    panel.querySelectorAll('.settings-tab').forEach((tab, at) => {
+      tab.addEventListener('click', () => {
+        section = at === 0 ? 'teclado' : 'apariencia';
+      });
+    });
+  };
+
+  $('#edit-tokens').addEventListener('click', () => {
+    if (panel.hidden) openSettings();
+    else closeSettings();
   });
+
+  // Escape cierra la configuración, como cierra cualquier cosa abierta encima.
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !panel.hidden) closeSettings();
+  });
+
 }
 
 // ---------------------------------------------------------------------------

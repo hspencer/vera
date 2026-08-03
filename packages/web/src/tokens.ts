@@ -6,10 +6,37 @@
 //
 // @invariant DualColourScheme: cada token declara su valor claro y su oscuro.
 
+/** Qué clase de valor es, para saber con qué control se edita. */
+export type TokenKind = 'color' | 'font' | 'text';
+
 export interface DesignToken {
   name: string;
   light: string;
   dark: string;
+}
+
+const PLEX_SANS = "'IBM Plex Sans', system-ui, sans-serif";
+const PLEX_MONO = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
+
+/** Las pilas que Vera sirve, para ofrecerlas en vez de pedir que se escriban. */
+export const FONT_STACKS: { label: string; value: string }[] = [
+  { label: 'IBM Plex Sans', value: PLEX_SANS },
+  { label: 'IBM Plex Mono', value: PLEX_MONO },
+  { label: 'la del sistema', value: 'system-ui, sans-serif' },
+  { label: 'serif del sistema', value: 'Georgia, "Times New Roman", serif' },
+  { label: 'monoespaciada del sistema', value: 'ui-monospace, "SF Mono", Menlo, monospace' },
+];
+
+/**
+ * De qué clase es cada token.
+ *
+ * Se deduce del valor y no de una lista aparte, para que un token nuevo nazca
+ * con el control correcto sin que nadie tenga que acordarse de registrarlo.
+ */
+export function kindOf(token: DesignToken): TokenKind {
+  if (token.name.startsWith('--font-')) return 'font';
+  if (/^#[0-9a-f]{3,8}$/i.test(token.light.trim())) return 'color';
+  return 'text';
 }
 
 export const DEFAULT_TOKENS: DesignToken[] = [
@@ -23,9 +50,12 @@ export const DEFAULT_TOKENS: DesignToken[] = [
   { name: '--node-fill', light: '#9aa0ab', dark: '#6d7480' },
   { name: '--link-stroke', light: '#d5d7d2', dark: '#333842' },
   { name: '--warm', light: '#ef7a1c', dark: '#ef7a1c' },
-  { name: '--font-body', light: 'Georgia, "Times New Roman", serif', dark: 'Georgia, "Times New Roman", serif' },
-  { name: '--font-ui', light: 'system-ui, sans-serif', dark: 'system-ui, sans-serif' },
-  { name: '--font-mono', light: 'ui-monospace, "SF Mono", Menlo, monospace', dark: 'ui-monospace, "SF Mono", Menlo, monospace' },
+  // La reserva del sistema no sobra: el subconjunto latino que Vera sirve no
+  // cubre el griego ni el árabe que el corpus también trae, y es mejor que se
+  // lean en otra letra a que no se lean.
+  { name: '--font-body', light: PLEX_SANS, dark: PLEX_SANS },
+  { name: '--font-ui', light: PLEX_SANS, dark: PLEX_SANS },
+  { name: '--font-mono', light: PLEX_MONO, dark: PLEX_MONO },
 ];
 
 const TOKENS_KEY = 'vera.tokens';

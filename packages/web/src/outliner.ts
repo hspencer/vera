@@ -14,6 +14,7 @@
 import { api, type BlockView, type Change, type PageView } from './api.ts';
 import { renderMarkdown, type RenderOptions } from './markdown.ts';
 import { renderMermaid } from './mermaid.ts';
+import { is } from './bindings.ts';
 import { createSession, type SaveIntent } from './session.ts';
 import {
   completionFor,
@@ -1269,19 +1270,19 @@ function startEditing(
     // Con una lista abierta, estas teclas son suyas. Sin esto, Enter partiría el
     // bloque en mitad de una búsqueda y Tab lo indentaría.
     if (list !== null && candidates.length > 0) {
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (is('complete-move', event)) {
         event.preventDefault();
         const paso = event.key === 'ArrowDown' ? 1 : -1;
         highlighted = (highlighted + paso + candidates.length) % candidates.length;
         drawList();
         return;
       }
-      if (event.key === 'Enter' || event.key === 'Tab') {
+      if (is('complete-accept', event)) {
         event.preventDefault();
         accept(highlighted);
         return;
       }
-      if (event.key === 'Escape') {
+      if (is('complete-close', event)) {
         // La primera pulsación cierra la lista; la segunda ya sale del bloque.
         event.preventDefault();
         closeList();
@@ -1291,13 +1292,13 @@ function startEditing(
 
     // Escape sale guardando. No descarta: para cuando se pulsa, la pausa ya dejó
     // el texto en el grafo, y ofrecer descartar sería mentir.
-    if (event.key === 'Escape') {
+    if (is('leave', event)) {
       event.preventDefault();
       editor.blur();
       return;
     }
 
-    if (event.key === 'Enter' && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+    if (is('split', event)) {
       event.preventDefault();
       session.type(editor.value);
       structural(resolveEnter(editor.value, start, end, context.near));
@@ -1306,28 +1307,28 @@ function startEditing(
 
     // Shift-Enter escribe un salto de línea dentro del bloque, que es la única
     // forma de tener un párrafo de varias líneas en un solo bloque.
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    if (is('leave-cmd', event)) {
       event.preventDefault();
       editor.blur();
       return;
     }
 
-    if (event.key === 'Tab') {
+    if (is('indent', event) || is('outdent', event)) {
       event.preventDefault();
       session.type(editor.value);
-      structural(resolveTab(!event.shiftKey, context.near));
+      structural(resolveTab(is('indent', event), context.near));
       return;
     }
 
-    if (event.key === 'Backspace' && start === 0 && end === 0) {
+    if (is('merge', event) && start === 0 && end === 0) {
       event.preventDefault();
       session.type(editor.value);
       structural(resolveBackspaceAtStart(editor.value, context.near));
       return;
     }
 
-    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-      const outcome = resolveArrow(event.key === 'ArrowUp', editor.value, start, context.near);
+    if (is('up', event) || is('down', event)) {
+      const outcome = resolveArrow(is('up', event), editor.value, start, context.near);
       if (outcome.kind === 'ninguno') return;
       event.preventDefault();
       session.type(editor.value);

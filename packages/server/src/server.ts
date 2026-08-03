@@ -48,6 +48,12 @@ const MIME: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.webmanifest': 'application/manifest+json',
+  // Las fuentes las sirve Vera. Sin su tipo declarado viajan como binario
+  // cualquiera, y aunque el navegador suele tragárselo por el `format()` del
+  // @font-face, no hay razón para servir algo diciendo que no se sabe qué es.
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.txt': 'text/plain; charset=utf-8',
 };
 
 export interface ServerOptions {

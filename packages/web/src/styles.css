@@ -5,6 +5,61 @@
  * de la aplicación (@guarantee EditableDesignSystem).
  */
 
+/*
+ * Las fuentes se sirven desde la propia Vera.
+ *
+ * No dependen de que el cliente las tenga instaladas —lo que dejaría la
+ * tipografía a merced de cada aparato— ni de una CDN, que sería una petición a
+ * un tercero cada vez que alguien abre su memoria privada. Son 104 KB, están
+ * bajo la SIL Open Font License, y su texto viaja junto a los archivos.
+ *
+ * El intercambio al cargar deja el texto legible desde el primer momento: una
+ * memoria que tarda en mostrar sus propias palabras no sirve de nada.
+ *
+ * El subconjunto es latino. El corpus también trae griego y árabe, y para eso
+ * está la cadena de reserva del sistema: es mejor que se lean en otra letra a
+ * que no se lean.
+ */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/plex-sans-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/plex-sans-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/plex-sans-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/plex-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/plex-mono-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -330,16 +385,31 @@ input {
 /* El control de plegado. Está siempre en la columna —vacío en las hojas— para
    que las viñetas queden alineadas hagan lo que hagan sus vecinos. */
 .fold {
+  position: relative;
   flex: none;
-  width: 1rem;
-  font-size: 0.62rem;
-  line-height: 1.6;
+  width: 1.1rem;
+  height: 1.4rem;
+  font-size: 0.72rem;
+  line-height: 1.4rem;
   color: var(--text-dim);
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
   text-align: center;
+  border-radius: 50%;
+}
+
+/* El mismo trato que el bullet: el triángulo es pequeño, el área no. */
+.fold:not(.empty)::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 44px;
+  border-radius: 50%;
 }
 
 .fold.empty {
@@ -474,15 +544,40 @@ input {
 
 /* El bullet es el asa del bloque: abre sus acciones. Es un `button` para que
    el teclado llegue a él, pero no debe parecer uno. */
+/*
+ * El bullet se toca con el dedo, así que su área es lo que importa, no su
+ * tamaño dibujado. El punto sigue siendo pequeño —un esquema con viñetas
+ * gordas se lee peor— pero el botón que lo rodea llega a los 44 px que un dedo
+ * necesita para acertar sin suerte.
+ *
+ * El área se estira con un pseudoelemento en vez de con relleno: el relleno
+ * separaría las filas y volvería el esquema más suelto de lo que debe ser.
+ */
 .bullet {
+  position: relative;
   color: var(--text-dim);
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   flex: none;
   cursor: pointer;
   background: none;
   border: none;
-  padding: 0 0.15rem;
-  line-height: 1.6;
+  padding: 0;
+  width: 1.1rem;
+  height: 1.4rem;
+  line-height: 1.4rem;
+  text-align: center;
+  border-radius: 50%;
+}
+
+.bullet::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 44px;
+  /* Sólo amplía dónde se puede tocar; no se ve ni empuja nada. */
   border-radius: 50%;
 }
 
@@ -1017,55 +1112,6 @@ code {
 
 /* --- Panel de tokens --------------------------------------------------- */
 
-#tokens {
-  position: fixed;
-  right: 1rem;
-  top: 3.4rem;
-  width: 22rem;
-  max-height: 75vh;
-  overflow-y: auto;
-  background: var(--bg-raised);
-  border: 1px solid var(--rule);
-  border-radius: 5px;
-  padding: 0.8rem;
-  font-family: var(--font-ui);
-  font-size: 0.8rem;
-  z-index: 30;
-}
-
-#tokens h2 {
-  margin: 0 0 0.6rem;
-  font-size: 0.9rem;
-  font-weight: 400;
-}
-
-.token {
-  display: grid;
-  grid-template-columns: 9rem 1fr;
-  gap: 0.4rem;
-  align-items: center;
-  margin-bottom: 0.3rem;
-}
-
-.token span {
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-}
-
-.token input {
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-  background: var(--bg);
-  padding: 0.15rem 0.35rem;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-}
-
-/* --- Teléfono ----------------------------------------------------------
- * @guarantee ResponsiveSinglePaneNavigation: un solo panel, nunca dividido.
- */
-
 @media (max-width: 640px) {
   #vera-root,
   #vera-root[data-layout='split'],
@@ -1185,4 +1231,199 @@ code {
   border-radius: 4px;
   padding: 0.35rem 0.9rem;
   cursor: pointer;
+}
+
+/* --- Configuración ------------------------------------------------------ */
+
+#tokens {
+  position: fixed;
+  right: 1rem;
+  top: calc(3.4rem + env(safe-area-inset-top));
+  width: 30rem;
+  max-width: calc(100vw - 2rem);
+  max-height: 78vh;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 10px 34px rgb(0 0 0 / 26%);
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  z-index: 30;
+}
+
+.settings-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.7rem 0.9rem 0.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.settings-head h2 {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.settings-close {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.8rem;
+  text-decoration: underline;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.5rem 0.9rem 0;
+}
+
+.settings-tab {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px 4px 0 0;
+  color: var(--text-dim);
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+
+.settings-tab.selected {
+  color: var(--accent);
+  border-color: var(--rule);
+  border-bottom-color: transparent;
+  background: var(--bg);
+}
+
+.settings-body {
+  padding: 0.9rem;
+}
+
+.settings-note {
+  margin: 0 0 0.9rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.settings-body h3 {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.settings-body h3:first-of-type {
+  margin-top: 0;
+}
+
+/* Los atajos: la tecla a la izquierda, qué hace y cuándo a la derecha. */
+.keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.8rem;
+  margin: 0;
+  align-items: baseline;
+}
+
+.keys dt {
+  white-space: nowrap;
+}
+
+.keys dd {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.keys kbd {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.1rem 0.4rem;
+  white-space: nowrap;
+}
+
+.keys-when {
+  display: block;
+  color: var(--text-dim);
+  font-size: 0.74rem;
+}
+
+/* Los tokens: nombre legible a la izquierda, su control a la derecha. */
+.tokens {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.token {
+  display: grid;
+  grid-template-columns: 1fr 12rem;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.token-name {
+  display: flex;
+  flex-direction: column;
+}
+
+.token-var {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+.token input[type='text'],
+.token select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.78rem;
+}
+
+/* El selector de color y su valor comparten fila: se elige mirando, pero el
+   token sigue siendo texto y hay quien prefiere escribirlo. */
+.token-color {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.token-color input[type='color'] {
+  flex: none;
+  width: 2.2rem;
+  height: 1.7rem;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+.token-hex {
+  font-family: var(--font-mono);
+  min-width: 0;
+}
+
+.settings-reset {
+  margin-top: 1rem;
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--text-dim);
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.settings-reset:hover {
+  color: var(--warm);
+  border-color: var(--warm);
 }
