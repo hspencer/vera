@@ -209,7 +209,7 @@ describe('inlineMarkdown', () => {
     it('convierte la referencia en un salto al destino', () => {
       assert.equal(
         inlineMarkdown('afirmación[^3]'),
-        'afirmación<sup class="fnref"><a href="#fn-3">3</a></sup>',
+        'afirmación<sup class="fnref"><a class="fnref-link" href="#fn-3">3</a></sup>',
       );
     });
 

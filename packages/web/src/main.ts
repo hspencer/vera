@@ -10,6 +10,7 @@ import { renderOutliner } from './outliner.ts';
 import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
 import { renderVoicePanel } from './voice-panel.ts';
+import { brandMark, icon } from './icons.ts';
 import { renderGraph } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D } from './graph/render3d.ts';
 import {
@@ -345,10 +346,26 @@ function wireSearch(): void {
 function wireTheme(): void {
   applyTokens(tokens, workspace.scheme);
 
-  $('#scheme').addEventListener('click', () => {
+  // La marca y el micrófono no cambian nunca, así que se dibujan una vez.
+  $('#brand').innerHTML = brandMark();
+  $('#insert-voice').innerHTML = icon('mic');
+  $('#settings').innerHTML = icon('settings');
+
+  // El botón muestra a dónde lleva, no dónde se está: con el tema oscuro
+  // puesto ofrece el sol, que es lo que se obtiene al pulsarlo.
+  const scheme = $('#scheme');
+  const drawScheme = (): void => {
+    const toLight = workspace.scheme === 'dark';
+    scheme.innerHTML = icon(toLight ? 'sun' : 'moon');
+    scheme.title = toLight ? 'Pasar al tema claro' : 'Pasar al tema oscuro';
+  };
+  drawScheme();
+
+  scheme.addEventListener('click', () => {
     workspace.scheme = workspace.scheme === 'dark' ? 'light' : 'dark';
     session.setScheme(workspace.scheme);
     applyTokens(tokens, workspace.scheme);
+    drawScheme();
     void refreshGraph();
     // El texto sigue al tema por variables CSS, pero un diagrama Mermaid ya
     // está dibujado con los colores del tema anterior y no puede repintarse:
@@ -421,7 +438,7 @@ function wireTheme(): void {
     });
   });
 
-  $('#edit-tokens').addEventListener('click', () => {
+  $('#settings').addEventListener('click', () => {
     if (panel.hidden) openSettings();
     else closeSettings();
   });

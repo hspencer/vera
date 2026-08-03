@@ -32,7 +32,10 @@
 
     <div id="vera-root" data-layout="split">
       <header id="bar">
-        <span id="brand">Vera</span>
+        <!-- La marca la dibuja icons.ts, para que el icono tenga una sola
+             definición y no se separe del que usa el resto de la interfaz. El
+             nombre sigue estando, en la etiqueta accesible y en el título. -->
+        <span id="brand" title="Vera" role="img" aria-label="Vera"></span>
         <nav id="breadcrumbs"></nav>
         <div id="search-wrap">
           <input id="search" type="search" placeholder="buscar en el grafo" autocomplete="off" />
@@ -46,9 +49,16 @@
           <button data-view="graph_2d" title="Grafo en dos dimensiones">2D</button>
           <button data-view="graph_3d" title="Grafo en tres dimensiones">3D</button>
           <span class="sep"></span>
-          <button id="scheme" title="Claro u oscuro">◐</button>
-          <button id="insert-voice" title="Insertar voz: grabar, transcribir aquí mismo, validar y asentar">voz</button>
-          <button id="edit-tokens" title="Editar los tokens de diseño">tokens</button>
+          <!-- El contenido de estos tres lo pone icons.ts. El texto accesible
+               va en aria-label, que es lo que se lee: un icono a solas no se
+               anuncia, y el dibujo no reemplaza al nombre de la acción. -->
+          <button id="scheme" aria-label="Claro u oscuro"></button>
+          <button
+            id="insert-voice"
+            aria-label="Insertar voz"
+            title="Insertar voz: grabar, transcribir aquí mismo, validar y asentar"
+          ></button>
+          <button id="settings" aria-label="Ajustes" title="Ajustes de Vera"></button>
         </div>
       </header>
 

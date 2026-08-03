@@ -15,6 +15,7 @@ import { api, type BlockView, type Change, type PageView } from './api.ts';
 import { renderMarkdown, type RenderOptions } from './markdown.ts';
 import { renderMermaid } from './mermaid.ts';
 import { is } from './bindings.ts';
+import { icon } from './icons.ts';
 import { createSession, type SaveIntent } from './session.ts';
 import {
   completionFor,
@@ -587,7 +588,8 @@ export function renderOutliner(
     const drop = document.createElement('button');
     drop.type = 'button';
     drop.className = 'property-drop';
-    drop.textContent = '×';
+    drop.innerHTML = icon('x');
+    drop.setAttribute('aria-label', `quitar ${property.key}`);
     drop.title = `quitar ${property.key}`;
     drop.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -687,8 +689,9 @@ export function renderOutliner(
       const fold = document.createElement('button');
       fold.type = 'button';
       fold.className = shut ? 'fold shut' : 'fold';
-      fold.textContent = shut ? '▸' : '▾';
+      fold.innerHTML = icon(shut ? 'chevron-right' : 'chevron-down');
       fold.title = shut ? 'desplegar' : 'plegar';
+      fold.setAttribute('aria-label', shut ? 'desplegar' : 'plegar');
       fold.setAttribute('aria-expanded', String(!shut));
       fold.addEventListener('click', (event) => {
         event.stopPropagation();

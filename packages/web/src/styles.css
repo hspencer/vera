@@ -175,10 +175,38 @@ input {
   font-size: 0.85rem;
 }
 
+/*
+ * Todo icono mide lo que diga su contenedor.
+ *
+ * `1em` en vez de una medida fija: así un icono crece con el `font-size` del
+ * control donde se pone, y el mismo dibujo sirve para el bullet de un bloque y
+ * para la marca sin tener que declarar píxeles en cada sitio.
+ */
+.icon {
+  width: 1em;
+  height: 1em;
+  display: block;
+  /* El trazo no se estira al escalar: un icono grande con la línea gruesa deja
+     de pertenecer a la familia. `vector-effect` mantiene el grosor. */
+  vector-effect: non-scaling-stroke;
+}
+
+/* Un botón de icono centra su dibujo y no depende del interlineado del texto. */
+#controls button:has(.icon),
+.fold,
+.bullet,
+.property-drop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 #brand {
-  font-family: var(--font-body);
-  font-size: 1.15rem;
-  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  /* La marca ya no es la palabra sino el icono, así que el tamaño lo fija aquí
+     el `font-size` del que cuelga el `1em` del SVG. */
+  font-size: 1.6rem;
   color: var(--accent);
 }
 
@@ -384,20 +412,49 @@ input {
 
 /* El control de plegado. Está siempre en la columna —vacío en las hojas— para
    que las viñetas queden alineadas hagan lo que hagan sus vecinos. */
+/*
+ * El chevron de plegado sólo se ve cuando hace falta.
+ *
+ * Antes estaba siempre a la vista y el resultado era que cada bloque con hijos
+ * llevaba dos marcas seguidas —el triángulo y la viñeta—, dos cosas donde el
+ * ojo espera una. Ahora aparece al pasar por encima de la fila, y la viñeta
+ * queda como la única marca permanente del bloque.
+ *
+ * Un bloque plegado es la excepción: ahí el chevron se queda a la vista, porque
+ * es la única señal de que hay algo escondido debajo y esconderla sería esconder
+ * contenido sin decirlo.
+ */
 .fold {
   position: relative;
   flex: none;
-  width: 1.1rem;
-  height: 1.4rem;
-  font-size: 0.72rem;
-  line-height: 1.4rem;
+  width: 1.4rem;
+  height: 1.6rem;
+  font-size: 1.05rem;
   color: var(--text-dim);
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
-  text-align: center;
   border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.block:hover > .fold,
+.block:focus-within > .fold,
+.fold.shut {
+  opacity: 1;
+}
+
+/*
+ * En una pantalla táctil no hay «pasar por encima», así que un padre desplegado
+ * no tendría manera de plegarse. Ahí el chevron se queda a la vista: ver dos
+ * marcas es peor que no poder plegar.
+ */
+@media (hover: none) {
+  .fold {
+    opacity: 1;
+  }
 }
 
 /* El mismo trato que el bullet: el triángulo es pequeño, el área no. */
@@ -553,19 +610,20 @@ input {
  * El área se estira con un pseudoelemento en vez de con relleno: el relleno
  * separaría las filas y volvería el esquema más suelto de lo que debe ser.
  */
+/* Crece a la par del chevron: si una de las dos marcas de la fila se agranda y
+   la otra no, dejan de leerse como el par que son. */
 .bullet {
   position: relative;
   color: var(--text-dim);
-  font-size: 0.85rem;
+  font-size: 1.15rem;
   flex: none;
   cursor: pointer;
   background: none;
   border: none;
   padding: 0;
-  width: 1.1rem;
-  height: 1.4rem;
-  line-height: 1.4rem;
-  text-align: center;
+  width: 1.4rem;
+  height: 1.6rem;
+  line-height: 1;
   border-radius: 50%;
 }
 
@@ -752,11 +810,36 @@ input {
   resize: none;
 }
 
-.wiki {
+/*
+ * Un enlace es un enlace, lleve dentro o fuera.
+ *
+ * Los externos no tenían regla y se quedaban con el azul del navegador, que ni
+ * pertenece al tema ni cambia con él: en modo oscuro quedaba un azul ajeno
+ * junto al acento de Vera, y el destino de un enlace no es razón para pintarlo
+ * de otro color.
+ *
+ * Los enlaces del Markdown son los únicos sin clase propia: la referencia a
+ * bloque, el medio y la nota al pie declaran la suya porque se pintan a
+ * propósito de otra forma. Seleccionar por ausencia de clase evita ir
+ * excluyéndolos uno a uno a golpe de especificidad.
+ */
+.wiki,
+.body a[href]:not([class]) {
   color: var(--accent);
   text-decoration: none;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
+
+/* Visitado tampoco lo cambia: el morado del navegador es del navegador. */
+.body a[href]:not([class]):visited {
+  color: var(--accent);
+}
+
+.wiki:hover,
+.body a[href]:not([class]):hover {
+  border-bottom-color: var(--accent);
+}
+
 
 .tag {
   color: var(--warm);

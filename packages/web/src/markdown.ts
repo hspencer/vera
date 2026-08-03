@@ -130,7 +130,7 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
   // Referencia a nota al pie. Sólo el destino lleva id, así que dos bloques que
   // citen la misma nota no producen ids repetidos en la página.
   html = html.replace(/\[\^([^\]\s]+)\]/g, (_whole, id: string) =>
-    hold(`<sup class="fnref"><a href="#fn-${encodeURIComponent(id)}">${id}</a></sup>`),
+    hold(`<sup class="fnref"><a class="fnref-link" href="#fn-${encodeURIComponent(id)}">${id}</a></sup>`),
   );
 
   // Referencia a bloque. El identificador no lleva espacios ni paréntesis, de

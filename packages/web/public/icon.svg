@@ -1,6 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Vera">
+  <!--
+    La marca de Vera: el icono `share-2` de Feather (Cole Bemis, MIT) girado un
+    cuarto de vuelta a la izquierda. Los tres nodos quedan en V, y el dibujo
+    dice lo que Vera es: cosas y los vínculos entre ellas.
+
+    El trazo va escrito aquí y no importado de icons.ts porque este archivo lo
+    lee el sistema operativo al instalar la aplicación, no el navegador: no
+    puede depender de que ningún guion llegue a ejecutarse.
+
+    El lienzo de Feather mide 24 y el del icono 64: el `scale(2)` con margen de
+    8 deja la marca centrada y con aire suficiente para que el sistema le
+    redondee las esquinas sin comerse un nodo.
+  -->
   <rect width="64" height="64" rx="12" fill="#16181c"/>
-  <path d="M16 18 L32 46 L48 18" fill="none" stroke="#4a9ade" stroke-width="5"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="32" cy="46" r="4" fill="#ef7a1c"/>
+  <g transform="translate(8 8) scale(2)" fill="none" stroke="#4a9ade" stroke-width="2"
+     stroke-linecap="round" stroke-linejoin="round">
+    <g transform="rotate(-90 12 12)">
+      <circle cx="18" cy="5" r="3"/>
+      <circle cx="6" cy="12" r="3"/>
+      <circle cx="18" cy="19" r="3"/>
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+    </g>
+  </g>
 </svg>
