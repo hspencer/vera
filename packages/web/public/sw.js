@@ -6,7 +6,9 @@
 // las lecturas del grafo: servir grafo viejo sin poder escribir sería peor que
 // decir que no hay red.
 
-const SHELL = 'vera-shell-v2';
+// Subir este número tira el caché anterior entero al activarse. Hace falta
+// cuando lo guardado deja de ser válido, y no sólo cuando cambia esta lista.
+const SHELL = 'vera-shell-v3';
 const ASSETS = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -53,7 +55,18 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
-        .then((response) => keep(request, response))
+        .then((response) => {
+          // El armazón se guarda SIEMPRE bajo la misma clave. Guardarlo sólo
+          // bajo la URL pedida dejaba `/index.html` con la copia del día de la
+          // instalación para siempre, y era justo esa la que se servía al caer
+          // la red: un index viejo pidiendo assets con hash ya inexistentes.
+          // La aplicación quedaba en blanco ante cualquier hipo del servidor.
+          if (response.ok) {
+            const copy = response.clone();
+            void caches.open(SHELL).then((cache) => cache.put('/index.html', copy));
+          }
+          return response;
+        })
         .catch(() => caches.match('/index.html').then((hit) => hit ?? caches.match('/'))),
     );
     return;

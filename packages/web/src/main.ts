@@ -422,6 +422,8 @@ async function start(): Promise<void> {
   );
 
   const index = $('#index');
+  // Reintentar el arranque no puede duplicar la lateral.
+  index.innerHTML = '';
   for (const page of byConnection.slice(0, 200)) {
     const item = document.createElement('button');
     item.className = 'index-item';
@@ -440,7 +442,53 @@ async function start(): Promise<void> {
   if (first !== undefined) await openPage(first.id);
 }
 
-void start();
+/**
+ * Arrancar puede fallar, y hasta ahora fallaba en silencio.
+ *
+ * `start()` pedía `/health` sin recoger el error: bastaba que el servidor
+ * estuviera un segundo caído —un reinicio, la máquina despertando, Tailscale
+ * reconectando— para que la promesa se rechazara, no se dibujara nada, y la
+ * aplicación quedara en blanco sin decir por qué ni recuperarse sola.
+ *
+ * Ahora lo dice y lo reintenta. Un servidor que vuelve en unos segundos no
+ * debería costar una recarga a mano.
+ */
+async function boot(attempt = 1): Promise<void> {
+  // El aviso del HTML sólo tiene sentido mientras el guion no haya arrancado.
+  // Que lo retire esto y no el HTML es lo que lo vuelve fiable: aparece salvo
+  // que este código llegue a correr.
+  document.querySelector('#sin-arranque')?.remove();
+  try {
+    await start();
+  } catch (error) {
+    const why = error instanceof Error ? error.message : 'error desconocido';
+    const wait = Math.min(attempt * 2, 10);
+
+    const root = $('#text');
+    root.innerHTML = '';
+    const message = document.createElement('p');
+    message.className = 'notice';
+    message.textContent =
+      `No se pudo hablar con el servidor de Vera (${why}). ` +
+      `Reintentando en ${wait} segundos…`;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'notice-retry';
+    retry.textContent = 'reintentar ahora';
+    let timer: number | undefined;
+    const again = (): void => {
+      window.clearTimeout(timer);
+      void boot(attempt + 1);
+    };
+    retry.addEventListener('click', again);
+    message.append(' ', retry);
+    root.append(message);
+
+    timer = window.setTimeout(again, wait * 1000);
+  }
+}
+
+void boot();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

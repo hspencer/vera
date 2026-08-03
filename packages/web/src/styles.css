@@ -389,6 +389,17 @@ input {
   text-decoration: underline;
 }
 
+.notice-retry {
+  font-family: var(--font-ui);
+  font-size: inherit;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 /* Lo editable se anuncia al pasar por encima. Sin esto, el front matter parece
    lo que era hasta ahora: un cartel. */
 .page-title,
@@ -1145,4 +1156,33 @@ code {
   .block-menu {
     max-width: calc(100vw - 2rem);
   }
+}
+
+/* El aviso que vive en el HTML para cuando el guion no llega a arrancar. Se
+   dibuja sobre todo lo demás porque, si está, no hay nada más que ver. */
+#sin-arranque {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg, #16181c);
+  color: var(--text, #d8dae0);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+#sin-arranque button {
+  font: inherit;
+  color: var(--accent, #4a9ade);
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
 }

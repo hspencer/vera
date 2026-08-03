@@ -17,6 +17,19 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   </head>
   <body>
+    <!--
+      Red de seguridad. Si el guion de la aplicación no llega a ejecutarse —sin
+      red, con el service worker sirviendo un armazón cuyo asset no tiene
+      cacheado, o con un error de carga— la página quedaba en blanco y muda.
+      Este aviso vive en el HTML, así que no depende de nada que pueda fallar, y
+      el propio arranque lo retira en cuanto toma el control.
+    -->
+    <div id="sin-arranque" role="status">
+      <p>Vera no pudo arrancar.</p>
+      <p>Puede que el servidor no esté respondiendo. Se reintenta solo.</p>
+      <button type="button" onclick="location.reload()">recargar</button>
+    </div>
+
     <div id="vera-root" data-layout="split">
       <header id="bar">
         <span id="brand">Vera</span>
