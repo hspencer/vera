@@ -458,6 +458,132 @@ async function pageMarkdown(page: string): Promise<string | null> {
   }
 }
 
+/** Lo que procesar devolvió. Proposiciones, ninguna decisión. */
+interface PageReading {
+  links: {
+    url: string;
+    title: string | null;
+    kind: string | null;
+    unreachable: string | null;
+  }[];
+  types: string[];
+  tags: string[];
+  notDone: string[];
+}
+
+/**
+ * Procesa la página y enseña lo que se leyó.
+ *
+ * Nada de esto se aplica: lo que se ve es una lectura, y quien decide qué hacer
+ * con ella es quien la pidió. @invariant ProcessingProposesAndNothingMore.
+ */
+async function processPage(
+  page: { id: string; title: string },
+  notify: (message: string) => void,
+): Promise<void> {
+  notify('leyendo la página y sus enlaces…');
+  let reading: PageReading;
+  try {
+    const answer = await fetch(`/pages/${encodeURIComponent(page.id)}/process`, { method: 'POST' });
+    if (!answer.ok) {
+      notify('no se pudo procesar la página');
+      return;
+    }
+    reading = (await answer.json()) as PageReading;
+  } catch {
+    notify('no se pudo procesar: sin conexión con el servidor');
+    return;
+  }
+
+  const panel = document.querySelector<HTMLElement>('#tokens');
+  if (panel === null) return;
+  panel.hidden = false;
+  panel.innerHTML = '';
+
+  const head = document.createElement('header');
+  head.className = 'settings-head';
+  const title = document.createElement('h2');
+  title.textContent = `Lectura de «${page.title}»`;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'settings-close';
+  close.textContent = 'cerrar';
+  close.addEventListener('click', () => {
+    panel.hidden = true;
+    panel.innerHTML = '';
+  });
+  head.append(title, close);
+  panel.append(head);
+
+  const body = document.createElement('div');
+  body.className = 'settings-body';
+  panel.append(body);
+
+  const note = document.createElement('p');
+  note.className = 'settings-note';
+  note.textContent =
+    'Esto es una lectura, no un cambio. Nada de lo que aparece aquí se ha escrito ' +
+    'en la página: procesarla y luego cerrar esto la deja exactamente como estaba.';
+  body.append(note);
+
+  // Lo que no se pudo hacer va primero. Un resultado parcial callado se lee como
+  // uno completo. @guarantee ProcessingSaysWhatItDidAndWhatItCouldNot.
+  if (reading.notDone.length > 0) {
+    const missing = document.createElement('ul');
+    missing.className = 'reading-missing';
+    for (const line of reading.notDone) {
+      const item = document.createElement('li');
+      item.textContent = line;
+      missing.append(item);
+    }
+    body.append(missing);
+  }
+
+  if (reading.links.length === 0) {
+    const none = document.createElement('p');
+    none.className = 'settings-note';
+    none.textContent = 'La página no nombra ninguna dirección.';
+    body.append(none);
+    return;
+  }
+
+  const heading = document.createElement('h3');
+  heading.className = 'settings-group';
+  heading.textContent = `Enlaces (${reading.links.length})`;
+  body.append(heading);
+
+  for (const link of reading.links) {
+    const row = document.createElement('div');
+    row.className = 'reading-link';
+
+    const what = document.createElement('span');
+    what.className = 'reading-title';
+    what.textContent = link.title ?? link.url;
+    row.append(what);
+
+    const meta = document.createElement('span');
+    meta.className = 'reading-meta';
+    meta.textContent =
+      link.unreachable !== null ? link.unreachable : `${link.kind ?? 'desconocido'} · ${link.url}`;
+    row.append(meta);
+
+    // El título se copia; no se escribe solo. La dirección del bloque no se
+    // toca: @guarantee ALinkResolvedKeepsItsAddress.
+    if (link.title !== null) {
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'page-action';
+      copy.textContent = 'copiar como enlace con título';
+      copy.addEventListener('click', () => {
+        void copyText(`[${link.title ?? ''}](${link.url})`, notify);
+      });
+      row.append(copy);
+    }
+
+    body.append(row);
+  }
+}
+
 async function copyPageMarkdown(page: string): Promise<void> {
   const text = await pageMarkdown(page);
   if (text === null) return;
@@ -711,9 +837,37 @@ export function renderOutliner(
 
   header.append(properties, add);
 
-  const badge = document.createElement('span');
+  /*
+   * Público o privado, como interruptor.
+   *
+   * Era una etiqueta que sólo decía el estado, así que cambiarlo no tenía dónde
+   * hacerse. Nace apagado —una página es privada hasta que alguien decide lo
+   * contrario— y sólo lo mueve una persona: @invariant OnlyTheOwnerPublishes.
+   *
+   * El `public::` que traen las páginas importadas de Logseq es otra cosa: una
+   * propiedad de texto que duplica esto sin gobernarlo. Se sigue viendo en el
+   * front matter porque es contenido del corpus, y quien manda es este.
+   */
+  const badge = document.createElement('button');
+  badge.type = 'button';
+  const publica = page.visibility === 'public';
   badge.className = `visibility ${page.visibility}`;
-  badge.textContent = page.visibility === 'public' ? 'pública' : 'privada';
+  badge.textContent = publica ? 'pública' : 'privada';
+  badge.setAttribute('role', 'switch');
+  badge.setAttribute('aria-checked', String(publica));
+  badge.title = publica
+    ? 'Pública: se proyecta al sitio personal. Pulsa para hacerla privada.'
+    : 'Privada: no sale de aquí. Pulsa para publicarla.';
+  badge.addEventListener('click', () => {
+    void submitAndReload(
+      {
+        kind: 'set_page_visibility',
+        page: page.id,
+        visibility: publica ? 'private' : 'public',
+      },
+      callbacks,
+    );
+  });
   header.append(badge);
 
   /*
@@ -735,6 +889,13 @@ export function renderOutliner(
   more.addEventListener('click', (event) => {
     event.stopPropagation();
     openBlockMenu(more, [
+      {
+        // Deliberado y sobre esta página, nunca de oficio: resolver un enlace es
+        // preguntarle al servidor que lo tiene, y eso le dice que aquí alguien
+        // está leyendo sobre esto.
+        label: 'Procesar la página',
+        run: () => void processPage(page, toast),
+      },
       {
         label: 'Copiar el Markdown de la página',
         run: () => void copyPageMarkdown(page.id),

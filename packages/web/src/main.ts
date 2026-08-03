@@ -290,6 +290,16 @@ async function startDay(date: string, content = ''): Promise<string | null> {
       return null;
     }
     pageId = born.subjectId;
+    // Un día es una bitácora, y lo dice desde que nace. Es lo que permite
+    // preguntar por los días como clase —«qué escribí en julio»— sin que haya
+    // que reconocer una fecha en un título, y lo que hace que un día importado
+    // de otra parte y uno nacido aquí se parezcan.
+    await api.submit({
+      kind: 'set_property',
+      page: pageId,
+      propertyKey: 'type',
+      propertyValue: 'bitácora',
+    });
     // El índice en memoria tiene que enterarse, o el día parecería no existir
     // hasta la próxima recarga.
     pages.unshift({ id: pageId, title: date, visibility: 'private', blockCount: 0, linkCount: 0 });

@@ -1,0 +1,246 @@
+-- allium: 3
+-- special-pages.allium
+
+-- Scope: The pages by which Vera describes itself — its ontology, its
+--   presentation, and the standing instructions its agents work under
+-- Includes: What makes a page special, what a special page may and may not
+--   decide, who may change one, and what happens when what it says cannot be
+--   understood
+-- Excludes:
+--   - The meaning of each particular setting (see workspace-interface.allium,
+--     controlled-ontology.allium)
+--   - How an agent is credentialed (see agent-participation.allium)
+--   - Editing and rendering, which are the same as for any other page
+-- Dependencies: Page, Block and Participant are governed by core.allium; the
+--   authorship of what an agent writes by agent-participation.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- Vera described inside Vera.
+--
+-- What governs the system — the vocabulary it classifies with, the colours it
+-- draws itself in, the standing instructions its librarian works under — lives
+-- in the corpus it governs, as pages, written in the same Markdown as everything
+-- else.
+--
+-- The reason is not elegance. A configuration file has no history, no author and
+-- no provenance: it says what it says now, and nothing about who decided it or
+-- when, or what it said before. A page has all of that already, because Vera
+-- gives it to every page. Changing how the librarian works becomes a dated,
+-- attributed, reversible change that can be read, argued with and undone — which
+-- is what one wants from a decision, and never what a config file offers.
+--
+-- The price is circularity, and it is paid explicitly below rather than
+-- discovered later.
+contract SelfDescription {
+    read_setting: (page: core/Page, key: String) -> String?
+    propose_change: (participant: core/Participant, page: core/Page, content: String) -> Proposal
+
+    @invariant DefaultsLiveInTheCode
+        -- Every setting a special page can express has a value that holds when
+        -- the page is absent, empty or unreadable. A special page overrides; it
+        -- never supplies the floor.
+        --
+        -- Otherwise Vera would have to read a page to know how to draw the page,
+        -- and a corpus whose ontology page was deleted would have no ontology
+        -- rather than the starting one.
+
+    @invariant ASpecialPageCannotBreakVera
+        -- What a special page says is validated when read, never when written.
+        -- A value that cannot be understood is ignored and reported, and the
+        -- default stands. Nobody is ever prevented from editing a page of their
+        -- own corpus, and no edit can leave Vera unable to open.
+
+    @invariant AnAgentProposesToASpecialPage
+        -- An agent may write anywhere in the corpus except a special page, where
+        -- its changes arrive as proposals for a human to confirm.
+        --
+        -- This is the one place where the rule matters most: the librarian's
+        -- standing instructions live in a corpus the librarian can write to, and
+        -- an agent able to rewrite its own instructions is an agent under no
+        -- instructions at all. Stated as a rule and not left to trust, because
+        -- trust is exactly what an instruction is meant to establish.
+        --
+        -- It is a restriction on applying, not on participating: an agent that
+        -- notices its instructions are wrong should say so, and this is how.
+
+    @invariant SpecialityIsDeclaredNotGuessed
+        -- A page is special because it says it is, in a property anyone can
+        -- read and change. Vera does not keep a private list of page titles it
+        -- treats differently: a rule that cannot be read from the corpus is a
+        -- rule the corpus cannot be audited against.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+-- What a special page governs. Open on purpose: the list grows, and each new
+-- kind is a decision to be argued rather than a value to be added quietly.
+enum SpecialKind { ontology | presentation | instructions }
+
+enum ProposalStatus { proposed | accepted | rejected }
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- A page that Vera reads for its own governance.
+--
+-- Not a different kind of page: a page carrying a property that says what it
+-- governs. It has blocks, revisions, links and history like any other, and is
+-- read and written in the same editor.
+entity SpecialPage {
+    graph: core/Graph
+    page: core/Page
+    kind: SpecialKind
+}
+
+-- A change an agent wants made to a special page, waiting for a person.
+entity Proposal {
+    target: SpecialPage
+    -- What the agent would have written, whole, so that accepting it is applying
+    -- a text and not reconstructing an intention.
+    content: String
+    rationale: String
+    status: ProposalStatus
+    proposed_by: core/Participant
+    proposed_at: Timestamp
+    decided_by: core/Participant?
+    decided_at: Timestamp?
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- A person writes to a special page like to any other page. There is no
+-- ceremony: it is their corpus and their governance.
+rule ParticipantEditsASpecialPage {
+    when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    let special = SpecialPage{page: change.page}
+
+    requires: exists special
+    requires: participant.kind = human
+
+    ensures: change_applies
+}
+
+-- An agent's change to a special page becomes a proposal instead of an edit.
+rule AgentProposesToASpecialPage {
+    when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    let special = SpecialPage{page: change.page}
+
+    requires: exists special
+    requires: participant.kind = agent
+
+    ensures: Proposal.created(
+        target: special,
+        content: change.content,
+        rationale: "",
+        status: proposed,
+        proposed_by: participant,
+        proposed_at: now,
+        decided_by: null,
+        decided_at: null
+    )
+
+    @guidance
+        -- The submission is not refused and not silently dropped. It is
+        -- redirected, and the agent is told so, because an agent that believes
+        -- it wrote something it did not will go on reasoning from a corpus that
+        -- does not exist.
+}
+
+-- Aceptar es aplicar el texto que el agente escribió, entero. No se reconstruye
+-- una intención a partir de un resumen: lo que se acepta es lo que se leyó.
+rule ParticipantAcceptsAProposal {
+    when: AcceptProposal(participant, proposal)
+
+    requires: participant.kind = human
+    requires: proposal.status = proposed
+
+    ensures:
+        proposal.status = accepted
+        proposal.decided_by = participant
+        proposal.decided_at = now
+        proposal.target.page.content = proposal.content
+}
+
+rule ParticipantRejectsAProposal {
+    when: RejectProposal(participant, proposal)
+
+    requires: participant.kind = human
+    requires: proposal.status = proposed
+
+    ensures:
+        proposal.status = rejected
+        proposal.decided_by = participant
+        proposal.decided_at = now
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant OneKindPerSpecialPage {
+    for special in SpecialPages:
+        for other in SpecialPages:
+            other.page = special.page implies other = special
+}
+
+invariant DecidedProposalsNameTheirDecider {
+    for proposal in Proposals:
+        proposal.status != proposed implies proposal.decided_by != null
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface SpecialPageAdministration {
+    facing owner: core/Participant
+    context special: SpecialPage
+
+    exposes:
+        special.kind
+        special.page
+
+    provides:
+        AcceptProposal(owner, proposal)
+        RejectProposal(owner, proposal)
+
+    contracts:
+        fulfils SelfDescription
+
+    @guarantee ASpecialPageSaysWhatItGoverns
+        -- Reading a special page tells a participant what it decides and what
+        -- happens if it is wrong, without leaving it. A page that silently
+        -- governs is worse than a config file: at least a config file is
+        -- obviously not prose.
+
+    @guarantee WhatVeraCouldNotUnderstandIsSaid
+        -- When a special page contains something Vera cannot read, it says so
+        -- on that page, naming the line. Falling back to a default in silence
+        -- leaves a participant editing a setting that has never taken effect.
+
+    @guarantee ProposalsAreVisibleWhereTheyApply
+        -- An agent's pending proposals are seen on the page they would change,
+        -- not in a queue elsewhere. A proposal nobody encounters is a proposal
+        -- nobody decides, and the agent waits for ever.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Can a participant make an ordinary page special after the fact, and what happens to the history of what it said while it was ordinary?"
+open question "When two special pages of the same kind exist — by import, by copy, by mistake — which governs, and is the answer a rule or a refusal?"
+open question "Does a special page belong in the public projection of a graph, given that it describes how the instance is run rather than what its owner thinks?"
+open question "Should a rejected proposal remain readable on the page it targeted, as a record of what an agent wanted and was refused, or does that turn every page into an argument?"

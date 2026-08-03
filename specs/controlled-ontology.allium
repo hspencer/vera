@@ -93,6 +93,57 @@ rule SuggestBlockSemanticType {
     )
 }
 
+-- Procesar una página: leerla y decir qué se ve en ella.
+--
+-- Un solo acto, deliberado y sobre una página concreta, del que salen
+-- proposiciones de tres clases —qué es la página, qué nombra, y a qué apuntan
+-- sus enlaces— y ninguna decisión. Es la misma forma que la voz: la máquina
+-- propone, la persona declara.
+--
+-- Deliberado y no automático por dos razones. La primera es que clasificar de
+-- oficio llenaría el corpus de sugerencias que nadie pidió y que hay que
+-- desestimar una por una, y una bandeja que sólo crece se deja de mirar. La
+-- segunda está abajo, en @invariant ReachingOutIsAnOutwardAct.
+rule ParticipantProcessesAPage {
+    when: ProcessPage(participant, ontology, page)
+
+    let membership = core/Membership{graph: ontology.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+
+    ensures:
+        for finding in readings_of(page):
+            TypeAssignment.created(
+                ontology: ontology,
+                semantic_type: finding.semantic_type,
+                page: page,
+                block: null,
+                status: suggested,
+                rationale: finding.rationale,
+                suggested_by: participant,
+                decided_by: null
+            )
+
+    @invariant ProcessingProposesAndNothingMore
+        -- Processing writes no content, changes no property and settles no type.
+        -- What it leaves are suggestions, and a page processed and then ignored
+        -- is exactly the page it was.
+
+    @invariant ReachingOutIsAnOutwardAct
+        -- Resolving what a link points at means asking the server that holds it,
+        -- and asking tells that server that someone here is reading about this.
+        -- A sovereign memory does not make that request behind its owner's back:
+        -- it happens because they asked for it, on the page they asked it for,
+        -- and what was requested is recorded.
+
+    @invariant TheModelIsLocalOrThereIsNone
+        -- The model that reads the page runs on this machine, like the one that
+        -- transcribes voice. A corpus does not leave to be understood. Where no
+        -- local model is available, processing does the part that needs none and
+        -- says plainly which part it could not do.
+}
+
 rule CuratorConfirmsSemanticType {
     when: ConfirmTypeAssignment(participant, assignment)
 
@@ -161,6 +212,7 @@ surface OntologyCuration {
         ontology.assignments
 
     provides:
+        ProcessPage(participant, ontology, page)
         SuggestPageType(participant, ontology, semantic_type, page, rationale)
         SuggestBlockType(participant, ontology, semantic_type, block, rationale)
         ConfirmTypeAssignment(participant, assignment) when assignment.ontology = ontology
@@ -177,6 +229,17 @@ surface OntologyCuration {
     @guarantee HumanFinalAuthority
         -- A human participant can correct a confirmed or rejected assignment.
 
+    @guarantee ProcessingSaysWhatItDidAndWhatItCouldNot
+        -- Processing reports which links it resolved, which it could not reach,
+        -- and whether it had a model to read the page with. A silent partial
+        -- result is read as a complete one, and a participant will believe a
+        -- page was understood when half of it was skipped.
+
+    @guarantee ALinkResolvedKeepsItsAddress
+        -- Learning what a link points at never replaces the address written in
+        -- the block. The title arrives beside it, as a suggestion to name it,
+        -- and the source stays exactly what its author typed.
+
     @guarantee SmallStarterOntology
         -- A new ontology starts with only Persona, Organizacion, Lugar,
         -- Proyecto, Tarea, Idea, Evento, Fuente and Publicacion.
@@ -187,5 +250,7 @@ surface OntologyCuration {
 ------------------------------------------------------------
 
 open question "Which ontology changes may an agent curator apply without prior human confirmation?"
+open question "When processing resolves a link, does the title it found belong in the block as text, in a property of the page, or in a record beside the link that the block never sees?"
+open question "What does processing do with an address it cannot reach — say nothing, propose the link as dead, or leave a standing question to retry later, given that unreachable today and gone for ever look identical from here?"
 open question "What happens when two composed semantic types define incompatible properties or lifecycles?"
 open question "Are semantic types assigned to pages and blocks equally, or do some types permit only one target kind?"

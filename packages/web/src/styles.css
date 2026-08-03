@@ -360,6 +360,49 @@ input {
   letter-spacing: 0.01em;
 }
 
+/* --- La lectura de una página ------------------------------------------ */
+
+.reading-missing {
+  margin: 0 0 0.8rem;
+  padding-left: 1.1rem;
+  color: var(--warm, var(--text-dim));
+  font-size: 0.78rem;
+}
+
+.reading-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  align-items: flex-start;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.reading-title {
+  font-size: 0.86rem;
+  /* Una dirección sin título ocupa la línea entera y no tiene espacios donde
+     partirse: sin esto empujaba el panel a lo ancho y aparecía una barra de
+     desplazamiento horizontal sobre el texto. */
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.reading-meta {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.reading-link .page-action {
+  margin-top: 0.25rem;
+}
+
+/* El estado de publicación es un interruptor, así que se comporta como uno. */
+.visibility {
+  cursor: pointer;
+}
+
 /* --- Los controles del mapa, dentro del mapa --------------------------- */
 
 #map-controls {

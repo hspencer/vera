@@ -47,6 +47,7 @@ import {
   type Credential,
   type Scope,
 } from './credentials.ts';
+import { readLinks } from './process.ts';
 import { transcribeAudio } from './transcribe.ts';
 import { renderPage } from '@vera/store/projection';
 
@@ -759,6 +760,43 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     // @guarantee RememberedSessionPresentation: va con el participante y no con
     // el navegador, para que ajustar el sistema de diseño en una máquina no haya
     // que repetirlo en la siguiente.
+    // Procesar una página: leerla y decir qué se ve en ella.
+    //
+    // Deliberado y sobre una página concreta, nunca de oficio. Salen
+    // proposiciones y ninguna decisión: no escribe contenido, no cambia una
+    // propiedad y no asienta un tipo.
+    if (request.method === 'POST' && /^\/pages\/[^/]+\/process$/.test(path)) {
+      const id = decodeURIComponent(path.split('/')[2] ?? '');
+      const page = graph.page(id) ?? graph.pageTitled(id);
+      if (page === undefined) {
+        send(response, 404, { error: 'no such page' });
+        return;
+      }
+
+      const text = graph
+        .blocksOf(page.id)
+        .map((block) => block.content)
+        .join('\n');
+
+      void readLinks(text).then((reading) => {
+        // @invariant TheModelIsLocalOrThereIsNone: sin modelo local se hace la
+        // parte que no lo necesita y se dice cuál no se pudo. Callarlo dejaría
+        // creer que la página se entendió cuando sólo se leyeron sus enlaces.
+        const notDone = [...reading.notDone];
+        notDone.push(
+          'no hay un modelo local con el que leer la página: no se propusieron tipos ni etiquetas',
+        );
+        send(response, 200, {
+          page: page.id,
+          links: reading.links,
+          types: [],
+          tags: [],
+          notDone,
+        });
+      });
+      return;
+    }
+
     if (request.method === 'GET' && path === '/workspace') {
       send(response, 200, workspaceOf(store, owner.id));
       return;
