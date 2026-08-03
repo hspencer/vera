@@ -503,6 +503,7 @@ export class VeraGraph {
           createdAt: Date.now(),
         });
         this.#indexBlock(id, change.page, change.parent);
+        this.#reseat(change.page, change.parent, id, change.position);
         this.#settleBlock(id);
         return id;
       }
@@ -516,11 +517,17 @@ export class VeraGraph {
       case 'move_block': {
         const block = this.#blocks.get(change.block);
         if (block) {
-          this.#deindexBlock(change.block, block.page, block.parent);
+          const fromPage = block.page;
+          const fromParent = block.parent;
+          this.#deindexBlock(change.block, fromPage, fromParent);
           block.page = change.page;
           block.parent = change.parent;
-          block.position = change.position;
           this.#indexBlock(change.block, change.page, change.parent);
+          // El grupo que deja atrás cierra su hueco; el que lo recibe lo sienta
+          // en el índice pedido. Las dos renumeraciones son parte de aplicar
+          // esta operación, no operaciones aparte.
+          this.#renumber(fromPage, fromParent);
+          this.#reseat(change.page, change.parent, change.block, change.position);
         }
         // El subárbol viaja con su raíz: el padre debe vivir en la misma página.
         for (const descendant of this.descendantsOf(change.block)) {
@@ -534,11 +541,16 @@ export class VeraGraph {
       }
       case 'remove_block': {
         const block = this.#blocks.get(change.block);
+        const page = block?.page;
+        const parent = block?.parent ?? null;
         if (block) this.#deindexBlock(change.block, block.page, block.parent);
         this.#blocks.delete(change.block);
         this.#clearLinksOf(change.block);
         this.#tags.delete(change.block);
         this.#unportedByBlock.delete(change.block);
+        // El grupo cierra el hueco: las posiciones de un grupo de hermanos son
+        // densas, y un hueco haría que el siguiente índice pedido cayera mal.
+        if (page !== undefined) this.#renumber(page, parent);
         return change.block;
       }
       case 'set_property': {
@@ -633,6 +645,41 @@ export class VeraGraph {
   // -------------------------------------------------------------------------
   // Mantenimiento de índices
   // -------------------------------------------------------------------------
+
+  /** Los hermanos de un bloque: los hijos de su padre, o las raíces de la página. */
+  #siblings(page: PageId, parent: BlockId | null): Block[] {
+    const group =
+      parent === null
+        ? this.blocksOf(page).filter((block) => block.parent === null)
+        : this.childrenOf(parent);
+    return group.sort((a, b) => a.position - b.position);
+  }
+
+  /**
+   * Sienta un bloque en el índice pedido entre sus hermanos y renumera el grupo.
+   *
+   * `position` en un cambio es el lugar que se pide, no un número que se copia.
+   * Renumerar aquí es lo que permite que insertar en medio sea UNA operación: si
+   * el emisor tuviera que correr a los hermanos, pulsar Enter en una página con
+   * treinta bloques se registraría como treinta cambios, y el log dejaría de
+   * decir qué hizo alguien para decir cómo lo hizo la interfaz.
+   */
+  #reseat(page: PageId, parent: BlockId | null, moved: BlockId, index: number): void {
+    const block = this.#blocks.get(moved);
+    if (block === undefined) return;
+
+    const order = this.#siblings(page, parent).filter((sibling) => sibling.stableId !== moved);
+    const at = Math.max(0, Math.min(Math.trunc(index), order.length));
+    order.splice(at, 0, block);
+
+    for (const [position, sibling] of order.entries()) sibling.position = position;
+  }
+
+  /** Cierra el hueco que deja un bloque al salir de su grupo de hermanos. */
+  #renumber(page: PageId, parent: BlockId | null): void {
+    const order = this.#siblings(page, parent);
+    for (const [position, sibling] of order.entries()) sibling.position = position;
+  }
 
   #indexBlock(id: BlockId, page: PageId, parent: BlockId | null): void {
     let onPage = this.#blocksByPage.get(page);

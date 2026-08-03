@@ -201,6 +201,52 @@ describe('persistencia', () => {
     store.close();
   });
 
+  // Insertar entre hermanos renumera al grupo, y esa renumeración es parte de
+  // aplicar la operación. Si sólo bajara a disco el bloque sujeto, el grafo en
+  // memoria y la base contarían dos órdenes distintos hasta el siguiente
+  // arranque, que es la clase de divergencia que este proyecto no admite.
+  it('persiste el orden de los hermanos, no sólo el bloque insertado', () => {
+    const { store, write } = freshStore();
+    const page = write({ kind: 'create_page', title: 'P', visibility: 'private' });
+    const a = write({ kind: 'create_block', page, parent: null, position: 0, content: 'a' });
+    const b = write({ kind: 'create_block', page, parent: null, position: 1, content: 'b' });
+    const medio = write({ kind: 'create_block', page, parent: null, position: 1, content: 'medio' });
+
+    const enDisco = (): string[] =>
+      (
+        store.db
+          .prepare('SELECT content FROM blocks WHERE page_id = ? ORDER BY position')
+          .all(page) as { content: string }[]
+      ).map((row) => row.content);
+
+    assert.deepEqual(enDisco(), ['a', 'medio', 'b']);
+
+    write({ kind: 'move_block', block: a, page, parent: null, position: 2 });
+    assert.deepEqual(enDisco(), ['medio', 'b', 'a']);
+
+    write({ kind: 'remove_block', block: b });
+    assert.deepEqual(enDisco(), ['medio', 'a']);
+
+    const posiciones = (
+      store.db
+        .prepare('SELECT position FROM blocks WHERE page_id = ? ORDER BY position')
+        .all(page) as { position: number }[]
+    ).map((row) => row.position);
+    assert.deepEqual(posiciones, [0, 1], 'sin huecos ni repetidos en disco');
+
+    // Y lo definitivo: reproducir el log desde cero da el mismo orden.
+    const reproducido = loadGraph(store, 'mind');
+    assert.deepEqual(
+      reproducido
+        .blocksOf(page)
+        .sort((x, y) => x.position - y.position)
+        .map((block) => block.content),
+      ['medio', 'a'],
+    );
+    assert.deepEqual(checkInvariants(reproducido), []);
+    store.close();
+  });
+
   it('borra una página que lleva propiedades', () => {
     const { store, write } = freshStore();
     const page = write({ kind: 'create_page', title: 'P', visibility: 'private' });

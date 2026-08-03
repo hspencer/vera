@@ -369,6 +369,14 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
     case 'move_block': {
       const block = graph.block(subjectId);
       if (block === undefined) return;
+
+      // Dónde estaba antes, leído de la base mientras la fila todavía lo dice.
+      // Mover deja un hueco en el grupo de origen, y sin esto ese grupo se
+      // quedaría con las posiciones viejas.
+      const before = db
+        .prepare('SELECT page_id AS page, parent_id AS parent FROM blocks WHERE id = ?')
+        .get(subjectId) as { page: string; parent: string | null } | undefined;
+
       db.prepare(
         `INSERT INTO blocks (id, page_id, parent_id, position, content, created_at)
          VALUES (?, ?, ?, ?, ?, ?)
@@ -384,6 +392,18 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
         block.createdAt,
       );
       syncBlockRelations(store, graph, block.stableId);
+
+      // Crear o mover sienta el bloque en un índice y renumera a sus hermanos.
+      // Esa renumeración es parte de aplicar la operación, así que también tiene
+      // que bajar a disco: si no, la memoria y la base contarían dos órdenes
+      // distintos hasta el siguiente arranque.
+      if (change.kind !== 'edit_block') {
+        writeSiblingOrder(store, graph, block.page, block.parent);
+        if (before !== undefined && (before.page !== block.page || before.parent !== block.parent)) {
+          writeSiblingOrder(store, graph, before.page, before.parent);
+        }
+      }
+
       // Mover arrastra el subárbol, y con él la página que registran sus enlaces.
       if (change.kind === 'move_block') {
         for (const descendant of graph.descendantsOf(subjectId)) {
@@ -398,6 +418,11 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
     }
 
     case 'remove_block': {
+      // Dónde vivía, para poder cerrar el hueco en su grupo después de quitarlo.
+      const home = db
+        .prepare('SELECT page_id AS page, parent_id AS parent FROM blocks WHERE id = ?')
+        .get(subjectId) as { page: string; parent: string | null } | undefined;
+
       // Las propiedades del bloque van primero. Su clave foránea no declara
       // ON DELETE, así que mientras exista una el borrado del bloque falla; y
       // como el bloque en memoria ya se había quitado, el fallo llegaba después
@@ -407,6 +432,7 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
       db.prepare('DELETE FROM block_tags WHERE block_id = ?').run(subjectId);
       db.prepare('DELETE FROM unported_queries WHERE block_id = ?').run(subjectId);
       db.prepare('DELETE FROM blocks WHERE id = ?').run(subjectId);
+      if (home !== undefined) writeSiblingOrder(store, graph, home.page, home.parent);
       return;
     }
 
@@ -435,6 +461,28 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
 }
 
 /** Reescribe enlaces, etiquetas y query preservada de un bloque. */
+/**
+ * Baja a disco el orden de un grupo de hermanos tal como lo dejó el dominio.
+ *
+ * Insertar entre hermanos es una sola operación, y renumerar al resto es parte
+ * de aplicarla. El dominio ya lo hizo en memoria; esto lo hace persistente, que
+ * es lo único que evita que la base y el grafo cuenten dos órdenes distintos.
+ */
+function writeSiblingOrder(
+  store: Store,
+  graph: VeraGraph,
+  page: string,
+  parent: string | null,
+): void {
+  const siblings =
+    parent === null
+      ? graph.blocksOf(page).filter((block) => block.parent === null)
+      : graph.childrenOf(parent);
+
+  const statement = store.db.prepare('UPDATE blocks SET position = ? WHERE id = ?');
+  for (const sibling of siblings) statement.run(sibling.position, sibling.stableId);
+}
+
 function syncBlockRelations(store: Store, graph: VeraGraph, blockId: string): void {
   const { db } = store;
   db.prepare('DELETE FROM page_links WHERE source_block = ?').run(blockId);
