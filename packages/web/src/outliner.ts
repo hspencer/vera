@@ -360,6 +360,73 @@ async function submitAndReload(change: Change, callbacks: OutlinerCallbacks): Pr
   return applied;
 }
 
+/**
+ * Crea una página y la abre.
+ *
+ * Nace privada y sin bloques: `create_page` es la operación, y el primer bloque
+ * lo escribe quien la abra. Ponerle contenido de plantilla sería inventar texto
+ * que nadie escribió, y en un corpus con procedencia eso no es inocuo.
+ */
+async function createPage(callbacks: OutlinerCallbacks): Promise<void> {
+  const title = window.prompt('Título de la página nueva');
+  if (title === null || title.trim() === '') return;
+
+  let result;
+  try {
+    result = await api.submit({ kind: 'create_page', title: title.trim(), visibility: 'private' });
+  } catch {
+    toast('no se pudo crear: sin conexión con el servidor');
+    return;
+  }
+
+  if (result.status === 'rejected') {
+    // El dominio exige título único dentro del grafo, y lo dice él.
+    toast(`rechazado: ${result.reason}`);
+    return;
+  }
+  callbacks.onOpen(result.subjectId);
+}
+
+/** El Markdown de la página, pedido al servidor para que sea el mismo que git recibiría. */
+async function pageMarkdown(page: string): Promise<string | null> {
+  try {
+    const response = await fetch(`/pages/${encodeURIComponent(page)}/markdown`);
+    if (!response.ok) throw new Error(String(response.status));
+    return await response.text();
+  } catch {
+    toast('no se pudo traer el Markdown de la página');
+    return null;
+  }
+}
+
+async function copyPageMarkdown(page: string): Promise<void> {
+  const text = await pageMarkdown(page);
+  if (text === null) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(`copiado: ${text.length} caracteres`);
+  } catch {
+    toast('no se pudo copiar; el portapapeles exige contexto seguro');
+  }
+}
+
+async function downloadPage(page: { id: string; title: string }): Promise<void> {
+  const text = await pageMarkdown(page.id);
+  if (text === null) return;
+
+  // El nombre del archivo lleva el título, no el identificador: lo exportado se
+  // abre fuera de Vera y ahí `page:31015` no le dice nada a nadie. Los caracteres
+  // que un sistema de archivos no admite se sustituyen, como hace Logseq.
+  const name = `${page.title.replace(/[/\\?%*:|"<>]/g, '_').trim() || page.id}.md`;
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+  toast(`exportado ${name}`);
+}
+
 export interface Node {
   block: BlockView;
   children: Node[];
@@ -561,6 +628,37 @@ export function renderOutliner(
 
   header.append(properties, add);
 
+  // Acciones de la página. Van aquí y no en la barra superior porque son de la
+  // página que se está mirando, no del espacio de trabajo.
+  const actions = document.createElement('div');
+  actions.className = 'page-actions';
+
+  const nueva = document.createElement('button');
+  nueva.type = 'button';
+  nueva.className = 'page-action';
+  nueva.textContent = '+ página';
+  nueva.title = 'Crear una página nueva y abrirla';
+  nueva.addEventListener('click', () => void createPage(callbacks));
+  actions.append(nueva);
+
+  const copiar = document.createElement('button');
+  copiar.type = 'button';
+  copiar.className = 'page-action';
+  copiar.textContent = 'copiar Markdown';
+  copiar.title = 'Copiar la página entera como Markdown';
+  copiar.addEventListener('click', () => void copyPageMarkdown(page.id));
+  actions.append(copiar);
+
+  const exportar = document.createElement('button');
+  exportar.type = 'button';
+  exportar.className = 'page-action';
+  exportar.textContent = 'exportar .md';
+  exportar.title = 'Descargar la página como archivo Markdown';
+  exportar.addEventListener('click', () => void downloadPage(page));
+  actions.append(exportar);
+
+  header.append(actions);
+
   const badge = document.createElement('span');
   badge.className = `visibility ${page.visibility}`;
   badge.textContent = page.visibility === 'public' ? 'pública' : 'privada';
@@ -744,6 +842,28 @@ export function renderOutliner(
   }
 
   for (const root of tree) drawBlock(root, 0);
+
+  // Una página sin bloques no tenía dónde pulsar, así que crearla dejaba a
+  // quien la creó mirando una página en la que no podía escribir.
+  if (tree.length === 0) {
+    const empty = document.createElement('button');
+    empty.type = 'button';
+    empty.className = 'first-block';
+    empty.textContent = 'escribir el primer bloque';
+    empty.addEventListener('click', () => {
+      void api
+        .submit({ kind: 'create_block', page: page.id, parent: null, position: 0, content: '' })
+        .then((result) => {
+          if (result.status === 'rejected') {
+            toast(`rechazado: ${result.reason}`);
+            return;
+          }
+          callbacks.onReload({ block: result.subjectId, at: 0 });
+        })
+        .catch(() => toast('no se pudo crear el bloque: sin conexión con el servidor'));
+    });
+    list.append(empty);
+  }
 
   // Un cambio estructural rehace la página y pide seguir editando donde el
   // modelo dice que quedó el cursor.

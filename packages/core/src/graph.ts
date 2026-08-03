@@ -435,6 +435,16 @@ export class VeraGraph {
     return this.#propertiesBySubject.get(subject)?.find((p) => p.key === key);
   }
 
+  /**
+   * La página que lleva ese título, sin distinguir mayúsculas ni acentos.
+   *
+   * Pública porque una URL la nombra por su título: [[LogSeq]] y [[Logseq]] son
+   * la misma página, y una dirección escrita a mano también debería serlo.
+   */
+  pageTitled(title: string): Page | undefined {
+    return this.#pageTitled(title);
+  }
+
   #pageTitled(title: string): Page | undefined {
     const id = this.#pageByTitleKey.get(titleKey(title));
     return id === undefined ? undefined : this.#pages.get(id);

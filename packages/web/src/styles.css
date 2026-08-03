@@ -1427,3 +1427,47 @@ code {
   color: var(--warm);
   border-color: var(--warm);
 }
+
+/* Acciones de la página. Discretas: están para cuando se buscan, no para
+   competir con el texto. */
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.page-action {
+  font-family: var(--font-ui);
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.18rem 0.55rem;
+  cursor: pointer;
+}
+
+.page-action:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Una página vacía tiene que ofrecer por dónde empezar. */
+.first-block {
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  background: none;
+  border: 1px dashed var(--rule);
+  border-radius: 4px;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.first-block:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}

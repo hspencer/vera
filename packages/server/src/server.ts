@@ -23,6 +23,7 @@ import {
   type Store,
 } from '@vera/store';
 import { HASH, objectPath } from '@vera/store/objects';
+import { renderPage } from '@vera/store/projection';
 
 const CHANGE_KINDS = new Set([
   'create_page',
@@ -47,6 +48,7 @@ const MIME: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.md': 'text/markdown; charset=utf-8',
   '.webmanifest': 'application/manifest+json',
   // Las fuentes las sirve Vera. Sin su tipo declarado viajan como binario
   // cualquiera, y aunque el navegador suele tragárselo por el `format()` del
@@ -307,9 +309,34 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         return;
       }
 
+      // El Markdown de una página, tal como git lo recibiría. Se sirve la misma
+      // proyección determinista que baja el corpus a disco: exportar y versionar
+      // no pueden dar dos textos distintos.
+      if (path.startsWith('/pages/') && path.endsWith('/markdown')) {
+        const named = decodeURIComponent(
+          path.slice('/pages/'.length, -'/markdown'.length),
+        );
+        const page = graph.page(named) ?? graph.pageTitled(named);
+        if (page === undefined) {
+          send(response, 404, { error: 'no such page' });
+          return;
+        }
+        const { text } = renderPage(graph, page);
+        const body = Buffer.from(text, 'utf8');
+        response.writeHead(200, {
+          'content-type': 'text/markdown; charset=utf-8',
+          'content-length': body.byteLength,
+        });
+        response.end(body);
+        return;
+      }
+
       if (path.startsWith('/pages/')) {
-        const id = decodeURIComponent(path.slice('/pages/'.length));
-        const page = graph.page(id);
+        const named = decodeURIComponent(path.slice('/pages/'.length));
+        // Por identidad primero, por título después. La URL nombra la página por
+        // su título porque es lo legible, pero un enlace viejo escrito con el
+        // identificador tiene que seguir funcionando después de un renombrado.
+        const page = graph.page(named) ?? graph.pageTitled(named);
         if (page === undefined) {
           send(response, 404, { error: 'no such page' });
           return;
@@ -461,6 +488,15 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       }
 
       if (serveStatic(response, path)) return;
+
+      // Reserva para las rutas de la aplicación. `/p/Lectogram` no es un archivo
+      // y nunca lo será: es la propia aplicación pidiendo abrirse en esa página.
+      // Sin esto, escribir la dirección a mano o recargar devolvía un 404, que
+      // es tanto como no tener enrutado.
+      if (webRoot !== null && !path.startsWith('/api') && serveStatic(response, '/index.html')) {
+        return;
+      }
+
       send(response, 404, { error: 'not found' });
     } catch (error) {
       send(response, 400, { error: error instanceof Error ? error.message : 'bad request' });

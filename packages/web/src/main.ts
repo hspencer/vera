@@ -8,6 +8,7 @@ import './styles.css';
 import { api, type PageSummary } from './api.ts';
 import { renderOutliner } from './outliner.ts';
 import { renderSettings, type Section } from './settings.ts';
+import { parseRoute, routeTo } from './router.ts';
 import { renderGraph } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D } from './graph/render3d.ts';
 import {
@@ -95,6 +96,7 @@ const HISTORY = 50;
 async function openPage(
   id: string,
   focus: { block: string; at: number } | null = null,
+  options: { fromUrl?: boolean; reveal?: string | null } = {},
 ): Promise<void> {
   let page;
   try {
@@ -106,7 +108,20 @@ async function openPage(
     return;
   }
 
-  workspace.activePage = id;
+  // La identidad manda a partir de aquí: la URL pudo nombrarla por su título.
+  workspace.activePage = page.id;
+  id = page.id;
+
+  // La dirección sigue a la página, salvo cuando es la dirección la que trajo
+  // aquí: entonces escribirla otra vez apilaría una entrada por navegación y el
+  // botón de atrás dejaría de deshacer un paso.
+  if (options.fromUrl !== true) {
+    const url = routeTo(page, { focus: workspace.focusRoot, block: options.reveal ?? null });
+    if (window.location.pathname + window.location.search + window.location.hash !== url) {
+      window.history.pushState({}, '', url);
+    }
+  }
+
   // Volver a la misma página no la repite en el rastro, y el rastro no crece
   // sin término durante una sesión larga.
   if (workspace.history.at(-1) !== id) workspace.history.push(id);
@@ -120,7 +135,7 @@ async function openPage(
     // participante en el bloque que nombra, no sólo en su página. Llegar a una
     // página de cien bloques y tener que buscarlo no es haberla seguido.
     onOpenBlock: (target, block) => {
-      void openPage(target).then(() => revealBlock(block));
+      void openPage(target, null, { reveal: block }).then(() => revealBlock(block));
     },
     // Un cambio estructural rehace la página desde el grafo y devuelve el cursor
     // donde el modelo dice que quedó. Parchear el árbol dibujado en vez de
@@ -139,6 +154,25 @@ async function openPage(
 
   drawBreadcrumbs();
   if (!isPhone() && workspace.layout !== 'text_only') void drawGraph();
+}
+
+/**
+ * Abre lo que la dirección dice, sin volver a escribirla.
+ *
+ * Es lo que corre al arrancar y cada vez que el botón de atrás cambia la URL,
+ * así que el historial del navegador y el de Vera cuentan lo mismo.
+ */
+async function applyRoute(): Promise<void> {
+  const route = parseRoute(new URL(window.location.href));
+  if (route.page === null) {
+    const first = pages[0];
+    if (first !== undefined) await openPage(first.id);
+    return;
+  }
+
+  workspace.focusRoot = route.focus;
+  await openPage(route.page, null, { fromUrl: true });
+  if (route.block !== null) revealBlock(route.block);
 }
 
 /**
@@ -416,6 +450,10 @@ async function start(): Promise<void> {
     });
   }
 
+  // Atrás y adelante del navegador. Sin esto la dirección cambiaría y la
+  // aplicación se quedaría enseñando otra cosa.
+  window.addEventListener('popstate', () => void applyRoute());
+
   // Redibujar el grafo pide datos al servidor: un arrastre del borde de la
   // ventana no puede disparar una petición por cuadro.
   let resizeTimer: number | undefined;
@@ -427,14 +465,14 @@ async function start(): Promise<void> {
   const health = await api.health();
   $('#status').textContent = `${health.pages} páginas · ${health.blocks} bloques · secuencia ${health.lastSequence}`;
 
-  pages = await api.pages();
-
-  // Ordenar por conectividad y no por tamaño: la página con más bloques del
+  // Ordenadas por conectividad y no por tamaño: la página más grande del
   // corpus es una transcripción sin un solo enlace, y abrirla de entrada
-  // mostraría un grafo vacío.
-  const byConnection = [...pages].sort(
+  // mostraría un mapa vacío.
+  pages = (await api.pages()).sort(
     (a, b) => b.linkCount - a.linkCount || b.blockCount - a.blockCount,
   );
+
+  const byConnection = pages;
 
   const index = $('#index');
   // Reintentar el arranque no puede duplicar la lateral.
@@ -453,8 +491,7 @@ async function start(): Promise<void> {
   }
 
   applyLayout();
-  const first = byConnection[0];
-  if (first !== undefined) await openPage(first.id);
+  await applyRoute();
 }
 
 /**
