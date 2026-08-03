@@ -16,6 +16,13 @@ import { renderMarkdown, type RenderOptions } from './markdown.ts';
 import { renderMermaid } from './mermaid.ts';
 import { createSession, type SaveIntent } from './session.ts';
 import {
+  completionFor,
+  detectTrigger,
+  matchingCommands,
+  queryOf,
+  type Open,
+} from './autocomplete.ts';
+import {
   resolveArrow,
   resolveBackspaceAtStart,
   resolveDelimiter,
@@ -642,6 +649,55 @@ async function perform(outcome: KeyOutcome, context: Structural): Promise<void> 
   void near;
 }
 
+
+/** Una entrada ofrecida por el autocompletado. */
+interface Candidate {
+  /** Lo que se escribe al elegirla. */
+  value: string;
+  label: string;
+  hint?: string;
+}
+
+/**
+ * Busca candidatos para lo que hay abierto.
+ *
+ * Las páginas y los bloques se piden al servidor, que es quien sabe qué hay en
+ * el grafo; los comandos son una lista fija que vive en el cliente porque no
+ * dependen del contenido.
+ */
+async function candidatesFor(open: Open, query: string): Promise<Candidate[]> {
+  if (open.trigger === 'comando') {
+    return matchingCommands(query).map((command) => ({
+      value: command.name,
+      label: command.name,
+      hint: command.hint,
+    }));
+  }
+
+  if (query.trim() === '') return [];
+
+  const hits = await api.search(query);
+  const seen = new Set<string>();
+  const out: Candidate[] = [];
+
+  for (const hit of hits) {
+    if (open.trigger === 'bloque') {
+      if (hit.block === null || seen.has(hit.block)) continue;
+      seen.add(hit.block);
+      out.push({ value: hit.block, label: hit.excerpt, hint: 'bloque' });
+    } else {
+      // Páginas y etiquetas se completan con un título, que es lo que va entre
+      // corchetes; el hallazgo puede venir de un bloque de esa página.
+      if (hit.field !== 'page_title' || seen.has(hit.excerpt)) continue;
+      seen.add(hit.excerpt);
+      out.push({ value: hit.excerpt, label: hit.excerpt });
+    }
+    if (out.length >= 8) break;
+  }
+
+  return out;
+}
+
 /** Cuánto silencio hace falta para que lo escrito baje al grafo. */
 const EDITING_PAUSE = 900;
 
@@ -769,17 +825,143 @@ function startEditing(
     });
   };
 
+  // --- Autocompletado -------------------------------------------------------
+  //
+  // @invariant AutocompleteOwnsItsKeys: mientras hay uno abierto, las teclas que
+  // lo recorren le pertenecen. Es lo que permite que Tab indente un bloque y
+  // elija una entrada sin ambigüedad.
+
+  let open: Open | null = null;
+  let candidates: Candidate[] = [];
+  let highlighted = 0;
+  let list: HTMLElement | null = null;
+  let queryTurn = 0;
+
+  const closeList = (): void => {
+    list?.remove();
+    list = null;
+    open = null;
+    candidates = [];
+    highlighted = 0;
+  };
+
+  const drawList = (): void => {
+    if (candidates.length === 0) {
+      list?.remove();
+      list = null;
+      return;
+    }
+    if (list === null) {
+      list = document.createElement('div');
+      list.className = 'complete';
+      list.setAttribute('role', 'listbox');
+      document.body.append(list);
+    }
+    list.innerHTML = '';
+    for (const [at, candidate] of candidates.entries()) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = at === highlighted ? 'complete-item selected' : 'complete-item';
+      item.setAttribute('role', 'option');
+      const label = document.createElement('span');
+      label.textContent = candidate.label;
+      item.append(label);
+      if (candidate.hint !== undefined) {
+        const hint = document.createElement('span');
+        hint.className = 'complete-hint';
+        hint.textContent = candidate.hint;
+        item.append(hint);
+      }
+      // `mousedown` y no `click`: el clic llegaría después del blur, que ya
+      // habría cerrado la lista y salido del bloque.
+      item.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+        accept(at);
+      });
+      list.append(item);
+    }
+
+    const box = editor.getBoundingClientRect();
+    list.style.left = `${Math.round(box.left + window.scrollX)}px`;
+    list.style.top = `${Math.round(box.bottom + window.scrollY + 2)}px`;
+  };
+
+  const accept = (at: number): void => {
+    const chosen = candidates[at];
+    if (open === null || chosen === undefined) return;
+    const applied = completionFor(open, chosen.value, editor.value, editor.selectionStart);
+    editor.value = applied.buffer;
+    editor.setSelectionRange(applied.cursor, applied.cursor);
+    session.type(editor.value);
+    closeList();
+    autosize();
+    scheduleSave();
+    editor.focus();
+  };
+
+  const refreshList = (): void => {
+    const cursor = editor.selectionStart;
+    if (open === null) open = detectTrigger(editor.value, cursor);
+    if (open === null) {
+      closeList();
+      return;
+    }
+
+    const query = queryOf(open, editor.value, cursor);
+    if (query === null) {
+      closeList();
+      return;
+    }
+
+    // Cada búsqueda lleva turno: una respuesta lenta no pisa a una más reciente.
+    queryTurn += 1;
+    const turn = queryTurn;
+    void candidatesFor(open, query).then((found) => {
+      if (turn !== queryTurn || open === null) return;
+      candidates = found;
+      highlighted = 0;
+      drawList();
+    });
+  };
+
   editor.addEventListener('input', () => {
     session.type(editor.value);
     autosize();
     scheduleSave();
+    refreshList();
   });
 
-  editor.addEventListener('blur', () => leave());
+  editor.addEventListener('blur', () => {
+    closeList();
+    leave();
+  });
 
   editor.addEventListener('keydown', (event) => {
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
+
+    // Con una lista abierta, estas teclas son suyas. Sin esto, Enter partiría el
+    // bloque en mitad de una búsqueda y Tab lo indentaría.
+    if (list !== null && candidates.length > 0) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const paso = event.key === 'ArrowDown' ? 1 : -1;
+        highlighted = (highlighted + paso + candidates.length) % candidates.length;
+        drawList();
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        accept(highlighted);
+        return;
+      }
+      if (event.key === 'Escape') {
+        // La primera pulsación cierra la lista; la segunda ya sale del bloque.
+        event.preventDefault();
+        closeList();
+        return;
+      }
+    }
 
     // Escape sale guardando. No descarta: para cuando se pulsa, la pausa ya dejó
     // el texto en el grafo, y ofrecer descartar sería mentir.
