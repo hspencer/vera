@@ -14,6 +14,7 @@
 --   blocks_fts, pages_fts                                        search-index.allium
 --   media, media_references                                      content-media.allium
 --   recordings, spoken_origins                                   voice-capture.allium
+--   access_tokens, block_authorship                              agent-participation.allium
 --
 -- Falta `properties_fts`. search-index.allium declara `property_value` como campo
 -- buscable y su @guarantee OneSearchReachesEverySearchableField exige que una sola
@@ -349,3 +350,60 @@ CREATE TABLE IF NOT EXISTS block_collapse_state (
     collapsed       INTEGER NOT NULL CHECK (collapsed IN (0, 1)),
     PRIMARY KEY (participant_id, block_id)
 ) STRICT;
+
+------------------------------------------------------------
+-- Participación de agentes (agent-participation.allium)
+------------------------------------------------------------
+
+-- Credenciales de agente.
+--
+-- No pasan por `operations` y es deliberado: una credencial no es contenido del
+-- grafo. Emitirla y retirarla no cambia lo que el corpus dice, del mismo modo
+-- que plegar un bloque no lo cambia. El registro canónico guarda lo que se
+-- escribió, no quién tenía permiso para escribirlo.
+--
+-- @invariant TheSecretIsNeverStored: aquí sólo vive el digest. El secreto se
+-- devuelve una vez, al emitirlo, y no se puede reconstruir desde esta tabla.
+CREATE TABLE IF NOT EXISTS access_tokens (
+    id              TEXT PRIMARY KEY,
+    graph_id        TEXT NOT NULL REFERENCES graphs (id),
+    participant_id  TEXT NOT NULL REFERENCES participants (id),
+    secret_digest   TEXT NOT NULL UNIQUE,
+    -- Los alcances van como lista separada por comas y ordenada. Son tres y no
+    -- se consultan por alcance; una tabla aparte costaría una unión por petición
+    -- para no ganar nada.
+    scopes          TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+    label           TEXT NOT NULL,
+    issued_by       TEXT NOT NULL REFERENCES participants (id),
+    issued_at       INTEGER NOT NULL,
+    expires_at      INTEGER,
+    revoked_at      INTEGER,
+    last_used_at    INTEGER,
+    -- @invariant RevokedCredentialsAreInert
+    CHECK (status <> 'revoked' OR revoked_at IS NOT NULL)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS access_tokens_by_participant
+    ON access_tokens (graph_id, participant_id);
+
+-- De qué mano salió el texto que un bloque tiene ahora.
+--
+-- @invariant GeneratedContentIsAlwaysDistinguishable: se materializa aquí para
+-- que distinguir lo escrito de lo generado sea una lectura y no un recorrido del
+-- registro. Es reconstruible desde `operations`, como todo lo demás.
+--
+-- Vive aparte de `spoken_origins` porque responden preguntas distintas: uno dice
+-- de dónde vinieron las palabras y el otro quién las escribió por última vez. Un
+-- bloque puede tener los dos y nombrar participantes distintos en cada uno.
+CREATE TABLE IF NOT EXISTS block_authorship (
+    block_id        TEXT PRIMARY KEY REFERENCES blocks (id) ON DELETE CASCADE,
+    participant_id  TEXT NOT NULL REFERENCES participants (id),
+    channel         TEXT NOT NULL CHECK (
+                        channel IN ('typed_text', 'authenticated_voice',
+                                    'agent_generation', 'import')),
+    written_at      INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS block_authorship_by_participant
+    ON block_authorship (participant_id);

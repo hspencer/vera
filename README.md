@@ -9,7 +9,7 @@ medios nativos y la publicación personal. Personas y agentes participan
 mediante los mismos contratos, con identidad y permisos explícitos.
 
 > **Estado:** el primer recorrido completo está construido y corre sobre el
-> corpus real. Las otras siete specs siguen sin implementar. Vera es hoy una
+> corpus real. Tres specs siguen sin implementar y cinco van a medias. Vera es hoy una
 > aplicación usable para un solo grafo, no un producto terminado.
 
 ## El núcleo
@@ -79,7 +79,7 @@ de implementarlo.
 
 ## Especificaciones
 
-Las cinco que sostienen el primer recorrido, y que ya tienen implementación:
+Con implementación que las sostiene entera:
 
 - [`core.allium`](specs/core.allium) — participantes, páginas, bloques,
   procedencia, revisiones y publicación selectiva.
@@ -90,25 +90,41 @@ Las cinco que sostienen el primer recorrido, y que ya tienen implementación:
   derivados del contenido, backlinks y vecindades acotadas por profundidad.
 - [`query-language.allium`](specs/query-language.allium) — qué puede expresar
   una query de Vera y qué selecciona del grafo.
-- [`search-index.allium`](specs/search-index.allium) — qué encuentra la búsqueda
-  de texto libre, cómo ordena y qué extracto justifica cada hallazgo.
+- [`agent-participation.allium`](specs/agent-participation.allium) — cómo
+  participa un agente: credenciales revocables con alcance, la identidad que
+  sale de la credencial y no de lo que el cuerpo afirme, y la autoría que cada
+  bloque lleva para que lo generado nunca se confunda con lo escrito.
+- [`voice-capture.allium`](specs/voice-capture.allium) — la cascada de
+  validación desde el audio y la denominación de origen que sobrevive a todo lo
+  que se le haga después al contenido.
+- [`block-editing.allium`](specs/block-editing.allium) — el modelo de teclado:
+  qué hace cada tecla, qué se guarda y qué se rechaza a la vista.
 
-Las siete restantes, todavía sin implementación:
+Implementadas en parte, con lo que falta declarado en la propia spec:
 
 - [`logseq-block-identity-reference.allium`](specs/logseq-block-identity-reference.allium)
-  — identidad estable de bloques y proyección Markdown limpia.
+  — identidad estable de bloques y proyección Markdown limpia. La identidad
+  sobrevive; la proyección todavía no cubre todo.
 - [`content-media.allium`](specs/content-media.allium) — contenido hipermedia
-  nativo y preservación de fuentes.
+  nativo y preservación de fuentes. Los binarios están ingeridos y direccionados
+  por contenido; los derivados editables, no.
 - [`workspace-interface.allium`](specs/workspace-interface.allium) — navegación,
-  vistas, búsqueda, queries y temas.
+  vistas, búsqueda, queries y temas. Es la PWA que existe hoy.
+- [`search-index.allium`](specs/search-index.allium) — qué encuentra la búsqueda
+  de texto libre, cómo ordena y qué extracto justifica cada hallazgo. Falta
+  `properties_fts`, declarado en `schema/schema.sql` y en las obligaciones de
+  prueba: hoy la búsqueda cubre títulos y contenido, no valores de propiedad.
+- [`identity-access.allium`](specs/identity-access.allium) — instancias,
+  credenciales y alcance. Los agentes ya se autentican; las personas no.
+
+Sin implementación:
+
 - [`controlled-ontology.allium`](specs/controlled-ontology.allium) — tipos
   componibles y curaduría semántica.
 - [`bibliographic-integration.allium`](specs/bibliographic-integration.allium) —
   agregación unidireccional desde Zotero.
 - [`personal-site-projection.allium`](specs/personal-site-projection.allium) —
   proyección pública y migración del sitio histórico.
-- [`identity-access.allium`](specs/identity-access.allium) — instancias,
-  credenciales y alcance de los permisos.
 
 Las specs son válidas pero no están completas. Sus preguntas abiertas son parte
 del trabajo de elicitación, no defectos que deban ocultarse.
@@ -132,7 +148,7 @@ materialización y los índices derivados son reconstruibles. Nada fuera de
 ```sh
 npm install
 npm run typecheck                    # tsc --noEmit, raíz y PWA
-npm test                             # 184 tests, node --test, sin build
+npm test                             # 360 tests, node --test, sin build
 npm run spec                         # allium check specs/
 npm run import -- ../mind            # ingesta del corpus
 npm run build                        # la PWA a packages/web/dist

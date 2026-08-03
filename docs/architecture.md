@@ -190,17 +190,41 @@ aislados para SVG y sketches.
 - Git recibe Markdown y manifiestos deterministas. El archivo SQLite activo y
   sus WAL no se usan como historial Git — ya está en `.gitignore`.
 
-## Identidad y seguridad — propuesta
+## Identidad y seguridad
+
+Los agentes ya se autentican; las personas todavía no.
+
+**Hecho.** Un agente participa con una credencial: token revocable, con alcance
+y digest almacenado en lugar del secreto. La identidad de una operación sale de
+la credencial, nunca de lo que el cuerpo afirme, y el canal se deriva de qué es
+quien escribe. Ver [`agent-participation.allium`](../specs/agent-participation.allium)
+y `packages/server/src/credentials.ts`.
+
+| Ruta | Qué hace |
+| --- | --- |
+| `POST /agents` | Admite un agente como participante. Sólo el dueño. |
+| `POST /agents/credentials` | Emite una credencial. Devuelve el secreto una vez. |
+| `GET /agents/credentials` | Lista las credenciales. Nunca sus secretos. |
+| `POST /agents/credentials/:id/revoke` | La retira. No toca lo que escribió. |
+| `GET /agents/whoami` | Quién es el portador y con qué alcances. |
+
+Los alcances son `read`, `write` y `discard`. `discard` va aparte porque borrar
+es el único acto que el grafo no puede enseñarte después.
+
+**Pendiente.**
 
 - **Passkeys/WebAuthn** para humanos, implementadas con SimpleWebAuthn.
-- Tokens revocables, con alcance y hash almacenado, para agentes y dispositivos.
 - Cookies de sesión `HttpOnly`, `Secure` y `SameSite`; protección CSRF donde
   corresponda.
-- Autorización aplicada en el servidor para toda lectura, escritura y
-  publicación. La interfaz nunca constituye la frontera de seguridad.
+- Autorización de lectura por alcance: hoy `read` se emite y se muestra, pero
+  las rutas de lectura no lo exigen todavía.
+- Publicación: `OnlySiteOwnerPublishes` ya impide que un agente publique.
 
-v0 no autentica. Corre en `localhost` con un único participante propietario
-sembrado por el importador. Esto es aceptable mientras la instancia no escuche
+v0 no autentica al dueño. Quien llega sin credencial se toma por él, que es
+como Vera ha funcionado desde el principio: corre en `localhost` con un único
+participante propietario sembrado por el importador. Lo que cambió es que esa
+vía ya no puede escribir como otro — para firmar como Cotito hace falta la
+credencial de Cotito. Sigue siendo aceptable mientras la instancia no escuche
 fuera de la máquina, y deja de serlo el día que lo haga.
 
 ## Publicación — propuesta

@@ -509,6 +509,13 @@ export function renderOutliner(
   const folded = new Set(page.folded);
   // @invariant SpokenContentNamesItsRecording: un bloque hablado lo dice.
   const spoken = new Map((page.spokenOrigins ?? []).map((o) => [o.block, o.recording]));
+  // @invariant GeneratedContentIsAlwaysDistinguishable.
+  //
+  // Sólo se marca lo generado, no todo. El corpus es casi entero de Herbert, y
+  // atribuir cada bloque a su autor lo convertiría en un muro de firmas donde
+  // lo excepcional dejaría de verse. Lo que hay que poder distinguir de un
+  // vistazo es lo que no escribió él.
+  const hands = page.authorship ?? {};
   const options: RenderOptions = {};
   const asset = assetResolver(page);
   if (asset !== undefined) options.resolveAsset = asset;
@@ -708,14 +715,24 @@ export function renderOutliner(
     const bullet = document.createElement('button');
     bullet.type = 'button';
     const origin = spoken.get(node.block.stableId);
+    const hand = hands[node.block.stableId];
+    const generated = hand?.kind === 'agent';
+    if (generated) row.classList.add('generated');
+
     bullet.className = [
       'bullet',
       shut ? 'folded' : '',
       origin === undefined ? '' : 'spoken',
+      generated ? 'generated' : '',
     ].filter((part) => part !== '').join(' ');
-    if (origin !== undefined) {
-      bullet.title = `${node.block.stableId} · dicho en voz: ${origin}`;
-    }
+
+    // Un bloque puede llevar las dos marcas y no se contradicen: dictado por
+    // Herbert y reescrito después por un agente. Una dice de dónde vinieron las
+    // palabras y la otra de quién son ahora.
+    const said: string[] = [node.block.stableId];
+    if (origin !== undefined) said.push(`dicho en voz: ${origin}`);
+    if (generated) said.push(`escrito por ${hand.participant}`);
+    bullet.title = said.join(' · ');
     bullet.textContent = '•';
     bullet.setAttribute('aria-haspopup', 'menu');
     bullet.setAttribute('aria-label', 'acciones del bloque');

@@ -31,6 +31,17 @@ import {
   type Store,
 } from '@vera/store';
 import { HASH, objectPath, putObject } from '@vera/store/objects';
+import {
+  SCOPES,
+  bearerOf,
+  issueCredential,
+  listCredentials,
+  resolveSecret,
+  revokeCredential,
+  scopeRefusal,
+  type Credential,
+  type Scope,
+} from './credentials.ts';
 import { transcribeAudio } from './transcribe.ts';
 import { renderPage } from '@vera/store/projection';
 
@@ -91,6 +102,74 @@ interface SubmitBody {
   change?: unknown;
 }
 
+/** Quién resultó ser quien escribe, y por qué canal se registra lo que escriba. */
+interface Submitter {
+  participant: ParticipantId;
+  channel: ContributionChannel | null;
+  credential: Credential | null;
+}
+
+/**
+ * Decide quién está escribiendo.
+ *
+ * @invariant IdentityComesFromTheCredential. Con credencial, el participante
+ * sale de ella; lo que el cuerpo diga sólo puede coincidir o ser rechazado.
+ * Nunca se honra una identidad distinta de la que la credencial nombra.
+ *
+ * Sin credencial se sigue asumiendo el dueño, que es lo que v0 hace desde el
+ * principio y lo que docs/architecture.md declara: la aplicación corre en
+ * localhost con un único participante propietario y su identidad todavía no se
+ * demuestra. Lo que cambia hoy es que esa vía ya no puede escribir como otro:
+ * para firmar como Cotito hace falta la credencial de Cotito.
+ */
+function authorise(
+  store: Store,
+  graph: VeraGraph,
+  header: string | undefined,
+  claimed: unknown,
+  changeKind: string,
+): { error: string; status: number } | Submitter {
+  const secret = bearerOf(header);
+
+  if (secret === null) {
+    const owner = graph.owner;
+    if (owner === null) return { error: 'this graph has no owner', status: 500 };
+    if (typeof claimed === 'string' && claimed !== '' && claimed !== owner) {
+      return {
+        status: 403,
+        error:
+          `sin credencial sólo se escribe como ${owner}. ` +
+          `Para escribir como ${claimed} hace falta su credencial.`,
+      };
+    }
+    return { participant: owner, channel: null, credential: null };
+  }
+
+  const resolved = resolveSecret(store, secret);
+  if (!resolved.ok) return { error: resolved.detail, status: 401 };
+
+  const credential = resolved.credential;
+  if (typeof claimed === 'string' && claimed !== '' && claimed !== credential.participant) {
+    return {
+      status: 403,
+      error: `la credencial escribe como ${credential.participant}, no como ${claimed}`,
+    };
+  }
+
+  const refusal = scopeRefusal(credential, changeKind);
+  if (refusal !== null) return { error: refusal, status: 403 };
+
+  // @invariant ChannelFollowsParticipantKind: el canal se deriva de qué es quien
+  // escribe, no se lee del cuerpo. Un agente no puede presentar su generación
+  // como texto tecleado ni aunque lo pida.
+  const kind = graph.participant(credential.participant)?.kind;
+  return {
+    participant: credential.participant,
+    channel: kind === 'agent' ? 'agent_generation' : null,
+    credential,
+  };
+}
+
 const EXCERPT = 140;
 
 /** Una línea legible del bloque, sin arrastrar transcripciones enteras. */
@@ -102,7 +181,6 @@ function excerpt(content: string): string {
 /** Valida la forma del cuerpo antes de dejarlo entrar al dominio. */
 function readOperation(body: SubmitBody): { error: string } | {
   originId: string;
-  participant: ParticipantId;
   channel: ContributionChannel;
   evidence?: OriginEvidence;
   change: Change;
@@ -110,8 +188,12 @@ function readOperation(body: SubmitBody): { error: string } | {
   if (typeof body.originId !== 'string' || body.originId === '') {
     return { error: 'originId must be a non-empty string' };
   }
-  if (typeof body.participant !== 'string' || body.participant === '') {
-    return { error: 'participant must be a non-empty string' };
+  // `participant` ya no se exige ni se cree: quien escribe lo decide authorise()
+  // a partir de la credencial. Si el cuerpo lo trae, es una afirmación que se
+  // comprueba, y afirmarlo distinto se rechaza allí (@invariant
+  // IdentityComesFromTheCredential).
+  if (body.participant !== undefined && typeof body.participant !== 'string') {
+    return { error: 'participant, if given, must be a string' };
   }
   const channel = body.channel ?? 'typed_text';
   if (typeof channel !== 'string' || !CHANNELS.has(channel)) {
@@ -135,7 +217,6 @@ function readOperation(body: SubmitBody): { error: string } | {
 
   return {
     originId: body.originId,
-    participant: body.participant,
     channel: channel as ContributionChannel,
     change: change as Change,
     ...(evidence === undefined ? {} : { evidence }),
@@ -206,7 +287,26 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           return;
         }
 
-        const outcome = graph.submitOperation(input);
+        // Quién escribe se decide aquí y no se lee del cuerpo. Antes de esto, el
+        // cuerpo declaraba su propio participante: cualquiera que alcanzara el
+        // puerto podía firmar como Herbert o como Cotito.
+        const who = authorise(
+          store,
+          graph,
+          request.headers.authorization,
+          body.participant,
+          input.change.kind,
+        );
+        if ('error' in who) {
+          send(response, who.status, { status: 'rejected', reason: who.error });
+          return;
+        }
+
+        const outcome = graph.submitOperation({
+          ...input,
+          participant: who.participant,
+          ...(who.channel === null ? {} : { channel: who.channel }),
+        });
         if (outcome.status === 'rejected') {
           send(response, 422, { status: 'rejected', reason: outcome.reason });
           return;
@@ -241,6 +341,175 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           subjectId: outcome.subjectId,
         });
       });
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // Agentes y credenciales (agent-participation.allium)
+    // -----------------------------------------------------------------------
+    //
+    // Administrar credenciales es cosa del dueño: surface CredentialAdministration.
+    // Mientras la identidad humana no se demuestre, «el dueño» es quien llega sin
+    // credencial, que es la misma asunción con la que v0 lleva funcionando. Lo
+    // que no puede pasar —y ya no pasa— es que un portador de credencial se
+    // emita otra: @invariant SovereignOwnerCredentials.
+
+    const ownerOnly = (): { error: string } | null =>
+      bearerOf(request.headers.authorization) === null
+        ? null
+        : { error: 'sólo el dueño administra credenciales, y no lo hace con una credencial' };
+
+    /** Quién dice ser quien llama, para que un agente pueda comprobarlo. */
+    if (request.method === 'GET' && path === '/agents/whoami') {
+      const secret = bearerOf(request.headers.authorization);
+      if (secret === null) {
+        send(response, 200, { participant: graph.owner, kind: 'human', scopes: null });
+        return;
+      }
+      const resolved = resolveSecret(store, secret);
+      if (!resolved.ok) {
+        send(response, 401, { error: resolved.detail, reason: resolved.reason });
+        return;
+      }
+      send(response, 200, {
+        participant: resolved.credential.participant,
+        kind: graph.participant(resolved.credential.participant)?.kind ?? null,
+        scopes: resolved.credential.scopes,
+        label: resolved.credential.label,
+      });
+      return;
+    }
+
+    /** Admitir un agente en el grafo. rule OwnerInvitesParticipant. */
+    if (request.method === 'POST' && path === '/agents') {
+      const blocked = ownerOnly();
+      if (blocked !== null) {
+        send(response, 403, blocked);
+        return;
+      }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { id?: unknown; name?: unknown };
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+        const id = typeof body.id === 'string' ? body.id.trim() : '';
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (id === '' || name === '') {
+          send(response, 400, { error: 'un agente necesita id y name' });
+          return;
+        }
+        if (graph.participant(id) !== undefined) {
+          send(response, 409, { error: `${id} ya participa en este grafo` });
+          return;
+        }
+        try {
+          saveParticipant(store, { id, name, kind: 'agent' });
+          graph.addParticipant({ id, name, kind: 'agent' });
+          graph.admit(id);
+        } catch (error) {
+          send(response, 500, {
+            error: 'no se pudo admitir el agente',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+        send(response, 201, { id, name, kind: 'agent', status: 'active' });
+      });
+      return;
+    }
+
+    if (request.method === 'GET' && path === '/agents/credentials') {
+      const blocked = ownerOnly();
+      if (blocked !== null) {
+        send(response, 403, blocked);
+        return;
+      }
+      // @guarantee TheSecretIsShownOnce: aquí nunca hay secretos que mostrar.
+      send(response, 200, listCredentials(store));
+      return;
+    }
+
+    if (request.method === 'POST' && path === '/agents/credentials') {
+      const blocked = ownerOnly();
+      if (blocked !== null) {
+        send(response, 403, blocked);
+        return;
+      }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { participant?: unknown; scopes?: unknown; label?: unknown; expiresAt?: unknown };
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+
+        const participant = typeof body.participant === 'string' ? body.participant : '';
+        const held = graph.participant(participant);
+        if (held === undefined) {
+          send(response, 404, { error: `no existe el participante ${participant}` });
+          return;
+        }
+        if (held.kind !== 'agent') {
+          send(response, 400, {
+            error: 'las credenciales son para agentes; una persona no se autentica con un token',
+          });
+          return;
+        }
+
+        const asked = Array.isArray(body.scopes) ? body.scopes : [];
+        const scopes = asked.filter((s): s is Scope => SCOPES.includes(s as Scope));
+        if (scopes.length !== asked.length || scopes.length === 0) {
+          send(response, 400, { error: `scopes debe ser un subconjunto de ${SCOPES.join(', ')}` });
+          return;
+        }
+
+        const owner = graph.owner;
+        if (owner === null) {
+          send(response, 500, { error: 'this graph has no owner' });
+          return;
+        }
+
+        try {
+          const issued = issueCredential(store, {
+            participant,
+            scopes,
+            label: typeof body.label === 'string' && body.label !== '' ? body.label : participant,
+            issuedBy: owner,
+            expiresAt: typeof body.expiresAt === 'number' ? body.expiresAt : null,
+          });
+          // La única vez que el secreto viaja. No se vuelve a poder leer.
+          send(response, 201, { ...issued.credential, secret: issued.secret });
+        } catch (error) {
+          send(response, 500, {
+            error: 'no se pudo emitir la credencial',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+      return;
+    }
+
+    if (request.method === 'POST' && /^\/agents\/credentials\/[^/]+\/revoke$/.test(path)) {
+      const blocked = ownerOnly();
+      if (blocked !== null) {
+        send(response, 403, blocked);
+        return;
+      }
+      const id = decodeURIComponent(path.split('/')[3] ?? '');
+      const revoked = revokeCredential(store, id);
+      if (revoked === null) {
+        send(response, 404, { error: `no existe la credencial ${id}` });
+        return;
+      }
+      send(response, 200, revoked);
       return;
     }
 
@@ -571,6 +840,30 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           })(),
           // La denominación de origen de los bloques hablados de esta página.
           spokenOrigins: spokenOriginsOnPage(store, page.id),
+          // @invariant GeneratedContentIsAlwaysDistinguishable: de qué mano
+          // salió el texto de cada bloque. Viaja con la página y no en una
+          // petición aparte, porque distinguir lo escrito de lo generado tiene
+          // que costar lo mismo que leer, o no se hará.
+          //
+          // Es cosa distinta de spokenOrigins: uno dice de dónde vinieron las
+          // palabras y el otro quién las escribió por última vez. Un bloque
+          // dictado por Herbert y reescrito por Cotito aparece en los dos, y
+          // nombrando participantes distintos.
+          authorship: Object.fromEntries(
+            graph
+              .blocksOf(page.id)
+              .map((block) => [block.stableId, graph.authorship(block.stableId)] as const)
+              .filter(([, hand]) => hand !== undefined)
+              .map(([id, hand]) => [
+                id,
+                {
+                  participant: hand?.participant,
+                  kind: graph.participant(hand?.participant ?? '')?.kind ?? null,
+                  channel: hand?.channel,
+                  writtenAt: hand?.writtenAt,
+                },
+              ]),
+          ),
           // @invariant FoldingIsNotAChange: qué tiene plegado ESTE participante.
           // No sale del registro de operaciones porque nunca entró en él.
           folded: foldedOnPage(store, participant, page.id),

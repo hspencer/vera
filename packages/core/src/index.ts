@@ -39,6 +39,7 @@ export {
 } from './types.ts';
 
 export type {
+  Authorship,
   Block,
   BlockId,
   Change,

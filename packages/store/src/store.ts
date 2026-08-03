@@ -137,6 +137,7 @@ export function recordOperation(store: Store, graph: VeraGraph, operation: Opera
     }
 
     materialise(store, graph, submission.change, operation.subjectId);
+    materialiseAuthorship(store, graph, submission.change, operation.subjectId);
     db.exec(`RELEASE ${savepoint}`);
   } catch (error) {
     db.exec(`ROLLBACK TO ${savepoint}`);
@@ -224,6 +225,7 @@ export function materialiseAll(store: Store, graph: VeraGraph): void {
     'block_tags',
     'page_links',
     'property_assignments',
+    'block_authorship',
     'blocks',
     'pages',
   ]) {
@@ -258,6 +260,19 @@ export function materialiseAll(store: Store, graph: VeraGraph): void {
       block.content,
       block.createdAt,
     );
+  }
+
+  // La autoría va después de los bloques porque la referencia por clave ajena.
+  const insertHand = db.prepare(
+    `INSERT INTO block_authorship (block_id, participant_id, channel, written_at)
+     VALUES (?, ?, ?, ?)`,
+  );
+  for (const hand of graph.authorships()) {
+    // Un bloque que ya no existe deja atrás su autoría: la eliminación en
+    // cascada la limpia en la ruta incremental, y aquí sencillamente no se
+    // inserta lo que no tiene bloque al que colgarse.
+    if (graph.block(hand.block) === undefined) continue;
+    insertHand.run(hand.block, hand.participant, hand.channel, hand.writtenAt);
   }
 
   const insertProperty = db.prepare(
@@ -323,6 +338,37 @@ export function materialiseAll(store: Store, graph: VeraGraph): void {
   for (const unported of graph.unportedQueries()) {
     insertUnported.run(unported.id, store.graphId, unported.block, unported.sourceText);
   }
+}
+
+/**
+ * De qué mano salió el texto de un bloque, llevado a SQL.
+ *
+ * @invariant GeneratedContentIsAlwaysDistinguishable. El grafo en memoria ya lo
+ * sabe; se materializa para que una consulta SQL pueda preguntar «qué escribió
+ * Cotito» sin recorrer el registro, y para que la copia del cliente lo tenga.
+ *
+ * Sólo escribir cambia la mano: `move_block` no está y es rule
+ * MovingLeavesTheHandAlone. Un bibliotecario que archiva no firma.
+ */
+function materialiseAuthorship(
+  store: Store,
+  graph: VeraGraph,
+  change: Change,
+  subjectId: string,
+): void {
+  if (change.kind !== 'create_block' && change.kind !== 'edit_block') return;
+  const hand = graph.authorship(subjectId);
+  if (hand === undefined) return;
+  store.db
+    .prepare(
+      `INSERT INTO block_authorship (block_id, participant_id, channel, written_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (block_id) DO UPDATE SET
+         participant_id = excluded.participant_id,
+         channel = excluded.channel,
+         written_at = excluded.written_at`,
+    )
+    .run(hand.block, hand.participant, hand.channel, hand.writtenAt);
 }
 
 function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: string): void {
@@ -589,7 +635,7 @@ export function loadGraph(store: Store, graphName = 'mind'): VeraGraph {
     .all(store.graphId) as unknown as OperationRow[];
 
   for (const row of rows) {
-    graph.submitOperation({
+    const outcome = graph.submitOperation({
       originId: row.origin_id,
       participant: row.participant_id,
       channel: row.channel as 'typed_text' | 'authenticated_voice' | 'agent_generation' | 'import',
@@ -604,6 +650,19 @@ export function loadGraph(store: Store, graphName = 'mind'): VeraGraph {
             },
           }),
     });
+
+    // @invariant ReplayReconstructsState: reproducir tiene que devolver el
+    // mismo grafo. Una operación que el dominio ya aceptó una vez y ahora
+    // rechaza significa que el registro y las reglas dejaron de concordar, y
+    // seguir adelante levantaría un grafo al que le faltan cosas sin que nadie
+    // se entere. Antes esto se descartaba en silencio: el contenido se perdía
+    // al reiniciar y el único síntoma era una página más corta.
+    if (outcome.status === 'rejected') {
+      throw new Error(
+        `el registro no se puede reproducir: la operación ${row.sequence} ` +
+          `(${row.origin_id}) fue rechazada por «${outcome.reason}»`,
+      );
+    }
   }
 
   // Los participantes suspendidos vuelven a serlo después de reproducir: durante

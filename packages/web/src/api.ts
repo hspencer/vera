@@ -50,6 +50,17 @@ export interface PageView {
   folded: string[];
   /** La denominación de origen: qué bloques vinieron de qué grabación. */
   spokenOrigins: { block: string; recording: string }[];
+  /**
+   * De qué mano salió el texto de cada bloque, indexado por su identidad.
+   *
+   * @invariant GeneratedContentIsAlwaysDistinguishable: viaja con la página, no
+   * en una petición aparte, porque distinguir lo escrito de lo generado tiene
+   * que costar lo mismo que leer.
+   */
+  authorship: Record<
+    string,
+    { participant: string; kind: 'human' | 'agent' | null; channel: string; writtenAt: number }
+  >;
   backlinks: Backlink[];
 }
 

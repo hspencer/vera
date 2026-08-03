@@ -114,13 +114,19 @@ describe('POST /operations', () => {
     assert.equal(status, 201);
   });
 
-  it('rechaza a un participante sin membresía', async () => {
-    const { status } = await post({
+  // Antes esto llegaba al dominio y volvía 422 por falta de membresía. Ahora ni
+  // llega: sin credencial sólo se escribe como el dueño, así que nombrar a otro
+  // es un intento de suplantación y se rechaza en la frontera
+  // (@invariant IdentityComesFromTheCredential). Que un desconocido no pueda
+  // escribir sigue siendo cierto; lo que cambia es dónde se le dice que no.
+  it('rechaza a quien dice ser otro participante', async () => {
+    const { status, json } = await post({
       originId: 'op-ajeno',
       participant: 'participant:desconocido',
       change: { kind: 'create_page', title: 'Ajena', visibility: 'private' },
     });
-    assert.equal(status, 422);
+    assert.equal(status, 403, JSON.stringify(json));
+    assert.match(json['reason'] as string, /credencial/);
   });
 });
 

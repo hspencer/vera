@@ -15,9 +15,11 @@ import {
 } from './text.ts';
 import type { QueryExpression } from './query.ts';
 import type {
+  Authorship,
   Block,
   BlockId,
   Change,
+  ContributionChannel,
   GraphId,
   GraphNeighbourhood,
   NeighbourhoodEdge,
@@ -56,6 +58,11 @@ export class VeraGraph {
   #participants = new Map<ParticipantId, Participant>();
   #memberships = new Map<ParticipantId, 'active' | 'suspended'>();
   #owner: ParticipantId | null = null;
+
+  // @invariant EveryBlockNamesItsHand. Se mantiene junto al bloque y no dentro
+  // de él porque responde otra pregunta: el bloque dice qué palabras hay, esto
+  // dice de quién son.
+  #authorship = new Map<BlockId, Authorship>();
 
   #pages = new Map<PageId, Page>();
   #blocks = new Map<BlockId, Block>();
@@ -252,6 +259,22 @@ export class VeraGraph {
       return { status: 'rejected', reason: 'authenticated voice requires origin evidence' };
     }
 
+    // @invariant ChannelFollowsParticipantKind: la procedencia no la elige quien
+    // escribe. Un agente no puede presentar su generación como texto tecleado, y
+    // una persona no puede firmar como generada la frase que escribió a mano. Si
+    // el canal fuese seleccionable registraría intención, no hecho, y entonces
+    // distinguir lo escrito de lo generado dejaría de significar nada.
+    const kind = this.#participants.get(input.participant)?.kind;
+    if (kind === 'agent' && channel !== 'agent_generation') {
+      return {
+        status: 'rejected',
+        reason: `an agent submits through agent_generation, not ${channel}`,
+      };
+    }
+    if (kind === 'human' && channel === 'agent_generation') {
+      return { status: 'rejected', reason: 'agent_generation belongs to agent participants' };
+    }
+
     // @invariant OriginIdentityIsTheIdempotencyKey
     const seen = this.#origins.get(input.originId);
     if (seen !== undefined) {
@@ -265,6 +288,7 @@ export class VeraGraph {
 
     const at = Date.now();
     const subjectId = this.#apply(input.change, null);
+    this.#recordAuthorship(input.change, subjectId, input.participant, channel, at);
 
     const submission: Submission = {
       graph: this.id,
@@ -293,6 +317,40 @@ export class VeraGraph {
     this.#origins.set(input.originId, operation);
 
     return { status: 'applied', operation, subjectId };
+  }
+
+  /**
+   * rule WritingRecordsItsHand y rule RewritingTransfersTheHand.
+   *
+   * Sólo escribir cambia la mano. Mover un bloque de una página a otra no es
+   * haber escrito una palabra suya, así que `move_block` no aparece aquí: es
+   * @invariant... bueno, es rule MovingLeavesTheHandAlone, escrita como el
+   * silencio deliberado de este switch. Un bibliotecario que ordena no firma.
+   */
+  #recordAuthorship(
+    change: Change,
+    subjectId: string,
+    participant: ParticipantId,
+    channel: ContributionChannel,
+    at: number,
+  ): void {
+    if (change.kind !== 'create_block' && change.kind !== 'edit_block') return;
+    this.#authorship.set(subjectId, {
+      block: subjectId,
+      participant,
+      channel,
+      writtenAt: at,
+    });
+  }
+
+  /** De qué mano salió el texto que este bloque tiene ahora. */
+  authorship(block: BlockId): Authorship | undefined {
+    return this.#authorship.get(block);
+  }
+
+  /** Toda la autoría del grafo, para materializarla y para verificarla. */
+  authorships(): Authorship[] {
+    return [...this.#authorship.values()];
   }
 
   #recordRevision(submission: Submission, subjectId: string, at: number): void {
@@ -1014,6 +1072,16 @@ export class VeraGraph {
     // reutilizando el sujeto que quedó registrado.
     for (const operation of [...this.#operations].sort((a, b) => a.sequence - b.sequence)) {
       replayed.#apply(operation.submission.change, operation.subjectId);
+      // La autoría es materialización del registro, no un hecho aparte: se
+      // reconstruye reproduciendo, o @invariant ReplayReconstructsState dejaría
+      // de cubrirla y el grafo reproducido no sabría de quién son las palabras.
+      replayed.#recordAuthorship(
+        operation.submission.change,
+        operation.subjectId,
+        operation.submission.submittedBy,
+        operation.submission.channel,
+        operation.appliedAt,
+      );
       replayed.#recordRevision(operation.submission, operation.subjectId, operation.appliedAt);
       replayed.#lastSequence = operation.sequence;
       replayed.#operations.push(operation);

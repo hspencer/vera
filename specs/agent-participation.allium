@@ -1,0 +1,419 @@
+-- allium: 3
+-- agent-participation.allium
+
+-- Scope: How an agent participates in one Vera graph, and what the graph keeps
+--   saying about which hand wrote each passage
+-- Includes: Credentials that name an agent and can be withdrawn, the boundary
+--   that derives a submitter's identity from its credential rather than from its
+--   claim, and the authorship every block carries so that generated text is never
+--   mistaken for written text
+-- Excludes:
+--   - The wire protocol and its headers (core.allium excludes network protocol)
+--   - The model behind the agent, its prompt and its reasoning
+--   - Human authentication, which does not exist yet (see identity-access.allium)
+--   - Where spoken content came from, which is a different question entirely
+--     (see voice-capture.allium)
+-- Dependencies: Participant, Membership, Block, Operation and ContributionChannel
+--   are governed by core.allium; membership administration by identity-access.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Given
+------------------------------------------------------------
+
+given {
+    instance: VeraInstance
+}
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- The whole point, stated once.
+--
+-- An agent in Vera is not a lesser participant. It writes, edits, files and
+-- discards through exactly the contracts a person uses, because a second, weaker
+-- path into the graph would be a second thing to keep honest.
+--
+-- What protects the corpus is therefore not a shorter leash. It is that the graph
+-- can always answer, of any passage, whose hand produced these words. Herbert
+-- writes and Cotito writes; the corpus stays trustworthy because the two are
+-- distinguishable at every block, not because one of them was fenced in.
+contract AttributedGeneration {
+    hand: (block: core/Block) -> Authorship
+
+    @invariant IdentityComesFromTheCredential
+        -- Who submitted an operation is whoever the credential names. A
+        -- submission that asserts some other participant is refused, not
+        -- honoured: an identity a caller can choose is not an identity.
+
+    @invariant ChannelFollowsParticipantKind
+        -- An agent's operations carry agent_generation, and no agent can submit
+        -- through a human channel. Provenance that the writer could select would
+        -- record intention rather than fact.
+
+    @invariant GeneratedContentIsAlwaysDistinguishable
+        -- Every block names the participant whose hand produced the text it
+        -- currently holds. Reading the graph never requires guessing whether a
+        -- passage was written or generated, and never requires walking the log
+        -- to find out.
+
+    @invariant AuthorshipFollowsTheLastWord
+        -- Rewriting a block transfers its authorship to whoever rewrote it. A
+        -- paragraph Herbert wrote and Cotito rewrote reads as Cotito's, because
+        -- those are Cotito's words now. Authorship describes the text that is
+        -- there, not the text that used to be.
+
+    @invariant OriginAndHandAreDifferentQuestions
+        -- A block may name a recording as its origin and an agent as its hand at
+        -- the same time. Where words came from and who last wrote them are
+        -- separate claims, and neither one implies the other.
+}
+
+-- A credential is the only thing that makes an agent an agent rather than a
+-- caller. It names one participant, carries what it is allowed to do, and can be
+-- taken back without touching anything it already did.
+contract AgentCredentialing {
+    issue: (owner: core/Participant, agent: core/Participant, scopes: Set<Scope>) -> AccessToken
+    revoke: (owner: core/Participant, token: AccessToken) -> AccessToken
+
+    @invariant SovereignOwnerCredentials
+        -- Only the instance's founding human owner issues or withdraws a
+        -- credential. An agent that could credential another agent would make
+        -- the owner's consent transitive, and therefore meaningless.
+
+    @invariant TheSecretIsNeverStored
+        -- Vera keeps what proves a secret, never the secret. A credential is
+        -- readable once, at the moment it is issued, and cannot be recovered
+        -- afterwards from anything Vera holds.
+
+    @invariant RevocationTakesEffectAtOnce
+        -- The first submission after a withdrawal is refused. There is no window
+        -- in which a withdrawn credential still writes.
+
+    @invariant WithdrawalLeavesTheWorkStanding
+        -- Withdrawing a credential changes nothing that was already applied. The
+        -- operations stay in the log, attributed as they always were. Revoking
+        -- access is not retracting history.
+
+    @invariant ScopeIsCheckedPerChange
+        -- What a credential may do is decided against each change it submits,
+        -- not once at the door. A credential that may write does not thereby
+        -- discard.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+-- What a credential is allowed to do. Deliberately coarse: a vocabulary fine
+-- enough to describe every change kind would be the change vocabulary again,
+-- and nobody would be able to read a token and say what it permits.
+--
+-- Discarding is separate from writing because it is the one act the graph cannot
+-- show you afterwards. Everything else leaves the previous state legible in the
+-- log; a removal leaves an absence.
+enum Scope { read | write | discard }
+
+enum CredentialStatus { active | revoked }
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity VeraInstance {
+    graph: core/Graph
+    owner: core/Participant
+    credentials: AccessToken with graph = this.graph
+}
+
+entity AccessToken {
+    graph: core/Graph
+    -- Whom this credential speaks as. Every operation it submits is attributed
+    -- here, whatever the submission claims.
+    participant: core/Participant
+
+    -- What proves the secret without being the secret.
+    secret_digest: String
+    scopes: Set<Scope>
+
+    status: CredentialStatus
+
+    transitions status {
+        active -> revoked
+    }
+
+    label: String
+    issued_by: core/Participant
+    issued_at: Timestamp
+    expires_at: Timestamp?
+    revoked_at: Timestamp?
+    last_used_at: Timestamp?
+}
+
+-- Whose hand produced the text a block currently holds.
+--
+-- It is a separate thing from the block, for the same reason SpokenOrigin is:
+-- one describes the words, the other describes where they came from, and they
+-- change on different occasions. It is also separate from SpokenOrigin, because
+-- a block can have both and they can name different participants.
+entity Authorship {
+    block: core/Block
+    participant: core/Participant
+    channel: core/ContributionChannel
+    written_at: Timestamp
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule OwnerIssuesCredential {
+    when: IssueCredential(owner, agent, scopes, label, digest)
+
+    let membership = core/Membership{graph: instance.graph, participant: agent}
+
+    requires: instance.owner = owner
+    requires: owner.kind = human
+    requires: exists membership
+    requires: membership.status = active
+    requires: scopes != {}
+
+    ensures: AccessToken.created(
+        graph: instance.graph,
+        participant: agent,
+        secret_digest: digest,
+        scopes: scopes,
+        status: active,
+        label: label,
+        issued_by: owner,
+        issued_at: now,
+        expires_at: null,
+        revoked_at: null,
+        last_used_at: null
+    )
+}
+
+rule OwnerRevokesCredential {
+    when: RevokeCredential(owner, token)
+
+    requires: instance.owner = owner
+    requires: token.status = active
+
+    ensures:
+        token.status = revoked
+        token.revoked_at = now
+
+    @guidance
+        -- Nothing here touches the operations the credential submitted. That is
+        -- @invariant WithdrawalLeavesTheWorkStanding: the log is a record of what
+        -- happened, and what happened does not stop having happened.
+}
+
+-- The rule that makes @invariant IdentityComesFromTheCredential operational.
+--
+-- The submitter says who it is and presents its secret, and both have to agree
+-- with the credential: the claim is checked, never trusted. What lands in the
+-- operation is the credential's participant, so a caller that names somebody
+-- else does not write as them — it is refused.
+rule CredentialSubmitsChange {
+    when: SubmitAsAgent(agent, token, secret, change, origin_id)
+
+    let membership = core/Membership{graph: token.graph, participant: token.participant}
+
+    requires: digest_of(secret) = token.secret_digest
+    requires: token.participant = agent
+    requires: token.status = active
+    requires: token.expires_at = null or token.expires_at > now
+    requires: exists membership
+    requires: membership.status = active
+    requires: write in token.scopes
+    requires: discard in token.scopes or not discards(change)
+
+    ensures:
+        core/Operation.created(
+            graph: token.graph,
+            origin_id: origin_id,
+            participant: token.participant,
+            change: change,
+            channel: agent_generation
+        )
+        token.last_used_at = now
+}
+
+-- Authorship hangs off the one door every change already goes through, so there
+-- is no way to write a block that bypasses the record of who wrote it. These
+-- three rules read the change kind rather than listening for three separate
+-- events, because core has one submission event and @guarantee EqualMutationPath
+-- is the reason it has only one.
+
+-- @invariant GeneratedContentIsAlwaysDistinguishable made operational: a block
+-- cannot come into existence without its authorship, because the submission that
+-- creates it records the hand in the same breath.
+rule WritingRecordsItsHand {
+    when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    requires: change.kind = create_block
+
+    ensures: Authorship.created(
+        block: change.block,
+        participant: participant,
+        channel: channel,
+        written_at: now
+    )
+}
+
+-- @invariant AuthorshipFollowsTheLastWord made operational.
+rule RewritingTransfersTheHand {
+    when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    let previous = Authorship{block: change.block}
+
+    requires: change.kind = edit_block
+    requires: exists previous
+
+    ensures:
+        previous.participant = participant
+        previous.channel = channel
+        previous.written_at = now
+}
+
+-- Filing is not writing. A librarian who moves a block from one page to another
+-- has not written a word of it, and the block must not start claiming otherwise.
+-- Stated as a rule rather than left to silence, because "the hand does not change
+-- here" is exactly the kind of thing that gets implemented wrong by omission.
+rule MovingLeavesTheHandAlone {
+    when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    let authorship = Authorship{block: change.block}
+
+    requires: change.kind = move_block
+    requires: exists authorship
+
+    ensures: authorship.written_at = authorship.written_at
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant EveryBlockNamesItsHand {
+    for block in core/Blocks:
+        exists Authorship{block: block}
+}
+
+invariant AgentWritingIsAlwaysMarked {
+    for authorship in Authorships:
+        authorship.participant.kind = agent
+            implies authorship.channel = agent_generation
+}
+
+invariant AgentOperationsCarryTheGeneratedChannel {
+    for operation in core/Operations:
+        operation.participant.kind = agent
+            implies operation.channel = agent_generation
+}
+
+invariant HumanOperationsNeverClaimGeneration {
+    for operation in core/Operations:
+        operation.channel = agent_generation
+            implies operation.participant.kind = agent
+}
+
+invariant RevokedCredentialsAreInert {
+    for token in AccessTokens:
+        token.status = revoked implies token.revoked_at != null
+}
+
+invariant CredentialsBelongToTheInstanceGraph {
+    for token in AccessTokens:
+        token.graph = instance.graph
+}
+
+invariant CredentialsAreIssuedByTheOwner {
+    for token in AccessTokens:
+        token.issued_by = instance.owner
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor SovereignOwner {
+    within: VeraInstance
+    identified_by: core/Participant where this = within.owner and this.kind = human
+}
+
+actor AgentParticipant {
+    within: AccessToken
+    identified_by: core/Participant where this = within.participant and this.kind = agent
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface CredentialAdministration {
+    facing owner: SovereignOwner
+    context instance: VeraInstance
+
+    exposes:
+        instance.credentials
+        AccessToken.label
+        AccessToken.participant
+        AccessToken.scopes
+        AccessToken.status
+        AccessToken.issued_at
+        AccessToken.last_used_at
+
+    provides:
+        IssueCredential(owner, agent, scopes, label, digest)
+        RevokeCredential(owner, token)
+
+    contracts:
+        fulfils AgentCredentialing
+
+    @guarantee TheSecretIsShownOnce
+        -- Issuing returns the credential in the clear exactly once. Every later
+        -- reading shows what it is for, who holds it and when it was last used,
+        -- and never what it is.
+
+    @guarantee WhatAnAgentDidIsReviewable
+        -- The owner can read every operation a credential submitted, in order,
+        -- without leaving Vera. A credential whose work could not be reviewed
+        -- would be a credential granted blind.
+}
+
+surface AgentGraphParticipation {
+    facing agent: AgentParticipant
+    context token: AccessToken
+
+    exposes:
+        token.scopes
+
+    provides:
+        SubmitAsAgent(agent, token, secret, change, origin_id)
+
+    contracts:
+        fulfils AttributedGeneration
+
+    @guarantee TheSameDoorAsEveryoneElse
+        -- An agent's change is applied by the same rules, in the same order, with
+        -- the same refusals as a person's. There is no editorial back door.
+
+    @guarantee RefusalsSayWhy
+        -- A refused submission comes back with the reason it was refused —
+        -- expired credential, missing scope, or a rule of the domain. An agent
+        -- that cannot tell these apart cannot correct itself.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Should a credential carry a rate or a budget, so that a runaway agent is slowed by the graph rather than by noticing it?"
+open question "May an agent act on the owner's behalf for acts reserved to a human — publishing a page, validating a transcript — if the owner approves each one, or is delegation of those acts never possible?"
+open question "Does authorship need to survive a split and a merge the way SpokenOrigin does, and if two blocks with different hands merge, whose hand does the result carry?"
+open question "Should the interface show authorship on every block, or only where it differs from the reader's own, so that a corpus that is mostly Herbert's does not become a wall of attributions?"
+open question "When an agent's membership is suspended, are its credentials revoked with it, or do they survive a suspension that might be lifted?"

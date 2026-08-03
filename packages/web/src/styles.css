@@ -1711,3 +1711,31 @@ code {
 .bullet.spoken {
   color: var(--warm);
 }
+
+/*
+ * Lo generado se distingue de lo escrito.
+ *
+ * Es la razón de toda la frontera de agentes: Herbert escribe y Cotito escribe,
+ * y el corpus sigue siendo fiable porque los dos se distinguen en cada bloque.
+ *
+ * Se marca sólo lo generado y no todo. Casi todo el corpus es suyo; firmar cada
+ * bloque con su autor sería un muro de atribuciones donde lo excepcional se
+ * perdería. La marca es un filo a la izquierda —no un color de texto— para que
+ * la distinción se lea sin cambiar cómo se lee el texto.
+ */
+.block.generated {
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  margin-left: -2px;
+}
+
+.bullet.generated {
+  color: var(--accent);
+  /* Hueca, frente a la viñeta llena de lo escrito a mano. */
+  background: none;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  font-size: 0;
+  width: 0.62rem;
+  height: 0.62rem;
+  margin: 0.4rem 0.39rem;
+  border-radius: 50%;
+}

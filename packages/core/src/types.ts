@@ -148,6 +148,25 @@ export interface Revision {
   readonly originIsCanonical: boolean;
 }
 
+/**
+ * De qué mano salió el texto que un bloque tiene ahora.
+ *
+ * @invariant GeneratedContentIsAlwaysDistinguishable: todo bloque la tiene, así
+ * que saber si un pasaje se escribió o se generó nunca obliga a recorrer el
+ * registro.
+ *
+ * Es cosa distinta de la denominación de origen. `SpokenOrigin` dice de dónde
+ * vinieron las palabras y no cambia nunca; esto dice quién las escribió por
+ * última vez y cambia con cada edición. Un bloque puede tener las dos y nombrar
+ * participantes distintos: dictado por Herbert, reescrito por un agente.
+ */
+export interface Authorship {
+  readonly block: BlockId;
+  readonly participant: ParticipantId;
+  readonly channel: ContributionChannel;
+  readonly writtenAt: number;
+}
+
 export interface Operation {
   readonly id: OperationId;
   readonly originId: string;

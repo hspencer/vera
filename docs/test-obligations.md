@@ -84,8 +84,14 @@ operaciones, y verifican `checkInvariants(graph)` después de cada corrida.
 - **Recorrido de punta a punta**: ningún test conduce la PWA contra el servidor contra la
   base. Los tres se prueban por separado. La verificación de que el conjunto funciona
   sobre el corpus real es hoy manual: importar, servir y pedir `GET /invariants`.
-- **Las siete specs fuera de v0**: audio, ontología, Zotero, sitio público, workspace,
-  identidad y la referencia destilada de Logseq. Sin cobertura y sin pretenderla.
+- **Las specs fuera de v0**: ontología, Zotero y sitio público. Sin cobertura y sin
+  pretenderla.
+- **La lectura por alcance**: `read` se emite, se lista y se devuelve en `whoami`, pero
+  ninguna ruta de lectura lo exige todavía. Una credencial sólo de lectura no puede
+  escribir —eso sí está probado— y puede leer, como puede leer cualquiera que alcance el
+  puerto. El alcance describe la intención antes que la frontera.
+- **La identidad humana**: sigue sin demostrarse. Quien llega sin credencial se toma por
+  el dueño. Lo que las pruebas cubren es que esa vía no puede escribir como otro.
 
 ## Cómo correrlos
 
@@ -95,5 +101,5 @@ npm run typecheck    # tsc --noEmit, raíz y PWA
 npm test             # node --test, sin paso de build
 ```
 
-Los 184 pasan y el typecheck está limpio. `node --test` ejecuta TypeScript directamente:
+Los 360 pasan y el typecheck está limpio. `node --test` ejecuta TypeScript directamente:
 no hay paso de compilación intermedio que pueda quedar desfasado del código.
