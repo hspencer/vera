@@ -53,6 +53,22 @@
           costar decidir primero cómo se llama lo que se va a escribir. El día
           sólo entra en la base cuando algo se escribe en él.
         -->
+        <!--
+          El switch de la vista, de tres posiciones y en el orden del espacio que
+          gobierna: mapa a la izquierda, texto a la derecha, y en medio los dos.
+          Mover el switch a la derecha es acercarse; a la izquierda, alejarse.
+          Los dibujos los pone icons.ts.
+        -->
+        <div id="view-switch" role="group" aria-label="Vista">
+          <button data-layout="graph_only" aria-label="Sólo el mapa" title="Sólo el mapa"></button>
+          <button data-layout="split" aria-label="Mapa y texto" title="Mapa y texto"></button>
+          <button data-layout="text_only" aria-label="Sólo el texto" title="Sólo el texto"></button>
+        </div>
+
+        <!--
+          Atrás, adelante y hoy. La fecha es el botón: dice a dónde lleva sin que
+          haga falta un icono al lado que repita lo mismo peor.
+        -->
         <nav id="nav" aria-label="Navegación">
           <button id="back" aria-label="Atrás" title="Atrás"></button>
           <button id="forward" aria-label="Adelante" title="Adelante"></button>
@@ -60,35 +76,24 @@
             <time id="hoy"></time>
           </button>
         </nav>
+
+        <!-- El buscador toma el espacio que sobra: es lo único de la barra que
+             mejora al ser más ancho. -->
         <div id="search-wrap">
           <input id="search" type="search" placeholder="buscar en el grafo" autocomplete="off" />
           <div id="results" hidden></div>
         </div>
+
         <div id="controls">
-          <!--
-            El switch de la vista, de tres posiciones y en el orden del espacio
-            que gobierna: mapa a la izquierda, texto a la derecha, y en medio los
-            dos. Mover el switch a la derecha es acercarse; a la izquierda,
-            alejarse. Los dibujos los pone icons.ts.
-          -->
-          <div id="view-switch" role="group" aria-label="Vista">
-            <button data-layout="graph_only" aria-label="Sólo el mapa" title="Sólo el mapa"></button>
-            <button data-layout="split" aria-label="Mapa y texto" title="Mapa y texto"></button>
-            <button data-layout="text_only" aria-label="Sólo el texto" title="Sólo el texto"></button>
-          </div>
-          <span class="sep"></span>
-          <button data-view="graph_2d" title="Grafo en dos dimensiones">2D</button>
-          <button data-view="graph_3d" title="Grafo en tres dimensiones">3D</button>
-          <span class="sep"></span>
           <!-- El contenido de estos tres lo pone icons.ts. El texto accesible
                va en aria-label, que es lo que se lee: un icono a solas no se
                anuncia, y el dibujo no reemplaza al nombre de la acción. -->
-          <button id="scheme" aria-label="Claro u oscuro"></button>
           <button
             id="insert-voice"
             aria-label="Insertar voz"
-            title="Insertar voz: grabar, transcribir aquí mismo, validar y asentar"
+            title="Hablar: lo grabado queda en el día de hoy"
           ></button>
+          <button id="scheme" aria-label="Claro u oscuro"></button>
           <button id="settings" aria-label="Ajustes" title="Ajustes de Vera"></button>
         </div>
       </header>
@@ -102,7 +107,17 @@
         el conjunto es uno hacia la izquierda. Invertirlo obligaría a leer al
         revés lo que se está haciendo.
       -->
-      <section id="graph"></section>
+      <section id="graph">
+        <!--
+          Lo que gobierna el mapa vive en el mapa. Un control puesto lejos de lo
+          que gobierna obliga a aprender una correspondencia que la disposición
+          podría haber contado sola.
+        -->
+        <div id="map-controls">
+          <button data-view="graph_2d" title="Mapa en dos dimensiones">2D</button>
+          <button data-view="graph_3d" title="Mapa en tres dimensiones">3D</button>
+        </div>
+      </section>
       <div id="divider" role="separator" aria-orientation="vertical" tabindex="0"></div>
       <main id="text"></main>
       <div id="tokens" hidden></div>

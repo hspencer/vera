@@ -490,6 +490,10 @@ async function openTitle(title: string): Promise<void> {
 async function drawGraph(): Promise<void> {
   if (workspace.activePage === null) return;
   const container = $('#graph');
+  // Los controles del mapa viven dentro del mapa, y el renderizador se lleva por
+  // delante lo que haya en su contenedor. Se apartan y se devuelven.
+  const controls = $('#map-controls');
+  controls.remove();
   const data = await api.graph(workspace.activePage, workspace.depth);
 
   const onClick = (id: string): void => {
@@ -514,6 +518,7 @@ async function drawGraph(): Promise<void> {
     cleanupGraph3D();
     renderGraph(container, data, onClick, settings);
   }
+  container.append(controls);
 }
 
 async function refreshGraph(): Promise<void> {
@@ -615,9 +620,10 @@ function wireTheme(): void {
   $('#back').innerHTML = icon('chevron-left');
   $('#forward').innerHTML = icon('chevron-right');
 
-  // La casa lleva al día en curso, y la fecha va escrita al lado para que se vea
-  // a qué día, sin pulsarla. En números y en el orden en que se dice —día, mes,
-  // año— y no en el ISO del título: el título es identidad y esto es lectura.
+  // El botón de hoy es la fecha, sin icono. El número dice a dónde lleva mejor
+  // que un dibujo, y dice además a qué día: una casa al lado sólo repetiría
+  // peor lo que la fecha ya cuenta. En el orden en que se dice —día, mes, año—
+  // y no en el ISO del título, porque el título es identidad y esto es lectura.
   const stamp = $('#hoy');
   const drawToday = (): void => {
     const now = new Date();
@@ -629,7 +635,6 @@ function wireTheme(): void {
   // Una sesión abierta pasada la medianoche seguiría enseñando el día de ayer, y
   // el botón llevaría a otro sitio del que dice.
   window.setInterval(drawToday, 60_000);
-  $('#home').insertAdjacentHTML('afterbegin', icon('home'));
   $('#back').addEventListener('click', () => window.history.back());
   $('#forward').addEventListener('click', () => window.history.forward());
   $('#home').addEventListener('click', () => void openToday());

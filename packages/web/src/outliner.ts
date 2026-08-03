@@ -147,11 +147,40 @@ function openBlockMenu(anchor: HTMLElement, actions: MenuAction[]): void {
     menu.append(item);
   }
 
-  const at = anchor.getBoundingClientRect();
-  menu.style.left = `${Math.round(at.left + window.scrollX)}px`;
-  menu.style.top = `${Math.round(at.bottom + window.scrollY + 4)}px`;
-
+  /*
+   * Un desplegable cabe en la ventana o no sirve.
+   *
+   * Se dibujaba siempre hacia abajo y hacia la derecha desde su ancla, así que
+   * el de un control pegado al borde derecho —el menú de la página, sin ir más
+   * lejos— salía de la pantalla y sus opciones quedaban inalcanzables. Hay que
+   * medirlo antes de colocarlo, y para medirlo hay que haberlo puesto en el
+   * documento: va invisible primero y se sitúa después.
+   */
+  menu.style.visibility = 'hidden';
   document.body.append(menu);
+
+  const at = anchor.getBoundingClientRect();
+  const box = menu.getBoundingClientRect();
+  const margin = 8;
+
+  // Se alinea por la izquierda del ancla; si no cabe, por su derecha; y si
+  // tampoco, se pega al borde. Nunca se sale.
+  let left = at.left;
+  if (left + box.width > window.innerWidth - margin) left = at.right - box.width;
+  left = Math.max(margin, Math.min(left, window.innerWidth - box.width - margin));
+
+  // Abajo del ancla, salvo que no quepa: entonces encima, que es donde queda el
+  // hueco. Un menú que se sale por abajo es igual de inservible.
+  let top = at.bottom + 4;
+  if (top + box.height > window.innerHeight - margin && at.top - box.height - 4 > margin) {
+    top = at.top - box.height - 4;
+  }
+  top = Math.max(margin, Math.min(top, window.innerHeight - box.height - margin));
+
+  menu.style.left = `${Math.round(left + window.scrollX)}px`;
+  menu.style.top = `${Math.round(top + window.scrollY)}px`;
+  menu.style.visibility = '';
+
   openMenu = menu;
   menu.querySelector('button')?.focus();
 }
@@ -1443,9 +1472,21 @@ function startEditing(
       list.append(item);
     }
 
-    const box = editor.getBoundingClientRect();
-    list.style.left = `${Math.round(box.left + window.scrollX)}px`;
-    list.style.top = `${Math.round(box.bottom + window.scrollY + 2)}px`;
+    // Cabe en la ventana o no sirve, igual que el menú de un bloque: el editor
+    // puede estar pegado al borde derecho o al pie, y la lista se salía.
+    const at = editor.getBoundingClientRect();
+    const box = list.getBoundingClientRect();
+    const margin = 8;
+
+    const left = Math.max(margin, Math.min(at.left, window.innerWidth - box.width - margin));
+    let top = at.bottom + 2;
+    if (top + box.height > window.innerHeight - margin && at.top - box.height - 2 > margin) {
+      top = at.top - box.height - 2;
+    }
+    top = Math.max(margin, Math.min(top, window.innerHeight - box.height - margin));
+
+    list.style.left = `${Math.round(left + window.scrollX)}px`;
+    list.style.top = `${Math.round(top + window.scrollY)}px`;
   };
 
   const accept = (at: number): void => {

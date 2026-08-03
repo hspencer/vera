@@ -241,13 +241,16 @@ input {
   color: var(--accent);
 }
 
+/* El buscador toma el espacio que sobra: es lo único de la barra que mejora al
+   ser más ancho, y antes lo desperdiciaba con un ancho fijo. */
 #search-wrap {
   position: relative;
-  margin-left: auto;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 #search {
-  width: 18rem;
+  width: 100%;
   padding: 0.3rem 0.6rem;
   border: 1px solid var(--rule);
   border-radius: 4px;
@@ -349,16 +352,43 @@ input {
   height: 1.05rem;
 }
 
-/* El botón de hoy lleva la fecha dentro, así que es más ancho que sus vecinos. */
-#home {
-  gap: 0.35rem;
-  padding-right: 0.5rem;
-}
-
+/* El botón de hoy es la fecha. Sin icono al lado: el número dice a dónde lleva
+   mejor que cualquier dibujo, y dice además a qué día. */
 #hoy {
   font-family: var(--font-mono);
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   letter-spacing: 0.01em;
+}
+
+/* --- Los controles del mapa, dentro del mapa --------------------------- */
+
+#map-controls {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  display: flex;
+  gap: 0.2rem;
+  z-index: 5;
+}
+
+#map-controls button {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.15rem 0.45rem;
+  cursor: pointer;
+}
+
+#map-controls button:hover {
+  color: var(--text);
+}
+
+#map-controls button[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* --- El switch de la vista --------------------------------------------- */
