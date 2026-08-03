@@ -133,22 +133,57 @@ function drawMemory(host: HTMLElement): void {
     title.after(list);
   });
 
-  const index = document.createElement('div');
-  index.id = 'index';
-  for (const page of pages.slice(0, 200)) {
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.className = 'index-item';
-    const name = document.createElement('span');
-    name.textContent = page.title;
-    const count = document.createElement('span');
-    count.className = 'count';
-    count.textContent = String(page.linkCount);
-    item.append(name, count);
-    item.addEventListener('click', () => void openPage(page.id));
-    index.append(item);
-  }
-  host.append(index);
+  // Las páginas que gobiernan a Vera.
+  //
+  // El listado de las doscientas más conectadas que había aquí era un índice de
+  // todo, y un índice de todo no es un índice: para eso está el buscador, que
+  // encuentra por lo que uno recuerda en vez de obligar a reconocer un título en
+  // una lista. Lo que sí pertenece a Memoria es lo que decide cómo funciona esta
+  // instancia. @invariant SpecialityIsDeclaredNotGuessed: se reconocen por lo que
+  // declaran, no por una lista de títulos escrita en el código.
+  const kinds: { key: string; label: string; what: string }[] = [
+    { key: 'ontology', label: 'Ontología', what: 'los tipos, conceptos y propiedades con que se clasifica' },
+    { key: 'presentation', label: 'Presentación', what: 'los tokens de diseño' },
+    { key: 'instructions', label: 'Instrucciones', what: 'lo que el bibliotecario tiene dicho' },
+  ];
+
+  const heading = document.createElement('h3');
+  heading.className = 'settings-group';
+  heading.textContent = 'Páginas especiales';
+  host.append(heading);
+
+  const special = document.createElement('div');
+  special.id = 'special-pages';
+  host.append(special);
+
+  void api.specialPages().then((found) => {
+    for (const kind of kinds) {
+      const page = found.find((p) => p.kind === kind.key);
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'index-item';
+
+      const name = document.createElement('span');
+      name.textContent = page === undefined ? `${kind.label} — sin definir` : page.title;
+      const what = document.createElement('span');
+      what.className = 'count';
+      what.textContent = kind.what;
+      item.append(name, what);
+
+      if (page === undefined) {
+        // Que falte no es un error: lo que la página diría tiene un valor por
+        // defecto en el código. @invariant DefaultsLiveInTheCode.
+        item.title = `Todavía no hay una página que gobierne ${kind.label.toLowerCase()}. Rige lo que trae Vera.`;
+        item.disabled = true;
+      } else {
+        item.addEventListener('click', () => {
+          closeSettings();
+          void openPage(page.id);
+        });
+      }
+      special.append(item);
+    }
+  });
 }
 
 const $ = <T extends HTMLElement>(selector: string): T =>

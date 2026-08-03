@@ -50,6 +50,13 @@ export const DEFAULT_TOKENS: DesignToken[] = [
   { name: '--node-fill', light: '#9aa0ab', dark: '#6d7480' },
   { name: '--link-stroke', light: '#d5d7d2', dark: '#333842' },
   { name: '--warm', light: '#ef7a1c', dark: '#ef7a1c' },
+  // Hasta dónde llega una línea de prosa.
+  //
+  // Una línea muy ancha se lee mal: el ojo pierde el comienzo de la siguiente al
+  // volver del final de la anterior. Con el texto a pantalla completa las líneas
+  // llegaban al borde. No lo cumplen las tablas, las imágenes, los diagramas ni
+  // el código, que necesitan el ancho que necesitan y no son prosa.
+  { name: '--content-width', light: '45em', dark: '45em' },
   // La reserva del sistema no sobra: el subconjunto latino que Vera sirve no
   // cubre el griego ni el árabe que el corpus también trae, y es mejor que se
   // lean en otra letra a que no se lean.

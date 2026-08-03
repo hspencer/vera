@@ -360,6 +360,20 @@ input {
   letter-spacing: 0.01em;
 }
 
+/*
+ * Hasta dónde llega una línea de prosa.
+ *
+ * Se limita lo que se lee renglón a renglón —párrafos, listas, citas,
+ * encabezados— y no el bloque entero: limitar el contenedor obligaría a lo que
+ * no es prosa a desbordarse en vez de ocupar el sitio que le hace falta.
+ *
+ * Quedan fuera a propósito las tablas, las imágenes, los diagramas, el código y
+ * el audio. Una tabla estrecha se vuelve ilegible por el otro lado.
+ */
+.body > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, dl) {
+  max-width: var(--content-width, 45em);
+}
+
 /* --- La lectura de una página ------------------------------------------ */
 
 .reading-missing {

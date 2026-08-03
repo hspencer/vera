@@ -135,6 +135,9 @@ export const api = {
 
   page: (id: string) => json<PageView>(`/pages/${encodeURIComponent(id)}`),
 
+  /** Las páginas que gobiernan a Vera, por lo que declaran gobernar. */
+  specialPages: () => json<{ id: string; title: string; kind: string }[]>('/special-pages'),
+
   search: (text: string) => json<Hit[]>(`/search?q=${encodeURIComponent(text)}`),
 
   /**

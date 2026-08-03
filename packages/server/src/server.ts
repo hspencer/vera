@@ -797,6 +797,32 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       return;
     }
 
+    // Las páginas que gobiernan a Vera.
+    //
+    // @invariant SpecialityIsDeclaredNotGuessed: una página es especial porque
+    // lo dice en una propiedad que cualquiera puede leer y cambiar. Vera no
+    // guarda una lista privada de títulos que trata distinto, porque una regla
+    // que no se puede leer del corpus es una regla contra la que el corpus no se
+    // puede auditar.
+    if (request.method === 'GET' && path === '/special-pages') {
+      const found = graph
+        .pages()
+        .map((page) => ({
+          page,
+          kind: graph
+            .propertiesOf(page.id)
+            .find((property) => property.key === 'special-kind')?.value,
+        }))
+        .filter((entry) => entry.kind !== undefined)
+        .map((entry) => ({
+          id: entry.page.id,
+          title: entry.page.title,
+          kind: String(entry.kind).trim().toLowerCase(),
+        }));
+      send(response, 200, found);
+      return;
+    }
+
     if (request.method === 'GET' && path === '/workspace') {
       send(response, 200, workspaceOf(store, owner.id));
       return;
