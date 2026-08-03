@@ -11,7 +11,7 @@ import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
 import { STAGES, voice } from './voice.ts';
 import { brandMark, icon, type IconName } from './icons.ts';
-import { renderGraph } from './graph/render.ts';
+import { forgetPositions, renderGraph } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D } from './graph/render3d.ts';
 import {
   applyTokens,
@@ -46,8 +46,11 @@ const workspace: Workspace = {
   scheme: session.scheme(),
   divider: session.divider(),
   history: [],
-  depth: 2,
+  depth: session.reach(),
 };
+
+/** Desde qué disposición se ocultó el mapa, para devolverlo a la misma. */
+let mapWasShowing: WorkspaceLayout = 'split';
 
 let tokens = loadTokens();
 let pages: PageSummary[] = [];
@@ -203,6 +206,9 @@ function applyLayout(): void {
 
   root.dataset['layout'] = effective;
   root.style.setProperty('--divider', String(workspace.divider));
+
+  const showToggle = document.querySelector<HTMLElement>('#map-show');
+  if (showToggle !== null) showToggle.hidden = workspace.layout !== 'text_only';
 
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-layout]')) {
     const here = button.dataset['layout'] === workspace.layout;
@@ -538,7 +544,9 @@ async function drawGraph(): Promise<void> {
   // Los controles del mapa viven dentro del mapa, y el renderizador se lleva por
   // delante lo que haya en su contenedor. Se apartan y se devuelven.
   const controls = $('#map-controls');
+  const trail = $('#map-trail');
   controls.remove();
+  trail.remove();
   const data = await api.graph(workspace.activePage, workspace.depth);
 
   const onClick = (id: string): void => {
@@ -554,7 +562,14 @@ async function drawGraph(): Promise<void> {
     history: workspace.history,
     showEdges: true,
     showTitles: true,
-    nodeStyle: 'circular' as const,
+    // El nodo es su nombre. @guarantee GraphNodesAreTheirNames: un círculo al
+    // lado no dice nada que el nombre no diga, y gasta el mismo sitio diciendo
+    // menos. En 2D los nombres no se traslapan: dos nombres uno encima de otro
+    // no son ninguno de los dos.
+    nodeStyle: 'title' as const,
+    fontFamily:
+      getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim() ||
+      'system-ui, sans-serif',
   };
 
   if (workspace.graphView === 'graph_3d') {
@@ -563,7 +578,40 @@ async function drawGraph(): Promise<void> {
     cleanupGraph3D();
     renderGraph(container, data, onClick, settings);
   }
-  container.append(controls);
+  container.append(controls, trail);
+  drawTrail();
+}
+
+/**
+ * Por dónde se ha pasado, acumulándose.
+ *
+ * Vive en el mapa y no en la barra porque el mapa es la superficie de saber
+ * dónde está uno: el rastro es una respuesta a esa misma pregunta.
+ * @guarantee TheTrailIsWhereOneIsLocated.
+ */
+function drawTrail(): void {
+  const trail = $('#map-trail');
+  trail.innerHTML = '';
+  // Los últimos, y sin repetir: volver dos veces a la misma página no la pone
+  // dos veces en el rastro.
+  const seen = new Set<string>();
+  const recent: string[] = [];
+  for (const id of [...workspace.history].reverse()) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    recent.push(id);
+    if (recent.length >= 6) break;
+  }
+
+  for (const id of recent.reverse()) {
+    const page = pages.find((candidate) => candidate.id === id);
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = id === workspace.activePage ? 'trail-pill here' : 'trail-pill';
+    pill.textContent = page?.title ?? id;
+    pill.addEventListener('click', () => void openPage(id));
+    trail.append(pill);
+  }
 }
 
 async function refreshGraph(): Promise<void> {
@@ -683,6 +731,54 @@ function wireTheme(): void {
   $('#back').addEventListener('click', () => window.history.back());
   $('#forward').addEventListener('click', () => window.history.forward());
   $('#home').addEventListener('click', () => void openToday());
+
+  /*
+   * El ojo: el mapa se aparta y vuelve.
+   *
+   * @guarantee TheMapCanStepAside. Vuelve al ancho que tenía y mirando lo que
+   * miraba, porque `--divider` se recuerda y las posiciones de los nodos no se
+   * recalculan. Un panel que siempre está es mobiliario; uno que puede irse es
+   * una herramienta.
+   */
+  const hide = $('#map-hide');
+  const show = $('#map-show');
+  hide.innerHTML = icon('eye-off');
+  show.innerHTML = icon('eye');
+
+  const mapVisible = (): boolean => workspace.layout !== 'text_only';
+  const drawMapToggles = (): void => {
+    show.hidden = mapVisible();
+  };
+  drawMapToggles();
+
+  hide.addEventListener('click', () => {
+    // Se recuerda desde dónde se ocultó, para volver ahí y no a un valor fijo.
+    if (workspace.layout !== 'text_only') mapWasShowing = workspace.layout;
+    setLayout('text_only');
+    drawMapToggles();
+  });
+  show.addEventListener('click', () => {
+    setLayout(mapWasShowing);
+    drawMapToggles();
+  });
+
+  // El alcance: cuántos saltos desde la página en foco. Saltos y no cantidad de
+  // nodos, porque la pregunta que uno se hace es «qué tan lejos de aquí».
+  const reach = $<HTMLInputElement>('#map-reach input');
+  const reachValue = $('#map-reach-value');
+  reach.value = String(workspace.depth);
+  reachValue.textContent = String(workspace.depth);
+  reach.addEventListener('input', () => {
+    reachValue.textContent = reach.value;
+  });
+  // Al soltar, no en cada pixel: cada cambio pide el grafo al servidor.
+  reach.addEventListener('change', () => {
+    workspace.depth = Number(reach.value);
+    session.setReach(workspace.depth);
+    // El alcance cambia qué nodos hay, así que lo colocado deja de valer.
+    forgetPositions();
+    void refreshGraph();
+  });
 
   // El switch de la vista, en el orden del espacio que gobierna.
   const SWITCH: Record<string, IconName> = {

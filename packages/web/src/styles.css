@@ -461,6 +461,83 @@ input {
   color: var(--text);
 }
 
+#map-controls .sep {
+  margin: 0 0.15rem;
+}
+
+#map-controls .icon {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+/* El alcance: cuántos saltos desde la página en foco. */
+#map-reach {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+
+#map-reach input {
+  width: 4.5rem;
+  accent-color: var(--accent);
+}
+
+#map-reach-value {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  min-width: 0.6rem;
+}
+
+/*
+ * El rastro: por dónde se ha pasado, acumulándose.
+ *
+ * Abajo y no arriba, para no disputarle el sitio a los controles, y sobre el
+ * mapa porque es una respuesta a la misma pregunta que el mapa responde.
+ */
+#map-trail {
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.trail-pill {
+  pointer-events: auto;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 0.12rem 0.6rem;
+  cursor: pointer;
+}
+
+.trail-pill:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Dónde se está ahora, dentro del rastro. */
+.trail-pill.here {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
 #map-controls button[aria-pressed='true'] {
   color: var(--accent);
   border-color: var(--accent);

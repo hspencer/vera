@@ -32,7 +32,13 @@ function titleFontSize(d: GraphNode): number {
 }
 
 // ── Max label width before wrapping ──
-const MAX_LABEL_CHARS = 70;
+// Setenta caracteres en una sola línea era casi una frase: un nombre largo
+// atravesaba el mapa y empujaba a todos los demás. Al partirse antes, la caja es
+// más compacta y quedan más nombres legibles en el mismo sitio.
+const MAX_LABEL_CHARS = 24;
+
+/** El aire entre dos nombres. Sin él se tocan, y tocarse ya se lee como uno. */
+const COLLISION_PAD = 6;
 
 /** Split text into lines respecting word boundaries and max char width. */
 function wrapText(text: string, maxChars: number): string[] {
@@ -58,6 +64,28 @@ const RING_COLOR = "#ef7a1c";
 // Track listeners for cleanup on re-render
 let active2dListeners: { event: string; fn: EventListener }[] = [];
 
+/**
+ * Dónde quedó cada nodo, entre un dibujo y el siguiente.
+ *
+ * @guarantee TheMapHoldsItsPositions. La simulación de fuerzas se corría entera
+ * en cada repintado, así que colapsar el panel, redimensionarlo o volver a una
+ * página vecina reordenaba el mapa completo. El costo era real —se notaba como
+ * lag sobre un corpus de este tamaño— pero no es la razón principal: un mapa que
+ * se reacomoda mientras uno lo mira no se puede recordar, y un mapa que no se
+ * recuerda es una imagen y no un lugar. Reconocer una región por su forma es
+ * para lo que sirve dibujarla.
+ */
+const positions = new Map<string, { x: number; y: number }>();
+
+/** El encuadre. Se conserva por lo mismo: volver no debe reencuadrar. */
+let heldTransform: d3.ZoomTransform | null = null;
+
+/** Olvida lo colocado. Para cuando el grafo cambia de centro de verdad. */
+export function forgetPositions(): void {
+  positions.clear();
+  heldTransform = null;
+}
+
 export function renderGraph(
   container: HTMLElement,
   data: GraphData,
@@ -74,7 +102,9 @@ export function renderGraph(
 
   const width = container.clientWidth;
   const height = container.clientHeight;
-  const style = settings.nodeStyle ?? "circular";
+  // El nodo es su nombre. Un círculo al lado no dice nada que el nombre no diga,
+  // y gasta el mismo sitio diciendo menos.
+  const style = settings.nodeStyle ?? "title";
 
   const svg = d3
     .select(container)
@@ -123,14 +153,20 @@ export function renderGraph(
   const cs = rootEl ? getComputedStyle(rootEl) : null;
   const cssVar = (name: string, fallback: string) =>
     cs?.getPropertyValue(name).trim() || fallback;
+  // Todo color sale de los tokens, que es lo que hace que el mapa siga al tema
+  // que se elija sin tener una paleta propia escondida aquí. `--border` no
+  // existe y nunca existió: la línea del tema es `--rule`.
   const colors = {
     nodeCentral: cssVar("--node-central", dark ? "#4a9ade" : "#045591"),
     nodeFill: cssVar("--node-fill", dark ? "#777" : "#999"),
-    nodeBorder: cssVar("--border", dark ? "#555" : "#ddd"),
-    textCentral: cssVar("--text", dark ? "#d4d4d4" : "#333"),
-    textNormal: cssVar("--text", dark ? "#d4d4d4" : "#333"),
-    linkStroke: cssVar("--link-stroke", dark ? "#555" : "#ccc"),
+    nodeBorder: cssVar("--rule", dark ? "#2b2f38" : "#e3e3de"),
+    textCentral: cssVar("--node-central", dark ? "#4a9ade" : "#045591"),
+    // Los nombres corrientes van atenuados a propósito: lo que se busca en un
+    // mapa es lo excepcional, y si todo pesa igual no destaca nada.
+    textNormal: cssVar("--node-fill", dark ? "#6d7480" : "#9aa0ab"),
+    linkStroke: cssVar("--link-stroke", dark ? "#333842" : "#d5d7d2"),
     hoverAccent: cssVar("--accent", dark ? "#4a9ade" : "#045591"),
+    visited: cssVar("--warm", "#ef7a1c"),
   };
 
   // History lookup
@@ -217,10 +253,55 @@ export function renderGraph(
       node.attr("opacity", 1);
     });
 
+  /*
+   * Lo colocado se conserva.
+   *
+   * Si todos los nodos ya tienen sitio, no se corre la simulación: se dibuja
+   * donde estaban. Si aparecieron nodos nuevos, se siembra a los conocidos con
+   * su posición y sólo lo nuevo tiene que encontrar hueco, así que el mapa no se
+   * reordena entero por haber entrado una página más.
+   */
+  let allPlaced = data.nodes.length > 0;
+  for (const item of data.nodes as any[]) {
+    const held = positions.get(item.id);
+    if (held === undefined) {
+      allPlaced = false;
+    } else {
+      item.x = held.x;
+      item.y = held.y;
+    }
+  }
+
+  const remember = (): void => {
+    for (const item of data.nodes as any[]) {
+      if (typeof item.x === "number" && typeof item.y === "number") {
+        positions.set(item.id, { x: item.x, y: item.y });
+      }
+    }
+  };
+
+  const place = (): void => {
+    link
+      .attr("x1", (d: any) => d.source.x)
+      .attr("y1", (d: any) => d.source.y)
+      .attr("x2", (d: any) => d.target.x)
+      .attr("y2", (d: any) => d.target.y);
+    node.attr("transform", (d: any) => `translate(${d.x},${d.y})`);
+  };
+
+  // El encuadre también se conserva: volver a una página no debe reencuadrar.
+  if (heldTransform !== null) {
+    svg.call(zoomBehavior.transform as any, heldTransform);
+  }
+  zoomBehavior.on("zoom", (event) => {
+    heldTransform = event.transform;
+    g.attr("transform", event.transform);
+  });
+
   // Simulation — title mode needs more space and stronger repulsion
   const isTitle = style === "title";
   const collisionForce = isTitle
-    ? rectCollide(dims, 4)
+    ? rectCollide(dims, COLLISION_PAD)
     : d3.forceCollide<GraphNode>().radius(20);
 
   const linkDist = settings.linkDistance ?? (isTitle ? 120 : 80);
@@ -238,16 +319,125 @@ export function renderGraph(
     .force("center", d3.forceCenter(width / 2, height / 2))
     .force("collide", collisionForce as any);
 
-  sim.on("tick", () => {
-    link
-      .attr("x1", (d: any) => d.source.x)
-      .attr("y1", (d: any) => d.source.y)
-      .attr("x2", (d: any) => d.target.x)
-      .attr("y2", (d: any) => d.target.y);
-    node.attr("transform", (d: any) => `translate(${d.x},${d.y})`);
-  });
+  /*
+   * Los nombres no se traslapan. Punto.
+   *
+   * La simulación se detiene cuando su alpha baja, no cuando los choques están
+   * resueltos, así que quedaban nombres uno encima de otro —«Postgraduate
+   * Research Symposium» sobre «PICTOS.net»— y dos nombres superpuestos no son
+   * ninguno de los dos. Al terminar se sigue separando, ya sin fuerzas que tiren
+   * en contra, hasta que no quede ningún choque o hasta un tope: converge en
+   * unas pocas pasadas y el tope está para que un caso patológico no cuelgue la
+   * pestaña.
+   *
+   * @guarantee GraphNodesAreTheirNames.
+   */
+  /*
+   * Vuelve a medir cada nombre.
+   *
+   * Las cajas se miden en cuanto se dibujan, y en ese momento la tipografía
+   * puede no haber llegado todavía: `font-display: swap` enseña la de reserva
+   * primero, así que se medía una letra y se dibujaba otra, más ancha. Por eso
+   * había nombres pisándose aunque la separación funcionara. Se vuelve a medir
+   * sobre lo que hay de verdad en la pantalla.
+   */
+  const remeasure = (): void => {
+    node.each(function (d) {
+      const box = (this as SVGGElement).getBBox();
+      if (box.width > 0) dims.set(d.id, { w: box.width, h: box.height });
+    });
+  };
 
-  node.call(drag(sim) as any);
+  const untangle = (): void => {
+    const items = data.nodes as any[];
+    for (let pass = 0; pass < 60; pass += 1) {
+      let moved = false;
+      for (let i = 0; i < items.length; i += 1) {
+        for (let j = i + 1; j < items.length; j += 1) {
+          const a = items[i];
+          const b = items[j];
+          const da = dims.get(a.id) ?? { w: 40, h: 16 };
+          const db = dims.get(b.id) ?? { w: 40, h: 16 };
+          const halfW = (da.w + db.w) / 2 + COLLISION_PAD;
+          const halfH = (da.h + db.h) / 2 + COLLISION_PAD;
+
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          if (dx === 0 && dy === 0) {
+            // Exactamente encima: hay que romper el empate de algún modo.
+            dx = 0.5;
+            dy = 0.5;
+          }
+
+          const overlapX = halfW - Math.abs(dx);
+          const overlapY = halfH - Math.abs(dy);
+          if (overlapX <= 0 || overlapY <= 0) continue;
+
+          moved = true;
+          // Se separa por donde menos cuesta, que es lo que mantiene el dibujo
+          // parecido al que la simulación había encontrado.
+          if (overlapX < overlapY) {
+            const shift = (overlapX / 2) * (dx > 0 ? 1 : -1);
+            a.x -= shift;
+            b.x += shift;
+          } else {
+            const shift = (overlapY / 2) * (dy > 0 ? 1 : -1);
+            a.y -= shift;
+            b.y += shift;
+          }
+        }
+      }
+      if (!moved) break;
+    }
+  };
+
+  /*
+   * Se resuelve de una vez, sin animación.
+   *
+   * Antes se dibujaba en cada tick y la separación de nombres corría al terminar
+   * la simulación, confiando en el evento `end` de d3 — que con repintados
+   * encadenados no siempre llega, así que quedaban nombres pisándose. Ahora la
+   * simulación se corre entera aquí, se separan los nombres y se dibuja una vez.
+   *
+   * Además es lo que hace falta para que el mapa se pueda recordar: sin
+   * animación no hay nada que se reacomode mientras uno mira, y lo que aparece
+   * ya está en su sitio.
+   */
+  const settle = (): void => {
+    if (isTitle) {
+      remeasure();
+      untangle();
+    }
+    place();
+    remember();
+  };
+
+  sim.stop();
+  if (!allPlaced) {
+    // Trescientos pasos es lo que d3 haría por su cuenta antes de detenerse. En
+    // un mapa acotado por alcance son unas decenas de nodos: se hace en un
+    // suspiro y no se ve moverse nada.
+    for (let step = 0; step < 300; step += 1) sim.tick();
+  }
+  settle();
+
+  // Y otra vez cuando la tipografía haya llegado: las cajas se miden con la
+  // letra que hay en pantalla, y `font-display: swap` enseña la de reserva
+  // primero. `document.fonts.ready` resuelve de inmediato si ya estaba.
+  if (isTitle) {
+    void document.fonts.ready.then(() => {
+      // Entretanto pudo haberse redibujado el mapa; si estos nodos ya no están
+      // en el documento, no hay nada que reacomodar.
+      if (!container.isConnected || svg.node()?.isConnected !== true) return;
+      settle();
+    });
+  }
+
+  // El arrastre sí anima: mover un nodo a mano es la única vez que uno quiere
+  // ver moverse el mapa, porque lo está moviendo.
+  sim.on("tick", place);
+
+  node.call(drag(sim, remember) as any);
 }
 
 // ── Circular mode ──
@@ -336,12 +526,16 @@ function renderTitleNodes(
   fontFamily: string,
   fontSize: number
 ) {
+  void colors.nodeBorder;
   // History color: nodes in history get orange tint, fading with recency
+  // Por dónde se ha pasado, desvaneciéndose con la distancia en el rastro. El
+  // color es `--warm`, el mismo token que usa el resto de la interfaz para lo
+  // que pide atención sin ser un error.
   const historyColor = (d: GraphNode): string | null => {
     const idx = historyMap.get(d.id.toLowerCase());
     if (idx === undefined) return null;
-    const opacities = [1.0, 0.7, 0.5, 0.3, 0.15];
-    return `rgba(239, 122, 28, ${opacities[idx]})`;
+    const opacities = [1, 0.7, 0.5, 0.3, 0.15];
+    return `color-mix(in srgb, ${colors.visited} ${(opacities[idx] ?? 0.15) * 100}%, transparent)`;
   };
 
   // Font size range based on user's fontSize setting
@@ -449,7 +643,7 @@ function rectCollide(
 }
 
 // ── Drag behavior ──
-function drag(simulation: d3.Simulation<GraphNode, undefined>) {
+function drag(simulation: d3.Simulation<GraphNode, undefined>, remember: () => void) {
   return d3
     .drag<SVGGElement, GraphNode>()
     .on("start", (event, d: any) => {
@@ -465,5 +659,6 @@ function drag(simulation: d3.Simulation<GraphNode, undefined>) {
       if (!event.active) simulation.alphaTarget(0);
       d.fx = null;
       d.fy = null;
+      remember();
     });
 }

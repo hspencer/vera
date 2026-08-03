@@ -883,6 +883,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           if (typeof body['designTokens'] === 'string' || body['designTokens'] === null) {
             patch.designTokens = body['designTokens'];
           }
+          if (typeof body['graphReach'] === 'number' && Number.isFinite(body['graphReach'])) {
+            patch.graphReach = Math.min(4, Math.max(1, Math.round(body['graphReach'])));
+          }
           send(response, 200, saveWorkspace(store, owner.id, patch));
         } catch {
           send(response, 400, { error: 'the body must be JSON' });

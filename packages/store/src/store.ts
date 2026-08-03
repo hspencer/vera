@@ -46,6 +46,7 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
     definition: 'TEXT REFERENCES blocks (id) ON DELETE SET NULL',
   },
   { table: 'workspaces', column: 'design_tokens', definition: 'TEXT' },
+  { table: 'workspaces', column: 'graph_reach', definition: 'INTEGER' },
 ];
 
 function addMissingColumns(db: DatabaseSync): void {
@@ -1237,6 +1238,8 @@ export interface Workspace {
   colourScheme: 'light' | 'dark';
   /** Los tokens de diseño tal como se guardaron, o null si nunca se tocaron. */
   designTokens: string | null;
+  /** Cuántos saltos alcanza el mapa desde la página en foco. */
+  graphReach: number;
 }
 
 interface WorkspaceRow {
@@ -1245,6 +1248,7 @@ interface WorkspaceRow {
   graph_view: Workspace['graphView'];
   colour_scheme: Workspace['colourScheme'];
   design_tokens: string | null;
+  graph_reach: number | null;
 }
 
 /** Lo recordado de este participante, o los valores de partida si no hay nada. */
@@ -1261,6 +1265,7 @@ export function workspaceOf(store: Store, participant: string): Workspace {
       graphView: 'graph_2d',
       colourScheme: 'dark',
       designTokens: null,
+      graphReach: 2,
     };
   }
   return {
@@ -1269,6 +1274,7 @@ export function workspaceOf(store: Store, participant: string): Workspace {
     graphView: row.graph_view,
     colourScheme: row.colour_scheme,
     designTokens: row.design_tokens,
+    graphReach: row.graph_reach ?? 2,
   };
 }
 
@@ -1290,14 +1296,15 @@ export function saveWorkspace(
     .prepare(
       `INSERT INTO workspaces (
          participant_id, graph_id, layout, split_divider_position, graph_view,
-         colour_scheme, design_tokens
-       ) VALUES (?, ?, ?, ?, ?, ?, ?)
+         colour_scheme, design_tokens, graph_reach
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (participant_id, graph_id) DO UPDATE SET
          layout = excluded.layout,
          split_divider_position = excluded.split_divider_position,
          graph_view = excluded.graph_view,
          colour_scheme = excluded.colour_scheme,
-         design_tokens = excluded.design_tokens`,
+         design_tokens = excluded.design_tokens,
+         graph_reach = excluded.graph_reach`,
     )
     .run(
       participant,
@@ -1307,6 +1314,7 @@ export function saveWorkspace(
       next.graphView,
       next.colourScheme,
       next.designTokens,
+      next.graphReach,
     );
   return next;
 }

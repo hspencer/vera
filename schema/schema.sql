@@ -358,6 +358,10 @@ CREATE TABLE IF NOT EXISTS workspaces (
     -- añadir un token pida una migración del esquema; lo que los valida es
     -- DEFAULT_TOKENS en el cliente, que es donde se sabe qué token existe.
     design_tokens           TEXT,
+    -- Cuántos saltos alcanza el mapa desde la página en foco. Saltos y no
+    -- cantidad de nodos: la pregunta es «qué tan lejos de aquí», que es un hecho
+    -- del grafo y no de la pantalla.
+    graph_reach             INTEGER,
     PRIMARY KEY (participant_id, graph_id)
 ) STRICT;
 

@@ -70,16 +70,41 @@ const SCHEME_KEY = 'vera.scheme';
 const DIVIDER_KEY = 'vera.divider';
 const LAYOUT_KEY = 'vera.layout';
 const VIEW_KEY = 'vera.graphView';
+const REACH_KEY = 'vera.graphReach';
 
 export type ColourScheme = 'light' | 'dark';
 export type WorkspaceLayout = 'text_only' | 'graph_only' | 'split';
 export type GraphViewMode = 'graph_2d' | 'graph_3d';
 
+/**
+ * Los tokens de este participante.
+ *
+ * Lo guardado se superpone a los valores por defecto, no los reemplaza. Antes se
+ * devolvía la lista guardada tal cual, así que un token nuevo —`--content-width`
+ * fue el primero— no existía para nadie que ya hubiera tocado su tema: ni se
+ * aplicaba ni aparecía en Ajustes. Ahora un token nuevo nace con su valor por
+ * defecto sin que nadie pierda lo que ajustó.
+ *
+ * También descarta los que ya no existen: un token retirado del código deja de
+ * arrastrarse en el navegador de quien lo tuviera guardado.
+ */
 export function loadTokens(): DesignToken[] {
   const held = localStorage.getItem(TOKENS_KEY);
   if (held === null) return structuredClone(DEFAULT_TOKENS);
   try {
-    return JSON.parse(held) as DesignToken[];
+    const saved = JSON.parse(held) as DesignToken[];
+    if (!Array.isArray(saved)) return structuredClone(DEFAULT_TOKENS);
+    const byName = new Map(saved.filter((t) => typeof t?.name === 'string').map((t) => [t.name, t]));
+    return DEFAULT_TOKENS.map((token) => {
+      const mine = byName.get(token.name);
+      return mine === undefined
+        ? { ...token }
+        : {
+            name: token.name,
+            light: typeof mine.light === 'string' ? mine.light : token.light,
+            dark: typeof mine.dark === 'string' ? mine.dark : token.dark,
+          };
+    });
   } catch {
     return structuredClone(DEFAULT_TOKENS);
   }
@@ -118,6 +143,7 @@ export interface RemotePresentation {
   graphView: GraphViewMode;
   colourScheme: ColourScheme;
   designTokens: string | null;
+  graphReach?: number;
 }
 
 /**
@@ -152,6 +178,7 @@ export async function syncPresentation(): Promise<boolean> {
   adopt(LAYOUT_KEY, remote.layout);
   adopt(VIEW_KEY, remote.graphView);
   adopt(DIVIDER_KEY, String(remote.dividerPosition));
+  if (typeof remote.graphReach === 'number') adopt(REACH_KEY, String(remote.graphReach));
   return changed;
 }
 
@@ -187,6 +214,16 @@ export const session = {
   setLayout: (layout: WorkspaceLayout) => {
     localStorage.setItem(LAYOUT_KEY, layout);
     void push({ layout });
+  },
+
+  /** Cuántos saltos alcanza el mapa desde la página en foco. */
+  reach: (): number => {
+    const held = Number(localStorage.getItem(REACH_KEY) ?? '2');
+    return Number.isFinite(held) && held >= 1 && held <= 4 ? held : 2;
+  },
+  setReach: (hops: number) => {
+    localStorage.setItem(REACH_KEY, String(hops));
+    void push({ graphReach: hops });
   },
 
   graphView: (): GraphViewMode =>
