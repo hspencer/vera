@@ -85,7 +85,6 @@
             aria-label="Insertar voz"
             title="Hablar: lo grabado queda en el día de hoy"
           ></button>
-          <button id="map-show" aria-label="Mostrar el mapa" title="Mostrar el mapa" hidden></button>
           <button id="scheme" aria-label="Claro u oscuro"></button>
           <button id="settings" aria-label="Ajustes" title="Ajustes de Vera"></button>
         </div>
@@ -106,27 +105,40 @@
           que gobierna obliga a aprender una correspondencia que la disposición
           podría haber contado sola.
         -->
+        <!--
+          Lo que gobierna el mapa vive en el mapa, y dentro de un panel que se
+          puede cerrar. Un mapa es para mirarlo: sus controles no pueden ocupar
+          sitio permanente sobre lo que se está mirando.
+        -->
         <div id="map-controls">
-          <button id="map-hide" aria-label="Ocultar el mapa" title="Ocultar el mapa"></button>
-          <span class="sep"></span>
-          <button data-view="graph_2d" title="Mapa en dos dimensiones">2D</button>
-          <button data-view="graph_3d" title="Mapa en tres dimensiones">3D</button>
-          <span class="sep"></span>
-          <!--
-            Hasta dónde llega el mapa, contado en saltos desde la página en foco.
-            Es distancia del grafo y no cantidad de nodos: la pregunta que uno se
-            hace es «qué tan lejos de aquí», que es un hecho del grafo y no de la
-            pantalla.
-          -->
-          <label id="map-reach" title="Cuántos saltos desde la página en foco">
-            <input type="range" min="1" max="4" step="1" />
-            <span id="map-reach-value">2</span>
-          </label>
-        </div>
+          <button
+            id="map-panel-toggle"
+            aria-label="Controles del mapa"
+            aria-expanded="true"
+            aria-controls="map-panel"
+            title="Mostrar u ocultar los controles del mapa"
+          ></button>
 
-        <!-- Por dónde se ha pasado. Va en el mapa porque el mapa es la
-             superficie de saber dónde está uno. -->
-        <nav id="map-trail" aria-label="Por dónde se ha pasado"></nav>
+          <div id="map-panel">
+            <div class="map-panel-row">
+              <button data-view="graph_2d" title="Mapa en dos dimensiones">2D</button>
+              <button data-view="graph_3d" title="Mapa en tres dimensiones">3D</button>
+              <!--
+                Hasta dónde llega el mapa, contado en saltos desde la página en
+                foco. Es distancia del grafo y no cantidad de nodos: la pregunta
+                que uno se hace es «qué tan lejos de aquí».
+              -->
+              <label id="map-reach" title="Cuántos saltos desde la página en foco">
+                <input type="range" min="1" max="4" step="1" />
+                <span id="map-reach-value">2</span>
+              </label>
+            </div>
+
+            <!-- Por dónde se ha pasado, acumulándose. Va aquí porque el mapa es
+                 la superficie de saber dónde está uno. -->
+            <nav id="map-trail" aria-label="Por dónde se ha pasado"></nav>
+          </div>
+        </div>
       </section>
       <div id="divider" role="separator" aria-orientation="vertical" tabindex="0"></div>
       <main id="text"></main>

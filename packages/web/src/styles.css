@@ -437,37 +437,72 @@ input {
 
 /* --- Los controles del mapa, dentro del mapa --------------------------- */
 
+/*
+ * Arriba a la izquierda, sobre el mapa. El ojo queda siempre; lo demás se
+ * pliega. Un mapa es para mirarlo, y sus controles no pueden ocupar sitio
+ * permanente sobre lo que se está mirando.
+ */
 #map-controls {
   position: absolute;
   top: 0.5rem;
   left: 0.5rem;
+  right: 0.5rem;
   display: flex;
-  gap: 0.2rem;
+  align-items: flex-start;
+  gap: 0.35rem;
   z-index: 5;
+  /* El panel no captura el ratón donde no hay nada: el mapa de abajo se
+     arrastra y se acerca aunque el panel esté abierto. */
+  pointer-events: none;
 }
 
-#map-controls button {
+#map-controls > *,
+#map-controls button,
+#map-controls label {
+  pointer-events: auto;
+}
+
+#map-panel-toggle,
+#map-panel button {
+  display: flex;
+  align-items: center;
   font-family: var(--font-ui);
   font-size: 0.72rem;
   color: var(--text-dim);
-  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
   border: 1px solid var(--rule);
   border-radius: 3px;
-  padding: 0.15rem 0.45rem;
+  padding: 0.2rem 0.45rem;
   cursor: pointer;
 }
 
-#map-controls button:hover {
+#map-panel-toggle:hover,
+#map-panel button:hover {
   color: var(--text);
 }
 
-#map-controls .sep {
-  margin: 0 0.15rem;
+#map-panel button[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
-#map-controls .icon {
+#map-panel-toggle .icon {
   width: 0.95rem;
   height: 0.95rem;
+}
+
+#map-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.map-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 /* El alcance: cuántos saltos desde la página en foco. */
@@ -475,8 +510,8 @@ input {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.1rem 0.4rem;
-  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  padding: 0.12rem 0.45rem;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
   border: 1px solid var(--rule);
   border-radius: 3px;
 }
@@ -496,23 +531,18 @@ input {
 /*
  * El rastro: por dónde se ha pasado, acumulándose.
  *
- * Abajo y no arriba, para no disputarle el sitio a los controles, y sobre el
- * mapa porque es una respuesta a la misma pregunta que el mapa responde.
+ * Dentro del panel del mapa y no en la barra: el mapa es la superficie de saber
+ * dónde está uno, y el rastro responde a esa misma pregunta.
  */
 #map-trail {
-  position: absolute;
-  left: 0.5rem;
-  right: 0.5rem;
-  bottom: 0.5rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
-  z-index: 5;
-  pointer-events: none;
+  max-height: 5.5rem;
+  overflow-y: auto;
 }
 
 .trail-pill {
-  pointer-events: auto;
   max-width: 11rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -538,10 +568,6 @@ input {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
-#map-controls button[aria-pressed='true'] {
-  color: var(--accent);
-  border-color: var(--accent);
-}
 
 /* --- El switch de la vista --------------------------------------------- */
 

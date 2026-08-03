@@ -49,8 +49,9 @@ const workspace: Workspace = {
   depth: session.reach(),
 };
 
-/** Desde qué disposición se ocultó el mapa, para devolverlo a la misma. */
-let mapWasShowing: WorkspaceLayout = 'split';
+/** Si el panel de controles del mapa está abierto. De este aparato, no del participante. */
+const PANEL_KEY = 'vera.mapPanel';
+let mapPanelOpen = localStorage.getItem(PANEL_KEY) !== 'false';
 
 let tokens = loadTokens();
 let pages: PageSummary[] = [];
@@ -206,9 +207,6 @@ function applyLayout(): void {
 
   root.dataset['layout'] = effective;
   root.style.setProperty('--divider', String(workspace.divider));
-
-  const showToggle = document.querySelector<HTMLElement>('#map-show');
-  if (showToggle !== null) showToggle.hidden = workspace.layout !== 'text_only';
 
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-layout]')) {
     const here = button.dataset['layout'] === workspace.layout;
@@ -543,10 +541,10 @@ async function drawGraph(): Promise<void> {
   const container = $('#graph');
   // Los controles del mapa viven dentro del mapa, y el renderizador se lleva por
   // delante lo que haya en su contenedor. Se apartan y se devuelven.
+  // Los controles viven dentro del mapa, y el renderizador se lleva por delante
+  // lo que haya en su contenedor. Se apartan y se devuelven.
   const controls = $('#map-controls');
-  const trail = $('#map-trail');
   controls.remove();
-  trail.remove();
   const data = await api.graph(workspace.activePage, workspace.depth);
 
   const onClick = (id: string): void => {
@@ -578,7 +576,7 @@ async function drawGraph(): Promise<void> {
     cleanupGraph3D();
     renderGraph(container, data, onClick, settings);
   }
-  container.append(controls, trail);
+  container.append(controls);
   drawTrail();
 }
 
@@ -733,33 +731,30 @@ function wireTheme(): void {
   $('#home').addEventListener('click', () => void openToday());
 
   /*
-   * El ojo: el mapa se aparta y vuelve.
+   * El ojo abre y cierra el panel de controles del mapa.
    *
-   * @guarantee TheMapCanStepAside. Vuelve al ancho que tenía y mirando lo que
-   * miraba, porque `--divider` se recuerda y las posiciones de los nodos no se
-   * recalculan. Un panel que siempre está es mobiliario; uno que puede irse es
-   * una herramienta.
+   * No oculta el mapa: lo que se aparta es lo que se le pone encima. Un mapa es
+   * para mirarlo, y sus propios controles no pueden quedarse ocupando sitio
+   * sobre lo que se está mirando. Para dejar de ver el mapa está el switch de la
+   * vista, que es donde vive esa decisión.
    */
-  const hide = $('#map-hide');
-  const show = $('#map-show');
-  hide.innerHTML = icon('eye-off');
-  show.innerHTML = icon('eye');
+  const panelToggle = $('#map-panel-toggle');
+  const mapPanel = $('#map-panel');
 
-  const mapVisible = (): boolean => workspace.layout !== 'text_only';
-  const drawMapToggles = (): void => {
-    show.hidden = mapVisible();
+  const drawPanel = (): void => {
+    mapPanel.hidden = !mapPanelOpen;
+    panelToggle.setAttribute('aria-expanded', String(mapPanelOpen));
+    panelToggle.innerHTML = icon(mapPanelOpen ? 'eye' : 'eye-off');
+    panelToggle.title = mapPanelOpen ? 'Ocultar los controles' : 'Mostrar los controles';
   };
-  drawMapToggles();
+  drawPanel();
 
-  hide.addEventListener('click', () => {
-    // Se recuerda desde dónde se ocultó, para volver ahí y no a un valor fijo.
-    if (workspace.layout !== 'text_only') mapWasShowing = workspace.layout;
-    setLayout('text_only');
-    drawMapToggles();
-  });
-  show.addEventListener('click', () => {
-    setLayout(mapWasShowing);
-    drawMapToggles();
+  panelToggle.addEventListener('click', () => {
+    mapPanelOpen = !mapPanelOpen;
+    // Abierto o cerrado se recuerda en este aparato y no viaja: cuánto sitio
+    // puede gastarse en controles depende de la pantalla que se tiene delante.
+    localStorage.setItem(PANEL_KEY, String(mapPanelOpen));
+    drawPanel();
   });
 
   // El alcance: cuántos saltos desde la página en foco. Saltos y no cantidad de
