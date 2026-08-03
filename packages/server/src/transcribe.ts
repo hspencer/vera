@@ -8,9 +8,10 @@
 // es un acto de una persona, y ninguna máquina puede hacerlo en su nombre.
 
 import { execFile } from 'node:child_process';
+import { accessSync, constants } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, isAbsolute, join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
@@ -23,14 +24,75 @@ export interface TranscriberOptions {
   language?: string;
   /** Tope de espera: una grabación larga no puede colgar una petición. */
   timeoutMs?: number;
+  /** El conversor a wav. */
+  ffmpeg?: string;
 }
 
+const home = homedir();
+
 const DEFAULTS = {
-  command: 'whisper-cli',
-  model: `${process.env['HOME'] ?? ''}/.local/share/whisper/ggml-base.bin`,
   language: 'es',
   timeoutMs: 10 * 60 * 1000,
+  model: `${home}/.local/share/whisper/ggml-base.bin`,
 };
+
+// El servidor no siempre nace de un shell de inicio de sesión: un lanzador de
+// escritorio o un servicio systemd le entregan un PATH mínimo, sin los binarios
+// que uno instaló en su propia casa. Buscar aquí también evita que la voz
+// dependa de cómo se arrancó el proceso.
+const EXTRA_DIRS = [
+  join(home, '.local', 'bin'),
+  join(home, 'bin'),
+  '/usr/local/bin',
+  '/opt/homebrew/bin',
+  '/home/linuxbrew/.linuxbrew/bin',
+];
+
+// whisper.cpp cambió de nombre entre versiones: `main` en las viejas,
+// `whisper-cli` en las nuevas.
+const WHISPER_NAMES = ['whisper-cli', 'whisper-cpp', 'whisper', 'main'];
+
+function executable(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Encuentra un binario por nombre, mirando el PATH heredado y además los
+ * lugares donde una instalación personal suele dejarlo.
+ */
+export function findTool(names: string[], override?: string): string | null {
+  if (override !== undefined && override !== '') {
+    if (isAbsolute(override)) return executable(override) ? override : null;
+    names = [override, ...names];
+  }
+  const dirs = [...(process.env['PATH'] ?? '').split(delimiter).filter((d) => d !== ''), ...EXTRA_DIRS];
+  for (const name of names) {
+    for (const dir of dirs) {
+      const candidate = join(dir, name);
+      if (executable(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+function whyFailed(error: unknown): string {
+  if (error instanceof Error) {
+    // execFile cuelga la salida de error del proceso en el error mismo; ahí está
+    // el motivo real, y callarlo deja a quien graba sin nada que hacer.
+    const stderr = String((error as { stderr?: unknown }).stderr ?? '').trim();
+    if (stderr !== '') {
+      const lines = stderr.split('\n').filter((line) => line.trim() !== '');
+      return lines.slice(-3).join('; ');
+    }
+    return error.message;
+  }
+  return 'error desconocido';
+}
 
 export type Transcription = { text: string } | { error: string };
 
@@ -46,10 +108,25 @@ export async function transcribeAudio(
   audio: Uint8Array,
   options: TranscriberOptions = {},
 ): Promise<Transcription> {
-  const command = options.command ?? DEFAULTS.command;
-  const model = options.model ?? DEFAULTS.model;
-  const language = options.language ?? DEFAULTS.language;
+  const language = options.language ?? process.env['VERA_WHISPER_LANGUAGE'] ?? DEFAULTS.language;
   const timeout = options.timeoutMs ?? DEFAULTS.timeoutMs;
+  const model = options.model ?? process.env['VERA_WHISPER_MODEL'] ?? DEFAULTS.model;
+
+  const ffmpeg = findTool(['ffmpeg'], options.ffmpeg ?? process.env['VERA_FFMPEG']);
+  if (ffmpeg === null) {
+    return { error: 'no encuentro ffmpeg; instálalo o apunta VERA_FFMPEG al binario' };
+  }
+  const command = findTool(WHISPER_NAMES, options.command ?? process.env['VERA_WHISPER']);
+  if (command === null) {
+    return {
+      error: `no encuentro whisper.cpp (${WHISPER_NAMES.join(', ')}); instálalo o apunta VERA_WHISPER al binario`,
+    };
+  }
+  try {
+    await readFile(model);
+  } catch {
+    return { error: `falta el modelo de whisper en ${model}; apunta VERA_WHISPER_MODEL a uno` };
+  }
 
   let work: string | null = null;
   try {
@@ -59,9 +136,9 @@ export async function transcribeAudio(
     await writeFile(source, audio);
 
     try {
-      await run('ffmpeg', ['-i', source, '-ar', '16000', '-ac', '1', '-y', wav], { timeout });
-    } catch {
-      return { error: 'no se pudo convertir el audio; ¿está ffmpeg disponible?' };
+      await run(ffmpeg, ['-i', source, '-ar', '16000', '-ac', '1', '-y', wav], { timeout });
+    } catch (error) {
+      return { error: `no se pudo convertir el audio: ${whyFailed(error)}` };
     }
 
     try {
@@ -75,8 +152,7 @@ export async function transcribeAudio(
       const text = stdout.trim();
       return text === '' ? { error: 'la transcripción salió vacía' } : { text };
     } catch (error) {
-      const why = error instanceof Error ? error.message : 'error desconocido';
-      return { error: `whisper no pudo transcribir: ${why}` };
+      return { error: `whisper no pudo transcribir: ${whyFailed(error)}` };
     }
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'error desconocido' };
@@ -85,16 +161,26 @@ export async function transcribeAudio(
   }
 }
 
-/** ¿Están las herramientas? Se dice al arrancar, no cuando alguien graba. */
-export async function transcriberAvailable(options: TranscriberOptions = {}): Promise<boolean> {
-  const command = options.command ?? DEFAULTS.command;
-  const model = options.model ?? DEFAULTS.model;
+/**
+ * ¿Están las herramientas? Se dice al arrancar, no cuando alguien graba: quien
+ * levanta el servidor puede arreglarlo antes de que alguien confíe su voz.
+ */
+export async function transcriberDiagnosis(
+  options: TranscriberOptions = {},
+): Promise<{ ready: boolean; ffmpeg: string | null; whisper: string | null; model: string | null }> {
+  const model = options.model ?? process.env['VERA_WHISPER_MODEL'] ?? DEFAULTS.model;
+  const ffmpeg = findTool(['ffmpeg'], options.ffmpeg ?? process.env['VERA_FFMPEG']);
+  const whisper = findTool(WHISPER_NAMES, options.command ?? process.env['VERA_WHISPER']);
+  let present = true;
   try {
-    await run('ffmpeg', ['-version'], { timeout: 5000 });
-    await run(command, ['--help'], { timeout: 5000 });
     await readFile(model);
-    return true;
   } catch {
-    return false;
+    present = false;
   }
+  return {
+    ready: ffmpeg !== null && whisper !== null && present,
+    ffmpeg,
+    whisper,
+    model: present ? model : null,
+  };
 }
