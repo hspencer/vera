@@ -467,7 +467,7 @@ interface PageReading {
     unreachable: string | null;
   }[];
   types: string[];
-  tags: string[];
+  concepts: string[];
   notDone: string[];
 }
 
@@ -539,18 +539,44 @@ async function processPage(
     body.append(missing);
   }
 
-  if (reading.links.length === 0) {
+  // Qué es y de qué trata: dos preguntas, dos respuestas, y ninguna aplicada.
+  // @guarantee TypeAndTopicAreNeverTheSameQuestion.
+  const proposed: [string, string[]][] = [
+    ['Qué es', reading.types],
+    ['De qué trata', reading.concepts],
+  ];
+  for (const [label, values] of proposed) {
+    if (values.length === 0) continue;
+    const heading = document.createElement('h3');
+    heading.className = 'settings-group';
+    heading.textContent = label;
+    body.append(heading);
+
+    const row = document.createElement('div');
+    row.className = 'reading-terms';
+    for (const value of values) {
+      const term = document.createElement('span');
+      term.className = 'reading-term';
+      term.textContent = value;
+      row.append(term);
+    }
+    body.append(row);
+  }
+
+  if (reading.links.length === 0 && reading.types.length === 0 && reading.concepts.length === 0) {
     const none = document.createElement('p');
     none.className = 'settings-note';
-    none.textContent = 'La página no nombra ninguna dirección.';
+    none.textContent = 'No se pudo leer nada de esta página.';
     body.append(none);
     return;
   }
 
-  const heading = document.createElement('h3');
-  heading.className = 'settings-group';
-  heading.textContent = `Enlaces (${reading.links.length})`;
-  body.append(heading);
+  if (reading.links.length === 0) return;
+
+  const linksHeading = document.createElement('h3');
+  linksHeading.className = 'settings-group';
+  linksHeading.textContent = `Enlaces (${reading.links.length})`;
+  body.append(linksHeading);
 
   for (const link of reading.links) {
     const row = document.createElement('div');

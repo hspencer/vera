@@ -121,8 +121,9 @@ function drawMemory(host: HTMLElement, handlers: SettingsHandlers): void {
   const intro = document.createElement('p');
   intro.className = 'settings-note';
   intro.textContent =
-    'Lo que hay en este grafo y de qué está hecho. El índice ordena por lo que ' +
-    'las páginas son —categorías y atributos—, no por sus títulos.';
+    'Lo que hay en este grafo, lo que quedó a medias, y las páginas que gobiernan ' +
+    'esta instancia. Para encontrar una página cualquiera está el buscador: ' +
+    'encuentra por lo que uno recuerda, sin obligar a reconocer un título en una lista.';
   host.append(intro);
 
   if (handlers.drawMemory === undefined) return;

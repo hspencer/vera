@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { listen } from './server.ts';
+import { modelPresence } from './model.ts';
 import { transcriberDiagnosis } from './transcribe.ts';
 
 /**
@@ -65,3 +66,12 @@ if (voz.ready) {
   if (voz.whisper === null) console.log('    falta whisper.cpp (o apunta VERA_WHISPER al binario)');
   if (voz.model === null) console.log('    falta el modelo (o apunta VERA_WHISPER_MODEL a uno)');
 }
+
+// El modelo con que se leen las páginas. Que falte no impide nada: procesar hace
+// la parte de los enlaces igual y dice cuál no pudo hacer.
+const lector = await modelPresence();
+console.log(
+  lector.ready
+    ? `  lectura:  ${lector.model}`
+    : '  lectura:  sin modelo local (procesar sólo resolverá enlaces)',
+);

@@ -1,21 +1,73 @@
+<p align="center">
+  <img src="packages/web/public/assets/vera_vera-logo.svg" width="128" alt="Logo de Vera">
+</p>
+
 # Vera
 
 **Vera** — _versionable, editable, replicable y auditable_.
-
-> 🌐 **Instalable desde la Web** — PWA, sin tienda ni permiso de plataforma.
->
-> ✊ **Soberanía digital** — _Tu memoria. Tu máquina. Tus reglas._
-
-No son sólo lemas. Vera aspira a que el corpus canónico viva bajo el control de
-su propietario, pueda exportarse y respaldarse en formatos migrables, no dependa
-de una tienda ni de un proveedor obligatorio y conserve visible quién hizo cada
-cambio —persona o agente— y con qué autoridad.
 
 Vera es una memoria personal soberana: un corpus versionado y distribuido,
 habitado por personas y agentes, con procedencia explícita y publicación
 selectiva. Reúne en un mismo grafo el PKM cotidiano, la investigación, los
 medios nativos y la publicación personal. Personas y agentes participan
 mediante los mismos contratos, con identidad y permisos explícitos.
+
+Vera forma parte de [MediaFranca](https://mediafranca.net/): es una tecnología
+convivencial para gobernar la memoria y el contexto con que personas y agentes
+piensan y actúan en común.
+
+## Soberanía digital
+
+<p align="center">
+  <img src="packages/web/public/assets/raised-fist.svg" width="104" alt="Puño alzado">
+</p>
+
+<p align="center">
+  <strong>SOBERANÍA DIGITAL</strong><br>
+  <em>Tu memoria. Tu máquina. Tus reglas.</em>
+</p>
+
+Vera parte de una confianza crítica en la inteligencia artificial: un modelo no
+conoce por sí solo a la persona con quien trabaja, no conserva necesariamente su
+historia ni debe decidir qué cuenta como contexto. Por eso Vera es, primero, una
+**wiki personal gobernable**. Quien la habita controla la memoria que alimenta a
+sus agentes, puede inspeccionarla, corregirla, relacionarla, exportarla y decidir
+qué reglas y fuentes tienen autoridad.
+
+Ese contexto propio permite que la IA amplíe capacidades sin reemplazar el
+juicio: ayuda a gestionar, crear, investigar, aprender y tomar decisiones desde
+una memoria cuya procedencia permanece visible. Personas y agentes participan
+en el mismo corpus, pero la agencia humana no se arrienda a la plataforma ni se
+diluye en una caja negra.
+
+El [Manifiesto para el Diseño de Interacción en un Tiempo que se
+Despliega](https://herbertspencer.net/2025/manifiesto) sostiene que las
+herramientas deben amplificar la capacidad colectiva y la agencia individual, y
+que las comunidades han de poder apropiarse de ellas, mantenerlas y
+transformarlas. [Intelligent Internet](https://ii.inc/web/whitepaper) propone que
+cada persona acceda a una IA soberana que posea y gobierne. Vera toma en serio
+ambas premisas y propone cómo llevarlas a la práctica: **cada persona gobierna el
+contexto con que su inteligencia trabaja**.
+
+El puño alzado expresa esa postura frente a la concentración del poder digital;
+no es un ornamento ni una promesa abstracta. El corpus canónico vive bajo el
+control de quien lo habita, puede respaldarse y migrarse, no depende de una
+tienda ni de un proveedor obligatorio y conserva visible quién hizo cada cambio
+—persona o agente— y con qué autoridad.
+
+## Instalación y stack técnico
+
+<p align="center">
+  <img src="packages/web/public/assets/pwa-logo.svg" width="112" alt="Progressive Web App">
+  <br>
+  <strong>Instalable desde la Web</strong> — sin tienda ni permiso de plataforma.
+</p>
+
+Para ejecutar esta alfa se necesita **Node.js 24 o posterior** y **npm**. Vera
+usa TypeScript, SQLite y una PWA servida por su propio servidor HTTP; no requiere
+una tienda de aplicaciones ni un servicio obligatorio de terceros. Las
+instrucciones y la composición de los paquetes están en
+[Implementación](#implementación).
 
 > **Estado:** el primer recorrido completo está construido y corre sobre el
 > corpus real. Tres specs siguen sin implementar y cinco van a medias. Vera es hoy una
@@ -196,3 +248,12 @@ La cobertura de pruebas y, sobre todo, lo que **no** cubre está en
 Primero especificamos comportamiento y casos límite en Allium. Después elegimos
 arquitectura e implementación. Las decisiones técnicas deben servir a las
 garantías del producto, no sustituirlas.
+
+## Créditos gráficos
+
+- **Puño alzado:** Eugenio Hansen, OFS — trabajo propio, licencia
+  [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), vía
+  [Wikimedia Commons](https://commons.wikimedia.org/w/index.php?curid=65787095).
+- **Logo PWA:** Diego González-Zúñiga — dedicado al dominio público mediante
+  [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/), vía
+  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Progressive_Web_Apps_Logo.svg).

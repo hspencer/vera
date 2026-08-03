@@ -47,6 +47,7 @@ import {
   type Credential,
   type Scope,
 } from './credentials.ts';
+import { readPage, modelPresence, STARTER_TYPES } from './model.ts';
 import { readLinks } from './process.ts';
 import { transcribeAudio } from './transcribe.ts';
 import { renderPage } from '@vera/store/projection';
@@ -778,22 +779,52 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         .map((block) => block.content)
         .join('\n');
 
-      void readLinks(text).then((reading) => {
-        // @invariant TheModelIsLocalOrThereIsNone: sin modelo local se hace la
-        // parte que no lo necesita y se dice cuál no se pudo. Callarlo dejaría
-        // creer que la página se entendió cuando sólo se leyeron sus enlaces.
-        const notDone = [...reading.notDone];
-        notDone.push(
-          'no hay un modelo local con el que leer la página: no se propusieron tipos ni etiquetas',
+      // El vocabulario sale de la página especial de ontología si existe, y de
+      // los valores por defecto si no. @invariant DefaultsLiveInTheCode.
+      const ontology = graph
+        .pages()
+        .find((candidate) =>
+          graph
+            .propertiesOf(candidate.id)
+            .some((property) => property.key === 'special-kind' && property.value === 'ontology'),
         );
-        send(response, 200, {
-          page: page.id,
-          links: reading.links,
-          types: [],
-          tags: [],
-          notDone,
-        });
-      });
+      const vocabulary =
+        ontology === undefined
+          ? STARTER_TYPES
+          : (() => {
+              // Los tipos son los hijos del bloque que los encabeza. Se leen del
+              // texto porque la página es la fuente: si dice otra cosa mañana,
+              // mañana rige otra cosa.
+              const heading = graph
+                .blocksOf(ontology.id)
+                .find((block) => /^Tipos iniciales/i.test(block.content));
+              if (heading === undefined) return STARTER_TYPES;
+              const listed = graph
+                .blocksOf(ontology.id)
+                .filter((block) => block.parent === heading.stableId)
+                .flatMap((block) => block.content.split('·'))
+                .map((word) => word.trim())
+                .filter((word) => word !== '' && word.length < 40 && !word.includes(' a propósito'));
+              return listed.length > 0 ? listed : STARTER_TYPES;
+            })();
+
+      void Promise.all([readLinks(text), readPage(page.title, text, vocabulary)]).then(
+        ([reading, understood]) => {
+          // @invariant TheModelIsLocalOrThereIsNone y @guarantee
+          // ProcessingSaysWhatItDidAndWhatItCouldNot: lo que no se pudo hacer se
+          // dice, porque un resultado parcial callado se lee como uno completo.
+          const notDone = [...reading.notDone];
+          if ('error' in understood) notDone.push(understood.error);
+
+          send(response, 200, {
+            page: page.id,
+            links: reading.links,
+            types: 'error' in understood ? [] : understood.types,
+            concepts: 'error' in understood ? [] : understood.concepts,
+            notDone,
+          });
+        },
+      );
       return;
     }
 

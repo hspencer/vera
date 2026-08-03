@@ -376,6 +376,24 @@ input {
 
 /* --- La lectura de una página ------------------------------------------ */
 
+.reading-terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+/* Propuesto, no aplicado: por eso el borde punteado. Nada de esto está escrito
+   todavía en la página. */
+.reading-term {
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: var(--accent);
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 3px;
+  padding: 0.12rem 0.5rem;
+}
+
 .reading-missing {
   margin: 0 0 0.8rem;
   padding-left: 1.1rem;
