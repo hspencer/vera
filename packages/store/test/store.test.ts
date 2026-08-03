@@ -6,10 +6,17 @@ import assert from 'node:assert/strict';
 import { VeraGraph, checkInvariants } from '@vera/core';
 import type { Change } from '@vera/core';
 import {
+  createRecording,
+  discardAudio,
   loadGraph,
   neighbourhoodFromStore,
   openStore,
+  placeRecording,
+  recordMedia,
   recordOperation,
+  recordingByBlock,
+  recordingById,
+  recordingsInPage,
   saveParticipant,
   searchStore,
 } from '../src/store.ts';
@@ -300,6 +307,148 @@ describe('persistencia', () => {
     };
     assert.throws(() => recordOperation(store, graph, corrupted));
     assert.equal(count(store, 'operations'), before, 'no queda media operación escrita');
+    store.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hablar dentro de la escritura
+// ---------------------------------------------------------------------------
+//
+// Una grabación puede nacer con lugar: un bloque le guarda el sitio mientras se
+// recorre la cascada, y su contenido aterriza ahí en vez de al final de una
+// página. Lo que se prueba aquí es que ese lugar no se pueda tomar a la fuerza.
+
+/** El audio tiene que existir en `media` antes de que una grabación lo nombre. */
+function withAudio(store: ReturnType<typeof freshStore>['store'], hash: string): void {
+  recordMedia(store, {
+    path: `recording/${hash}`,
+    hash,
+    mediaType: 'audio/webm',
+    byteSize: 10,
+    at: 1,
+  });
+}
+
+describe('una grabación con lugar en la escritura', () => {
+  function withPage() {
+    const kit = freshStore();
+    const page = kit.write({ kind: 'create_page', title: 'P', visibility: 'private' });
+    withAudio(kit.store, 'a'.repeat(64));
+    withAudio(kit.store, 'b'.repeat(64));
+    return { ...kit, page };
+  }
+
+  const spoken = {
+    audioHash: 'a'.repeat(64),
+    mediaType: 'audio/webm',
+    durationMs: 1000,
+    evidence: { reference: 'speaker:x (asumido)', capturedAt: 1 },
+    capturedBy: OWNER,
+  };
+
+  it('nace atada al bloque que le guarda el sitio', () => {
+    const { store, write, page } = withPage();
+    const block = write({ kind: 'create_block', page, parent: null, position: 0, content: '' });
+    const recording = createRecording(store, { ...spoken, placedInBlock: block });
+    assert.ok(!('error' in recording));
+    if ('error' in recording) return;
+    assert.equal(recording.placedInBlock, block);
+    assert.equal(recordingByBlock(store, block)?.id, recording.id);
+    store.close();
+  });
+
+  it('no se mete en un bloque que ya tiene texto escrito', () => {
+    // @invariant AHeldBlockHoldsNothingElse: la transcripción caería encima de
+    // palabras que nadie aceptó perder.
+    const { store, write, page } = withPage();
+    const block = write({ kind: 'create_block', page, parent: null, position: 0, content: 'ya escrito' });
+    const outcome = createRecording(store, { ...spoken, placedInBlock: block });
+    assert.ok('error' in outcome);
+    store.close();
+  });
+
+  it('no le quita el lugar a otra grabación', () => {
+    // @invariant APlaceIsHeldOnce: con dos, el bloque no podría decir de cuál
+    // de las dos vino su contenido.
+    const { store, write, page } = withPage();
+    const block = write({ kind: 'create_block', page, parent: null, position: 0, content: '' });
+    createRecording(store, { ...spoken, placedInBlock: block });
+    const second = createRecording(store, {
+      ...spoken,
+      audioHash: 'b'.repeat(64),
+      placedInBlock: block,
+    });
+    assert.ok('error' in second);
+    store.close();
+  });
+
+  it('sobrevive a que le borren el bloque', () => {
+    // Borrar el sitio donde se iba a hablar no puede destruir lo ya dicho.
+    const { store, write, page } = withPage();
+    const block = write({ kind: 'create_block', page, parent: null, position: 0, content: '' });
+    const recording = createRecording(store, { ...spoken, placedInBlock: block });
+    assert.ok(!('error' in recording));
+    if ('error' in recording) return;
+    store.db.prepare('DELETE FROM blocks WHERE id = ?').run(block);
+    const after = recordingById(store, recording.id);
+    assert.equal(after?.placedInBlock, null, 'la grabación queda sin lugar, no borrada');
+    assert.equal(after?.audioHash, spoken.audioHash);
+    store.close();
+  });
+
+  it('se puede reparar dándole lugar después', () => {
+    const { store, write, page } = withPage();
+    const recording = createRecording(store, spoken);
+    assert.ok(!('error' in recording));
+    if ('error' in recording) return;
+    assert.equal(recording.placedInBlock, null);
+    const block = write({ kind: 'create_block', page, parent: null, position: 0, content: '' });
+    const placed = placeRecording(store, recording.id, block);
+    assert.ok(!('error' in placed));
+    assert.equal(recordingsInPage(store, page).length, 1);
+    store.close();
+  });
+});
+
+describe('borrar el audio', () => {
+  const spoken = {
+    audioHash: 'c'.repeat(64),
+    mediaType: 'audio/webm',
+    durationMs: 1000,
+    evidence: { reference: 'speaker:x (asumido)', capturedAt: 1 },
+    capturedBy: OWNER,
+  };
+
+  it('no se puede antes de que el contenido esté asentado', () => {
+    // Hasta entonces la grabación es lo único que puede zanjar qué se dijo.
+    const { store } = freshStore();
+    withAudio(store, spoken.audioHash);
+    const recording = createRecording(store, spoken);
+    assert.ok(!('error' in recording));
+    if ('error' in recording) return;
+    for (const stage of ['captured', 'transcribed', 'transcript_validated'] as const) {
+      store.db.prepare('UPDATE recordings SET stage = ? WHERE id = ?').run(stage, recording.id);
+      assert.ok('error' in discardAudio(store, recording.id), `no desde ${stage}`);
+    }
+    store.close();
+  });
+
+  it('deja en pie lo que dice y de dónde vino', () => {
+    const { store } = freshStore();
+    withAudio(store, spoken.audioHash);
+    const recording = createRecording(store, spoken);
+    assert.ok(!('error' in recording));
+    if ('error' in recording) return;
+    store.db
+      .prepare("UPDATE recordings SET stage = 'content_settled', transcript = ? WHERE id = ?")
+      .run('lo que se dijo', recording.id);
+    const after = discardAudio(store, recording.id);
+    assert.ok(!('error' in after));
+    if ('error' in after) return;
+    assert.equal(after.audioHash, null);
+    assert.equal(after.transcript, 'lo que se dijo');
+    assert.equal(after.evidence.reference, spoken.evidence.reference);
     store.close();
   });
 });

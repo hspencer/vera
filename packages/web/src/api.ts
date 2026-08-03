@@ -4,6 +4,7 @@
 // dominio: el cliente no tiene ninguna vía propia para cambiar el grafo.
 
 import type { GraphData } from './graph/types.ts';
+import type { Recording } from './voice.ts';
 
 export interface PageSummary {
   id: string;
@@ -50,6 +51,14 @@ export interface PageView {
   folded: string[];
   /** La denominación de origen: qué bloques vinieron de qué grabación. */
   spokenOrigins: { block: string; recording: string }[];
+  /**
+   * Lo hablado que tiene lugar en esta página: la grabación y el bloque que le
+   * guarda el sitio mientras se recorre la cascada.
+   *
+   * @guarantee NothingSpokenIsStrandedFromTheWriting: viaja con la página para
+   * que el audio se vea donde se habló.
+   */
+  recordings?: Recording[];
   /**
    * De qué mano salió el texto de cada bloque, indexado por su identidad.
    *

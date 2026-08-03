@@ -20,6 +20,8 @@ export interface Recording {
   durationMs: number | null;
   stage: CascadeStage;
   transcript: string | null;
+  /** El bloque que le guarda el lugar en la escritura, si se habló dentro de una. */
+  placedInBlock: string | null;
   evidence: { reference: string; capturedAt: number };
   capturedBy: string;
   capturedAt: number;
@@ -117,13 +119,19 @@ async function ask<T>(path: string, options: RequestInit = {}): Promise<T | { er
 }
 
 export const voice = {
-  /** Sube el audio. Nace `captured`: nada se transcribe sin pedirlo. */
-  capture: (audio: Blob, durationMs: number) =>
+  /**
+   * Sube el audio. Nace `captured`: nada se transcribe sin pedirlo.
+   *
+   * Con `inBlock`, la grabación nace con lugar en la escritura: ese bloque le
+   * guarda el sitio hasta que su contenido se asiente ahí mismo.
+   */
+  capture: (audio: Blob, durationMs: number, inBlock?: string) =>
     ask<Recording>('/recordings', {
       method: 'POST',
       headers: {
         'content-type': audio.type || 'audio/webm',
         'x-duration-ms': String(Math.round(durationMs)),
+        ...(inBlock === undefined ? {} : { 'x-in-block': inBlock }),
       },
       body: audio,
     }),
@@ -141,15 +149,34 @@ export const voice = {
   validate: (id: string) =>
     ask<Recording>(`/recordings/${encodeURIComponent(id)}/validate`, { method: 'POST' }),
 
-  settle: (id: string, page: string) =>
+  /**
+   * Asienta el contenido. Sin página, aterriza en el bloque que le guardaba el
+   * lugar; el servidor sabe cuál es y no acepta que se lo digan.
+   */
+  settle: (id: string, page?: string) =>
     ask<{ recording: Recording; blocks: string[] }>(
       `/recordings/${encodeURIComponent(id)}/settle`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ page }),
+        body: JSON.stringify(page === undefined ? {} : { page }),
       },
     ),
+
+  /**
+   * Borra el audio. Sólo cuando el contenido ya está asentado: hasta entonces la
+   * grabación es lo único que puede zanjar qué se dijo.
+   */
+  discardAudio: (id: string) =>
+    ask<Recording>(`/recordings/${encodeURIComponent(id)}/audio`, { method: 'DELETE' }),
+
+  /** Le da o le quita lugar en la escritura a una grabación. */
+  place: (id: string, block: string | null) =>
+    ask<Recording>(`/recordings/${encodeURIComponent(id)}/place`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ block }),
+    }),
 
   list: () => ask<Recording[]>('/recordings'),
 };

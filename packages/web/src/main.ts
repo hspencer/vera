@@ -6,7 +6,7 @@
 import './styles.css';
 
 import { api, type PageSummary } from './api.ts';
-import { renderOutliner } from './outliner.ts';
+import { renderOutliner, speakInto } from './outliner.ts';
 import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
 import { renderVoicePanel } from './voice-panel.ts';
@@ -151,6 +151,41 @@ async function openPage(
     onFocusBlock: (block) => {
       workspace.focusRoot = block;
       if (workspace.activePage !== null) void openPage(workspace.activePage);
+    },
+    // Hablar donde se estaba escribiendo. La grabación necesita un bloque vacío
+    // que le guarde el lugar: si el bloque tenía texto, se le deja lo escrito y
+    // el que habla es uno nuevo debajo, para que la transcripción no caiga
+    // encima de palabras que nadie aceptó perder.
+    onSpeak: async (block, rest) => {
+      let place = block;
+      if (rest !== '') {
+        const kept = await api.submit({ kind: 'edit_block', block, content: rest });
+        if (kept.status === 'rejected') {
+          notice(`rechazado: ${kept.reason}`);
+          return;
+        }
+        const near = page.blocks.find((candidate) => candidate.stableId === block);
+        const born = await api.submit({
+          kind: 'create_block',
+          page: page.id,
+          parent: near?.parent ?? null,
+          position: (near?.position ?? 0) + 1,
+          content: '',
+        });
+        if (born.status === 'rejected') {
+          notice(`rechazado: ${born.reason}`);
+          return;
+        }
+        place = born.subjectId;
+      } else if (page.blocks.find((c) => c.stableId === block)?.content !== '') {
+        const emptied = await api.submit({ kind: 'edit_block', block, content: '' });
+        if (emptied.status === 'rejected') {
+          notice(`rechazado: ${emptied.reason}`);
+          return;
+        }
+      }
+      speakInto(place);
+      if (workspace.activePage !== null) await openPage(workspace.activePage);
     },
   }, focus, workspace.focusRoot);
 

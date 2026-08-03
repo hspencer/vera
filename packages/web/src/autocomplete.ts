@@ -118,6 +118,14 @@ export interface Command {
   inserts: string;
   /** Dónde cae el cursor dentro de lo insertado. */
   caret: number;
+  /**
+   * Lo que el comando hace además de escribir.
+   *
+   * Casi todos sólo dejan Markdown. `hablar` es el que no: abre una grabación en
+   * ese punto de la escritura, y quien atiende el comando es el outliner, porque
+   * el hecho ocurre en el grafo y no en el texto.
+   */
+  acts?: 'hablar';
 }
 
 /**
@@ -140,7 +148,13 @@ export const COMMANDS: Command[] = [
   { name: 'tarea', hint: 'casilla por hacer', inserts: '- [ ] ', caret: 6 },
   { name: 'nota', hint: 'referencia a nota al pie', inserts: '[^1]', caret: 3 },
   { name: 'pagina', hint: 'enlace a otra página', inserts: '[[]]', caret: 2 },
+  { name: 'audio', hint: 'hablar aquí mismo', inserts: '', caret: 0, acts: 'hablar' },
 ];
+
+/** Lo que un comando hace además de escribir, si hace algo. */
+export function actionOf(name: string): Command['acts'] | undefined {
+  return COMMANDS.find((command) => command.name === name)?.acts;
+}
 
 /** Filtra por lo escrito. Sin consulta se ofrecen todos. */
 export function matchingCommands(query: string): Command[] {

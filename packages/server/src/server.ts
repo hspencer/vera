@@ -17,13 +17,16 @@ import {
   createRecording,
   foldedOnPage,
   loadGraph,
+  discardAudio,
   mediaByHash,
   mediaReferences,
   openStore,
+  placeRecording,
   recordOperation,
   recordMedia,
   recordingById,
   recordings,
+  recordingsInPage,
   saveParticipant,
   setFold,
   setSpokenOrigin,
@@ -537,6 +540,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
 
         const mediaType = String(request.headers['content-type'] ?? 'audio/webm').split(';')[0] ?? 'audio/webm';
         const duration = Number(request.headers['x-duration-ms'] ?? '');
+        // El bloque donde se estaba escribiendo cuando se habló, si se habló
+        // dentro de un documento. Va en una cabecera porque el cuerpo son los
+        // bytes del audio y no cabe nada más.
+        const inBlock = String(request.headers['x-in-block'] ?? '').trim();
 
         // El audio entra al mismo almacén direccionado por contenido que todo
         // lo demás: grabar dos veces lo mismo no lo guarda dos veces.
@@ -561,7 +568,13 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             capturedAt: at,
           },
           capturedBy: owner.id,
+          placedInBlock: inBlock === '' ? null : inBlock,
         });
+
+        if ('error' in recording) {
+          send(response, 422, recording);
+          return;
+        }
 
         send(response, 201, recording);
       });
@@ -629,7 +642,6 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         // nombrando la grabación. Es el único momento en que puede recibir su
         // denominación de origen.
         const held = recordingById(store, id);
-        const page = typeof body.page === 'string' ? body.page : '';
         if (held === null) {
           send(response, 404, { error: 'no such recording' });
           return;
@@ -638,6 +650,12 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           send(response, 422, { error: 'la transcripción todavía no está validada' });
           return;
         }
+
+        // Dónde aterriza. Una grabación que se habló dentro de un documento
+        // aterriza en el bloque que le guardaba el lugar; una que existe por sí
+        // sola, al final de la página que se elija.
+        const inPlace = held.placedInBlock === null ? null : graph.block(held.placedInBlock);
+        const page = inPlace?.page ?? (typeof body.page === 'string' ? body.page : '');
         if (graph.page(page) === undefined) {
           send(response, 404, { error: 'no such page' });
           return;
@@ -653,18 +671,36 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         }
 
         const created: string[] = [];
-        const at = graph.blocksOf(page).filter((block) => block.parent === null).length;
+        const place = inPlace ?? null;
+        const parent = place === null ? null : place.parent;
+        const siblings = graph.blocksOf(page).filter((block) => block.parent === parent);
+        // El primer fragmento va donde se guardaba el lugar; el resto, detrás de
+        // él, en orden. Sin lugar guardado, todos al final de la página.
+        const at =
+          place === null
+            ? siblings.length
+            : siblings.findIndex((block) => block.stableId === place.stableId);
 
         try {
           for (const [n, fragment] of fragments.entries()) {
             // Canal `authenticated_voice` con su evidencia: es lo que el
             // registro guardará de por vida sobre estos bloques.
+            const change =
+              n === 0 && place !== null
+                ? ({ kind: 'edit_block', block: place.stableId, content: fragment } as const)
+                : ({
+                    kind: 'create_block',
+                    page,
+                    parent,
+                    position: at + n,
+                    content: fragment,
+                  } as const);
             const outcome = graph.submitOperation({
               originId: `voice:${id}:${n}`,
               participant: owner.id,
               channel: 'authenticated_voice',
               evidence: held.evidence,
-              change: { kind: 'create_block', page, parent: null, position: at + n, content: fragment },
+              change,
             });
             if (outcome.status !== 'applied') continue;
             recordOperation(store, graph, outcome.operation);
@@ -685,8 +721,42 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       return;
     }
 
+    // Borrar el audio. Es un acto aparte y explícito, y sólo cuando la cadena se
+    // recorrió entera: hasta entonces la grabación es lo único que puede zanjar
+    // un desacuerdo sobre qué se dijo.
+    if (request.method === 'DELETE' && /^\/recordings\/[^/]+\/audio$/.test(path)) {
+      const id = decodeURIComponent(path.split('/')[2] ?? '');
+      const outcome = discardAudio(store, id);
+      send(response, 'error' in outcome ? 422 : 200, outcome);
+      return;
+    }
+
+    // Dónde queda una grabación en la escritura. Se puede dar o quitar mientras
+    // no se haya asentado; después el lugar es el de su contenido.
+    if (request.method === 'POST' && /^\/recordings\/[^/]+\/place$/.test(path)) {
+      const id = decodeURIComponent(path.split('/')[2] ?? '');
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { block?: unknown } = {};
+        try {
+          if (chunks.length > 0) body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+        const block = typeof body.block === 'string' && body.block !== '' ? body.block : null;
+        const outcome = placeRecording(store, id, block);
+        send(response, 'error' in outcome ? 422 : 200, outcome);
+      });
+      return;
+    }
+
     if (request.method === 'GET' && path === '/recordings') {
-      send(response, 200, recordings(store));
+      // Con `page`, lo que tiene lugar en ella: es lo que deja ver el audio
+      // donde se habló en vez de en un limbo aparte.
+      const page = url.searchParams.get('page');
+      send(response, 200, page === null ? recordings(store) : recordingsInPage(store, page));
       return;
     }
 
@@ -840,6 +910,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           })(),
           // La denominación de origen de los bloques hablados de esta página.
           spokenOrigins: spokenOriginsOnPage(store, page.id),
+          // @guarantee NothingSpokenIsStrandedFromTheWriting: lo hablado dentro
+          // de esta página viaja con ella, para que se vea donde se habló y no
+          // haya que ir a buscarlo a una lista aparte.
+          recordings: recordingsInPage(store, page.id),
           // @invariant GeneratedContentIsAlwaysDistinguishable: de qué mano
           // salió el texto de cada bloque. Viaja con la página y no en una
           // petición aparte, porque distinguir lo escrito de lo generado tiene

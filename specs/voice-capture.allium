@@ -110,6 +110,14 @@ entity Recording {
     -- it. One field: correcting the transcript is editing it, not annotating it.
     transcript: String?
 
+    -- Where in the writing this recording stands, when it was spoken into a
+    -- document rather than on its own. The block holds the recording's place
+    -- while the chain is walked, and becomes its content at the end.
+    --
+    -- Optional because a recording does not need a place: one captured on its
+    -- own belongs to the graph and settles wherever its speaker later decides.
+    placed_in: core/Block?
+
     -- Who spoke and when. Without authentication the speaker is the instance's
     -- owner by assumption, and the specification says so rather than pretending
     -- the claim is proven.
@@ -149,6 +157,40 @@ rule ParticipantRecordsVoice {
         media_type: media_type,
         stage: captured,
         transcript: null,
+        placed_in: null,
+        evidence: evidence,
+        captured_by: participant,
+        captured_at: now,
+        validated_by: null,
+        validated_at: null
+    )
+}
+
+-- Speaking into a document, at the point where one was writing.
+--
+-- The block exists first and empty: it is the place held open while the chain is
+-- walked. It is not spoken content yet and does not claim to be — it has no
+-- origin until something is settled into it, which is what keeps
+-- @invariant OriginIsNeverAsserted true of a block that was born of a recording.
+rule ParticipantSpeaksIntoABlock {
+    when: CaptureVoiceInBlock(participant, graph, block, audio, media_type, evidence)
+
+    let membership = core/Membership{graph: graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: evidence != null
+    -- One block holds one recording's place. Two would leave it ambiguous which
+    -- one its content came from.
+    requires: not exists Recording{placed_in: block}
+
+    ensures: Recording.created(
+        graph: graph,
+        audio: audio,
+        media_type: media_type,
+        stage: captured,
+        transcript: null,
+        placed_in: block,
         evidence: evidence,
         captured_by: participant,
         captured_at: now,
@@ -221,6 +263,48 @@ rule ParticipantSettlesContent {
         recording.stage = content_settled
 }
 
+-- The same last link, for a recording spoken into a document: the content lands
+-- in the block that was holding its place, where the speaker was writing, rather
+-- than at the end of a page.
+rule ParticipantSettlesContentInPlace {
+    when: SettleContentInPlace(participant, recording)
+
+    let membership = core/Membership{graph: recording.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: recording.stage = transcript_validated
+    requires: recording.placed_in != null
+
+    ensures:
+        recording.placed_in.content = first_fragment_of(recording.transcript)
+        SpokenOrigin.created(block: recording.placed_in, recording: recording)
+        for fragment in rest_of_fragments(recording.transcript):
+            let block = core/Block.created(
+                page: recording.placed_in.page,
+                parent: recording.placed_in.parent,
+                content: fragment
+            )
+            SpokenOrigin.created(block: block, recording: recording)
+        recording.stage = content_settled
+}
+
+-- A held place that is torn out.
+--
+-- The recording survives it. Deleting the block one was about to speak into
+-- cannot destroy what was already said — the recording returns to belonging to
+-- the graph, and can still be settled somewhere chosen later.
+rule DeletingAHeldBlockReleasesItsRecording {
+    when: block/BlockDeleted(block)
+
+    let recording = Recording{placed_in: block}
+
+    requires: exists recording
+    requires: recording.stage != content_settled
+
+    ensures: recording.placed_in = null
+}
+
 -- Splitting spoken content leaves both halves spoken. This is the rule that
 -- makes @invariant OriginSurvivesFragmentation more than a wish.
 rule OriginFollowsASplit {
@@ -263,6 +347,23 @@ invariant NoOriginWithoutARecording {
         exists o.recording
 }
 
+-- A block held open for a recording is empty of anyone's writing until the
+-- content settles into it. Otherwise speaking into a block would overwrite words
+-- someone typed, and the transcript would arrive on top of a text nobody agreed
+-- to lose.
+invariant AHeldBlockHoldsNothingElse {
+    for r in Recordings:
+        r.placed_in != null and r.stage != content_settled
+            implies r.placed_in.content = ""
+}
+
+-- A place is held by one recording at most.
+invariant APlaceIsHeldOnce {
+    for r in Recordings:
+        for other in Recordings:
+            r.placed_in != null and other.placed_in = r.placed_in implies other = r
+}
+
 ------------------------------------------------------------
 -- Actor Declarations
 ------------------------------------------------------------
@@ -285,12 +386,16 @@ surface VoiceCapture {
         recording.transcript
         recording.evidence
         recording.captured_at
+        recording.placed_in
 
     provides:
         CaptureVoice(speaker, recording.graph, recording.audio, recording.media_type, recording.evidence)
+        CaptureVoiceInBlock(speaker, recording.graph, recording.placed_in, recording.audio, recording.media_type, recording.evidence)
         CorrectTranscript(speaker, recording, recording.transcript)
         ValidateTranscript(speaker, recording)
         SettleContent(speaker, recording, page)
+        SettleContentInPlace(speaker, recording)
+        DiscardRecording(speaker, recording)
 
     contracts:
         fulfils ValidationCascade
@@ -300,6 +405,12 @@ surface VoiceCapture {
         -- While the audio exists, it can be played from wherever its transcript
         -- or its content is being read. A chain whose head cannot be reached is
         -- a claim, not a provenance.
+
+    @guarantee NothingSpokenIsStrandedFromTheWriting
+        -- A recording that has not finished the chain can be reached from the
+        -- writing: either from the block holding its place, or from a list of
+        -- what is unfinished. A recording nobody can find is a recording nobody
+        -- can validate, and the chain would stop at its first link.
 }
 
 ------------------------------------------------------------

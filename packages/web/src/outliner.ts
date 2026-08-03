@@ -18,12 +18,19 @@ import { is } from './bindings.ts';
 import { icon } from './icons.ts';
 import { createSession, type SaveIntent } from './session.ts';
 import {
+  actionOf,
   completionFor,
   detectTrigger,
   matchingCommands,
   queryOf,
   type Open,
 } from './autocomplete.ts';
+import {
+  renderAudioBlock,
+  renderRecorder,
+  type AudioBlockHandlers,
+} from './audio-block.ts';
+import { audioUrl, voice, type Recording } from './voice.ts';
 import {
   resolveArrow,
   resolveBackspaceAtStart,
@@ -50,6 +57,28 @@ export interface OutlinerCallbacks {
   onReload(focus: { block: string; at: number } | null): void;
   /** Reenraizar la vista en un bloque; sin bloque, volver a la página entera. */
   onFocusBlock?(block: string | null): void;
+  /**
+   * Hablar en este punto de la escritura, tras `/audio`.
+   *
+   * `rest` es lo que quedaba escrito en el bloque. Si hay algo, la grabación
+   * necesita un bloque nuevo debajo: uno que ya tiene texto no puede guardarle el
+   * lugar sin que la transcripción caiga encima de lo escrito.
+   */
+  onSpeak?(block: string, rest: string): Promise<void>;
+}
+
+/**
+ * El bloque donde hay que empezar a grabar en cuanto se dibuje.
+ *
+ * `/audio` ocurre en un editor que el redibujado se lleva por delante, así que
+ * la intención sobrevive aquí hasta que el bloque exista en la página. Se
+ * consume al usarla: volver a dibujar no vuelve a grabar.
+ */
+let speakingIn: string | null = null;
+
+/** Deja dicho que en este bloque se va a hablar. */
+export function speakInto(block: string): void {
+  speakingIn = block;
 }
 
 /**
@@ -509,6 +538,12 @@ export function renderOutliner(
   const folded = new Set(page.folded);
   // @invariant SpokenContentNamesItsRecording: un bloque hablado lo dice.
   const spoken = new Map((page.spokenOrigins ?? []).map((o) => [o.block, o.recording]));
+  // Lo hablado que tiene lugar en esta página, por el bloque que se lo guarda.
+  const held = new Map(
+    (page.recordings ?? [])
+      .filter((r): r is Recording & { placedInBlock: string } => r.placedInBlock !== null)
+      .map((r) => [r.placedInBlock, r]),
+  );
   // @invariant GeneratedContentIsAlwaysDistinguishable.
   //
   // Sólo se marca lo generado, no todo. El corpus es casi entero de Herbert, y
@@ -516,6 +551,12 @@ export function renderOutliner(
   // lo excepcional dejaría de verse. Lo que hay que poder distinguir de un
   // vistazo es lo que no escribió él.
   const hands = page.authorship ?? {};
+  const audioHandlers: AudioBlockHandlers = {
+    onSettled: () => callbacks.onReload(null),
+    notify: toast,
+    // Un eslabón que avanza sin mover el árbol no necesita rehacer la página.
+    onChanged: () => undefined,
+  };
   const options: RenderOptions = {};
   const asset = assetResolver(page);
   if (asset !== undefined) options.resolveAsset = asset;
@@ -739,8 +780,21 @@ export function renderOutliner(
 
     const body = document.createElement('div');
     body.className = 'body';
-    body.innerHTML = renderMarkdown(node.block.content, options);
-    markMissingImages(body);
+
+    // Un bloque que le guarda el lugar a una grabación muestra la grabación:
+    // todavía no tiene texto, y lo que hay que ver es en qué eslabón va.
+    const waiting = held.get(node.block.stableId);
+    const speaking = speakingIn === node.block.stableId;
+    if (speaking) speakingIn = null;
+    const holding = speaking || (waiting !== undefined && waiting.stage !== 'content_settled');
+    if (speaking) {
+      renderRecorder(body, node.block.stableId, audioHandlers);
+    } else if (waiting !== undefined && waiting.stage !== 'content_settled') {
+      renderAudioBlock(body, waiting, audioHandlers);
+    } else {
+      body.innerHTML = renderMarkdown(node.block.content, options);
+      markMissingImages(body);
+    }
 
     bullet.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -761,6 +815,33 @@ export function renderOutliner(
           label: 'Copiar el Markdown del bloque',
           run: () => copyText(node.block.content, toast),
         },
+        // @guarantee TheRecordingIsAlwaysReachable: mientras el audio exista, se
+        // llega a él desde el bloque que dice lo que se dijo. Vive en el menú y
+        // no en la página para que leer siga siendo leer.
+        ...(waiting !== undefined && waiting.stage === 'content_settled' && waiting.audioHash !== null
+          ? [
+              {
+                label: 'Oír la grabación',
+                run: () => {
+                  const url = audioUrl(waiting);
+                  if (url !== null) window.open(url, '_blank');
+                },
+              },
+              {
+                label: 'Borrar el audio',
+                run: () => {
+                  void voice.discardAudio(waiting.id).then((next) => {
+                    if ('error' in next) {
+                      toast(next.error);
+                      return;
+                    }
+                    toast('el audio se borró; queda lo que dice y de dónde vino');
+                    callbacks.onReload(null);
+                  });
+                },
+              },
+            ]
+          : []),
         {
           label: 'Subir',
           ...(neighbourhoods.get(node.block.stableId)?.index === 0
@@ -815,6 +896,9 @@ export function renderOutliner(
         return;
       }
       if (target.tagName === 'A') return;
+      // Sobre una grabación no se escribe: el bloque le guarda el lugar hasta
+      // que su contenido se asiente, y abrir el editor lo taparía.
+      if (holding) return;
       openEditor(node, body);
     });
 
@@ -1365,12 +1449,22 @@ function startEditing(
   const accept = (at: number): void => {
     const chosen = candidates[at];
     if (open === null || chosen === undefined) return;
+    const acts = open.trigger === 'comando' ? actionOf(chosen.value) : undefined;
     const applied = completionFor(open, chosen.value, editor.value, editor.selectionStart);
     editor.value = applied.buffer;
     editor.setSelectionRange(applied.cursor, applied.cursor);
     session.type(editor.value);
     closeList();
     autosize();
+
+    // Hablar no es escribir: el comando desaparece del texto y lo que ocurre
+    // ocurre en el grafo. Lo que quedara escrito se guarda antes, porque la
+    // grabación necesita un bloque vacío que le guarde el lugar.
+    if (acts === 'hablar') {
+      void callbacks.onSpeak?.(block.stableId, editor.value.trim());
+      return;
+    }
+
     scheduleSave();
     editor.focus();
   };

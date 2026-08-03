@@ -32,9 +32,34 @@ export interface OpenOptions {
   graphId?: string;
 }
 
+/**
+ * Columnas que llegaron después de que hubiera bases en uso.
+ *
+ * `CREATE TABLE IF NOT EXISTS` no toca una tabla que ya existe, así que una
+ * columna nueva no llegaría nunca a la base de alguien que viene usando Vera. Se
+ * añade aquí, y como sólo se agrega lo que falta, correrlo de nuevo no hace nada.
+ */
+const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
+  {
+    table: 'recordings',
+    column: 'placed_in_block',
+    definition: 'TEXT REFERENCES blocks (id) ON DELETE SET NULL',
+  },
+];
+
+function addMissingColumns(db: DatabaseSync): void {
+  for (const { table, column, definition } of ADDED_COLUMNS) {
+    const present = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+      (c) => c.name === column,
+    );
+    if (!present) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
 export function openStore(options: OpenOptions): Store {
   const db = new DatabaseSync(options.path);
   db.exec(readFileSync(SCHEMA, 'utf8'));
+  addMissingColumns(db);
 
   const graphId = options.graphId ?? 'graph:1';
   db.prepare('INSERT OR IGNORE INTO graphs (id, name) VALUES (?, ?)').run(
@@ -882,6 +907,8 @@ export interface Recording {
   durationMs: number | null;
   stage: CascadeStage;
   transcript: string | null;
+  /** El bloque que le guarda el lugar en la escritura, si se habló dentro de una. */
+  placedInBlock: string | null;
   evidence: { reference: string; capturedAt: number };
   capturedBy: string;
   capturedAt: number;
@@ -896,6 +923,7 @@ interface RecordingRow {
   duration_ms: number | null;
   stage: CascadeStage;
   transcript: string | null;
+  placed_in_block: string | null;
   evidence_reference: string;
   evidence_captured_at: number;
   captured_by: string;
@@ -912,6 +940,7 @@ function toRecording(row: RecordingRow): Recording {
     durationMs: row.duration_ms,
     stage: row.stage,
     transcript: row.transcript,
+    placedInBlock: row.placed_in_block,
     evidence: { reference: row.evidence_reference, capturedAt: row.evidence_captured_at },
     capturedBy: row.captured_by,
     capturedAt: row.captured_at,
@@ -928,16 +957,41 @@ export function createRecording(
     durationMs: number | null;
     evidence: { reference: string; capturedAt: number };
     capturedBy: string;
+    /**
+     * El bloque que le guarda el lugar, cuando se habló dentro de un documento.
+     * Sin él la grabación existe por sí sola y se asentará donde se decida.
+     */
+    placedInBlock?: string | null;
   },
-): Recording {
+): Recording | { error: string } {
   const id = `recording:${input.audioHash.slice(0, 16)}`;
   const at = Date.now();
+  const place = input.placedInBlock ?? null;
+
+  if (place !== null) {
+    // @invariant APlaceIsHeldOnce: dos grabaciones en un bloque dejarían sin
+    // respuesta de cuál de las dos vino su contenido.
+    const taken = store.db
+      .prepare('SELECT id FROM recordings WHERE placed_in_block = ?')
+      .get(place) as { id: string } | undefined;
+    if (taken !== undefined && taken.id !== id) {
+      return { error: 'ese bloque ya le guarda el lugar a otra grabación' };
+    }
+    // @invariant AHeldBlockHoldsNothingElse: hablar dentro de un bloque escrito
+    // haría que la transcripción cayera encima de palabras que nadie aceptó perder.
+    const block = store.db.prepare('SELECT content FROM blocks WHERE id = ?').get(place) as
+      | { content: string }
+      | undefined;
+    if (block === undefined) return { error: 'no such block' };
+    if (block.content.trim() !== '') return { error: 'ese bloque ya tiene texto escrito' };
+  }
+
   store.db
     .prepare(
       `INSERT INTO recordings (
          id, graph_id, audio_hash, media_type, duration_ms, stage, transcript,
-         evidence_reference, evidence_captured_at, captured_by, captured_at
-       ) VALUES (?, ?, ?, ?, ?, 'captured', NULL, ?, ?, ?, ?)
+         placed_in_block, evidence_reference, evidence_captured_at, captured_by, captured_at
+       ) VALUES (?, ?, ?, ?, ?, 'captured', NULL, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO NOTHING`,
     )
     .run(
@@ -946,11 +1000,95 @@ export function createRecording(
       input.audioHash,
       input.mediaType,
       input.durationMs,
+      place,
       input.evidence.reference,
       input.evidence.capturedAt,
       input.capturedBy,
       at,
     );
+  return recordingById(store, id) as Recording;
+}
+
+/**
+ * Borra el audio, dejando en pie todo lo demás de la cadena.
+ *
+ * @invariant TheRecordingOutlivesItsTranscript se lee al revés aquí: la
+ * grabación puede irse, pero sólo después de que la cadena se recorrió entera y
+ * por un acto explícito de quien habló. Lo que queda —la transcripción validada,
+ * los bloques que la nombran, la evidencia— sigue diciendo de dónde vino, y la
+ * fila dice que el audio ya no está en vez de fingir que nunca existió.
+ */
+export function discardAudio(store: Store, id: string): Recording | { error: string } {
+  const held = recordingById(store, id);
+  if (held === null) return { error: 'no such recording' };
+  if (held.stage !== 'content_settled') {
+    return {
+      error:
+        'el audio sólo se borra cuando el contenido ya está asentado: hasta entonces es lo único que puede zanjar qué se dijo',
+    };
+  }
+  if (held.audioHash === null) return held;
+  // Sólo se suelta la referencia. El objeto vive en un almacén direccionado por
+  // contenido que puede estar compartido, y recogerlo es cosa de otro barrido.
+  store.db.prepare('UPDATE recordings SET audio_hash = NULL WHERE id = ?').run(id);
+  store.db
+    .prepare('DELETE FROM media_references WHERE graph_id = ? AND path = ?')
+    .run(store.graphId, `recording/${held.audioHash}`);
+  return recordingById(store, id) as Recording;
+}
+
+/** La grabación que le guarda el lugar a un bloque, si alguna. */
+export function recordingByBlock(store: Store, block: string): Recording | null {
+  const row = store.db.prepare('SELECT * FROM recordings WHERE placed_in_block = ?').get(block) as
+    | RecordingRow
+    | undefined;
+  return row === undefined ? null : toRecording(row);
+}
+
+/**
+ * Las grabaciones que tienen lugar en una página, para que quien la lee vea el
+ * audio donde se habló y no en un limbo aparte.
+ */
+export function recordingsInPage(store: Store, page: string): Recording[] {
+  return (
+    store.db
+      .prepare(
+        `SELECT r.* FROM recordings r
+         JOIN blocks b ON b.id = r.placed_in_block
+         WHERE b.page_id = ? AND r.graph_id = ?`,
+      )
+      .all(page, store.graphId) as unknown as RecordingRow[]
+  ).map(toRecording);
+}
+
+/**
+ * Le da lugar a una grabación que no lo tenía, o se lo cambia.
+ *
+ * Es lo que repara una grabación que quedó flotando: existe, se puede oír, y no
+ * había dónde encontrarla mientras se lee la página de la que habla.
+ */
+export function placeRecording(
+  store: Store,
+  id: string,
+  block: string | null,
+): Recording | { error: string } {
+  const held = recordingById(store, id);
+  if (held === null) return { error: 'no such recording' };
+  if (held.stage === 'content_settled') {
+    return { error: 'lo asentado ya tiene su lugar; moverlo sería reescribir de dónde vino' };
+  }
+  if (block !== null) {
+    const taken = recordingByBlock(store, block);
+    if (taken !== null && taken.id !== id) {
+      return { error: 'ese bloque ya le guarda el lugar a otra grabación' };
+    }
+    const found = store.db.prepare('SELECT content FROM blocks WHERE id = ?').get(block) as
+      | { content: string }
+      | undefined;
+    if (found === undefined) return { error: 'no such block' };
+    if (found.content.trim() !== '') return { error: 'ese bloque ya tiene texto escrito' };
+  }
+  store.db.prepare('UPDATE recordings SET placed_in_block = ? WHERE id = ?').run(block, id);
   return recordingById(store, id) as Recording;
 }
 

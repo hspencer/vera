@@ -271,6 +271,11 @@ CREATE TABLE IF NOT EXISTS recordings (
                             stage IN ('captured', 'transcribed', 'transcript_validated', 'content_settled')
                           ),
     transcript            TEXT,
+    -- El bloque que le guarda el lugar en la escritura, cuando se habló dentro de
+    -- un documento. Nulo cuando la grabación no tiene lugar: existe por sí sola y
+    -- se asentará donde su hablante decida después. Si el bloque se borra antes
+    -- de asentar, esto vuelve a nulo y la grabación sobrevive.
+    placed_in_block       TEXT REFERENCES blocks (id) ON DELETE SET NULL,
     -- Quien habla y cuándo. Sin autenticación todavía, se asume el propietario,
     -- y queda dicho en la referencia en vez de fingir que está probado.
     evidence_reference    TEXT NOT NULL,
