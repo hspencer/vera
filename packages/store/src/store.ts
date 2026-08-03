@@ -755,3 +755,48 @@ export function mediaReferences(store: Store): { path: string; hash: string; med
     )
     .all(store.graphId) as { path: string; hash: string; mediaType: string }[];
 }
+
+// ---------------------------------------------------------------------------
+// Estado de plegado
+// ---------------------------------------------------------------------------
+//
+// @invariant FoldingIsNotAChange: plegar es lo que una persona está mirando, no
+// lo que dice el grafo. No pasa por `submitOperation`, no genera revisión y no
+// aparece en el registro. Por eso vive en su propia tabla, indexada por
+// participante: dos personas pueden tener el mismo bloque abierto y cerrado.
+
+export function setFold(
+  store: Store,
+  participant: string,
+  block: string,
+  folded: boolean,
+): void {
+  if (!folded) {
+    // Lo desplegado es el estado por omisión, así que se representa por ausencia
+    // en vez de guardar un cero por cada bloque que alguien abrió alguna vez.
+    store.db
+      .prepare('DELETE FROM block_collapse_state WHERE participant_id = ? AND block_id = ?')
+      .run(participant, block);
+    return;
+  }
+
+  store.db
+    .prepare(
+      `INSERT INTO block_collapse_state (participant_id, block_id, collapsed) VALUES (?, ?, 1)
+       ON CONFLICT (participant_id, block_id) DO UPDATE SET collapsed = 1`,
+    )
+    .run(participant, block);
+}
+
+/** Los bloques que este participante tiene plegados en una página. */
+export function foldedOnPage(store: Store, participant: string, page: string): string[] {
+  return (
+    store.db
+      .prepare(
+        `SELECT s.block_id AS block
+           FROM block_collapse_state s JOIN blocks b ON b.id = s.block_id
+          WHERE s.participant_id = ? AND b.page_id = ? AND s.collapsed = 1`,
+      )
+      .all(participant, page) as { block: string }[]
+  ).map((row) => row.block);
+}

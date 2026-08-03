@@ -46,6 +46,8 @@ export interface OutlinerCallbacks {
    * quien sabe cómo quedó el árbol.
    */
   onReload(focus: { block: string; at: number } | null): void;
+  /** Reenraizar la vista en un bloque; sin bloque, volver a la página entera. */
+  onFocusBlock?(block: string | null): void;
 }
 
 /**
@@ -213,9 +215,81 @@ async function removeBlock(
   callbacks.onChanged();
 }
 
+/**
+ * Pliega o despliega un bloque.
+ *
+ * @invariant FoldingIsNotAChange: no pasa por `submit`. No genera operación, no
+ * aparece en ninguna revisión, y el registro no se entera. Es lo que esta
+ * persona está mirando, no lo que dice el grafo.
+ */
+async function toggleFold(
+  block: string,
+  folded: boolean,
+  callbacks: OutlinerCallbacks,
+): Promise<void> {
+  try {
+    await api.fold(block, folded);
+  } catch {
+    toast('no se pudo plegar: sin conexión con el servidor');
+    return;
+  }
+  callbacks.onReload(null);
+}
+
+/**
+ * Sube o baja un bloque intercambiándolo con su hermano.
+ *
+ * @invariant SubtreesTravelWithTheirRoot: `move_block` arrastra el subárbol, así
+ * que basta con pedir el índice del hermano. Un bloque que adelantara a sus
+ * propios hijos los dejaría describiendo algo que ya no está encima.
+ */
+async function moveBlock(
+  block: BlockView,
+  page: string,
+  near: Neighbourhood,
+  up: boolean,
+  callbacks: OutlinerCallbacks,
+): Promise<void> {
+  const target = up ? near.index - 1 : near.index + 1;
+  if (target < 0) {
+    toast('el bloque ya es el primero de su nivel');
+    return;
+  }
+
+  let result;
+  try {
+    result = await api.submit({
+      kind: 'move_block',
+      block: block.stableId,
+      page,
+      parent: near.parent,
+      position: target,
+    });
+  } catch {
+    toast('no se pudo mover: sin conexión con el servidor');
+    return;
+  }
+
+  if (result.status === 'rejected') {
+    toast(`rechazado: ${result.reason}`);
+    return;
+  }
+  callbacks.onReload({ block: block.stableId, at: 0 });
+}
+
 export interface Node {
   block: BlockView;
   children: Node[];
+}
+
+/** Busca un nodo por su identidad en cualquier profundidad del árbol. */
+function findNode(nodes: Node[], id: string): Node | null {
+  for (const node of nodes) {
+    if (node.block.stableId === id) return node;
+    const found = findNode(node.children, id);
+    if (found !== null) return found;
+  }
+  return null;
 }
 
 export function buildTree(blocks: BlockView[]): Node[] {
@@ -276,10 +350,12 @@ export function renderOutliner(
   page: PageView,
   callbacks: OutlinerCallbacks,
   focus: { block: string; at: number } | null = null,
+  focusRoot: string | null = null,
 ): void {
   container.innerHTML = '';
   /** Dónde quedó dibujado cada bloque, para poder devolverle el cursor. */
   const editors = new Map<string, { node: Node; body: HTMLElement }>();
+  const folded = new Set(page.folded);
   const options: RenderOptions = {};
   const asset = assetResolver(page);
   if (asset !== undefined) options.resolveAsset = asset;
@@ -323,9 +399,33 @@ export function renderOutliner(
     row.style.paddingLeft = `${depth * 1.25}rem`;
     row.dataset['id'] = node.block.stableId;
 
+    // @invariant OnlyParentsFold: el control sólo aparece donde hay algo que
+    // plegar. Ofrecerlo en una hoja prometería algo que no puede pasar.
+    const parent = node.children.length > 0;
+    const shut = folded.has(node.block.stableId);
+
+    if (parent) {
+      const fold = document.createElement('button');
+      fold.type = 'button';
+      fold.className = shut ? 'fold shut' : 'fold';
+      fold.textContent = shut ? '▸' : '▾';
+      fold.title = shut ? 'desplegar' : 'plegar';
+      fold.setAttribute('aria-expanded', String(!shut));
+      fold.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void toggleFold(node.block.stableId, !shut, callbacks);
+      });
+      row.append(fold);
+    } else {
+      // Un hueco del mismo ancho, para que las viñetas queden en columna.
+      const gap = document.createElement('span');
+      gap.className = 'fold empty';
+      row.append(gap);
+    }
+
     const bullet = document.createElement('button');
     bullet.type = 'button';
-    bullet.className = 'bullet';
+    bullet.className = shut ? 'bullet folded' : 'bullet';
     bullet.title = node.block.stableId;
     bullet.textContent = '•';
     bullet.setAttribute('aria-haspopup', 'menu');
@@ -354,6 +454,28 @@ export function renderOutliner(
         {
           label: 'Copiar el Markdown del bloque',
           run: () => copyText(node.block.content, toast),
+        },
+        {
+          label: 'Subir',
+          ...(neighbourhoods.get(node.block.stableId)?.index === 0
+            ? { blocked: 'el bloque ya es el primero de su nivel' }
+            : {}),
+          run: () => {
+            const near = neighbourhoods.get(node.block.stableId);
+            if (near !== undefined) void moveBlock(node.block, page.id, near, true, callbacks);
+          },
+        },
+        {
+          label: 'Bajar',
+          run: () => {
+            const near = neighbourhoods.get(node.block.stableId);
+            if (near !== undefined) void moveBlock(node.block, page.id, near, false, callbacks);
+          },
+        },
+        {
+          label: 'Enfocar en este bloque',
+          ...(parent ? {} : { blocked: 'un bloque sin hijos no tiene en qué enfocar' }),
+          run: () => callbacks.onFocusBlock?.(node.block.stableId),
         },
         {
           label: 'Eliminar bloque',
@@ -393,11 +515,37 @@ export function renderOutliner(
     row.append(bullet, body);
     list.append(row);
     editors.set(node.block.stableId, { node, body });
-    for (const child of node.children) drawBlock(child, depth + 1);
+    // Un subárbol plegado no se dibuja. Como la vecindad se calcula sobre el
+    // árbol visible, las teclas que recorren bloques lo saltan sin saber nada
+    // del plegado: no hay dos ideas de qué está a la vista.
+    if (!folded.has(node.block.stableId)) {
+      for (const child of node.children) drawBlock(child, depth + 1);
+    }
   };
 
-  const tree = buildTree(page.blocks);
+  /**
+   * @invariant FocusBoundsTheStructure: enfocar reenraiza el árbol, y todo lo
+   * demás se calcula sobre el árbol. Ninguna tecla necesita saber que hay un
+   * foco: fuera de él, simplemente, no hay bloques.
+   */
+  const whole = buildTree(page.blocks);
+  const rooted = focusRoot === null ? null : findNode(whole, focusRoot);
+  const tree = rooted === null ? whole : rooted.children;
   const neighbourhoods = buildNeighbourhoods(tree);
+
+  if (rooted !== null) {
+    const bar = document.createElement('div');
+    bar.className = 'focused';
+    const label = document.createElement('span');
+    label.textContent = renderMarkdown(rooted.block.content, options).replace(/<[^>]*>/g, '').trim();
+    const out = document.createElement('button');
+    out.type = 'button';
+    out.className = 'focused-out';
+    out.textContent = 'salir del enfoque';
+    out.addEventListener('click', () => callbacks.onFocusBlock?.(null));
+    bar.append(label, out);
+    container.append(bar);
+  }
 
   function openEditor(node: Node, body: HTMLElement, caret?: number): void {
     const near = neighbourhoods.get(node.block.stableId);

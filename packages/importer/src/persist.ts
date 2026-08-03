@@ -12,6 +12,7 @@ import {
   recordAllOperations,
   recordMedia,
   saveParticipant,
+  setFold,
 } from '@vera/store';
 import { mediaTypeFor, putObject, sniffMediaType } from '@vera/store/objects';
 
@@ -85,9 +86,27 @@ for (const asset of report.assetFiles) {
 }
 const ingested = Date.now() - t3;
 
+// El plegado que traía el corpus es estado del participante, no contenido. Sin
+// sembrarlo, la migración devolvería el corpus entero desplegado de golpe.
+//
+// @invariant OnlyParentsFold: se filtra aquí y no al leerlo, porque cuando
+// aparece el `collapsed::` de un bloque sus hijos todavía no se han creado.
+// El corpus trae 21 marcas sobre bloques que hoy no tienen hijos; plegarlos
+// sería guardar un estado que la interfaz no puede ni mostrar ni deshacer.
+let plegados = 0;
+let plegadosSinHijos = 0;
+for (const block of report.foldedBlocks) {
+  if (graph.childrenOf(block).length === 0) {
+    plegadosSinHijos += 1;
+    continue;
+  }
+  setFold(store, OWNER, block, true);
+  plegados += 1;
+}
+
 const n = (t: string) => (store.db.prepare(`SELECT count(*) c FROM ${t}`).get() as { c: number }).c;
 console.log(`\nEN LA BASE  ${target}`);
-for (const t of ['pages', 'blocks', 'property_assignments', 'page_links', 'block_tags', 'operations', 'revisions', 'unported_queries', 'media', 'media_references']) {
+for (const t of ['pages', 'blocks', 'property_assignments', 'page_links', 'block_tags', 'operations', 'revisions', 'unported_queries', 'media', 'media_references', 'block_collapse_state']) {
   console.log(`  ${t.padEnd(22)} ${String(n(t)).padStart(8)}`);
 }
 
@@ -102,6 +121,10 @@ console.log(`  enlaces   ${reloaded.links().length} (memoria: ${graph.links().le
 console.log(`  violaciones de invariante: ${checkInvariants(reloaded).length}`);
 console.log(`\n  parseo ${parsed} ms · persistencia ${persisted} ms · reproducción ${replayed} ms`);
 console.log(`  enlaces resueltos: ${report.linksResolved}/${report.linksSeen}`);
+console.log(
+  `  plegados recuperados: ${plegados}` +
+    `${plegadosSinHijos > 0 ? `, ${plegadosSinHijos} descartados por no tener hijos` : ''}`,
+);
 console.log(
   `  medios en ${objects}/: ${guardados} guardados, ${compartidos} ya presentes` +
     `${ilegibles > 0 ? `, ${ilegibles} ilegibles` : ''}` +

@@ -44,6 +44,13 @@ export interface LossReport {
   adoptedStableIds: number;
   collapseStatesDropped: number;
 
+  /**
+   * Los bloques que el corpus traía plegados. No son contenido —el grafo no
+   * cambia porque alguien cierre una rama— así que no entran como propiedad,
+   * pero sí son estado del participante y quien persista debe sembrarlo.
+   */
+  foldedBlocks: string[];
+
   linksSeen: number;
   linksResolved: number;
   linksWaiting: number;
@@ -102,6 +109,7 @@ function emptyReport(): LossReport {
     propertiesCreated: 0,
     adoptedStableIds: 0,
     collapseStatesDropped: 0,
+    foldedBlocks: [],
     linksSeen: 0,
     linksResolved: 0,
     linksWaiting: 0,
@@ -324,10 +332,14 @@ export function importLogseqGraph(options: ImportOptions): LossReport {
       ancestors[depth] = blockId;
       ancestors.length = depth + 1;
 
-      // Propiedades del bloque. `collapsed` es estado de interfaz, no contenido.
+      // Propiedades del bloque. `collapsed` es estado de interfaz, no contenido:
+      // no entra al grafo como propiedad, pero tampoco se tira. Es lo que el
+      // participante tenía plegado, y perderlo en la migración le dejaría el
+      // corpus entero desplegado de golpe.
       for (const [propertyKey, value] of block.properties) {
         if (propertyKey === 'collapsed') {
           report.collapseStatesDropped += 1;
+          if (value === 'true') report.foldedBlocks.push(blockId);
           continue;
         }
         if (INTERFACE_PROPERTIES.has(propertyKey)) continue;

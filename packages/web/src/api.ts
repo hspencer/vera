@@ -46,6 +46,8 @@ export interface PageView {
   blocks: BlockView[];
   assets: AssetView[];
   blockRefs: BlockRefView[];
+  /** Los bloques que este participante tiene plegados. No es contenido. */
+  folded: string[];
   backlinks: Backlink[];
 }
 
@@ -106,6 +108,17 @@ export const api = {
   page: (id: string) => json<PageView>(`/pages/${encodeURIComponent(id)}`),
 
   search: (text: string) => json<Hit[]>(`/search?q=${encodeURIComponent(text)}`),
+
+  /**
+   * Plegar no es un cambio del grafo, así que no pasa por submit: no genera
+   * operación ni revisión, y por eso tiene su propia ruta.
+   */
+  fold: (block: string, folded: boolean) =>
+    fetch('/folds', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ participant: 'participant:herbert', block, folded }),
+    }),
 
   graph: (centre: string, depth: number) =>
     json<GraphData>(`/graph/${encodeURIComponent(centre)}?depth=${depth}`),

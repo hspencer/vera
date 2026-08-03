@@ -25,6 +25,8 @@ interface Workspace {
   activePage: string | null;
   layout: WorkspaceLayout;
   graphView: GraphViewMode;
+  /** Bloque en el que está enraizada la vista, o null para la página entera. */
+  focusRoot: string | null;
   scheme: ColourScheme;
   divider: number;
   history: string[];
@@ -35,6 +37,7 @@ const workspace: Workspace = {
   activePage: null,
   layout: session.layout(),
   graphView: session.graphView(),
+  focusRoot: null,
   scheme: session.scheme(),
   divider: session.divider(),
   history: [],
@@ -124,7 +127,14 @@ async function openPage(
     onReload: (focus) => {
       if (workspace.activePage !== null) void openPage(workspace.activePage, focus);
     },
-  }, focus);
+    // @invariant FocusBoundsTheStructure: con la vista enraizada en un bloque,
+    // sólo se dibuja su subárbol, así que desindentar, fusionar y mover se
+    // detienen ahí sin que ninguna tecla tenga que saberlo.
+    onFocusBlock: (block) => {
+      workspace.focusRoot = block;
+      if (workspace.activePage !== null) void openPage(workspace.activePage);
+    },
+  }, focus, workspace.focusRoot);
 
   drawBreadcrumbs();
   if (!isPhone() && workspace.layout !== 'text_only') void drawGraph();

@@ -5,13 +5,16 @@
 -- Includes: The edit session and its buffer, saving while typing rather than only
 --   on the way out, splitting a block with Enter, indenting with Tab, merging with
 --   Backspace at the start of a block and the refusals that protect it, moving
---   between blocks without leaving the editor, delimiter autopairing, and the
---   autocomplete state machine for references, tags and commands
+--   between blocks without leaving the editor, delimiter autopairing, the
+--   autocomplete state machine for references, tags and commands, and the outline
+--   manipulation that surrounds them: moving a block among its siblings, folding a
+--   subtree, and focusing the view on one block
 -- Excludes:
 --   - Which operation each change becomes, and its ordering (see change-application.allium)
 --   - How a saved block is presented (see workspace-interface.allium)
---   - Collapsing, zooming into a block, and moving a block among its siblings
 --   - Block types, headings and numbered lists, which Vera does not model yet
+--   - Properties, their types and their cardinality, which the corpus already carries
+--     and no interface yet edits
 --   - Undo and redo
 --   - What the autocomplete searches and how it ranks (see search-index.allium)
 -- Dependencies: Page, Block and Participant are governed by core.allium
@@ -29,6 +32,8 @@ use "./core.allium" as core
 -- what lets a single key mean one thing.
 given {
     session: EditSession
+    -- One view at a time: focusing re-roots the one there is, it does not open another.
+    view: OutlineView
 }
 
 ------------------------------------------------------------
@@ -56,6 +61,29 @@ contract FluidBlockEditing {
     @invariant RefusalsAreVisible
         -- A structural keystroke that cannot be honoured says so. Silence would be
         -- indistinguishable from a key that did not register.
+}
+
+contract OutlineManipulation {
+    move: (block: core/Block, up: Boolean) -> core/Block
+    collapse: (participant: core/Participant, block: core/Block, folded: Boolean) -> FoldState
+    focus: (block: core/Block?) -> OutlineView
+
+    @invariant SubtreesTravelWithTheirRoot
+        -- Moving a block moves everything under it. A block never overtakes its
+        -- own children, and no child is left behind at the old position.
+
+    @invariant FoldingIsNotAChange
+        -- Collapsing is what one participant is looking at, not what the graph
+        -- says. It submits no operation, it appears in no revision, and two
+        -- participants can hold different folds of the same block at once.
+
+    @invariant OnlyParentsFold
+        -- A block with no children has nothing to fold, and offering the control
+        -- there would promise something that cannot happen.
+
+    @invariant FocusBoundsTheStructure
+        -- While the view is focused on a block, outdenting, merging and moving
+        -- stop at that block. A keystroke cannot reach past what is on screen.
 }
 
 contract EditorAutocomplete {
@@ -110,6 +138,23 @@ entity EditSession {
 entity StructuralRefusal {
     block: core/Block
     reason: RefusalReason
+}
+
+-- What one participant has folded. It is keyed by participant rather than by
+-- block because it is what that person is looking at: the corpus does not change
+-- when someone closes a branch, and two people can hold the same block open and
+-- shut at the same time.
+entity FoldState {
+    participant: core/Participant
+    block: core/Block
+    folded: Boolean
+}
+
+-- Where the view is rooted. With no root the whole page is in view.
+entity OutlineView {
+    participant: core/Participant
+    page: core/Page
+    root: core/Block?
 }
 
 ------------------------------------------------------------
@@ -470,6 +515,61 @@ rule ArrowDownMovesToNextBlock {
     ensures:
         SaveBuffer(block: session.block, content: session.buffer)
         BeginEditing(participant: session.participant, block: target, at: 0)
+}
+
+------------------------------------------------------------
+-- Rules: moving, folding and focusing
+------------------------------------------------------------
+
+-- Moving swaps a block with the sibling on the other side. The subtree goes
+-- with it, because a block that overtook its own children would leave them
+-- describing something that is no longer above them.
+rule MoveBlockAmongSiblings {
+    when: MoveBlock(block, up)
+
+    let target = if up: previous_sibling(block) else: next_sibling(block)
+
+    requires: exists target
+
+    ensures: swap_position(block, target)
+}
+
+rule RefuseMoveAtTheEdge {
+    when: MoveBlock(block, up)
+
+    let target = if up: previous_sibling(block) else: next_sibling(block)
+
+    requires: not exists target
+
+    ensures: StructuralRefusal.created(block: block, reason: nothing_to_merge)
+}
+
+-- @invariant FoldingIsNotAChange made operational: this rule ensures a FoldState
+-- and nothing else. No Operation, no Revision, no entry in the log.
+rule ParticipantFoldsBlock {
+    when: ToggleFold(participant, block)
+
+    requires: block.children.count > 0
+
+    ensures: FoldState.created(
+        participant: participant,
+        block: block,
+        folded: not folded_for(participant, block)
+    )
+}
+
+rule ParticipantFocusesOnBlock {
+    when: FocusOutline(participant, block)
+
+    ensures: OutlineView.created(participant: participant, page: block.page, root: block)
+}
+
+rule ParticipantLeavesFocus {
+    when: LeaveFocus(participant)
+
+    requires: view.root != null
+
+    ensures: view.root = view.root.parent
 }
 
 ------------------------------------------------------------

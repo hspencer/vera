@@ -12,12 +12,14 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { VeraGraph, checkInvariants } from '@vera/core';
 import type { Change, ContributionChannel, OriginEvidence, ParticipantId } from '@vera/core';
 import {
+  foldedOnPage,
   loadGraph,
   mediaByHash,
   mediaReferences,
   openStore,
   recordOperation,
   saveParticipant,
+  setFold,
   type Store,
 } from '@vera/store';
 import { HASH, objectPath } from '@vera/store/objects';
@@ -225,6 +227,38 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       return;
     }
 
+    // Plegar no es un cambio del grafo, así que no pasa por /operations: no
+    // genera operación ni revisión, y por eso tiene su propia ruta.
+    if (request.method === 'POST' && path === '/folds') {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { participant?: unknown; block?: unknown; folded?: unknown };
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+
+        const block = typeof body.block === 'string' ? body.block : '';
+        if (graph.block(block) === undefined) {
+          send(response, 404, { error: 'no such block' });
+          return;
+        }
+        // @invariant OnlyParentsFold: un bloque sin hijos no tiene qué plegar.
+        if (graph.childrenOf(block).length === 0) {
+          send(response, 422, { error: 'a block with no children has nothing to fold' });
+          return;
+        }
+
+        const who = typeof body.participant === 'string' ? body.participant : owner.id;
+        setFold(store, who, block, body.folded === true);
+        send(response, 200, { block, folded: body.folded === true });
+      });
+      return;
+    }
+
     if (request.method !== 'GET') {
       send(response, 405, { error: 'method not allowed' });
       return;
@@ -306,6 +340,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 mediaType: entry.mediaType,
               }));
           })(),
+          // @invariant FoldingIsNotAChange: qué tiene plegado ESTE participante.
+          // No sale del registro de operaciones porque nunca entró en él.
+          folded: foldedOnPage(store, participant, page.id),
           // @invariant ReferenceResolvesToItsBlock. Las referencias que esta
           // página nombra viajan resueltas: quién es el bloque, en qué página
           // vive y qué dice. Sin esto el cliente tendría que pedir una por una

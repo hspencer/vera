@@ -310,6 +310,68 @@ input {
   padding: 0.05rem 0;
 }
 
+/* El control de plegado. Está siempre en la columna —vacío en las hojas— para
+   que las viñetas queden alineadas hagan lo que hagan sus vecinos. */
+.fold {
+  flex: none;
+  width: 1rem;
+  font-size: 0.62rem;
+  line-height: 1.6;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: center;
+}
+
+.fold.empty {
+  cursor: default;
+}
+
+.fold:hover:not(.empty) {
+  color: var(--accent);
+}
+
+/* Un bloque plegado esconde un subárbol, y su viñeta lo dice con un anillo:
+   si no, un padre cerrado sería indistinguible de una hoja. */
+.bullet.folded {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-dim) 40%, transparent);
+}
+
+/* La barra del enfoque. Dice en qué está enraizada la vista y cómo salir. */
+.focused {
+  display: flex;
+  gap: 0.8rem;
+  align-items: baseline;
+  justify-content: space-between;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.4rem 0.7rem;
+  margin-bottom: 0.9rem;
+}
+
+.focused > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focused-out {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 /* El bullet es el asa del bloque: abre sus acciones. Es un `button` para que
    el teclado llegue a él, pero no debe parecer uno. */
 .bullet {
