@@ -2,6 +2,15 @@
 
 **Vera** — _versionable, editable, replicable y auditable_.
 
+> 🌐 **Instalable desde la Web** — PWA, sin tienda ni permiso de plataforma.
+>
+> ✊ **Soberanía digital** — _Tu memoria. Tu máquina. Tus reglas._
+
+No son sólo lemas. Vera aspira a que el corpus canónico viva bajo el control de
+su propietario, pueda exportarse y respaldarse en formatos migrables, no dependa
+de una tienda ni de un proveedor obligatorio y conserve visible quién hizo cada
+cambio —persona o agente— y con qué autoridad.
+
 Vera es una memoria personal soberana: un corpus versionado y distribuido,
 habitado por personas y agentes, con procedencia explícita y publicación
 selectiva. Reúne en un mismo grafo el PKM cotidiano, la investigación, los
@@ -127,7 +136,14 @@ Implementadas en parte, con lo que falta declarado en la propia spec:
 Sin implementación:
 
 - [`controlled-ontology.allium`](specs/controlled-ontology.allium) — tipos
-  componibles y curaduría semántica.
+  componibles y curaduría semántica. Distingue qué clase de cosa es algo de qué
+  trata, guarda las relaciones en una sola dirección y deriva sus inversas, y
+  gobierna cómo se funden dos conceptos que resultaron ser uno sin reescribir el
+  texto de nadie a sus espaldas.
+- [`special-pages.allium`](specs/special-pages.allium) — Vera descrita dentro de
+  Vera: las páginas que gobiernan su ontología, su presentación y las
+  instrucciones de sus agentes. Un agente puede escribir en cualquier página
+  menos en una de estas, donde sus cambios llegan como propuestas.
 - [`bibliographic-integration.allium`](specs/bibliographic-integration.allium) —
   agregación unidireccional desde Zotero.
 - [`personal-site-projection.allium`](specs/personal-site-projection.allium) —

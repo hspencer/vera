@@ -30,6 +30,9 @@ enum VocabularyStatus { proposed | approved | deprecated }
 -- lleva décadas resolviendo esto y con el que conviene poder hablar.
 enum ConceptRelationKind { broader | related | exact_match | close_match }
 
+-- Una migración se propone, se mira y sólo entonces corre.
+enum MigrationStatus { previewed | applied | discarded }
+
 ------------------------------------------------------------
 -- Entities and Variants
 ------------------------------------------------------------
@@ -111,6 +114,34 @@ entity RelationAssertion {
     to: core/Page
     status: AssignmentStatus
     asserted_by: core/Participant
+}
+
+-- Una reescritura de citas, mirada antes de correr.
+--
+-- Existe como entidad y no como un botón porque hay un momento entre proponerla
+-- y aplicarla en el que alguien tiene que poder verla: qué cambia, dónde y
+-- cuánto. Ese momento es la diferencia entre una migración y un accidente.
+entity CitationMigration {
+    ontology: Ontology
+    -- Qué se deja de escribir y qué se escribe en su lugar.
+    from_label: String
+    to_label: String
+    -- Los bloques que cambiarían y cómo quedarían, calculados antes de tocar
+    -- nada. Es lo que se enseña.
+    affected: Set<AffectedCitation>
+    status: MigrationStatus
+    proposed_by: core/Participant
+    applied_by: core/Participant?
+    applied_at: Timestamp?
+}
+
+entity AffectedCitation {
+    migration: CitationMigration
+    block: core/Block
+    -- El texto tal como está y tal como quedaría, entero: se compara lo que hay
+    -- con lo que habría, no un resumen de la diferencia.
+    current: String
+    rewritten: String
 }
 
 entity PropertyDefinition {
@@ -259,6 +290,108 @@ rule RelateConcepts {
     ensures: ConceptRelation.created(from: from, to: to, kind: kind)
 }
 
+-- Fusionar dos conceptos que resultaron ser uno.
+--
+-- Pasa constantemente y no es un descuido: uno escribe `lang` un martes y
+-- `language` un jueves, y ninguno de los dos estaba mal cuando se escribió. El
+-- vocabulario se descubre usándolo.
+--
+-- La fusión es un acto de vocabulario y ocurre entera y al instante: el nombre
+-- del absorbido pasa a ser un alias del que queda, así que todo lo que lo
+-- nombraba —consultas, asignaciones, relaciones— apunta al mismo sitio desde ya.
+-- Nada del texto se toca aquí. Reescribir las citas es otra cosa, viene después
+-- y se pide aparte: ver rule MigrateCitations.
+rule MergeConcepts {
+    when: MergeConcept(participant, ontology, absorbed, surviving)
+
+    requires: absorbed.ontology = ontology
+    requires: surviving.ontology = ontology
+    requires: absorbed != surviving
+    requires: participant.kind = human
+
+    ensures:
+        -- El nombre del absorbido sobrevive como alias. Es lo que hace que una
+        -- cita escrita hace dos años siga resolviendo sin haberla tocado.
+        surviving.alt_labels = surviving.alt_labels + absorbed.preferred_label + absorbed.alt_labels
+        absorbed.status = deprecated
+        for assignment in TypeAssignments where concept = absorbed:
+            assignment.concept = surviving
+        for relation in ConceptRelations where from = absorbed:
+            relation.from = surviving
+        for relation in ConceptRelations where to = absorbed:
+            relation.to = surviving
+
+    @invariant AMergeIsReversibleUntilTheTextMoves
+        -- Fusionar no destruye el concepto absorbido: lo deprecia y le conserva
+        -- sus nombres. Deshacerlo es devolverle el estado y separar los alias,
+        -- y mientras nadie haya reescrito una cita eso basta.
+
+    @invariant WhatWasWrittenStaysWritten
+        -- Fusionar no cambia una palabra del corpus. Lo que un participante
+        -- escribió sigue diciendo lo que escribió, y lo que cambia es a qué
+        -- resuelve — que es una afirmación sobre el vocabulario, no sobre el
+        -- texto de nadie.
+}
+
+-- Reescribir las citas para que el texto diga lo que el vocabulario ya sabe.
+--
+-- Un acto aparte, posterior y opcional. Vera funciona sin él: la fusión ya hizo
+-- que todo resuelva. Esto existe porque un corpus donde la mitad de los enlaces
+-- dicen `language` y la otra mitad `lang` es un corpus que se lee mal aunque
+-- consulte bien, y porque quien escribe merece que su texto se parezca a lo que
+-- ha decidido.
+rule MigrateCitations {
+    when: MigrateCitationsTo(participant, migration)
+
+    requires: participant.kind = human
+    requires: migration.status = previewed
+
+    ensures:
+        for citation in migration.affected:
+            core/ParticipantSubmits(
+                participant: participant,
+                graph: migration.ontology.graph,
+                origin_id: migration.id + citation.block,
+                change: edit_block(citation.block, citation.rewritten),
+                channel: typed_text
+            )
+        migration.status = applied
+        migration.applied_by = participant
+        migration.applied_at = now
+
+    @invariant NothingIsRewrittenUnseen
+        -- Una migración se mira antes de correr: qué títulos cambian, en qué
+        -- bloques y cuántos. Renombrar una palabra en seiscientas páginas sin
+        -- que nadie las haya visto es indistinguible de que alguien haya escrito
+        -- algo que nunca escribió.
+
+    @invariant AMigrationIsOrdinaryOperations
+        -- Cada bloque que cambia lo hace por el mismo `edit_block` que enviaría
+        -- una persona escribiendo. Queda en el registro, con su secuencia y su
+        -- procedencia, y se puede leer, auditar y deshacer uno por uno. Una vía
+        -- rápida que escribiera en la base sin pasar por ahí dejaría un corpus
+        -- con cambios que su propia historia no explica.
+
+    @invariant MigratingLeavesTheHandAlone
+        -- Un bloque que una migración reescribe conserva su autor y su fecha.
+        -- Migrar no es escribir, igual que archivar no es escribir: quien corrió
+        -- la migración cambió a qué apunta una cita, no dijo lo que el bloque
+        -- dice.
+        --
+        -- Es la misma regla que agent/MovingLeavesTheHandAlone y se declara por
+        -- la misma razón: «aquí la mano no cambia» es exactamente la clase de
+        -- cosa que se implementa mal por omisión. Sin ella, migrar una palabra
+        -- refirmaría seiscientos bloques a nombre de quien pulsó el botón, y en
+        -- un corpus de varias manos eso borra justo lo que no se puede perder.
+        --
+        -- Qué migración tocó un bloque queda dicho aparte, de modo que «quién lo
+        -- escribió» y «quién lo migró» sean dos preguntas con dos respuestas.
+
+    @invariant AMigrationIsIdempotent
+        -- Correrla dos veces no hace nada la segunda. Se interrumpe a mitad sin
+        -- dejar el corpus a medio migrar, y se reanuda sin repetir lo hecho.
+}
+
 rule CuratorConfirmsSemanticType {
     when: ConfirmTypeAssignment(participant, assignment)
 
@@ -332,6 +465,8 @@ surface OntologyCuration {
         SuggestBlockType(participant, ontology, semantic_type, block, rationale)
         AssertRelated(participant, ontology, definition, from, to)
         RelateConcept(participant, ontology, from, to, kind)
+        MergeConcept(participant, ontology, absorbed, surviving)
+        MigrateCitationsTo(participant, migration)
         ConfirmTypeAssignment(participant, assignment) when assignment.ontology = ontology
         RejectTypeAssignment(participant, assignment) when assignment.ontology = ontology
         CorrectTypeAssignment(participant, assignment, status) when assignment.ontology = ontology
