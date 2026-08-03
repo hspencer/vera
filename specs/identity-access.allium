@@ -12,6 +12,10 @@
 -- Dependencies: Participant, Graph and Membership are governed by core.allium
 
 use "./core.allium" as core
+-- The credential is one thing, not two. A person authenticates with the same
+-- AccessToken an agent does, so this spec names that entity rather than growing a
+-- parallel one for people.
+use "./agent-participation.allium" as agent
 
 ------------------------------------------------------------
 -- Given
@@ -24,6 +28,50 @@ given {
 ------------------------------------------------------------
 -- Contracts
 ------------------------------------------------------------
+
+-- How a person proves they are the person.
+--
+-- The answer is the one already given for agents: a credential. Not because it
+-- is the most comfortable, but because any other answer would give Vera two
+-- notions of who is writing — one for people and one for machines — and the
+-- whole point of the authorship boundary is that there is exactly one.
+--
+-- What a credential does not decide is the channel. That comes from what kind of
+-- participant it names: agent-participation.allium already holds that an agent's
+-- operations carry `agent_generation` and that no human operation ever claims it.
+-- A person's credential therefore proves who, and changes nothing about how their
+-- writing is recorded.
+--
+-- The cost of this contract is a real one and is stated rather than hidden: with
+-- no unauthenticated way in, a lost credential locks the owner out of their own
+-- memory. What answers that is the machine itself — see
+-- @invariant TheMachineIsTheLastResort.
+contract HumanAuthentication {
+    authenticate: (secret: String) -> core/Participant
+
+    @invariant NobodyIsAssumed
+        -- A submission with no credential participates as nobody. Vera does not
+        -- guess that whoever reached it must be the owner: on a network of any
+        -- size that guess hands the graph to whoever else is on it, and a
+        -- sovereign memory that anyone can write is not sovereign.
+
+    @invariant IdentityComesFromTheCredential
+        -- Who is writing is decided by the credential, never by what the
+        -- submission claims about itself. This already holds for agents and it
+        -- holds for people for the same reason.
+
+    @invariant TheChannelComesFromTheParticipant
+        -- A credential proves who, not how. What channel an operation carries
+        -- follows from the kind of participant the credential names, so a person
+        -- writing through a credential is still writing, not generating.
+
+    @invariant TheMachineIsTheLastResort
+        -- Whoever holds the machine can issue themselves a credential, without
+        -- one, from the machine. This is the root of trust of a sovereign
+        -- instance: the corpus lives on a disk its owner physically holds, and no
+        -- credential can be allowed to stand between them and it. It is also the
+        -- reason the instance must never be reachable in that way from a network.
+}
 
 contract ParticipantAdministration {
     invite: (participant: core/Participant) -> core/Membership
@@ -75,6 +123,38 @@ rule OwnerRemovesParticipant {
     requires: membership.status = active
 
     ensures: membership.status = suspended
+}
+
+-- Nobody by default. A submission that arrives without a credential is refused,
+-- whatever it claims and wherever it came from.
+rule UnauthenticatedSubmissionIsRefused {
+    when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    requires: not exists AuthenticatedAs(participant)
+
+    refuses: "who is writing is decided by a credential; without one there is nobody to attribute this to"
+}
+
+-- The escape hatch, and its shape.
+--
+-- Issuing from the machine is not a weaker path that happens to exist: it is the
+-- one place where holding the disk is the proof. It is deliberately not reachable
+-- over any network, so the instance's exposure and its recovery cannot be
+-- confused with one another.
+rule TheOwnerIssuesFromTheMachine {
+    when: IssueFromMachine(label, scopes)
+
+    requires: is_local_to_the_instance
+    requires: instance.owner != null
+
+    ensures: agent/AccessToken.created(
+        graph: instance.graph,
+        participant: instance.owner,
+        label: label,
+        scopes: scopes,
+        status: active,
+        issued_by: instance.owner
+    )
 }
 
 ------------------------------------------------------------
@@ -132,8 +212,11 @@ surface InstanceParticipantAdministration {
 -- Open Questions
 ------------------------------------------------------------
 
-open question "How does Herbert authenticate to the first Vera instance?"
+-- Answered: with a credential, the same mechanism agents use. See
+-- contract HumanAuthentication. What remains open about it is below.
 open question "How does Herbert authorize, identify and revoke each agent?"
+open question "Where does a person's credential live between visits — in the browser, in a password manager, in the machine's keyring — and what is the cost of each when the browser is not the owner's?"
+open question "Does a person's credential expire, given that an agent's does not, and does a memory one is locked out of monthly still feel like one's own?"
 open question "Are collaborator permissions role-based, capability-based or individually granted per operation and resource?"
 open question "When do sessions expire, and what happens to pending agent operations after revocation?"
 open question "How does Herbert recover ownership if every authentication credential is lost?"

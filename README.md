@@ -115,7 +115,14 @@ Implementadas en parte, con lo que falta declarado en la propia spec:
   `properties_fts`, declarado en `schema/schema.sql` y en las obligaciones de
   prueba: hoy la búsqueda cubre títulos y contenido, no valores de propiedad.
 - [`identity-access.allium`](specs/identity-access.allium) — instancias,
-  credenciales y alcance. Los agentes ya se autentican; las personas no.
+  credenciales y alcance. Los agentes ya se autentican; las personas todavía no,
+  pero ya está dicho cómo lo harán: con la misma credencial, porque dos nociones
+  de quién escribe serían una de más.
+- [`daily-log.allium`](specs/daily-log.allium) — los días de la bitácora: dónde
+  aterriza lo que llega antes de tener lugar, y qué sigue diciendo lo inscrito
+  sobre el día del que salió. Los días existen en el corpus y en la proyección
+  desde el principio; falta que la interfaz sepa de ellos y que una inscripción
+  nombre su día.
 
 Sin implementación:
 

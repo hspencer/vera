@@ -1,0 +1,269 @@
+-- allium: 3
+-- daily-log.allium
+
+-- Scope: The days of the bitácora — where what happens arrives before it has a
+--   place, and what an inscription keeps saying about the day it came from
+-- Includes: What makes a page a day, how a day comes into being, the day as the
+--   landing place of what arrives without a stated destination, the appellation
+--   of day that inscribed content carries, and where a day lands in the Markdown
+--   mirror
+-- Excludes:
+--   - Calendars, time zones, and how a clock decides which day is today
+--   - What a librarian judges worth inscribing, and how well it does it
+--     (see agent-participation.allium)
+--   - Editing and moving blocks (see block-editing.allium)
+--   - The cascade by which spoken words become content (see voice-capture.allium)
+-- Dependencies: Graph, Page, Block and Participant are governed by core.allium;
+--   the hand behind an inscription by agent-participation.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- The day is testimony, not a tray.
+--
+-- Things arrive before they have a place: a voice note, a thought with nowhere to
+-- go yet, a librarian's account of what it did. They land on the day, and later
+-- some of them are inscribed where they belong — in a page about the project, the
+-- person, the idea. What this contract holds is that inscribing takes nothing
+-- away. The day keeps what it received, exactly as it received it, because a day
+-- that empties as it is filed stops being a record of what happened and becomes a
+-- queue that happens to be dated.
+--
+-- The cost of the other design is not abstract: what a day held is the only
+-- account of the order in which things occurred to someone, and it cannot be
+-- reconstructed from the pages it fed.
+contract TheDayIsTestimony {
+    open_day: (graph: core/Graph, date: String) -> DailyLog
+    inscribe: (participant: core/Participant, source: core/Block, into: core/Page) -> core/Block
+
+    @invariant ADayIsNamedByItsDate
+        -- A day's title is its date and nothing else. The title is not a label on
+        -- the day, it is the day's identity: two pages for one date would split
+        -- what happened in it, and a day renamed would move a testimony to a date
+        -- on which it did not happen.
+
+    @invariant TheDayKeepsWhatItReceived
+        -- Inscribing content elsewhere never removes it from the day it arrived
+        -- on. What was written on a day stays written on that day.
+
+    @invariant InscribedContentNamesItsDay
+        -- A block inscribed from a day says which day it came from. Without this
+        -- the bitácora fills with statements whose moment is unrecoverable, and
+        -- the day that fed them becomes an orphan nobody cites.
+
+    @invariant ADayExistsBecauseSomethingArrived
+        -- Days are not laid out in advance. A date with nothing on it has no
+        -- page, because an empty day is not a fact about a life — it is a fact
+        -- about a calendar, and Vera does not keep calendars.
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- A day of the bitácora.
+--
+-- Not a different kind of page: a page whose title is a date. Everything true of
+-- a page is true of a day — its blocks, its revisions, its visibility, its links.
+-- Modelling it as a separate thing would give the corpus two kinds of container
+-- to reason about where it has one.
+entity DailyLog {
+    graph: core/Graph
+    page: core/Page
+
+    -- The date, written as the calendar writes it: `2026-08-03`. One spelling, so
+    -- that ordering days is ordering their titles and no code has to guess a
+    -- format. The Markdown mirror spells the same date `2026_08_03` in a filename
+    -- because a colon-free, slash-free name is what a filesystem accepts; that is
+    -- a fact about filenames, not a second format for dates.
+    date: String
+}
+
+-- What an inscribed block says about the day it came from.
+--
+-- A separate thing from the block, for the same reason SpokenOrigin is separate
+-- from the block it marks in voice-capture.allium: the content will be rewritten,
+-- split and moved, and the day it came from will not change.
+entity InscriptionOrigin {
+    block: core/Block
+    day: DailyLog
+
+    -- The block on the day that this one was inscribed from, while it is still
+    -- identifiable. Optional because the day's block may later be split or merged,
+    -- and losing the exact source must not cost the block its day.
+    source: core/Block?
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- A day opens because something arrived on it, and not before. The first thing
+-- written on a date brings its page into being; nothing schedules it.
+rule TheDayOpensWhenSomethingArrives {
+    when: WriteOnDay(participant, graph, date, content)
+
+    let membership = core/Membership{graph: graph, participant: participant}
+    let existing = DailyLog{graph: graph, date: date}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: is_date(date)
+
+    ensures:
+        if not exists existing:
+            let page = core/Page.created(
+                graph: graph,
+                title: date,
+                visibility: private
+            )
+            DailyLog.created(graph: graph, page: page, date: date)
+        core/Block.created(
+            page: DailyLog{graph: graph, date: date}.page,
+            parent: null,
+            content: content
+        )
+}
+
+-- Inscribing: taking what a day holds and writing it where it belongs.
+--
+-- The block that is born names the day, and the day's own block is not touched.
+-- Both halves matter: the first is what makes the bitácora answerable about when
+-- something was thought, the second is what keeps the day a testimony.
+rule ParticipantInscribesFromADay {
+    when: InscribeFromDay(participant, source, into, content)
+
+    let membership = core/Membership{graph: into.graph, participant: participant}
+    let day = DailyLog{page: source.page}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: exists day
+    -- A page cannot be inscribed into itself: that is editing the day, and
+    -- editing a day is not inscribing.
+    requires: into != source.page
+
+    ensures:
+        let block = core/Block.created(
+            page: into,
+            parent: null,
+            content: content
+        )
+        InscriptionOrigin.created(block: block, day: day, source: source)
+}
+
+-- What the previous rule does not do, said out loud.
+--
+-- Stated as a rule rather than left to silence for the same reason as
+-- agent/MovingLeavesTheHandAlone: "the day does not change here" is exactly the
+-- kind of guarantee that gets implemented wrong by omission, and the wrong
+-- implementation — a librarian that tidies the day as it files — looks like
+-- diligence right up until the record is gone.
+rule InscribingLeavesTheDayAlone {
+    when: InscribeFromDay(participant, source, into, content)
+
+    ensures:
+        source.content = source.content
+        source.page = source.page
+}
+
+-- A day cannot be renamed. Renaming it would say that what happened on the third
+-- happened on the fourth, which is not a correction anyone is entitled to make.
+rule ADayKeepsItsDate {
+    when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    let day = DailyLog{page: change.page}
+
+    requires: change.kind = rename_page
+    requires: exists day
+
+    refuses: "a day is named by its date; renaming it would move what happened to another day"
+}
+
+-- Splitting an inscribed block leaves both halves naming the same day, exactly as
+-- splitting spoken content leaves both halves spoken.
+rule TheDayFollowsASplit {
+    when: block/BlockSplit(from, into)
+
+    let origin = InscriptionOrigin{block: from}
+
+    requires: exists origin
+
+    ensures: InscriptionOrigin.created(block: into, day: origin.day, source: origin.source)
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant OneDayPerDate {
+    for day in DailyLogs:
+        for other in DailyLogs:
+            other.graph = day.graph and other.date = day.date implies other = day
+}
+
+invariant ADayIsItsTitle {
+    for day in DailyLogs:
+        day.page.title = day.date
+}
+
+-- The converse, which is what keeps the corpus from growing a second, silent kind
+-- of day: a page titled like a date is a day, whoever made it and however.
+invariant EveryDatedPageIsADay {
+    for page in core/Pages:
+        is_date(page.title) implies exists DailyLog{page: page}
+}
+
+invariant NoInscriptionWithoutItsDay {
+    for origin in InscriptionOrigins:
+        exists origin.day
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface DailyLogView {
+    facing writer: core/Participant
+    context day: DailyLog
+
+    exposes:
+        day.date
+        day.page
+
+    provides:
+        WriteOnDay(writer, day.graph, day.date, content)
+        InscribeFromDay(writer, source, into, content)
+
+    contracts:
+        fulfils TheDayIsTestimony
+
+    @guarantee TodayIsAlwaysOneMoveAway
+        -- Whatever is on screen, the day in progress can be reached without
+        -- naming it. What arrives has to land somewhere immediately or it does
+        -- not land at all, and a capture that costs a search is a capture that
+        -- does not happen.
+
+    @guarantee TheDayMirrorsUnderItsOwnRoof
+        -- In the Markdown mirror a day is written under `journals/`, named for its
+        -- date, and everything else under `pages/`. This is what makes the mirror
+        -- legible to a reader who never heard of Vera, and what lets a corpus that
+        -- came from Logseq go back the way it came.
+
+    @guarantee WhatTheDayFedIsVisibleFromIt
+        -- From a day one can see what was inscribed out of it. A testimony that
+        -- cannot show what it produced invites the belief that nothing was done
+        -- with it.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Which clock decides what today is, when the writer and the instance are in different time zones — and does a note written at 01:00 belong to the day that just began or the one that just ended?"
+open question "Should a day show, block by block, what has already been inscribed and what is still waiting, or is a day that tracks its own filing no longer a testimony but a queue?"
+open question "Does a day ever close — a point after which what happened on it can no longer be added to — or can a day be written to for ever?"
+open question "When a librarian inscribes from a day, is the day itself entitled to a record of what the librarian did with it, beyond the account the librarian writes there by hand?"

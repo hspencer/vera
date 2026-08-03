@@ -16,6 +16,13 @@
 --   recordings, spoken_origins                                   voice-capture.allium
 --   access_tokens, block_authorship                              agent-participation.allium
 --
+-- Los días de la bitácora (daily-log.allium) no tienen tabla propia: un día es
+-- una página cuyo título es su fecha, y darle una tabla partiría en dos lo que el
+-- corpus tiene como uno solo. Lo que sí falta es `inscription_origins`, el
+-- equivalente de `spoken_origins` para lo que se inscribe desde un día: hoy nada
+-- guarda de qué día salió un bloque, y el @invariant InscribedContentNamesItsDay
+-- no tiene dónde apoyarse.
+--
 -- Falta `properties_fts`. search-index.allium declara `property_value` como campo
 -- buscable y su @guarantee OneSearchReachesEverySearchableField exige que una sola
 -- búsqueda cubra títulos, contenido y valores de propiedad. Hoy cubre los dos
