@@ -1,0 +1,212 @@
+// Qué hace cada tecla estructural del outliner.
+//
+// Aquí no se toca el DOM ni se envía nada: entran el texto, el cursor y la
+// vecindad del bloque, y sale la decisión. El outliner la ejecuta. Así el
+// comportamiento que decide si se pierde texto o identidad se prueba entero
+// sin un navegador.
+//
+// Traducido de ~/Sites/logseq/specs/block-structure.allium al vocabulario de
+// Vera y a lo que su dominio ya sabe hacer.
+
+/** Lo que hace falta saber del entorno de un bloque para resolver una tecla. */
+export interface Neighbourhood {
+  /** El bloque que se está editando. */
+  block: string;
+  parent: string | null;
+  /** Su lugar entre sus hermanos. */
+  index: number;
+  hasChildren: boolean;
+  /** El hermano inmediatamente anterior, si lo hay. */
+  previousSibling: string | null;
+  /** El bloque anterior en el orden en que se leen, sea hermano o no. */
+  previousVisible: { block: string; content: string; hasChildren: boolean } | null;
+  /** El siguiente en el orden en que se leen. */
+  nextVisible: string | null;
+  /** El padre del padre, para desindentar. */
+  grandparent: string | null;
+  /** Dónde queda el padre entre SUS hermanos, para colocar lo desindentado. */
+  parentIndex: number;
+}
+
+export type KeyOutcome =
+  | { kind: 'ninguno' }
+  /** Partir el bloque: éste conserva `head` y su identidad; nace otro con `tail`. */
+  | { kind: 'partir'; head: string; tail: string; parent: string | null; position: number }
+  /** Un bloque vacío por encima; el editado no se toca. */
+  | { kind: 'insertar-encima'; parent: string | null; position: number }
+  | { kind: 'indentar'; parent: string; position: number }
+  | { kind: 'desindentar'; parent: string | null; position: number }
+  /** Fusionar con el anterior: su texto absorbe éste, y éste desaparece. */
+  | { kind: 'fusionar'; into: string; content: string; caret: number }
+  /** El de arriba estaba vacío: desaparece él y no éste. */
+  | { kind: 'quitar-encima'; target: string }
+  | { kind: 'mover-foco'; block: string; at: 'inicio' | 'final' }
+  | { kind: 'rechazo'; reason: string };
+
+/**
+ * Enter parte el bloque por el cursor.
+ *
+ * Un bloque con hijos gana un primer hijo, porque ahí es donde va la línea
+ * siguiente cuando se escribe dentro de una lista. Cualquier otro gana un
+ * hermano detrás.
+ */
+export function resolveEnter(
+  buffer: string,
+  selectionStart: number,
+  selectionEnd: number,
+  near: Neighbourhood,
+): KeyOutcome {
+  const head = buffer.slice(0, selectionStart);
+  const tail = buffer.slice(selectionEnd);
+
+  // Con el cursor al principio y texto detrás, se empuja un bloque vacío encima
+  // en vez de partir: así el texto conserva su identidad, sus hijos y sus
+  // referencias, que es justo lo que una partición le quitaría.
+  if (head === '' && tail !== '') {
+    return { kind: 'insertar-encima', parent: near.parent, position: near.index };
+  }
+
+  return near.hasChildren
+    ? { kind: 'partir', head, tail, parent: near.block, position: 0 }
+    : { kind: 'partir', head, tail, parent: near.parent, position: near.index + 1 };
+}
+
+/** Tab hace del bloque un hijo del hermano de arriba. Sin hermano arriba, nada. */
+export function resolveTab(forward: boolean, near: Neighbourhood): KeyOutcome {
+  if (forward) {
+    if (near.previousSibling === null) {
+      return { kind: 'rechazo', reason: 'no hay un hermano encima al que entrar' };
+    }
+    // Al final de los hijos del hermano: es donde cae lo que se acaba de indentar.
+    return { kind: 'indentar', parent: near.previousSibling, position: Number.MAX_SAFE_INTEGER };
+  }
+
+  if (near.parent === null) {
+    return { kind: 'rechazo', reason: 'el bloque ya está en el primer nivel' };
+  }
+  // Justo detrás de su antiguo padre, que es donde se lo espera al salir.
+  return { kind: 'desindentar', parent: near.grandparent, position: near.parentIndex + 1 };
+}
+
+/**
+ * Backspace con el cursor en cero deja de editar texto y pasa a editar
+ * estructura. Las negativas van primero: cada una protege algo que la fusión
+ * destruiría o dejaría ambiguo.
+ */
+export function resolveBackspaceAtStart(buffer: string, near: Neighbourhood): KeyOutcome {
+  const target = near.previousVisible;
+
+  if (target === null) {
+    // Sin nada encima no hay dónde fusionar. Si el bloque está vacío tampoco se
+    // quita aquí: para eso está el borrado explícito, que sí puede decir por qué.
+    return buffer === ''
+      ? { kind: 'ninguno' }
+      : { kind: 'rechazo', reason: 'no hay ningún bloque encima con el que fusionar' };
+  }
+
+  // Fusionar dos bloques que ambos tienen hijos obligaría a decidir de quién son
+  // los hijos primero. En vez de adivinar, se rechaza.
+  if (near.hasChildren && target.hasChildren) {
+    return { kind: 'rechazo', reason: 'ambos bloques tienen hijos y el orden sería ambiguo' };
+  }
+
+  // Cuando el de arriba está vacío, es él quien desaparece. El que se edita
+  // conserva su identidad, y con ella sus referencias y sus hijos.
+  if (target.content === '' && !target.hasChildren && target.block !== near.parent) {
+    return { kind: 'quitar-encima', target: target.block };
+  }
+
+  if (target.content === '') {
+    return { kind: 'rechazo', reason: 'el bloque de encima no se puede quitar' };
+  }
+
+  return {
+    kind: 'fusionar',
+    into: target.block,
+    content: target.content + buffer,
+    caret: target.content.length,
+  };
+}
+
+/** ¿El cursor está en la primera línea del texto? Decide si la flecha sale del bloque. */
+export function onFirstLine(buffer: string, cursor: number): boolean {
+  return !buffer.slice(0, cursor).includes('\n');
+}
+
+export function onLastLine(buffer: string, cursor: number): boolean {
+  return !buffer.slice(cursor).includes('\n');
+}
+
+export function resolveArrow(
+  up: boolean,
+  buffer: string,
+  cursor: number,
+  near: Neighbourhood,
+): KeyOutcome {
+  if (up) {
+    if (!onFirstLine(buffer, cursor) || near.previousVisible === null) return { kind: 'ninguno' };
+    return { kind: 'mover-foco', block: near.previousVisible.block, at: 'final' };
+  }
+  if (!onLastLine(buffer, cursor) || near.nextVisible === null) return { kind: 'ninguno' };
+  return { kind: 'mover-foco', block: near.nextVisible, at: 'inicio' };
+}
+
+// ---------------------------------------------------------------------------
+// Autopar
+// ---------------------------------------------------------------------------
+
+const PAIRS: Record<string, string> = {
+  '(': ')',
+  '[': ']',
+  '{': '}',
+  '"': '"',
+  '`': '`',
+};
+
+const CLOSERS = new Set(Object.values(PAIRS));
+
+export interface TypedText {
+  buffer: string;
+  cursor: number;
+}
+
+/**
+ * Qué deja escribir un delimitador.
+ *
+ * Con texto seleccionado lo envuelve, que es cómo una palabra marcada se vuelve
+ * código o cita. Con el cursor suelto trae su pareja y se queda en medio. Y si
+ * el cierre ya está bajo el cursor, lo salta: un par nunca se vuelve tres.
+ */
+export function resolveDelimiter(
+  character: string,
+  buffer: string,
+  selectionStart: number,
+  selectionEnd: number,
+): TypedText | null {
+  const closing = PAIRS[character];
+
+  if (selectionStart !== selectionEnd) {
+    if (closing === undefined) return null;
+    const selected = buffer.slice(selectionStart, selectionEnd);
+    return {
+      buffer:
+        buffer.slice(0, selectionStart) +
+        character +
+        selected +
+        closing +
+        buffer.slice(selectionEnd),
+      cursor: selectionEnd + 1,
+    };
+  }
+
+  if (CLOSERS.has(character) && buffer[selectionStart] === character) {
+    return { buffer, cursor: selectionStart + 1 };
+  }
+
+  if (closing === undefined) return null;
+
+  return {
+    buffer: buffer.slice(0, selectionStart) + character + closing + buffer.slice(selectionStart),
+    cursor: selectionStart + 1,
+  };
+}

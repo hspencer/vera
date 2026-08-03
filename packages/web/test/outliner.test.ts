@@ -1,9 +1,12 @@
 // Pruebas de la lógica pura del outliner: no tocan el DOM.
+//
+// La sesión de edición vive ahora en session.ts y se prueba aparte: Escape dejó
+// de descartar, así que los casos que lo fijaban ya no describen nada.
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildTree, editSession } from '../src/outliner.ts';
+import { buildNeighbourhoods, buildTree } from '../src/outliner.ts';
 import type { BlockView } from '../src/api.ts';
 
 const block = (stableId: string, parent: string | null, position: number): BlockView => ({
@@ -45,40 +48,54 @@ describe('buildTree', () => {
   });
 });
 
-describe('editSession', () => {
-  it('guarda al salir si el texto cambió', () => {
-    const session = editSession('original');
-    assert.deepEqual(session.leave('editado'), { action: 'submit', content: 'editado' });
+describe('buildNeighbourhoods', () => {
+  const nodo = (id: string, children: ReturnType<typeof nodo>[] = []) => ({
+    block: { stableId: id, parent: null, position: 0, content: id },
+    children,
   });
 
-  it('no emite operación si el texto no cambió', () => {
-    const session = editSession('original');
-    assert.deepEqual(session.leave('original'), { action: 'restore' });
+  it('encadena el orden de lectura, no el de hermanos', () => {
+    // a, su hijo a1, y luego b. Lo que está «encima» de b es a1, no a.
+    const tree = [nodo('a', [nodo('a1')]), nodo('b')];
+    const near = buildNeighbourhoods(tree as never);
+
+    assert.equal(near.get('b')?.previousVisible?.block, 'a1');
+    assert.equal(near.get('a1')?.previousVisible?.block, 'a');
+    assert.equal(near.get('a')?.previousVisible, null);
+    assert.equal(near.get('a')?.nextVisible, 'a1');
   });
 
-  it('descarta con Escape sin guardar', () => {
-    const session = editSession('original');
-    assert.deepEqual(session.cancel(), { action: 'restore' });
+  it('el hermano anterior se salta a los hijos del medio', () => {
+    const tree = [nodo('a', [nodo('a1')]), nodo('b')];
+    const near = buildNeighbourhoods(tree as never);
+
+    assert.equal(near.get('b')?.previousSibling, 'a', 'a1 no es hermano de b');
+    assert.equal(near.get('a1')?.previousSibling, null);
   });
 
-  // La regresión: descartar retira del DOM el campo enfocado y el navegador
-  // emite un `blur` tardío. Ese `blur` llegaba a guardar lo descartado.
-  it('el blur posterior a un descarte no guarda nada', () => {
-    const session = editSession('original');
-    session.cancel();
-    assert.deepEqual(session.leave('lo que se descartó'), { action: 'ignore' });
+  it('sitúa a cada bloque entre sus hermanos', () => {
+    const tree = [nodo('a'), nodo('b'), nodo('c')];
+    const near = buildNeighbourhoods(tree as never);
+
+    assert.equal(near.get('a')?.index, 0);
+    assert.equal(near.get('c')?.index, 2);
   });
 
-  it('un blur repetido no guarda dos veces', () => {
-    const session = editSession('original');
-    assert.deepEqual(session.leave('editado'), { action: 'submit', content: 'editado' });
-    assert.deepEqual(session.leave('editado'), { action: 'ignore' });
+  it('recuerda al abuelo y dónde está el padre, para desindentar', () => {
+    const tree = [nodo('a'), nodo('b', [nodo('b1', [nodo('b1x')])])];
+    const near = buildNeighbourhoods(tree as never);
+
+    assert.equal(near.get('b1x')?.parent, 'b1');
+    assert.equal(near.get('b1x')?.grandparent, 'b');
+    assert.equal(near.get('b1')?.parentIndex, 1, 'b es el segundo de su nivel');
   });
 
-  it('tras un fallo al guardar, la edición vuelve a poder resolverse', () => {
-    const session = editSession('original');
-    session.leave('editado');
-    session.reopen();
-    assert.deepEqual(session.leave('editado'), { action: 'submit', content: 'editado' });
+  it('sabe quién tiene hijos', () => {
+    const tree = [nodo('a', [nodo('a1')]), nodo('b')];
+    const near = buildNeighbourhoods(tree as never);
+
+    assert.equal(near.get('a')?.hasChildren, true);
+    assert.equal(near.get('b')?.hasChildren, false);
+    assert.equal(near.get('b')?.previousVisible?.hasChildren, false);
   });
 });

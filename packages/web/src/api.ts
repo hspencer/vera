@@ -72,6 +72,9 @@ export type Change =
   | { kind: 'set_page_visibility'; page: string; visibility: 'private' | 'public' }
   | { kind: 'create_block'; page: string; parent: string | null; position: number; content: string }
   | { kind: 'edit_block'; block: string; content: string }
+  // Indentar, desindentar y mudar a los hijos de un bloque que se fusiona son
+  // todos el mismo cambio: el bloque pasa a colgar de otro padre, en un índice.
+  | { kind: 'move_block'; block: string; page: string; parent: string | null; position: number }
   | { kind: 'remove_block'; block: string };
 
 export type SubmitResult =

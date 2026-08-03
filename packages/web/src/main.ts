@@ -88,7 +88,10 @@ function setLayout(layout: WorkspaceLayout): void {
 
 const HISTORY = 50;
 
-async function openPage(id: string): Promise<void> {
+async function openPage(
+  id: string,
+  focus: { block: string; at: number } | null = null,
+): Promise<void> {
   let page;
   try {
     page = await api.page(id);
@@ -115,7 +118,13 @@ async function openPage(id: string): Promise<void> {
     onOpenBlock: (target, block) => {
       void openPage(target).then(() => revealBlock(block));
     },
-  });
+    // Un cambio estructural rehace la página desde el grafo y devuelve el cursor
+    // donde el modelo dice que quedó. Parchear el árbol dibujado en vez de
+    // volver a pedirlo sería mantener una segunda idea de cómo quedó.
+    onReload: (focus) => {
+      if (workspace.activePage !== null) void openPage(workspace.activePage, focus);
+    },
+  }, focus);
 
   drawBreadcrumbs();
   if (!isPhone() && workspace.layout !== 'text_only') void drawGraph();

@@ -14,6 +14,16 @@
 import { api, type BlockView, type PageView } from './api.ts';
 import { renderMarkdown, type RenderOptions } from './markdown.ts';
 import { renderMermaid } from './mermaid.ts';
+import { createSession, type SaveIntent } from './session.ts';
+import {
+  resolveArrow,
+  resolveBackspaceAtStart,
+  resolveDelimiter,
+  resolveEnter,
+  resolveTab,
+  type KeyOutcome,
+  type Neighbourhood,
+} from './keys.ts';
 
 export interface OutlinerCallbacks {
   onNavigate(title: string): void;
@@ -21,6 +31,14 @@ export interface OutlinerCallbacks {
   onChanged(): void;
   /** Seguir una referencia hasta el bloque que nombra. */
   onOpenBlock?(page: string, block: string): void;
+  /**
+   * Vuelve a traer la página y sigue editando donde diga el foco.
+   *
+   * Un cambio estructural mueve bloques que ya estaban dibujados, así que la
+   * vista se rehace desde el grafo en vez de intentar parchearla: el grafo es
+   * quien sabe cómo quedó el árbol.
+   */
+  onReload(focus: { block: string; at: number } | null): void;
 }
 
 /**
@@ -129,46 +147,6 @@ async function copyText(text: string, notify: (message: string) => void): Promis
   } catch {
     notify(`no se pudo copiar. El texto es: ${text}`);
   }
-}
-
-export type LeaveAction =
-  | { action: 'ignore' }
-  | { action: 'restore' }
-  | { action: 'submit'; content: string };
-
-/**
- * Una edición se resuelve una sola vez.
- *
- * Escape descarta y salir del bloque guarda, pero descartar retira del DOM el
- * campo enfocado y el navegador emite entonces un `blur` tardío. Sin este
- * guardián ese `blur` guardaba justamente lo que se acababa de descartar.
- */
-export function editSession(original: string) {
-  let settled = false;
-
-  return {
-    settled: (): boolean => settled,
-
-    /** Salir del bloque: guarda si el texto cambió. */
-    leave(next: string): LeaveAction {
-      if (settled) return { action: 'ignore' };
-      settled = true;
-      if (next === original) return { action: 'restore' };
-      return { action: 'submit', content: next };
-    },
-
-    /** Escape descarta: ninguna salida posterior puede guardar. */
-    cancel(): LeaveAction {
-      if (settled) return { action: 'ignore' };
-      settled = true;
-      return { action: 'restore' };
-    },
-
-    /** Un fallo al guardar devuelve la edición al usuario sin perder su texto. */
-    reopen(): void {
-      settled = false;
-    },
-  };
 }
 
 /**
@@ -290,8 +268,11 @@ export function renderOutliner(
   container: HTMLElement,
   page: PageView,
   callbacks: OutlinerCallbacks,
+  focus: { block: string; at: number } | null = null,
 ): void {
   container.innerHTML = '';
+  /** Dónde quedó dibujado cada bloque, para poder devolverle el cursor. */
+  const editors = new Map<string, { node: Node; body: HTMLElement }>();
   const options: RenderOptions = {};
   const asset = assetResolver(page);
   if (asset !== undefined) options.resolveAsset = asset;
@@ -399,15 +380,46 @@ export function renderOutliner(
         return;
       }
       if (target.tagName === 'A') return;
-      startEditing(node.block, body, callbacks, options, row);
+      openEditor(node, body);
     });
 
     row.append(bullet, body);
     list.append(row);
+    editors.set(node.block.stableId, { node, body });
     for (const child of node.children) drawBlock(child, depth + 1);
   };
 
-  for (const root of buildTree(page.blocks)) drawBlock(root, 0);
+  const tree = buildTree(page.blocks);
+  const neighbourhoods = buildNeighbourhoods(tree);
+
+  function openEditor(node: Node, body: HTMLElement, caret?: number): void {
+    const near = neighbourhoods.get(node.block.stableId);
+    if (near === undefined) return;
+    startEditing(
+      node.block,
+      body,
+      callbacks,
+      options,
+      {
+        page: page.id,
+        near,
+        children: node.children.map((child) => child.block.stableId),
+      },
+      caret,
+    );
+  }
+
+  for (const root of tree) drawBlock(root, 0);
+
+  // Un cambio estructural rehace la página y pide seguir editando donde el
+  // modelo dice que quedó el cursor.
+  if (focus !== null) {
+    const seat = editors.get(focus.block);
+    if (seat !== undefined) {
+      seat.body.closest('.block')?.scrollIntoView({ block: 'nearest' });
+      openEditor(seat.node, seat.body, focus.at);
+    }
+  }
 
   // Los diagramas se dibujan después del texto: la biblioteca se carga sola y
   // la página no espera por ella para poder leerse.
@@ -448,20 +460,205 @@ export function renderOutliner(
   }
 }
 
+/**
+ * La vecindad de cada bloque de la página, calculada una vez por render.
+ *
+ * Las teclas estructurales necesitan saber quién está encima, quién es hermano
+ * y quién es abuelo. Recorrer el árbol en cada pulsación sería recalcular lo
+ * mismo una y otra vez.
+ */
+export function buildNeighbourhoods(roots: Node[]): Map<string, Neighbourhood> {
+  interface Seat {
+    node: Node;
+    parent: string | null;
+    index: number;
+  }
+
+  const flat: Seat[] = [];
+  const walk = (nodes: Node[], parent: string | null): void => {
+    for (const [index, node] of nodes.entries()) {
+      flat.push({ node, parent, index });
+      walk(node.children, node.block.stableId);
+    }
+  };
+  walk(roots, null);
+
+  const seats = new Map(flat.map((seat) => [seat.node.block.stableId, seat]));
+  const near = new Map<string, Neighbourhood>();
+
+  for (const [at, seat] of flat.entries()) {
+    const id = seat.node.block.stableId;
+    const before = flat[at - 1];
+    const after = flat[at + 1];
+
+    // El hermano anterior es el que comparte padre y va justo antes en el orden
+    // de lectura; buscarlo hacia atrás lo encuentra saltándose a los hijos.
+    let previousSibling: string | null = null;
+    for (let back = at - 1; back >= 0; back -= 1) {
+      const candidate = flat[back];
+      if (candidate === undefined) break;
+      if (candidate.parent === seat.parent) {
+        previousSibling = candidate.node.block.stableId;
+        break;
+      }
+    }
+
+    const parentSeat = seat.parent === null ? undefined : seats.get(seat.parent);
+
+    near.set(id, {
+      block: id,
+      parent: seat.parent,
+      index: seat.index,
+      hasChildren: seat.node.children.length > 0,
+      previousSibling,
+      previousVisible:
+        before === undefined
+          ? null
+          : {
+              block: before.node.block.stableId,
+              content: before.node.block.content,
+              hasChildren: before.node.children.length > 0,
+            },
+      nextVisible: after === undefined ? null : after.node.block.stableId,
+      grandparent: parentSeat?.parent ?? null,
+      parentIndex: parentSeat?.index ?? 0,
+    });
+  }
+
+  return near;
+}
+
+/** Lo que hace falta para llevar a cabo una decisión de tecla. */
+interface Structural {
+  page: string;
+  block: BlockView;
+  near: Neighbourhood;
+  children: string[];
+  callbacks: OutlinerCallbacks;
+}
+
+/**
+ * Lleva a cabo la decisión enviando operaciones.
+ *
+ * @invariant EveryKeystrokeChangeIsAnOperation: partir, fusionar e indentar
+ * envían operaciones ordinarias, con la misma procedencia y el mismo orden que
+ * cualquier otro cambio. La fluidez no compra ningún atajo hacia el grafo.
+ */
+async function perform(outcome: KeyOutcome, context: Structural): Promise<void> {
+  const { page, block, near, children, callbacks } = context;
+
+  try {
+    switch (outcome.kind) {
+      case 'ninguno':
+        return;
+
+      case 'rechazo':
+        // @invariant RefusalsAreVisible: el silencio sería indistinguible de una
+        // tecla que no registró.
+        toast(outcome.reason);
+        return;
+
+      case 'partir': {
+        // El bloque conserva su identidad y su cabeza; la cola nace aparte.
+        await api.submit({ kind: 'edit_block', block: block.stableId, content: outcome.head });
+        const created = await api.submit({
+          kind: 'create_block',
+          page,
+          parent: outcome.parent,
+          position: outcome.position,
+          content: outcome.tail,
+        });
+        callbacks.onReload(
+          created.status === 'rejected' ? null : { block: created.subjectId, at: 0 },
+        );
+        return;
+      }
+
+      case 'insertar-encima':
+        await api.submit({
+          kind: 'create_block',
+          page,
+          parent: outcome.parent,
+          position: outcome.position,
+          content: '',
+        });
+        callbacks.onReload({ block: block.stableId, at: 0 });
+        return;
+
+      case 'indentar':
+      case 'desindentar': {
+        const moved = await api.submit({
+          kind: 'move_block',
+          block: block.stableId,
+          page,
+          parent: outcome.parent,
+          position: outcome.position,
+        });
+        if (moved.status === 'rejected') toast(`rechazado: ${moved.reason}`);
+        callbacks.onReload({ block: block.stableId, at: 0 });
+        return;
+      }
+
+      case 'quitar-encima': {
+        const removed = await api.submit({ kind: 'remove_block', block: outcome.target });
+        if (removed.status === 'rejected') toast(`rechazado: ${removed.reason}`);
+        callbacks.onReload({ block: block.stableId, at: 0 });
+        return;
+      }
+
+      case 'fusionar': {
+        // Los hijos se mudan antes de quitar el bloque: sólo una hoja se puede
+        // quitar, y así ninguno queda huérfano por un padre que desapareció.
+        for (const child of children) {
+          await api.submit({
+            kind: 'move_block',
+            block: child,
+            page,
+            parent: outcome.into,
+            position: Number.MAX_SAFE_INTEGER,
+          });
+        }
+        await api.submit({ kind: 'edit_block', block: outcome.into, content: outcome.content });
+        const removed = await api.submit({ kind: 'remove_block', block: block.stableId });
+        if (removed.status === 'rejected') {
+          toast(`rechazado: ${removed.reason}`);
+          callbacks.onReload(null);
+          return;
+        }
+        callbacks.onReload({ block: outcome.into, at: outcome.caret });
+        return;
+      }
+
+      case 'mover-foco':
+        callbacks.onReload({
+          block: outcome.block,
+          at: outcome.at === 'inicio' ? 0 : Number.MAX_SAFE_INTEGER,
+        });
+        return;
+    }
+  } catch {
+    toast('no se pudo aplicar el cambio: sin conexión con el servidor');
+  }
+  void near;
+}
+
+/** Cuánto silencio hace falta para que lo escrito baje al grafo. */
+const EDITING_PAUSE = 900;
+
 function startEditing(
   block: BlockView,
   body: HTMLElement,
   callbacks: OutlinerCallbacks,
   options: RenderOptions,
-  row: HTMLElement,
+  context: { page: string; near: Neighbourhood; children: string[] },
+  caret = Number.MAX_SAFE_INTEGER,
 ): void {
   if (body.querySelector('textarea') !== null) return;
-  const original = block.content;
-  const session = editSession(original);
+  const session = createSession(block.content);
 
   const editor = document.createElement('textarea');
   editor.className = 'editor';
-  editor.value = original;
+  editor.value = block.content;
   editor.rows = 1;
 
   body.innerHTML = '';
@@ -489,10 +686,10 @@ function startEditing(
   };
 
   autosize();
-  editor.addEventListener('input', autosize);
 
+  const at = Math.min(caret, editor.value.length);
   editor.focus();
-  editor.setSelectionRange(editor.value.length, editor.value.length);
+  editor.setSelectionRange(at, at);
 
   const render = (content: string): void => {
     body.innerHTML = renderMarkdown(content, options);
@@ -500,59 +697,146 @@ function startEditing(
     void renderMermaid(body);
   };
 
-  const save = async (content: string): Promise<void> => {
+  let timer: number | undefined;
+  // Una salida estructural no vuelve a dibujar aquí: la página se recarga entera
+  // y sería dibujar algo que está a punto de desaparecer.
+  let leaving = false;
+
+  const flush = async (intent: SaveIntent): Promise<boolean> => {
+    if (intent.action === 'nada') return true;
+
     let result;
     try {
-      result = await api.submit({ kind: 'edit_block', block: block.stableId, content });
+      result = await api.submit({
+        kind: 'edit_block',
+        block: block.stableId,
+        content: intent.content,
+      });
     } catch {
-      // Sin red no se pierde lo escrito: la edición vuelve al usuario tal cual.
-      session.reopen();
+      // Sin red no se pierde lo escrito: sigue pendiente y el siguiente intento
+      // —otra pausa, o salir del bloque— vuelve a mandarlo.
+      session.failed();
       editor.classList.add('failed');
       editor.title = 'no se pudo guardar: sin conexión con el servidor';
-      return;
+      return false;
     }
 
     if (result.status === 'rejected') {
-      // El dominio rechazó el cambio: se restituye lo que había y se dice por qué.
-      render(original);
-      body.title = `rechazado: ${result.reason}`;
-      return;
+      toast(`rechazado: ${result.reason}`);
+      return false;
     }
 
-    block.content = content;
-    render(content);
+    session.settled(intent.content);
+    block.content = intent.content;
+    editor.classList.remove('failed');
+    editor.removeAttribute('title');
     callbacks.onChanged();
+    return true;
   };
 
-  const apply = (outcome: LeaveAction): void => {
-    if (outcome.action === 'ignore') return;
-    if (outcome.action === 'restore') {
-      render(original);
-      return;
-    }
-    void save(outcome.content);
+  /** @invariant TypingIsNeverLost: el texto baja al grafo mientras se escribe. */
+  const scheduleSave = (): void => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => void flush(session.pending()), EDITING_PAUSE);
   };
 
-  editor.addEventListener('blur', () => apply(session.leave(editor.value)));
+  const leave = (): void => {
+    if (leaving) return;
+    leaving = true;
+    window.clearTimeout(timer);
+    void flush(session.leave()).then(() => render(session.saved()));
+  };
+
+  /** Una tecla estructural guarda lo pendiente antes de cambiar el árbol. */
+  const structural = (outcome: KeyOutcome): void => {
+    if (outcome.kind === 'ninguno') return;
+    leaving = true;
+    window.clearTimeout(timer);
+    void flush(session.pending()).then(() => {
+      if (outcome.kind === 'rechazo') {
+        // Un rechazo no cambia nada, así que se vuelve a la edición.
+        leaving = false;
+        toast(outcome.reason);
+        return;
+      }
+      void perform(outcome, {
+        page: context.page,
+        block,
+        near: context.near,
+        children: context.children,
+        callbacks,
+      });
+    });
+  };
+
+  editor.addEventListener('input', () => {
+    session.type(editor.value);
+    autosize();
+    scheduleSave();
+  });
+
+  editor.addEventListener('blur', () => leave());
+
   editor.addEventListener('keydown', (event) => {
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+
+    // Escape sale guardando. No descarta: para cuando se pulsa, la pausa ya dejó
+    // el texto en el grafo, y ofrecer descartar sería mentir.
     if (event.key === 'Escape') {
       event.preventDefault();
-      apply(session.cancel());
+      editor.blur();
+      return;
     }
+
+    if (event.key === 'Enter' && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+      event.preventDefault();
+      session.type(editor.value);
+      structural(resolveEnter(editor.value, start, end, context.near));
+      return;
+    }
+
+    // Shift-Enter escribe un salto de línea dentro del bloque, que es la única
+    // forma de tener un párrafo de varias líneas en un solo bloque.
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       editor.blur();
+      return;
     }
 
-    // @invariant OnlyEmptyBlocksAreDiscarded: sólo se elimina un bloque que ya
-    // está vacío, así que esta tecla nunca puede llevarse texto por delante.
-    // Vaciarlo y pulsar una vez más es la forma de descartarlo.
-    if (event.key === 'Backspace' && editor.value === '') {
+    if (event.key === 'Tab') {
       event.preventDefault();
-      // Se resuelve la sesión antes de retirar el campo: si no, el `blur` que
-      // provoca quitarlo del DOM intentaría guardar el bloque recién eliminado.
-      session.cancel();
-      void removeBlock(block, row, callbacks);
+      session.type(editor.value);
+      structural(resolveTab(!event.shiftKey, context.near));
+      return;
+    }
+
+    if (event.key === 'Backspace' && start === 0 && end === 0) {
+      event.preventDefault();
+      session.type(editor.value);
+      structural(resolveBackspaceAtStart(editor.value, context.near));
+      return;
+    }
+
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      const outcome = resolveArrow(event.key === 'ArrowUp', editor.value, start, context.near);
+      if (outcome.kind === 'ninguno') return;
+      event.preventDefault();
+      session.type(editor.value);
+      structural(outcome);
+      return;
+    }
+
+    // Autopar. Se hace a mano porque hay que decidir entre envolver, emparejar y
+    // saltar el cierre, y ninguna de las tres es lo que el navegador haría.
+    const typed = resolveDelimiter(event.key, editor.value, start, end);
+    if (typed !== null) {
+      event.preventDefault();
+      editor.value = typed.buffer;
+      editor.setSelectionRange(typed.cursor, typed.cursor);
+      session.type(editor.value);
+      autosize();
+      scheduleSave();
     }
   });
 }
