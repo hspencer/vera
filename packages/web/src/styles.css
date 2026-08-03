@@ -62,7 +62,11 @@ input {
   grid-template-areas:
     'bar bar bar bar'
     'sidebar text divider graph';
+  /* `100vh` en Safari móvil cuenta la barra de direcciones aunque esté a la
+     vista, así que la aplicación queda más alta que la pantalla y el final se
+     va por debajo. `dvh` mide lo que de verdad se ve. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -91,12 +95,25 @@ input {
 
 /* --- Barra ------------------------------------------------------------- */
 
+/*
+ * La barra vive bajo el reloj y los iconos del sistema.
+ *
+ * `viewport-fit=cover` junto a `apple-mobile-web-app-status-bar-style:
+ * black-translucent` meten el contenido bajo la barra de estado del teléfono a
+ * propósito, para que el fondo llegue hasta el borde. El precio es que hay que
+ * devolver ese espacio a mano: sin estos `env()`, la barra se monta con la hora
+ * y deja de poder usarse.
+ *
+ * Los laterales también los llevan, porque en apaisado el notch se come una
+ * franja del lado izquierdo o del derecho según cómo se sostenga el aparato.
+ */
 #bar {
   grid-area: bar;
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 0.5rem 1rem;
+  padding: calc(0.5rem + env(safe-area-inset-top)) calc(1rem + env(safe-area-inset-right))
+    0.5rem calc(1rem + env(safe-area-inset-left));
   border-bottom: 1px solid var(--rule);
   background: var(--bg-raised);
   font-family: var(--font-ui);
@@ -370,6 +387,78 @@ input {
   font-size: 0.82rem;
   cursor: pointer;
   text-decoration: underline;
+}
+
+/* Lo editable se anuncia al pasar por encima. Sin esto, el front matter parece
+   lo que era hasta ahora: un cartel. */
+.page-title,
+.property-key,
+.property-value {
+  border-radius: 3px;
+  cursor: text;
+}
+
+.page-title:hover,
+.property-key:hover,
+.property-value:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.property-value {
+  position: relative;
+  padding-right: 1.2rem;
+}
+
+.property-drop {
+  position: absolute;
+  right: 0.1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.property-value:hover .property-drop,
+.property-drop:focus-visible {
+  opacity: 1;
+}
+
+.property-drop:hover {
+  color: var(--warm);
+}
+
+.property-add {
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  background: none;
+  border: 1px dashed var(--rule);
+  border-radius: 3px;
+  padding: 0.15rem 0.5rem;
+  margin-top: 0.4rem;
+  cursor: pointer;
+}
+
+.property-add:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* El campo hereda el tamaño de donde está, para que editar no dé un salto. */
+.inline-edit {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0.05rem 0.3rem;
 }
 
 /* El bullet es el asa del bloque: abre sus acciones. Es un `button` para que
@@ -1001,15 +1090,59 @@ code {
     display: none;
   }
 
-  #text {
-    padding: 1rem 1rem 5rem;
+  /* Con la barra a lo ancho de un teléfono, marca, buscador y ocho botones no
+     caben en una línea: se atropellaban unos a otros. Van en dos filas, y los
+     controles se desplazan en horizontal si aun así no entran. */
+  #bar {
+    flex-wrap: wrap;
+    gap: 0.5rem 0.7rem;
+    padding-bottom: 0.45rem;
+  }
+
+  #search-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   #search {
-    width: 9rem;
+    width: 100%;
+  }
+
+  #controls {
+    flex: 1 0 100%;
+    overflow-x: auto;
+    /* Que la fila de botones no empuje el ancho de la barra. */
+    min-width: 0;
+    scrollbar-width: none;
+    padding-bottom: 0.1rem;
+  }
+
+  #controls::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* El indicador de inicio del teléfono se sienta sobre el final del texto. */
+  #text {
+    padding: 1rem calc(1rem + env(safe-area-inset-right)) calc(5rem + env(safe-area-inset-bottom))
+      calc(1rem + env(safe-area-inset-left));
+  }
+
+  #graph {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   #breadcrumbs {
     display: none;
+  }
+
+  /* Un aviso pegado al borde inferior quedaría bajo el indicador de inicio. */
+  .toast {
+    bottom: calc(1.6rem + env(safe-area-inset-bottom));
+  }
+
+  /* Los desplegables se abren dentro de la pantalla y no la desbordan. */
+  .complete,
+  .block-menu {
+    max-width: calc(100vw - 2rem);
   }
 }

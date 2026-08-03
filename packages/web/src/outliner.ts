@@ -11,7 +11,7 @@
 // Cada edición emite una operación. No hay guardado implícito ni estado local
 // que pueda divergir del grafo.
 
-import { api, type BlockView, type PageView } from './api.ts';
+import { api, type BlockView, type Change, type PageView } from './api.ts';
 import { renderMarkdown, type RenderOptions } from './markdown.ts';
 import { renderMermaid } from './mermaid.ts';
 import { createSession, type SaveIntent } from './session.ts';
@@ -277,6 +277,88 @@ async function moveBlock(
   callbacks.onReload({ block: block.stableId, at: 0 });
 }
 
+/**
+ * Edita un texto donde está, sin abrir nada aparte.
+ *
+ * Sirve para el título y para las propiedades: son campos de una línea, y un
+ * editor de bloque completo sería desproporcionado. `commit` devuelve si el
+ * cambio se aplicó; si no, el texto vuelve a lo que era y no se pierde nada.
+ */
+function editInPlace(
+  host: HTMLElement,
+  original: string,
+  label: string,
+  commit: (next: string) => Promise<boolean>,
+): void {
+  if (host.querySelector('input') !== null) return;
+
+  const field = document.createElement('input');
+  field.type = 'text';
+  field.className = 'inline-edit';
+  field.value = original;
+  field.setAttribute('aria-label', label);
+
+  const held = host.innerHTML;
+  host.innerHTML = '';
+  host.append(field);
+  field.focus();
+  field.select();
+
+  let settled = false;
+  const finish = (accept: boolean): void => {
+    if (settled) return;
+    settled = true;
+    const next = field.value;
+    if (!accept || next === original) {
+      host.innerHTML = held;
+      return;
+    }
+    void commit(next).then((applied) => {
+      // Aplicar recarga la página entera, así que sólo hay que restituir esto
+      // cuando el cambio no llegó a ocurrir.
+      if (!applied) host.innerHTML = held;
+    });
+  };
+
+  field.addEventListener('blur', () => finish(true));
+  field.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      finish(true);
+    }
+    // Aquí Escape sí descarta: nada se ha guardado todavía, porque un campo de
+    // una línea no tiene guardado al reposar.
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      settled = true;
+      host.innerHTML = held;
+    }
+  });
+}
+
+/** Envía un cambio sin recargar. Devuelve si se aplicó. */
+async function submitQuietly(change: Change): Promise<boolean> {
+  let result;
+  try {
+    result = await api.submit(change);
+  } catch {
+    toast('sin conexión con el servidor');
+    return false;
+  }
+  if (result.status === 'rejected') {
+    toast(`rechazado: ${result.reason}`);
+    return false;
+  }
+  return true;
+}
+
+/** Envía un cambio y rehace la página desde el grafo. */
+async function submitAndReload(change: Change, callbacks: OutlinerCallbacks): Promise<boolean> {
+  const applied = await submitQuietly(change);
+  if (applied) callbacks.onReload(null);
+  return applied;
+}
+
 export interface Node {
   block: BlockView;
   children: Node[];
@@ -365,22 +447,118 @@ export function renderOutliner(
   const header = document.createElement('header');
   header.className = 'page-header';
 
+  // El título es contenido, así que se edita como contenido. Renombrar una
+  // página es una operación como cualquier otra.
   const title = document.createElement('h1');
+  title.className = 'page-title';
   title.textContent = page.title;
+  title.tabIndex = 0;
+  title.title = 'renombrar la página';
+  title.addEventListener('click', () => {
+    editInPlace(title, page.title, 'el título de la página', async (next) => {
+      if (next.trim() === '' || next === page.title) return true;
+      return submitAndReload(
+        { kind: 'rename_page', page: page.id, title: next.trim() },
+        callbacks,
+      );
+    });
+  });
   header.append(title);
 
-  if (page.properties.length > 0) {
-    const properties = document.createElement('dl');
-    properties.className = 'properties';
-    for (const property of page.properties) {
-      const key = document.createElement('dt');
-      key.textContent = property.key;
-      const value = document.createElement('dd');
-      value.textContent = property.value;
-      properties.append(key, value);
-    }
-    header.append(properties);
+  // El front matter no es decoración: son propiedades del grafo, y se editan.
+  const properties = document.createElement('dl');
+  properties.className = 'properties';
+
+  for (const property of page.properties) {
+    const key = document.createElement('dt');
+    key.className = 'property-key';
+    key.textContent = property.key;
+    key.tabIndex = 0;
+    key.title = 'renombrar la propiedad';
+    key.addEventListener('click', () => {
+      editInPlace(key, property.key, 'nombre de la propiedad', async (next) => {
+        const name = next.trim();
+        if (name === '' || name === property.key) return true;
+        // Renombrar es quitar la vieja y poner la nueva: el dominio identifica
+        // una propiedad por su clave, así que no hay un cambio que la renombre.
+        const removed = await submitQuietly({
+          kind: 'remove_property',
+          page: page.id,
+          propertyKey: property.key,
+        });
+        if (!removed) return false;
+        return submitAndReload(
+          { kind: 'set_property', page: page.id, propertyKey: name, propertyValue: property.value },
+          callbacks,
+        );
+      });
+    });
+
+    const value = document.createElement('dd');
+    value.className = 'property-value';
+    value.textContent = property.value;
+    value.tabIndex = 0;
+    value.title = 'editar el valor';
+    value.addEventListener('click', () => {
+      editInPlace(value, property.value, `valor de ${property.key}`, async (next) => {
+        if (next === property.value) return true;
+        return submitAndReload(
+          {
+            kind: 'set_property',
+            page: page.id,
+            propertyKey: property.key,
+            propertyValue: next,
+          },
+          callbacks,
+        );
+      });
+    });
+
+    const drop = document.createElement('button');
+    drop.type = 'button';
+    drop.className = 'property-drop';
+    drop.textContent = '×';
+    drop.title = `quitar ${property.key}`;
+    drop.addEventListener('click', (event) => {
+      event.stopPropagation();
+      void submitAndReload(
+        { kind: 'remove_property', page: page.id, propertyKey: property.key },
+        callbacks,
+      );
+    });
+    value.append(drop);
+
+    properties.append(key, value);
   }
+
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'property-add';
+  add.textContent = '+ propiedad';
+  add.addEventListener('click', () => {
+    const key = document.createElement('dt');
+    key.className = 'property-key';
+    const value = document.createElement('dd');
+    value.className = 'property-value';
+    value.textContent = '';
+    properties.append(key, value);
+    editInPlace(key, '', 'nombre de la propiedad nueva', async (next) => {
+      const name = next.trim();
+      if (name === '') {
+        key.remove();
+        value.remove();
+        return true;
+      }
+      // Nace con valor vacío; el valor se escribe en el siguiente clic. El
+      // dominio acepta una propiedad sin valor, así que no hace falta inventarlo.
+      return submitAndReload(
+        { kind: 'set_property', page: page.id, propertyKey: name, propertyValue: '' },
+        callbacks,
+      );
+    });
+  });
+
+  header.append(properties, add);
 
   const badge = document.createElement('span');
   badge.className = `visibility ${page.visibility}`;

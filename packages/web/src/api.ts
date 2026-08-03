@@ -77,7 +77,11 @@ export type Change =
   // Indentar, desindentar y mudar a los hijos de un bloque que se fusiona son
   // todos el mismo cambio: el bloque pasa a colgar de otro padre, en un índice.
   | { kind: 'move_block'; block: string; page: string; parent: string | null; position: number }
-  | { kind: 'remove_block'; block: string };
+  | { kind: 'remove_block'; block: string }
+  // El front matter de una página son propiedades, y se editan como todo lo
+  // demás: enviando una operación.
+  | { kind: 'set_property'; page?: string; block?: string; propertyKey: string; propertyValue: string }
+  | { kind: 'remove_property'; page?: string; block?: string; propertyKey: string };
 
 export type SubmitResult =
   | { status: 'applied'; sequence: number; subjectId: string }
