@@ -352,6 +352,12 @@ CREATE TABLE IF NOT EXISTS workspaces (
                                 CHECK (graph_view IN ('graph_2d', 'graph_3d')),
     colour_scheme           TEXT NOT NULL DEFAULT 'light'
                                 CHECK (colour_scheme IN ('light', 'dark')),
+    -- Los tokens de diseño, como JSON. Van con el participante y no con el
+    -- navegador: el sistema de diseño es de quien lo ajustó, no del aparato
+    -- desde el que lo ajustó. Guardarlos como texto y no en columnas evita que
+    -- añadir un token pida una migración del esquema; lo que los valida es
+    -- DEFAULT_TOKENS en el cliente, que es donde se sabe qué token existe.
+    design_tokens           TEXT,
     PRIMARY KEY (participant_id, graph_id)
 ) STRICT;
 

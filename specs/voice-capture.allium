@@ -406,6 +406,18 @@ surface VoiceCapture {
         -- or its content is being read. A chain whose head cannot be reached is
         -- a claim, not a provenance.
 
+    @guarantee TranscribingDoesNotHoldTheSpeakerWaiting
+        -- Asking for a transcript returns at once, and the recording says it is
+        -- being transcribed until it is. A machine that thinks for minutes
+        -- behind a request that must stay open is a machine that fails on the
+        -- long recordings — which are exactly the ones worth transcribing.
+
+    @guarantee SpeakingReachesTheDayFromAnywhere
+        -- Recording is available wherever one is, and what is recorded without a
+        -- stated place lands on the day in progress. Speaking is the mode that
+        -- has to work with one hand while walking; asking where it should go
+        -- first is asking at the worst possible moment. See daily-log.allium.
+
     @guarantee NothingSpokenIsStrandedFromTheWriting
         -- A recording that has not finished the chain can be reached from the
         -- writing: either from the block holding its place, or from a list of
@@ -418,6 +430,7 @@ surface VoiceCapture {
 ------------------------------------------------------------
 
 open question "How is a transcript cut into blocks: by pause, by sentence, by paragraph, or by the participant's own hand before settling?"
+open question "How does a block holding a recording's place appear in the Markdown mirror, given that it has no text yet and the mirror is meant to be legible to a reader who never heard of Vera — as an empty bullet, as a named reference to the audio, or not at all until the content settles?"
 open question "Should correcting a transcript after validation be possible at all, and if so does it return the recording to the proposed stage?"
 open question "When authentication exists, does an unauthenticated recording keep the origin it was given under the assumption that the owner spoke?"
 open question "Does a block whose spoken content was wholly rewritten still deserve to name the recording, or is there a point at which the appellation should lapse?"

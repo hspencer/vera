@@ -322,6 +322,33 @@ input {
   margin: 0 0.3rem;
 }
 
+/* --- Atrás, adelante, hoy ---------------------------------------------- */
+
+#nav {
+  display: flex;
+  gap: 0.1rem;
+  flex: none;
+}
+
+#nav button {
+  display: flex;
+  align-items: center;
+  padding: 0.25rem 0.35rem;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+#nav button:hover {
+  color: var(--accent);
+}
+
+#nav .icon {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
 /* --- El switch de la vista --------------------------------------------- */
 
 /*

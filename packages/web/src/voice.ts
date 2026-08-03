@@ -22,6 +22,8 @@ export interface Recording {
   transcript: string | null;
   /** El bloque que le guarda el lugar en la escritura, si se habló dentro de una. */
   placedInBlock: string | null;
+  /** La página de ese bloque, para poder llegar a ella sin una petición más. */
+  placedInPage: string | null;
   evidence: { reference: string; capturedAt: number };
   capturedBy: string;
   capturedAt: number;

@@ -45,6 +45,7 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
     column: 'placed_in_block',
     definition: 'TEXT REFERENCES blocks (id) ON DELETE SET NULL',
   },
+  { table: 'workspaces', column: 'design_tokens', definition: 'TEXT' },
 ];
 
 function addMissingColumns(db: DatabaseSync): void {
@@ -909,6 +910,14 @@ export interface Recording {
   transcript: string | null;
   /** El bloque que le guarda el lugar en la escritura, si se habló dentro de una. */
   placedInBlock: string | null;
+  /**
+   * La página de ese bloque.
+   *
+   * Se deriva, no se guarda: el bloque ya sabe en qué página está y repetirlo
+   * sería tener dos versiones de lo mismo. Viaja con la grabación para que quien
+   * la lea pueda llegar a ella sin una petición más.
+   */
+  placedInPage: string | null;
   evidence: { reference: string; capturedAt: number };
   capturedBy: string;
   capturedAt: number;
@@ -924,6 +933,7 @@ interface RecordingRow {
   stage: CascadeStage;
   transcript: string | null;
   placed_in_block: string | null;
+  placed_in_page: string | null;
   evidence_reference: string;
   evidence_captured_at: number;
   captured_by: string;
@@ -931,6 +941,16 @@ interface RecordingRow {
   validated_by: string | null;
   validated_at: number | null;
 }
+
+/**
+ * Toda grabación se lee con la página de su bloque al lado.
+ *
+ * Un `LEFT JOIN`, no uno normal: una grabación sin lugar sigue existiendo, y con
+ * un join estricto desaparecería de las listas justo cuando más falta hace verla.
+ */
+const WITH_PAGE =
+  'SELECT r.*, b.page_id AS placed_in_page FROM recordings r ' +
+  'LEFT JOIN blocks b ON b.id = r.placed_in_block';
 
 function toRecording(row: RecordingRow): Recording {
   return {
@@ -941,6 +961,7 @@ function toRecording(row: RecordingRow): Recording {
     stage: row.stage,
     transcript: row.transcript,
     placedInBlock: row.placed_in_block,
+    placedInPage: row.placed_in_page ?? null,
     evidence: { reference: row.evidence_reference, capturedAt: row.evidence_captured_at },
     capturedBy: row.captured_by,
     capturedAt: row.captured_at,
@@ -1039,7 +1060,7 @@ export function discardAudio(store: Store, id: string): Recording | { error: str
 
 /** La grabación que le guarda el lugar a un bloque, si alguna. */
 export function recordingByBlock(store: Store, block: string): Recording | null {
-  const row = store.db.prepare('SELECT * FROM recordings WHERE placed_in_block = ?').get(block) as
+  const row = store.db.prepare(`${WITH_PAGE} WHERE r.placed_in_block = ?`).get(block) as
     | RecordingRow
     | undefined;
   return row === undefined ? null : toRecording(row);
@@ -1052,11 +1073,7 @@ export function recordingByBlock(store: Store, block: string): Recording | null 
 export function recordingsInPage(store: Store, page: string): Recording[] {
   return (
     store.db
-      .prepare(
-        `SELECT r.* FROM recordings r
-         JOIN blocks b ON b.id = r.placed_in_block
-         WHERE b.page_id = ? AND r.graph_id = ?`,
-      )
+      .prepare(`${WITH_PAGE} WHERE b.page_id = ? AND r.graph_id = ?`)
       .all(page, store.graphId) as unknown as RecordingRow[]
   ).map(toRecording);
 }
@@ -1093,7 +1110,7 @@ export function placeRecording(
 }
 
 export function recordingById(store: Store, id: string): Recording | null {
-  const row = store.db.prepare('SELECT * FROM recordings WHERE id = ?').get(id) as
+  const row = store.db.prepare(`${WITH_PAGE} WHERE r.id = ?`).get(id) as
     | RecordingRow
     | undefined;
   return row === undefined ? null : toRecording(row);
@@ -1102,7 +1119,7 @@ export function recordingById(store: Store, id: string): Recording | null {
 export function recordings(store: Store, limit = 50): Recording[] {
   return (
     store.db
-      .prepare('SELECT * FROM recordings WHERE graph_id = ? ORDER BY captured_at DESC LIMIT ?')
+      .prepare(`${WITH_PAGE} WHERE r.graph_id = ? ORDER BY r.captured_at DESC LIMIT ?`)
       .all(store.graphId, limit) as unknown as RecordingRow[]
   ).map(toRecording);
 }
@@ -1197,4 +1214,99 @@ export function spokenOriginsOnPage(
         WHERE b.page_id = ?`,
     )
     .all(page) as { block: string; recording: string }[];
+}
+
+// ---------------------------------------------------------------------------
+// Presentación recordada
+// ---------------------------------------------------------------------------
+//
+// @guarantee RememberedSessionPresentation, de workspace-interface.allium.
+//
+// La tabla `workspaces` estaba en el esquema desde el principio y no la usaba
+// nadie: la presentación vivía entera en el `localStorage` del navegador, así
+// que era de un aparato y no de una persona. Cambiar de máquina era empezar de
+// cero, y la garantía decía otra cosa.
+//
+// Va por participante y grafo, no por dispositivo. Un sistema de diseño ajustado
+// es de quien lo ajustó.
+
+export interface Workspace {
+  layout: 'text_only' | 'graph_only' | 'split';
+  dividerPosition: number;
+  graphView: 'graph_2d' | 'graph_3d';
+  colourScheme: 'light' | 'dark';
+  /** Los tokens de diseño tal como se guardaron, o null si nunca se tocaron. */
+  designTokens: string | null;
+}
+
+interface WorkspaceRow {
+  layout: Workspace['layout'];
+  split_divider_position: number;
+  graph_view: Workspace['graphView'];
+  colour_scheme: Workspace['colourScheme'];
+  design_tokens: string | null;
+}
+
+/** Lo recordado de este participante, o los valores de partida si no hay nada. */
+export function workspaceOf(store: Store, participant: string): Workspace {
+  const row = store.db
+    .prepare('SELECT * FROM workspaces WHERE participant_id = ? AND graph_id = ?')
+    .get(participant, store.graphId) as WorkspaceRow | undefined;
+
+  // Una vista dividida empieza por la mitad para quien no ha ajustado nada.
+  if (row === undefined) {
+    return {
+      layout: 'split',
+      dividerPosition: 0.5,
+      graphView: 'graph_2d',
+      colourScheme: 'dark',
+      designTokens: null,
+    };
+  }
+  return {
+    layout: row.layout,
+    dividerPosition: row.split_divider_position,
+    graphView: row.graph_view,
+    colourScheme: row.colour_scheme,
+    designTokens: row.design_tokens,
+  };
+}
+
+/**
+ * Guarda lo que cambió y deja lo demás como estaba.
+ *
+ * Parcial a propósito: mover el divisor no puede pisar el esquema de color que
+ * se eligió en otro momento, y el cliente no tiene por qué mandar el estado
+ * entero cada vez que toca una cosa.
+ */
+export function saveWorkspace(
+  store: Store,
+  participant: string,
+  patch: Partial<Workspace>,
+): Workspace {
+  const now = workspaceOf(store, participant);
+  const next: Workspace = { ...now, ...patch };
+  store.db
+    .prepare(
+      `INSERT INTO workspaces (
+         participant_id, graph_id, layout, split_divider_position, graph_view,
+         colour_scheme, design_tokens
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (participant_id, graph_id) DO UPDATE SET
+         layout = excluded.layout,
+         split_divider_position = excluded.split_divider_position,
+         graph_view = excluded.graph_view,
+         colour_scheme = excluded.colour_scheme,
+         design_tokens = excluded.design_tokens`,
+    )
+    .run(
+      participant,
+      store.graphId,
+      next.layout,
+      next.dividerPosition,
+      next.graphView,
+      next.colourScheme,
+      next.designTokens,
+    );
+  return next;
 }

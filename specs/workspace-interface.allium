@@ -404,8 +404,35 @@ surface VeraWorkspace {
 
     @guarantee RememberedSessionPresentation
         -- Split view begins evenly divided for a participant with no saved
-        -- preference. Subsequent divider position and light or dark colour
-        -- scheme are retained in that participant's session.
+        -- preference. Subsequent divider position, light or dark colour scheme
+        -- and edited design tokens are retained for that participant — not for
+        -- the browser they happened to use. What someone tuned to their own eye
+        -- is theirs, and having to tune it again on the next machine would say
+        -- it belongs to the machine.
+        --
+        -- The typefaces Vera offers travel with Vera as files, so a corpus read
+        -- on a phone renders as it did on the desk. The remaining choices name
+        -- the system's own faces on purpose: those are meant to differ per
+        -- device, and resolving them differently is them working.
+
+    @guarantee PresentationSurvivesTheServer
+        -- Presentation is read and drawn from what the device already holds, and
+        -- reconciled with what is remembered afterwards. Opening Vera never
+        -- waits on the network to know what colour it is, and a Vera whose
+        -- server is unreachable still looks like itself.
+
+    -- El eje: de lo general a lo particular, de izquierda a derecha.
+    @guarantee TheMapIsBeforeTheText
+        -- The map occupies the side a reader begins from and the text the side
+        -- they end at. Entering a document is a movement inward, and the reading
+        -- direction is what tells a hand which way that is. The map is where one
+        -- is located; the text is where one is.
+
+    @guarantee TodayIsWhereWritingBegins
+        -- The workspace opens on the day in progress, and reaching it costs one
+        -- gesture from anywhere. Nothing has to be named or created before
+        -- writing: naming a thought is a judgement about it, and requiring that
+        -- judgement first is how thoughts go unwritten. See daily-log.allium.
 
     @guarantee EditableDesignSystem
         -- General styles and design tokens are editable from within Vera and
@@ -414,6 +441,39 @@ surface VeraWorkspace {
     @guarantee ResponsiveSinglePaneNavigation
         -- Narrow screens offer text or graph as exclusive views. Choosing a
         -- graph node opens its page in the text view.
+
+    -- Lo que el mapa debe llegar a ofrecer. Está dicho aquí, y no en una lista
+    -- de tareas aparte, porque es comportamiento exigible y no trabajo
+    -- pendiente: una lista de tareas se cierra, una garantía se cumple.
+
+    @guarantee TheMapCarriesItsOwnControls
+        -- What governs the map — its dimension, its reach, its trail — belongs
+        -- in the map and not in a bar shared with everything else. A control
+        -- placed away from what it governs makes a reader learn a mapping that
+        -- the layout could have told them.
+
+    @guarantee TheMapCanStepAside
+        -- The map can be collapsed and brought back without losing where one is.
+        -- A pane that is always there is furniture; one that can leave is a
+        -- tool.
+
+    @guarantee TheTrailIsWhereOneIsLocated
+        -- Where a participant has been accumulates visibly, and any step of it
+        -- can be returned to directly. It belongs with the map, because that is
+        -- the surface for knowing where one stands.
+
+    @guarantee TheMapIsBoundedByReach
+        -- How much of the graph a map shows is the participant's to set, from
+        -- the neighbours of the page in focus outward. A map of everything at
+        -- once shows nothing: the corpus is large enough that the whole of it is
+        -- a texture, not a picture.
+
+    @guarantee GraphNodesAreTheirNames
+        -- A node in the map is the text of what it names, not a circle beside
+        -- it. The name is the thing a reader is looking for, and a mark that
+        -- carries no name spends the same space saying less. In two dimensions
+        -- names must not overlap each other: two names on top of one another is
+        -- neither of them.
 }
 
 ------------------------------------------------------------
@@ -433,3 +493,6 @@ open question "When edited style source is invalid, should Vera reject it or kee
 -- fixed by RenderedPresentationIsFaithful and EditingRevealsTheSource above.
 open question "Which native Markdown editing behaviours are required beyond direct source editing and rendered presentation, including shortcuts, autocomplete and footnote assistance?"
 open question "Should a footnote reference resolve to its definition within the workspace, given that a definition may live in a different block from the reference that names it?"
+open question "What does the search field complete against as one types — page titles, blocks, tags, all of them ranked together — and does completing a search differ from completing a link inside a block, where the vocabulary is already settled?"
+open question "When the map is bounded by reach, is the unit hops from the page in focus, number of nodes shown, or strength of connection — and does moving to another page keep the reach that was set or return to a default?"
+open question "Does collapsing the map remember its width for when it returns, or does it come back evenly divided?"

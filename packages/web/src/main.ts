@@ -9,7 +9,7 @@ import { api, type PageSummary } from './api.ts';
 import { renderOutliner, speakInto } from './outliner.ts';
 import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
-import { renderVoicePanel } from './voice-panel.ts';
+import { STAGES, voice } from './voice.ts';
 import { brandMark, icon, type IconName } from './icons.ts';
 import { renderGraph } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D } from './graph/render3d.ts';
@@ -18,6 +18,7 @@ import {
   loadTokens,
   saveTokens,
   session,
+  syncPresentation,
   type ColourScheme,
   type GraphViewMode,
   type WorkspaceLayout,
@@ -50,6 +51,14 @@ const workspace: Workspace = {
 
 let tokens = loadTokens();
 let pages: PageSummary[] = [];
+/** Cierra los ajustes. Vive aquí porque Memoria también necesita cerrarlos: una
+ *  de sus entradas lleva a una página, y quedarse encima de ella no serviría. */
+function closeSettings(): void {
+  const panel = $('#tokens');
+  panel.hidden = true;
+  panel.innerHTML = '';
+}
+
 /** Lo que el grafo tiene. Se pide una vez al arrancar y se enseña en Memoria. */
 let corpus: { graph: string; pages: number; blocks: number; lastSequence: number } | null = null;
 
@@ -68,6 +77,61 @@ function drawMemory(host: HTMLElement): void {
       ? 'todavía sin datos del grafo'
       : `${corpus.pages} páginas · ${corpus.blocks} bloques · secuencia ${corpus.lastSequence}`;
   host.append(status);
+
+  // Lo hablado que no terminó la cascada.
+  //
+  // Desde que toda grabación nace en un día, ninguna nueva puede quedar sin
+  // sitio; esto es para las que se grabaron antes de que eso fuera cierto, y
+  // para la que se quede a medias por un fallo. Darle lugar es traerla al día de
+  // hoy, que es de donde habría salido si se grabara ahora.
+  void voice.list().then((all) => {
+    if (!Array.isArray(all)) return;
+    const pending = all.filter((r) => r.stage !== 'content_settled');
+    if (pending.length === 0) return;
+
+    const title = document.createElement('h3');
+    title.className = 'settings-group';
+    title.textContent = 'Voz sin terminar';
+    status.after(title);
+
+    const list = document.createElement('div');
+    list.id = 'pending-voice';
+    for (const item of pending) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'index-item';
+      const name = document.createElement('span');
+      name.textContent = (item.transcript ?? '').trim().slice(0, 60) ||
+        new Date(item.capturedAt).toLocaleString('es');
+      const stage = document.createElement('span');
+      stage.className = 'count';
+      stage.textContent = STAGES.find((s) => s.id === item.stage)?.label ?? item.stage;
+      row.append(name, stage);
+      row.addEventListener('click', () => {
+        void (async () => {
+          // Si ya tiene lugar, se va a él. Si no, se le da uno en hoy: es de
+          // donde habría salido si se grabara ahora.
+          if (item.placedInPage !== null) {
+            closeSettings();
+            await openPage(item.placedInPage);
+            if (item.placedInBlock !== null) revealBlock(item.placedInBlock);
+            return;
+          }
+          closeSettings();
+          const block = await startDay(today());
+          if (block === null) return;
+          const placed = await voice.place(item.id, block);
+          if ('error' in placed) {
+            notice(placed.error);
+            return;
+          }
+          if (workspace.activePage !== null) await openPage(workspace.activePage);
+        })();
+      });
+      list.append(row);
+    }
+    title.after(list);
+  });
 
   const index = document.createElement('div');
   index.id = 'index';
@@ -124,6 +188,126 @@ function setLayout(layout: WorkspaceLayout): void {
   workspace.layout = layout;
   session.setLayout(layout);
   applyLayout();
+}
+
+// ---------------------------------------------------------------------------
+// El día de hoy
+// ---------------------------------------------------------------------------
+
+/**
+ * La fecha de hoy tal como la escribe el calendario.
+ *
+ * El reloj es el de esta máquina, no el del servidor: quien escribe está aquí, y
+ * si son las once de la noche del lunes para él, es lunes, aunque el servidor
+ * viva en otro huso. daily-log.allium deja abierto qué pasa cuando esos dos
+ * relojes no son el mismo; mientras la instancia sea de una persona en una
+ * máquina, la pregunta no se hace.
+ */
+function today(): string {
+  const now = new Date();
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** La página del día, si el día ya existe. */
+function dayPage(date = today()): PageSummary | undefined {
+  return pages.find((page) => page.title === date);
+}
+
+/**
+ * Abre el día en curso.
+ *
+ * Si todavía no hay nada escrito hoy, no se crea nada: se enseña el día vacío y
+ * la página nace con el primer bloque. Crearla al mirarla llenaría el corpus de
+ * días en blanco —uno por cada vez que alguien abre Vera sin escribir— y un día
+ * vacío no es un hecho sobre una vida, es un hecho sobre un calendario.
+ *
+ * @invariant ADayExistsBecauseSomethingArrived, de daily-log.allium.
+ */
+async function openToday(): Promise<void> {
+  const date = today();
+  const existing = dayPage(date);
+  if (existing !== undefined) {
+    await openPage(existing.id);
+    return;
+  }
+  drawUnstartedDay(date);
+}
+
+/**
+ * El día que aún no empieza.
+ *
+ * Un solo gesto, que es el que crea el día: escribir. Deliberadamente no hay más
+ * que eso, porque la razón de que «hoy» sea el origen es no tener que decidir
+ * nada antes de ponerse a escribir.
+ */
+function drawUnstartedDay(date: string): void {
+  workspace.activePage = null;
+  const url = `/p/${encodeURIComponent(date)}`;
+  if (window.location.pathname !== url) window.history.pushState({}, '', url);
+
+  const host = $('#text');
+  host.innerHTML = '';
+
+  const header = document.createElement('header');
+  header.className = 'page-header';
+  const title = document.createElement('h1');
+  title.className = 'page-title';
+  title.textContent = date;
+  header.append(title);
+  host.append(header);
+
+  const note = document.createElement('p');
+  note.className = 'settings-note';
+  note.textContent = 'Hoy todavía no tiene nada. El día empieza a existir con lo primero que escribas.';
+  host.append(note);
+
+  const start = document.createElement('button');
+  start.type = 'button';
+  start.className = 'first-block';
+  start.textContent = 'escribir';
+  start.addEventListener('click', () => void startDay(date));
+  host.append(start);
+
+  drawGraph();
+}
+
+/**
+ * Hace nacer el día y devuelve su primer bloque, listo para escribir.
+ *
+ * Es el único camino por el que un día entra en la base, y por eso lo usan tanto
+ * el botón de escribir como la grabación de voz: hablar en el día también es
+ * haber escrito en él.
+ */
+async function startDay(date: string, content = ''): Promise<string | null> {
+  const existing = dayPage(date);
+  let pageId = existing?.id ?? null;
+
+  if (pageId === null) {
+    const born = await api.submit({ kind: 'create_page', title: date, visibility: 'private' });
+    if (born.status === 'rejected') {
+      notice(`no se pudo abrir el día: ${born.reason}`);
+      return null;
+    }
+    pageId = born.subjectId;
+    // El índice en memoria tiene que enterarse, o el día parecería no existir
+    // hasta la próxima recarga.
+    pages.unshift({ id: pageId, title: date, visibility: 'private', blockCount: 0, linkCount: 0 });
+  }
+
+  const block = await api.submit({
+    kind: 'create_block',
+    page: pageId,
+    parent: null,
+    position: Number.MAX_SAFE_INTEGER,
+    content,
+  });
+  if (block.status === 'rejected') {
+    notice(`no se pudo escribir en el día: ${block.reason}`);
+    return null;
+  }
+  await openPage(pageId, { block: block.subjectId, at: 0 });
+  return block.subjectId;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +410,6 @@ async function openPage(
     },
   }, focus, workspace.focusRoot);
 
-  drawBreadcrumbs();
   if (!isPhone() && workspace.layout !== 'text_only') void drawGraph();
 }
 
@@ -239,8 +422,17 @@ async function openPage(
 async function applyRoute(): Promise<void> {
   const route = parseRoute(new URL(window.location.href));
   if (route.page === null) {
-    const first = pages[0];
-    if (first !== undefined) await openPage(first.id);
+    // La raíz es hoy. Antes era la página más conectada del corpus, que es una
+    // buena portada y un mal sitio donde llegar: para escribir algo había que
+    // decidir primero dónde, y esa decisión es justo la que un diario ahorra.
+    await openToday();
+    return;
+  }
+
+  // Una fecha que todavía no tiene página no es un error: es un día que no ha
+  // empezado. Enseñarlo vacío es lo que permite escribir en él.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(route.page) && dayPage(route.page) === undefined) {
+    drawUnstartedDay(route.page);
     return;
   }
 
@@ -284,18 +476,12 @@ async function openTitle(title: string): Promise<void> {
   await openPage(found.id);
 }
 
-function drawBreadcrumbs(): void {
-  const trail = $('#breadcrumbs');
-  trail.innerHTML = '';
-  for (const id of workspace.history.slice(-4)) {
-    const page = pages.find((p) => p.id === id);
-    const crumb = document.createElement('button');
-    crumb.className = 'crumb';
-    crumb.textContent = page?.title ?? id;
-    crumb.addEventListener('click', () => void openPage(id));
-    trail.append(crumb);
-  }
-}
+/*
+ * El rastro ya no se dibuja en la barra: al lado de la marca era un texto que
+ * repetía el título que la página ya tiene debajo. `workspace.history` se sigue
+ * llevando, porque el rastro vuelve —como nav-pills en el panel del mapa, donde
+ * pertenece: el mapa es donde uno se ubica.
+ */
 
 // ---------------------------------------------------------------------------
 // Grafo
@@ -423,6 +609,16 @@ function wireTheme(): void {
   $('#insert-voice').innerHTML = icon('mic');
   $('#settings').innerHTML = icon('settings');
 
+  // Atrás y adelante son los del navegador, no un rastro propio: cada documento
+  // tiene dirección, así que el historial que ya existe es el correcto y no hay
+  // dos ideas de dónde se estuvo.
+  $('#back').innerHTML = icon('chevron-left');
+  $('#forward').innerHTML = icon('chevron-right');
+  $('#home').innerHTML = icon('calendar');
+  $('#back').addEventListener('click', () => window.history.back());
+  $('#forward').addEventListener('click', () => window.history.forward());
+  $('#home').addEventListener('click', () => void openToday());
+
   // El switch de la vista, en el orden del espacio que gobierna.
   const SWITCH: Record<string, IconName> = {
     graph_only: 'map',
@@ -459,12 +655,8 @@ function wireTheme(): void {
   // La configuración vive en su propia superficie, no en un panel suelto: son
   // varias secciones y van a ser más.
   const panel = $('#tokens');
-  let section: Section = 'teclado';
+  let section: Section = 'memoria';
 
-  const closeSettings = (): void => {
-    panel.hidden = true;
-    panel.innerHTML = '';
-  };
 
   const openSettings = (): void => {
     renderSettings(panel, tokens, section, {
@@ -495,31 +687,25 @@ function wireTheme(): void {
     });
   };
 
-  // Insertar voz. Vive en su propio panel: es una cascada de varios pasos, no
-  // una acción suelta.
-  const voicePanel = $('#voice');
+  /**
+   * Hablar, desde la barra.
+   *
+   * Lo grabado cae en el día de hoy, y por el mismo camino que `/audio`: un
+   * bloque del día le guarda el lugar y ahí se recorre la cascada. Que sea el
+   * mismo camino importa más de lo que parece — es lo que hace que ninguna
+   * grabación pueda volver a quedar flotando sin página, porque todas nacen con
+   * un día.
+   *
+   * En un teléfono es la razón de ser de la aplicación: se saca del bolsillo, se
+   * habla, y lo dicho ya está en el día que le corresponde.
+   */
   $('#insert-voice').addEventListener('click', () => {
-    if (!voicePanel.hidden) {
-      voicePanel.hidden = true;
-      voicePanel.innerHTML = '';
-      return;
-    }
-    renderVoicePanel(voicePanel, null, {
-      page: () => {
-        if (workspace.activePage === null) return null;
-        const found = pages.find((p) => p.id === workspace.activePage);
-        return found === undefined ? null : { id: found.id, title: found.title };
-      },
-      onSettled: (blocks) => {
-        notice(`Asentados ${blocks.length} bloques desde la voz.`);
-        if (workspace.activePage !== null) void openPage(workspace.activePage);
-      },
-      notify: (message) => notice(message),
-      onClose: () => {
-        voicePanel.hidden = true;
-        voicePanel.innerHTML = '';
-      },
-    });
+    void (async () => {
+      const block = await startDay(today());
+      if (block === null) return;
+      speakInto(block);
+      if (workspace.activePage !== null) await openPage(workspace.activePage);
+    })();
   });
 
   $('#settings').addEventListener('click', () => {
@@ -565,6 +751,21 @@ function wireDivider(): void {
 
 async function start(): Promise<void> {
   wireTheme();
+
+  // Lo recordado del participante llega del servidor y puede diferir de lo que
+  // este navegador tenía. Se pide después de pintar, no antes: dibujar con lo
+  // local es instantáneo, y esperar al servidor haría que abrir Vera empezara
+  // por una pantalla en blanco.
+  void syncPresentation().then((changed) => {
+    if (!changed) return;
+    tokens = loadTokens();
+    workspace.scheme = session.scheme();
+    workspace.layout = session.layout();
+    workspace.graphView = session.graphView();
+    workspace.divider = session.divider();
+    applyTokens(tokens, workspace.scheme);
+    applyLayout();
+  });
   wireSearch();
   wireDivider();
 

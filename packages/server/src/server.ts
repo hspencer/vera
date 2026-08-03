@@ -28,9 +28,11 @@ import {
   recordings,
   recordingsInPage,
   saveParticipant,
+  saveWorkspace,
   setFold,
   setSpokenOrigin,
   spokenOriginsOnPage,
+  workspaceOf,
   type Store,
 } from '@vera/store';
 import { HASH, objectPath, putObject } from '@vera/store/objects';
@@ -748,6 +750,48 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         const block = typeof body.block === 'string' && body.block !== '' ? body.block : null;
         const outcome = placeRecording(store, id, block);
         send(response, 'error' in outcome ? 422 : 200, outcome);
+      });
+      return;
+    }
+
+    // La presentación recordada de quien pregunta.
+    //
+    // @guarantee RememberedSessionPresentation: va con el participante y no con
+    // el navegador, para que ajustar el sistema de diseño en una máquina no haya
+    // que repetirlo en la siguiente.
+    if (request.method === 'GET' && path === '/workspace') {
+      send(response, 200, workspaceOf(store, owner.id));
+      return;
+    }
+
+    if (request.method === 'PUT' && path === '/workspace') {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+          // Se acepta lo que se reconoce y se ignora lo demás: un cliente más
+          // nuevo que mande un campo que este servidor no conoce no debe fallar.
+          const patch: Parameters<typeof saveWorkspace>[2] = {};
+          if (body['layout'] === 'text_only' || body['layout'] === 'graph_only' || body['layout'] === 'split') {
+            patch.layout = body['layout'];
+          }
+          if (typeof body['dividerPosition'] === 'number' && Number.isFinite(body['dividerPosition'])) {
+            patch.dividerPosition = Math.min(0.95, Math.max(0.05, body['dividerPosition']));
+          }
+          if (body['graphView'] === 'graph_2d' || body['graphView'] === 'graph_3d') {
+            patch.graphView = body['graphView'];
+          }
+          if (body['colourScheme'] === 'light' || body['colourScheme'] === 'dark') {
+            patch.colourScheme = body['colourScheme'];
+          }
+          if (typeof body['designTokens'] === 'string' || body['designTokens'] === null) {
+            patch.designTokens = body['designTokens'];
+          }
+          send(response, 200, saveWorkspace(store, owner.id, patch));
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+        }
       });
       return;
     }

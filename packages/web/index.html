@@ -44,7 +44,20 @@
              definición y no se separe del que usa el resto de la interfaz. El
              nombre sigue estando, en la etiqueta accesible y en el título. -->
         <span id="brand" title="Vera" role="img" aria-label="Vera"></span>
-        <nav id="breadcrumbs"></nav>
+
+        <!--
+          Atrás, adelante y hoy.
+
+          «Hoy» no es una página que haya que crear: es el día en curso, y va
+          antes que cualquier otra cosa porque ponerse a escribir no debería
+          costar decidir primero cómo se llama lo que se va a escribir. El día
+          sólo entra en la base cuando algo se escribe en él.
+        -->
+        <nav id="nav" aria-label="Navegación">
+          <button id="back" aria-label="Atrás" title="Atrás"></button>
+          <button id="forward" aria-label="Adelante" title="Adelante"></button>
+          <button id="home" aria-label="Hoy" title="El día de hoy"></button>
+        </nav>
         <div id="search-wrap">
           <input id="search" type="search" placeholder="buscar en el grafo" autocomplete="off" />
           <div id="results" hidden></div>
@@ -91,7 +104,6 @@
       <div id="divider" role="separator" aria-orientation="vertical" tabindex="0"></div>
       <main id="text"></main>
       <div id="tokens" hidden></div>
-      <div id="voice" hidden></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
