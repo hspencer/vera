@@ -358,13 +358,18 @@ describe('una grabación con lugar en la escritura', () => {
     store.close();
   });
 
-  it('no se mete en un bloque que ya tiene texto escrito', () => {
-    // @invariant AHeldBlockHoldsNothingElse: la transcripción caería encima de
-    // palabras que nadie aceptó perder.
+  it('se puede pegar a un bloque que ya tiene texto', () => {
+    // Antes se rechazaba, porque la transcripción reemplazaba al bloque entero y
+    // habría caído encima de palabras que nadie aceptó perder. Desde que el
+    // audio convive con lo escrito en vez de sustituirlo, pegarle una grabación
+    // a un bloque que ya dice algo es perfectamente sensato: el audio va arriba
+    // y el texto sigue donde estaba.
     const { store, write, page } = withPage();
     const block = write({ kind: 'create_block', page, parent: null, position: 0, content: 'ya escrito' });
     const outcome = createRecording(store, { ...spoken, placedInBlock: block });
-    assert.ok('error' in outcome);
+    assert.ok(!('error' in outcome));
+    if ('error' in outcome) return;
+    assert.equal(outcome.placedInBlock, block);
     store.close();
   });
 
