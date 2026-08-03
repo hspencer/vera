@@ -12,6 +12,65 @@ import {
   type Recording,
 } from './voice.ts';
 
+/** Cuánto duró, dicho como lo diría alguien. */
+function spokenLength(ms: number | null): string {
+  if (ms === null) return 'sin duración';
+  const total = Math.round(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = String(total % 60).padStart(2, '0');
+  return `${minutes}:${seconds}`;
+}
+
+/**
+ * Lo grabado que aún no llega al final de la cascada.
+ *
+ * Una grabación no vive en una página —sólo su contenido asentado lo hace—, así
+ * que sin esta lista quedaría fuera de alcance en cuanto se cierra el panel: la
+ * cadena existiría en la base y no habría por dónde retomarla.
+ */
+function renderPending(host: HTMLElement, resume: (recording: Recording) => void): void {
+  void voice.list().then((all) => {
+    if (!Array.isArray(all)) return;
+    const pending = all.filter((r) => r.stage !== 'content_settled');
+    if (pending.length === 0) return;
+
+    const title = document.createElement('p');
+    title.className = 'settings-note';
+    title.textContent = 'Sin terminar:';
+    host.append(title);
+
+    const list = document.createElement('ul');
+    list.className = 'voice-pending';
+    for (const item of pending) {
+      const row = document.createElement('li');
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'voice-pending-item';
+
+      const when = document.createElement('span');
+      when.className = 'voice-pending-when';
+      when.textContent = `${new Date(item.capturedAt).toLocaleString('es')} · ${spokenLength(item.durationMs)}`;
+
+      const stage = document.createElement('span');
+      stage.className = 'voice-pending-stage';
+      stage.textContent = STAGES.find((s) => s.id === item.stage)?.label ?? item.stage;
+
+      // La primera línea de lo transcrito basta para reconocerla; el resto es
+      // ruido en una lista.
+      const peek = document.createElement('span');
+      peek.className = 'voice-pending-peek';
+      peek.textContent = (item.transcript ?? '').trim().slice(0, 90);
+
+      open.append(when, stage);
+      if (peek.textContent !== '') open.append(peek);
+      open.addEventListener('click', () => resume(item));
+      row.append(open);
+      list.append(row);
+    }
+    host.append(list);
+  });
+}
+
 export interface VoicePanelHandlers {
   /** La página donde se asentará el contenido. */
   page(): { id: string; title: string } | null;
@@ -122,6 +181,8 @@ export function renderVoicePanel(
       });
     }
     body.append(record);
+    // Mientras se graba, retomar otra cosa sería perder lo que se está diciendo.
+    if (stopper === null || 'error' in stopper) renderPending(body, redraw);
     return;
   }
 

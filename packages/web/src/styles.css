@@ -1634,6 +1634,182 @@ code {
   background: color-mix(in srgb, var(--warm) 12%, transparent);
 }
 
+/* El audio dentro del texto: ocupa el lugar del bloque mientras se habla. */
+.audio-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--accent);
+  border-radius: 4px;
+  padding: 0.55rem 0.7rem;
+  margin: 0.1rem 0;
+}
+
+/* Mientras se graba, el bloque es una sola línea: hay poco que decidir. */
+.audio-block.recording {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.audio-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: audio-pulse 1.4s ease-in-out infinite;
+  flex: none;
+}
+
+@keyframes audio-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audio-dot { animation: none; }
+}
+
+.audio-time {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  min-width: 3.2rem;
+}
+
+.audio-player {
+  width: 100%;
+  height: 2rem;
+}
+
+.audio-meta {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.audio-hint {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.74rem;
+}
+
+.audio-transcript {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.audio-settled {
+  white-space: pre-wrap;
+  margin: 0;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.audio-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.audio-action {
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+
+.audio-action:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.audio-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* El paso que cierra un eslabón pesa más que los otros. */
+.audio-action.primary {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.audio-action.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* Lo que deshace o borra no compite por la mirada. */
+.audio-action.quiet {
+  border-color: transparent;
+}
+
+/* Lo grabado que espera: se llega por aquí o no se llega. */
+.voice-pending {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.voice-pending-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+}
+
+.voice-pending-item:hover {
+  border-color: var(--accent);
+}
+
+.voice-pending-when {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.voice-pending-stage {
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+}
+
+.voice-pending-peek {
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .voice-audio {
   width: 100%;
   margin-bottom: 0.5rem;
