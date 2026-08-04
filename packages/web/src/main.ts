@@ -7,6 +7,7 @@ import './styles.css';
 
 import { api, type PageSummary } from './api.ts';
 import { renderOutliner, speakInto } from './outliner.ts';
+import { today } from './autocomplete.ts';
 import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
 import { voice } from './voice.ts';
@@ -232,21 +233,6 @@ function setLayout(layout: WorkspaceLayout): void {
 // ---------------------------------------------------------------------------
 // El día de hoy
 // ---------------------------------------------------------------------------
-
-/**
- * La fecha de hoy tal como la escribe el calendario.
- *
- * El reloj es el de esta máquina, no el del servidor: quien escribe está aquí, y
- * si son las once de la noche del lunes para él, es lunes, aunque el servidor
- * viva en otro huso. daily-log.allium deja abierto qué pasa cuando esos dos
- * relojes no son el mismo; mientras la instancia sea de una persona en una
- * máquina, la pregunta no se hace.
- */
-function today(): string {
-  const now = new Date();
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
 
 /** La página del día, si el día ya existe. */
 function dayPage(date = today()): PageSummary | undefined {
@@ -536,18 +522,42 @@ async function openTitle(title: string): Promise<void> {
 // Grafo
 // ---------------------------------------------------------------------------
 
+/**
+ * Cada dibujo del mapa lleva turno, igual que cada búsqueda.
+ *
+ * Pedir el grafo tarda, y en ese rato se puede pedir otro: cambiar de dimensión,
+ * mover el alcance, abrir otra página. Sin turno, la respuesta que llegue última
+ * dibuja, aunque sea la de la pregunta vieja.
+ */
+let graphTurn = 0;
+
 async function drawGraph(): Promise<void> {
   if (workspace.activePage === null) return;
   const container = $('#graph');
-  // Los controles del mapa viven dentro del mapa, y el renderizador se lleva por
-  // delante lo que haya en su contenedor. Se apartan y se devuelven.
-  // Los controles viven dentro del mapa, y el renderizador se lleva por delante
-  // lo que haya en su contenedor. Se apartan y se devuelven.
+  const turn = ++graphTurn;
+  const data = await api.graph(workspace.activePage, workspace.depth);
+  // Mientras se pedía éste, alguien pidió otro: el que manda es el último.
+  if (turn !== graphTurn) return;
+
+  /*
+   * El ojo y el rastro se apartan aquí, y no antes de pedir el grafo.
+   *
+   * Viven dentro del mapa y el renderizador vacía su contenedor, así que hay que
+   * sacarlos y devolverlos. Lo que importa es dónde: mientras se apartaban antes
+   * de la espera, un segundo dibujo que empezara durante esa espera no los
+   * encontraba en el DOM —`$` devolvía null y `null.remove()` cortaba el dibujo
+   * a la mitad—. Se quedaban fuera para siempre: el mapa en blanco y sin
+   * controles con que salir de ahí. Bastaba pulsar 2D y 3D seguido.
+   *
+   * De aquí al `append` del final no hay ninguna espera, así que nadie puede
+   * colarse entre sacarlos y devolverlos. El turno de más arriba se encarga de
+   * que sólo el último dibujo llegue hasta aquí.
+   */
   const controls = $('#map-controls');
   const trail = $('#map-trail');
   controls.remove();
   trail.remove();
-  const data = await api.graph(workspace.activePage, workspace.depth);
+
   // La página que se está leyendo es el nodo señalado: las dos vistas hablan de
   // lo mismo y deben decirlo a la vez.
   selectNode(workspace.activePage);
@@ -1053,8 +1063,101 @@ async function boot(attempt = 1): Promise<void> {
 
 void boot();
 
+/*
+ * Registrar el service worker, y además ocuparse de que se renueve.
+ *
+ * Registrarlo y nada más basta en una pestaña, que se abre y se cierra todo el
+ * tiempo. No basta en una Vera instalada como aplicación del sistema: esa se
+ * lanza una vez y se queda semanas abierta, y en ese régimen el navegador sólo
+ * va a mirar si hay un worker nuevo cada tantas horas. El código nuevo existía
+ * en el servidor y la aplicación seguía corriendo el viejo, sin nada que
+ * indicara la diferencia; la única salida era desinstalarla y volver a
+ * instalarla, que es pedirle a la persona que haga de mecanismo de despliegue.
+ *
+ * Así que se pregunta cuando hay motivo para preguntar: al arrancar y cada vez
+ * que la ventana vuelve al frente. Es cuando alguien acaba de volver a Vera, y
+ * es exactamente cuando conviene que lo que vea ya sea lo último.
+ */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/sw.js');
+    void navigator.serviceWorker.register('/sw.js').then((registration) => {
+      const ask = (): void => {
+        if (document.visibilityState === 'visible') void registration.update();
+      };
+      ask();
+      document.addEventListener('visibilitychange', ask);
+    });
   });
+
+  /*
+   * Un worker nuevo toma el control: la página que está a la vista es vieja.
+   *
+   * El worker se activa solo —hace `skipWaiting`— pero eso cambia quién sirve
+   * los archivos, no lo que ya está corriendo en la ventana. Sin recargar, la
+   * aplicación se queda con el JavaScript de la versión anterior hasta que
+   * alguien la cierre, que es el problema entero visto desde el otro lado.
+   *
+   * La guarda del control previo es lo que evita el bucle: en la primera visita
+   * el worker también toma el control —no había ninguno— y recargar ahí sería
+   * recargar cada vez que alguien abre Vera por primera vez.
+   */
+  let renewing = false;
+  const hadWorker = navigator.serviceWorker.controller !== null;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadWorker || renewing) return;
+    renewing = true;
+    window.location.reload();
+  });
+}
+
+/*
+ * Si el compilado que sirve el servidor ya no es el que esta ventana cargó,
+ * recargar.
+ *
+ * Renovar el service worker no alcanza, y conviene entender por qué: el worker
+ * se reemplaza cuando cambian los bytes de `sw.js`, y un cambio en una hoja de
+ * estilo o en este mismo archivo no lo toca. Con sólo aquello, una Vera
+ * instalada y dejada abierta puede pasar semanas corriendo la versión del día
+ * que se abrió mientras el servidor sirve otra, sin ninguna señal.
+ *
+ * Lo que sí distingue una versión de otra es la huella de lo compilado. El
+ * `index.html` del servidor nombra el suyo, y compararlo con el que esta
+ * ventana está corriendo responde la pregunta exacta: ¿lo que tengo a la vista
+ * es todavía lo que hay?
+ *
+ * Se pregunta al volver al frente, no en un temporizador: recargar es descartar
+ * la ventana entera y no puede caer encima de alguien que está escribiendo.
+ * Quien acaba de volver de otra aplicación no lo está.
+ */
+const running = document
+  .querySelector<HTMLScriptElement>('script[type="module"][src^="/build/"]')
+  ?.getAttribute('src');
+
+if (running != null) {
+  let checking = false;
+  let stale = false;
+
+  const compareBuild = async (): Promise<void> => {
+    if (checking || stale || document.visibilityState !== 'visible') return;
+    checking = true;
+    try {
+      // `fresh` esquiva al service worker —que si no devolvería su propia copia
+      // del index y haría la comparación siempre verdadera— y `no-store` evita
+      // que la respuesta se quede en ningún caché: es una pregunta, no un dato.
+      const response = await fetch('/index.html?fresh=1', { cache: 'no-store' });
+      if (!response.ok) return;
+      const served = /src="(\/build\/[^"]+\.js)"/.exec(await response.text())?.[1];
+      if (served === undefined || served === running) return;
+      stale = true;
+      window.location.reload();
+    } catch {
+      // Sin red no hay nada que comparar, y no saber si hay versión nueva no es
+      // motivo para molestar a nadie: se vuelve a preguntar la próxima vez.
+    } finally {
+      checking = false;
+    }
+  };
+
+  document.addEventListener('visibilitychange', () => void compareBuild());
+  window.addEventListener('focus', () => void compareBuild());
 }

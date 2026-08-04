@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p packages/web",
     "build": "npm run build --workspace @vera/web",
     "import": "node packages/importer/src/persist.ts",
-    "serve": "node packages/server/src/main.ts"
+    "serve": "node packages/server/src/main.ts",
+    "dev": "trap 'kill 0' INT TERM EXIT; npm run watch --workspace @vera/web & npm run serve"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

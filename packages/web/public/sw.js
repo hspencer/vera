@@ -8,7 +8,7 @@
 
 // Subir este número tira el caché anterior entero al activarse. Hace falta
 // cuando lo guardado deja de ser válido, y no sólo cuando cambia esta lista.
-const SHELL = 'vera-shell-v3';
+const SHELL = 'vera-shell-v4';
 const ASSETS = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -49,6 +49,12 @@ self.addEventListener('fetch', (event) => {
 
   if (isData) return;
 
+  // `?fresh` es la aplicación preguntando qué versión sirve el servidor ahora
+  // mismo. Contestarla desde el caché sería contestarse a sí misma: diría
+  // siempre que la versión en curso es la vigente, que es justo lo que la
+  // pregunta trata de averiguar. Va a la red sin pasar por aquí, y no se guarda.
+  if (url.searchParams.has('fresh')) return;
+
   // El documento va primero a la red. Cachearlo de entrada dejaba servido un
   // index.html viejo que pedía assets con hash ya inexistentes: la aplicación
   // quedaba en blanco después de cada build hasta borrar el caché a mano.
@@ -72,11 +78,35 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Todo lo demás sí puede venir del caché: los assets llevan hash en el
-  // nombre, así que una copia guardada nunca es una versión equivocada.
+  // Lo compilado lleva huella en la ruta: `/build/index-BMdgMbJP.css` no puede
+  // cambiar de contenido sin cambiar de nombre, así que una copia guardada
+  // nunca es una versión equivocada y se sirve sin preguntar.
+  if (url.pathname.startsWith('/build/')) {
+    event.respondWith(
+      caches.match(request).then(
+        (hit) => hit ?? fetch(request).then((response) => keep(request, response)),
+      ),
+    );
+    return;
+  }
+
+  // El resto —iconos, fuentes, el manifiesto, los SVG de `public/`— conserva su
+  // nombre entre versiones. Servirlo del caché sin más lo congela para siempre:
+  // era el caso de los iconos de la interfaz, que una vez guardados no volvían
+  // a pedirse aunque el archivo cambiara.
+  //
+  // Se responde con la copia si la hay —rápido, y sirve sin red— y se pide la
+  // nueva en paralelo para la próxima vez. Una versión de retraso como mucho,
+  // en vez de ninguna versión nunca.
   event.respondWith(
-    caches.match(request).then(
-      (hit) => hit ?? fetch(request).then((response) => keep(request, response)),
-    ),
+    caches.match(request).then((hit) => {
+      const fresh = fetch(request).then((response) => keep(request, response));
+      // Sin copia guardada no hay nada que ofrecer si la red falla: el error
+      // tiene que llegar tal cual. Con copia, el fallo de la red no es asunto
+      // de nadie —ya se respondió— pero se recoge para no dejarlo suelto.
+      if (hit === undefined) return fresh;
+      void fresh.catch(() => undefined);
+      return hit;
+    }),
   );
 });
