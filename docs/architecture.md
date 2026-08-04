@@ -186,7 +186,7 @@ aislados para SVG y sketches.
 - SQLite conserva identidad, hash, MIME, tamaño, procedencia y relaciones. Las
   tablas `media` existen en el esquema y están vacías.
 - Backups consistentes usan la API de backup de SQLite; los binarios se respaldan
-  con **restic** hacia un destino independiente de Alexei.
+  con **restic** hacia un destino independiente de la máquina que sirve Vera.
 - Git recibe Markdown y manifiestos deterministas. El archivo SQLite activo y
   sus WAL no se usan como historial Git — ya está en `.gitignore`.
 

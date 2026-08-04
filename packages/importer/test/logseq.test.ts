@@ -63,13 +63,13 @@ describe('árbol de bloques', () => {
 
   it('une las líneas de continuación al contenido del bloque', () => {
     const page = parseLogseqPage(
-      ['- Hello, my name is Herbert.', '  id:: 672286bc-9b4c-4301-9e9b-4df027dc85a3', '  0221955130'].join(
+      ['- Una línea y su continuación.', '  id:: 672286bc-9b4c-4301-9e9b-4df027dc85a3', '  sigue aquí'].join(
         '\n',
       ),
     );
 
     assert.equal(page.blocks.length, 1);
-    assert.equal(page.blocks[0]?.content, 'Hello, my name is Herbert.\n0221955130');
+    assert.equal(page.blocks[0]?.content, 'Una línea y su continuación.\nsigue aquí');
     assert.equal(page.blocks[0]?.properties.get('id'), '672286bc-9b4c-4301-9e9b-4df027dc85a3');
   });
 

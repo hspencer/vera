@@ -6,7 +6,7 @@ Este documento compara el **diseño especificado** de Vera con capacidades
 documentadas de Logseq, Obsidian, Roam Research y SilverBullet. Vera todavía no
 está implementada; por tanto, no hay base honesta para afirmar que hoy sea más
 rápida, estable o fácil de usar. Aquí “mejor” significa **mejor ajustada al caso
-de Herbert** si cumple sus contratos.
+de una memoria personal soberana** si cumple sus contratos.
 
 No intentamos ganar una tabla marcando más casillas. Los cuatro productos de
 referencia están maduros en áreas donde Vera aún es sólo una intención formal.
