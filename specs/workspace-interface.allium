@@ -147,6 +147,18 @@ contract PageFrontMatter {
         -- after it arrived — the header says so rather than presenting the day
         -- of the import as the day of the writing.
 
+    @invariant BothHalvesOfAPropertyAreFollowable
+        -- The key leads to the page that defines it and the value to the page
+        -- that bears its name. Both, not one: `lang` and `es` are two questions
+        -- — what this property is, and what this answer means — and a header
+        -- that only follows the second leaves the first with nowhere to be
+        -- asked, which is how 231 property keys came to have no definitions.
+        --
+        -- Following is not answering. Reaching a value's page is a different act
+        -- from choosing that value, and the two must not share a target: a
+        -- reader who wants to know what `proyecto` means would otherwise have to
+        -- assign it to find out.
+
     @invariant TheControlChangesTheQuestionNotTheFile
         -- What a control writes is the same `key:: value` line the projection
         -- has always written. A redesign of the header that changed the Markdown
@@ -624,6 +636,22 @@ surface VeraWorkspace {
         --
         -- Not the eye. That mark already means folding the map's controls in
         -- this workspace, and a mark that means two things means neither.
+
+    @guarantee AVocabularyPageReadsAsListSearchAndRoomToWrite
+        -- A page whose name the vocabulary uses presents three things in one
+        -- order: what one has written on it, at the top and editable as any
+        -- blocks are; then the pages that classify with it or define it; and a
+        -- search bounded to that set.
+        --
+        -- Writing first because the page belongs to whoever writes it, not to
+        -- the index. A definition of what `proyecto` means in this corpus is
+        -- worth more than the list of them, and putting the list first would say
+        -- the opposite — that the page is a report one may annotate rather than
+        -- a page that happens to know something.
+        --
+        -- The search is bounded and is not a second mechanism: it composes the
+        -- standing expression with a text term, exactly as
+        -- query-language/SearchingWithinAResultIsComposition sets out.
 
     @guarantee FollowingAMissingNameLandsInItsFirstBlock
         -- Pressing a reference to a page that does not exist opens that page

@@ -230,6 +230,21 @@ surface SpecialPageAdministration {
         -- on that page, naming the line. Falling back to a default in silence
         -- leaves a participant editing a setting that has never taken effect.
 
+    @guarantee EverythingAConfigurationNamesIsFollowable
+        -- What a special page lists — a type, a property, a concept, a theme
+        -- token, an instruction the librarian works under — is reached from
+        -- where it is listed. These are not strings in a settings screen: each
+        -- is a page of the corpus with an author, a history and a definition,
+        -- and the configuration is a view onto them rather than the place they
+        -- live.
+        --
+        -- This is the SelfDescription contract taken to its end. Having argued
+        -- that what governs Vera lives in the corpus as pages, a settings screen
+        -- that then printed those pages as inert text would put the argument
+        -- exactly one click out of reach — and it is the click that makes the
+        -- difference between a configuration one can read about and one one can
+        -- only edit.
+
     @guarantee ProposalsAreVisibleWhereTheyApply
         -- An agent's pending proposals are seen on the page they would change,
         -- not in a queue elsewhere. A proposal nobody encounters is a proposal
