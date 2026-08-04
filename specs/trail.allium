@@ -1,0 +1,818 @@
+-- allium: 3
+-- trail.allium
+
+-- Scope: El recorrido — una ruta compuesta a través del grafo, y el argumento
+--   que esa ruta hace
+-- Includes: El rastro que se guarda y se vuelve borrador, el recorrido como
+--   página del corpus, los nodos derivados del texto que la página lleva, las
+--   conectivas que los unen y que son lo único que el recorrido aporta, el
+--   argumento que sigue vivo porque sus premisas lo están, y la publicación de un
+--   argumento cuyas premisas no siempre son legibles
+-- Excludes:
+--   - El rastro mismo: cómo se acumula, cómo se dibuja y cómo se vuelve a él
+--     (ver workspace-interface.allium)
+--   - La derivación de enlaces y la construcción de vecindarios
+--     (ver graph-navigation.allium)
+--   - La publicación al sitio personal, su URL y su HTML
+--     (ver core.allium y personal-site-projection.allium)
+--   - Cómo se acredita un agente y cómo se marca su mano
+--     (ver agent-participation.allium)
+-- Dependencies: Graph, Page, Block, Participant, Publication y la propia
+--   publicación los gobierna core.allium; PageLink lo deriva
+--   graph-navigation.allium; el rastro lo lleva workspace-interface.allium
+--
+-- Linaje: los trails del Memex de Vannevar Bush (1945) — secuencias asociativas,
+-- compuestas, persistentes, y entregables a un amigo para que sus recorridos y
+-- los nuestros se entrelacen.
+
+use "./core.allium" as core
+use "./graph-navigation.allium" as nav
+use "./workspace-interface.allium" as workspace
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- Qué es un recorrido, dicho una vez.
+--
+-- El grafo tiene todas las relaciones y ninguna dirección. `TraversalIsUndirected`
+-- lo dice sin rodeos: una página que sólo enlaza al centro está tan cerca como una
+-- que el centro sólo enlaza. Eso es honesto sobre lo que el corpus sabe, y es
+-- inhabitable para quien llega de fuera.
+--
+-- Un recorrido es la primera cosa dirigida de Vera. Alguien dice por aquí, en este
+-- orden, y por esto. Y como el orden es lo que se afirma, un recorrido no es una
+-- ruta con comentarios: es un argumento cuyas premisas son sitios del corpus y
+-- cuyo hilo es la voz de quien lo compuso.
+--
+-- Tiene dos materiales y sólo uno es suyo. Los nodos son prestados: sitios que ya
+-- estaban en el corpus, escritos por quien fuera, quizá por uno mismo hace años, y
+-- que siguen diciendo lo que digan hoy. Las conectivas son lo que el guía pone —el
+-- pegamento entre un nodo y el siguiente— y no dicen nada sobre ninguno de los
+-- dos: dicen lo que hay entre ellos. Ahí vive el argumento entero.
+contract ComposedRoute {
+    nodes: (trail: Trail) -> List<nav/PageLink>
+    ordinal: (node: nav/PageLink) -> Integer
+    connective: (node: nav/PageLink) -> String
+    conclusion: (trail: Trail) -> String
+    guide: (trail: Trail) -> core/Participant
+
+    @invariant TheOrdinalIsWhatMakesTheOrderDrawable
+        -- Cada nodo lleva su número, y el número no es una comodidad de lectura.
+        -- Un grafo dibujado no tiene orden: encender un subconjunto de páginas dice
+        -- cuáles son, y no hay nada en un dibujo de grafo que diga por cuál se
+        -- empieza. La numeración es lo único que convierte un subgrafo encendido en
+        -- un recorrido, y como el orden es el argumento, es lo único que hace que
+        -- un argumento se pueda dibujar.
+        --
+        -- Tiene un segundo efecto y es el que decide una ambigüedad. Toda
+        -- referencia del texto es un nodo, así que nombrar algo de pasada dentro de
+        -- una conectiva lo convierte en parada. Con números eso se ve en el acto:
+        -- la mención aparece numerada donde le toca. La ambigüedad no se elimina —
+        -- eliminarla pediría una marca que distinga citar de mencionar, y una marca
+        -- es una cosa más que aprender y que mantener— sino que se hace visible, y
+        -- quien la vea decide si quería decir eso.
+
+    @invariant TheConnectivesAreTheOnlyOriginalText
+        -- Un recorrido no aporta un solo hecho nuevo sobre los sitios que visita.
+        -- Lo único que escribe su autor es lo que va entre ellos, y es lo único que
+        -- hay que juzgar en él. Un recorrido que se leyera bien quitándole las
+        -- conectivas sería una lista de enlaces con un título encima, y el corpus
+        -- ya sabía hacer listas de enlaces.
+
+    @invariant TheLastConnectiveLeadsNowhere
+        -- Lo que se escribe después del último nodo no lleva a ninguna parte, y por
+        -- eso es la conclusión. Un argumento que acabara en una cita acabaría con
+        -- la palabra de otro, y quien compuso el recorrido tiene que poder decir
+        -- para qué lo compuso justo cuando ya se ha visto entero.
+
+    @invariant TheOrderIsTheArgument
+        -- Ir y volver no son de igual fortuna. Reordenar los nodos de un
+        -- recorrido no lo reorganiza: lo hace afirmar otra cosa. Por eso el orden
+        -- no es una propiedad de presentación que una vista pueda elegir, y no hay
+        -- forma de leer un recorrido salvo la que su autor escribió.
+
+    @invariant TheRouteIsDerivedFromItsText
+        -- Los nodos de un recorrido son las referencias que su texto lleva, en el
+        -- orden en que se leen, y sus conectivas son lo que queda de ese texto al
+        -- quitárselas. No hay una segunda estructura al lado del texto que pudiera
+        -- discrepar de él, y no hay manera de mover un nodo que no sea escribir.
+        -- Es la misma razón por la que graph-navigation deriva sus
+        -- aristas del contenido: una relación que sobreviviera a la frase que la
+        -- produjo sería una relación que ya nadie afirma.
+
+    @invariant ANodeCitesAndNeverCopies
+        -- Un nodo nombra un sitio del corpus; no guarda una copia de lo que ese
+        -- sitio dice. Un recorrido compuesto hace tres años enseña lo que sus nodos
+        -- dicen hoy, y eso incluye enseñar que uno de ellos cambió de opinión.
+
+    @invariant TheArgumentIsLiveAndCanStopHolding
+        -- Como los nodos son referencias, un argumento cambia cuando cambian sus
+        -- premisas, y puede dejar de sostenerse sin que su autor lo haya tocado.
+        -- Eso no es un defecto del modelo: es la única forma honesta de citar un
+        -- corpus que sigue vivo. La alternativa —congelar el texto citado en el
+        -- momento de componer— daría argumentos que se sostienen para siempre
+        -- porque hablan de un corpus que ya no existe.
+        --
+        -- Lo que Vera debe es avisar, no arreglar. Reescribir una conectiva porque
+        -- su premisa se movió es una decisión sobre lo que se está afirmando, y
+        -- pertenece a quien afirma.
+
+    @invariant AMissingNodeIsSaidAndNotRemoved
+        -- Si el sitio que un nodo nombra deja de existir, el recorrido no se acorta
+        -- solo. La frase que lo nombraba sigue ahí, legible, esperando —
+        -- exactamente como una referencia a una página que nunca se escribió. El
+        -- puente está cortado y el mapa tiene que decirlo.
+
+    @invariant TheGuidesVoiceIsNotThePlacesVoice
+        -- La conectiva y el nodo son dos textos con dos manos, y se leen como dos.
+        -- Un recorrido que fundiera ambas voces estaría poniendo palabras en boca
+        -- del corpus, que es el único daño que un recorrido puede hacerle: sus
+        -- premisas son de otros y siguen siendo de otros aunque el argumento sea
+        -- suyo.
+}
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+-- Un recorrido es una meta-página, y formalmente una página.
+--
+-- Meta-página por lo que hace: no habla de una cosa, habla de la relación entre
+-- cosas que ya están escritas. Su materia es el corpus, no el mundo.
+--
+-- Página por lo que es, y eso no es una concesión: es lo que impide que la primera
+-- mitad de la frase construya una segunda memoria al lado del corpus. Tiene
+-- bloques, revisiones, historia, autoría por bloque y enlaces como cualquier otra;
+-- se escribe en el mismo editor; se busca con la misma búsqueda; se puede
+-- [[enlazar]] desde cualquier sitio, porque un argumento sobre el que nadie puede
+-- argumentar no es un argumento; y —lo que decide el asunto— puede ser el nodo de
+-- otro recorrido. Un argumento que no pudiera ser premisa de otro sería el único
+-- texto de Vera sobre el que no se puede volver.
+--
+-- Es también lo que impide que esto sea una segunda memoria al lado del corpus.
+-- Un recorrido guardado aparte tendría autor y fecha en una tabla, y tendría que
+-- inventar su propia edición, su propia historia y su propia publicación. Guardado
+-- como página no tiene que inventar ninguna: ya las tiene todas.
+entity Trail {
+    graph: core/Graph
+    page: core/Page
+
+    -- Para qué se compuso esta ruta, escrito por quien la compuso. Vive como la
+    -- propiedad `intent::` de la página, y por tanto se edita escribiendo.
+    --
+    -- Es lo único que un recorrido pide y que una página normal no: el título dice
+    -- de qué trata y el intent dice para quién es. «Las 231 claves» y «para quien
+    -- herede este vocabulario» son dos cosas distintas, y la segunda es la que
+    -- decide qué nodos sobran.
+    intent: String
+
+    -- Los nodos: los enlaces que el texto de esta página lleva, ya derivados por
+    -- graph-navigation, en el orden en que se leen. No hay entidad que mantener y
+    -- no hay derivación nueva que escribir: un recorrido es una página que enlaza
+    -- sitios, y eso el grafo ya sabe verlo.
+    nodes: nav/PageLink with source_page = this.page
+
+    -- El orden de lectura: por el sitio del bloque en la página, y dentro de un
+    -- bloque, por el sitio de la referencia en la frase.
+    route: reading_order(nodes)
+
+    -- Las conectivas: el texto que hay entre un nodo y el siguiente. Se derivan
+    -- del mismo sitio y por el mismo procedimiento que los nodos, porque son lo
+    -- que queda de la página cuando se le quitan las referencias.
+    --
+    -- No hacen falta bloques de una clase distinta. Una conectiva puede tener su
+    -- propio bloque o compartirlo con el nodo al que lleva —«y siete años después
+    -- ya no se podía deshacer: [[X]]»— y en los dos casos es la misma cosa: lo que
+    -- se lee justo antes de llegar ahí.
+    connectives: connective_texts(page, route)
+
+    -- Lo que se escribe después del último nodo. Vacío mientras el recorrido no
+    -- concluya nada, que es el estado normal de un borrador recién andado.
+    conclusion: text_after_last(page, route)
+
+    walked: route where target != null
+    -- Los puentes cortados. Se enseñan; no se quitan.
+    broken: route where target = null
+
+    length: route.count
+    is_walkable: length >= 1 and broken.count = 0
+    -- Un recorrido sin una sola conectiva es una lista de enlaces. Se puede
+    -- guardar, se puede tener a medias y se puede volver a él mañana; lo que no
+    -- afirma todavía es nada.
+    argues: connectives.count >= 1
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- El ciclo, dicho entero, porque está repartido entre esta spec y otras tres y
+-- desde dentro de cada regla no se ve.
+--
+-- Cero. No hay nada, y es importante que no lo haya. Un recorrido no empieza con
+-- la decisión de hacer un recorrido: empieza andando por el corpus con cualquier
+-- otro propósito. El rastro se acumula solo, en el mapa, sin que nadie lo componga
+-- (workspace-interface.allium). Nadie ha decidido nada todavía.
+--
+-- Uno. Alguien mira por dónde anduvo y le parece que eso decía algo. Guarda el
+-- rastro. Nace una página privada, con `type:: trail`, un bloque por paso, ningún
+-- texto propio y un título provisional. Es SaveTheTraceAsADraftTrail, y es el
+-- único acto de esta spec que no es escribir.
+--
+-- Uno bis. O no hubo rastro ninguno: alguien estaba escribiendo una página, se dio
+-- cuenta a mitad de que lo que tenía entre manos era un argumento, y le puso la
+-- propiedad. Es DeclaringAPageToBeATrail. Los dos nacimientos acaban en lo mismo
+-- —una página que lleva la propiedad— y por eso no hay un acto de crear
+-- recorridos: hay dos maneras de que una página resulte serlo.
+--
+-- Dos. Se escribe. Podar, reordenar, partir un bloque en dos, afinar un nodo hasta
+-- un bloque, y sobre todo escribir las conectivas, que es donde está todo lo que
+-- este recorrido va a aportar. No hay estado de borrador ni acto de terminar:
+-- `argues` dice si ya afirma algo y es un hecho, no una fase. Un recorrido se
+-- puede tener a medias durante un año.
+--
+-- Tres. Se publica, o no. Publicar es core/PublishVisiblePageRevision sobre su
+-- página, más la puerta declarada sobre lo que el lector no puede leer. Es la
+-- única transición que un recorrido tiene, y no es suya: es la de cualquier
+-- página.
+--
+-- Cuatro. Se retira quitándole la propiedad, y lo que queda es el texto. No hay
+-- estado terminal ni papelera: un argumento que uno ya no sostiene sigue siendo
+-- una página que dice lo que decía, con su historia y su mano.
+--
+-- Cinco, y aquí el ciclo se muerde la cola. Alguien lee este recorrido, y leerlo
+-- es haber pasado por sus sitios, así que su rastro los recoge. De ahí puede salir
+-- el siguiente, que dirá otra cosa con parte de las mismas premisas. Es el gesto
+-- de Bush entero y no hace falta ningún mecanismo para tenerlo: sale de que leer
+-- deje huella y de que la huella se pueda guardar.
+
+-- Guardar por dónde se anduvo, y que eso sea el primer borrador.
+--
+-- El mapa ya lleva el rastro: dónde ha estado un participante, acumulado solo, sin
+-- que nadie lo componga. `workspace/TheTraceIsWhereOneIsLocated` existe para saber
+-- dónde está uno. Esta regla es el momento en que ese rastro deja de ser propio y
+-- empieza a ser para otro.
+--
+-- El parentesco entre las dos cosas es el hallazgo y no una coincidencia de
+-- nombres. Un rastro es la huella que uno deja sin querer: automática, privada,
+-- sin autor. Un recorrido es el camino que uno traza queriendo: compuesto, con
+-- autor, para alguien. Son el mismo objeto en dos momentos, y el segundo empieza
+-- cuando uno mira por dónde anduvo y decide que eso era un argumento.
+--
+-- Por eso el borrador nace lleno de sitios y vacío de palabras. Lo que el rastro
+-- sabe es la ruta; lo que no sabe, y es todo lo que hace falta, es por qué.
+--
+-- Y lo que ocurre aquí es que el rastro deja de ser un rastro. Sale del taller y
+-- entra en el corpus, y la señal de que eso pasó es que ahora tiene título. Un
+-- breadcrumb no tiene nombre y no puede tenerlo: por eso no se puede [[enlazar]],
+-- ni citar, ni ser el nodo de otro recorrido, ni entregárselo a nadie. Es dónde
+-- está uno, y sólo sirve mientras uno está ahí.
+rule SaveTheTraceAsADraftTrail {
+    when: SaveTrace(participant, workspace, from_step)
+
+    let graph = workspace.graph
+    let membership = core/Membership{graph, participant}
+    -- El tramo del breadcrumb que se guarda: desde el paso elegido hasta donde se
+    -- está ahora, sin repeticiones seguidas y conservando los regresos.
+    let trace = trace_from(workspace.navigation_history, from_step)
+    let title = provisional_title(trace, now)
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: participant.kind = human
+    requires: trace.count >= 1
+    requires: not exists core/Page{graph: graph, title_key: title_key(title)}
+
+    ensures:
+        core/ParticipantSubmits(
+            participant: participant,
+            graph: graph,
+            origin_id: origin_id_for_trace(participant, trace),
+            change: create_page(title, private),
+            channel: typed_text
+        )
+        core/ParticipantSubmits(
+            participant: participant,
+            graph: graph,
+            origin_id: origin_id_for_declaration(participant, trace),
+            change: set_property("type", "trail"),
+            channel: typed_text
+        )
+        for step in trace:
+            core/ParticipantSubmits(
+                participant: participant,
+                graph: graph,
+                origin_id: origin_id_for_step(participant, trace, step),
+                change: create_block(link_to(step.title)),
+                channel: typed_text
+            )
+        TrailSeeded(
+            participant: participant,
+            graph: graph,
+            title: title
+        )
+
+    @invariant TheUpgradeIsHavingAName
+        -- Lo que distingue al rastro guardado del rastro es que tiene título, y con
+        -- él todo lo que un título trae: se puede nombrar desde otra página, citar,
+        -- buscar, y ser el nodo de otro recorrido. El nombre provisional es un
+        -- andamio —lo pone Vera para que la página pueda existir sin obligar a nadie
+        -- a saber todavía de qué trata— y ponerle el suyo es un rename_page como
+        -- cualquier otro. Pero no es un trámite: el título de un recorrido es el
+        -- título de un texto, y escribirlo es decir qué se está afirmando.
+
+    @invariant TheTraceItselfIsNotConsumed
+        -- Guardar un tramo no vacía el breadcrumb ni lo marca. Se sigue andando y
+        -- se sigue acumulando, y el mismo tramo se puede guardar dos veces si a
+        -- alguien le da por contar dos cosas distintas con el mismo paseo. El rastro
+        -- es estado del taller y no lleva cuenta de lo que se hizo con él.
+
+    @invariant ADraftTrailIsBornPrivate
+        -- Nace privado como nace toda página en Vera. Haber andado por un sitio no
+        -- es haber decidido enseñárselo a nadie, y un rastro que se publicara solo
+        -- convertiría el mapa en una cámara.
+
+    @invariant TheFirstDraftIsNodesWithoutConnectives
+        -- Cada paso del rastro llega como un bloque con la referencia y nada más.
+        -- No se escribe conectiva por cuenta de nadie: ni el título repetido, ni un
+        -- resumen de la página citada, ni una frase de plantilla que diga «y
+        -- después». Lo que nace es un argumento con todas sus premisas y ningún
+        -- razonamiento, que es exactamente lo que el rastro sabía y exactamente
+        -- hasta dónde puede llegar una máquina sin ponerse a afirmar.
+        --
+        -- El cursor espera entre el primer nodo y el segundo, que es donde va la
+        -- primera cosa que este recorrido va a decir.
+
+    @invariant PruningIsEditing
+        -- Podar un nodo, reordenar dos, partir una frase en dos o unir dos en una
+        -- son ediciones de la página, con sus revisiones y su mano. No hay actos de
+        -- composición aparte de escribir, y por tanto no hay ninguna operación
+        -- sobre un recorrido de la que su historia no dé cuenta.
+
+    @guidance
+        -- El rastro guarda páginas, no bloques, así que el borrador cita páginas.
+        -- Afinar un nodo hasta un bloque concreto es una edición posterior y una
+        -- decisión distinta: el guía primero dice por dónde se pasa, y sólo
+        -- después, si hace falta, señala dónde exactamente hay que mirar.
+        --
+        -- TrailSeeded es lo que workspace-interface.allium escucha para abrir la
+        -- página nueva y dejar el cursor donde va la primera conectiva. Se emite en
+        -- vez de actuarse aquí porque dónde va el cursor es un hecho sobre el
+        -- taller, y esta spec gobierna el argumento.
+}
+
+-- Una página se vuelve un recorrido cuando alguien lo escribe.
+--
+-- Y lo que escribe no crea nada: nota algo. Cualquier buen texto es ya un
+-- recorrido —va por sitios, en un orden, y lo que pone entre ellos es lo que
+-- aporta—, así que la mitad del corpus lleva años siendo recorridos sin decirlo.
+-- La propiedad no añade estructura, porque la estructura ya estaba: añade una
+-- afirmación del autor sobre ella, que es que el orden estaba pensado.
+rule DeclaringAPageToBeATrail {
+    when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    requires: change.kind = set_property
+    requires: change.property_key = "type"
+    requires: change.property_value = "trail"
+
+    ensures: Trail.created(
+        graph: graph,
+        page: change.page,
+        intent: property_value(change.page, "intent")
+    )
+
+    @invariant DeclaringNoticesAndDoesNotCreate
+        -- Poner la propiedad no reordena nada, no crea bloques, no toca una
+        -- referencia y no cambia el mapa de nadie. Lo único que cambia es que a
+        -- partir de ahí el orden de esta página se puede leer como ruta, con sus
+        -- números y su hilo, porque alguien ha dicho que ese orden era a propósito.
+        -- Quitarla no destruye el texto por la misma razón: no había puesto nada.
+
+    @invariant AnyPageCouldBeSeenAsAThread
+        -- La maquinaria no es privativa de los recorridos, porque no hay
+        -- maquinaria: toda página tiene referencias en un orden y texto entre
+        -- ellas. Mirar cualquier página como hilo sobre el mapa es siempre posible,
+        -- y casi todas darían ruido — un salto aquí, un nombre suelto allá.
+        --
+        -- Las que dan una forma eran buenos textos, y ésa es probablemente la cosa
+        -- más útil que Vera puede decir de un texto sin leerlo.
+
+    @guidance
+        -- No hay acto de creación de recorridos. Hay una propiedad, y la escribe
+        -- quien escribe cualquier propiedad — que es lo que ya hace el borrador que
+        -- nace del rastro, y lo que puede hacer cualquiera sobre una página que
+        -- resultó ser un recorrido sin haber empezado siéndolo.
+}
+
+-- Retirar un recorrido es quitarle la propiedad, y lo que queda es el texto.
+--
+-- No hay estado terminal, ni papelera, ni recorridos jubilados. Un argumento que
+-- uno ya no sostiene sigue siendo una página que dice lo que decía, con su
+-- historia, su mano y sus enlaces intactos; lo único que se retira es la
+-- afirmación de que su orden hay que leerlo como ruta.
+--
+-- Es la forma barata de dejar de sostener algo, y hace falta que lo sea. La
+-- alternativa —borrar el recorrido— pediría destruir un texto para retirar una
+-- opinión sobre él, y entonces nadie lo retiraría nunca.
+rule RemovingTheDeclarationLeavesTheText {
+    when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    let trail = Trail{page: change.page}
+
+    requires: change.kind = remove_property
+    requires: change.property_key = "type"
+    requires: exists trail
+
+    ensures:
+        not exists trail
+        TrailRetired(page: change.page, retired_by: participant)
+
+    @invariant RetiringDestroysNothing
+        -- La página, sus bloques, sus revisiones, sus enlaces y su sitio en el mapa
+        -- quedan como estaban. Un recorrido retirado no es un recorrido borrado: es
+        -- una página que ya no dice de sí misma que su orden sea un argumento.
+
+    @invariant APublishedTrailStaysPublished
+        -- Retirar la declaración no despublica la página. Son dos decisiones y se
+        -- toman por separado: dejar de sostener un argumento y retirar un texto del
+        -- sitio público no son la misma cosa, y quien quiera las dos las hace dos
+        -- veces.
+}
+
+-- Publicar un recorrido es publicar su página.
+--
+-- No hay estado `published` sobre el recorrido, ni un segundo botón, ni una
+-- segunda máquina de publicación. `core/PublishVisiblePageRevision` publica
+-- páginas públicas y `PrivatePagesAreNeverPublished` lo sostiene; un recorrido es
+-- una página. Lo que esta regla añade es lo único que un argumento pide y una
+-- página cualquiera no: que el argumento se sostenga de pie.
+rule PublishingATrailDeclaresWhatCannotBeRead {
+    when: core/PublishPage(participant, site, page, revision, path)
+
+    let trail = Trail{page: page}
+
+    requires: exists trail
+
+    ensures:
+        for node in trail.route:
+            ClosedDoorDeclared(
+                trail: trail,
+                node: node,
+                readable: node.target != null and node.target.visibility = public
+            )
+
+    @invariant AClosedDoorIsDeclaredAndNotHidden
+        -- Un recorrido publicado puede pasar por sitios que el lector no puede
+        -- leer, y lo dice. Las conectivas se leen enteras —son del guía y son lo
+        -- que se está publicando—; el nodo privado se presenta como una puerta
+        -- cerrada, contada en el orden que le toca.
+        --
+        -- Las dos alternativas son peores y por la misma razón. Exigir que todo
+        -- nodo sea público obliga a publicar el cuaderno entero para poder publicar
+        -- un argumento sobre él, y lo que se publicaría al final no es lo que se
+        -- pensó. Omitir los nodos privados es peor todavía: el lector recibe un
+        -- argumento del que faltan premisas sin saber que faltan, y un argumento
+        -- cuyas lagunas no se ven no es un argumento incompleto sino uno falso.
+        --
+        -- Declarar la puerta deja al lector sabiendo exactamente en qué punto esto
+        -- se apoya en algo que no puede comprobar. Es menos de lo que querría y es
+        -- todo lo que se le puede dar honestamente.
+
+    @invariant NothingBehindTheDoorLeaks
+        -- Una puerta declarada enseña que hay un nodo y dónde va en el orden. No
+        -- enseña el título de la página privada, ni un extracto, ni cuántos bloques
+        -- tiene. Que exista algo y qué es ese algo son dos revelaciones distintas,
+        -- y sólo la primera es parte del argumento.
+}
+
+-- Cuando una premisa se mueve, el argumento se entera y lo dice.
+--
+-- Es la consecuencia directa de que los nodos sean referencias vivas: alguien
+-- reescribe una página, y un recorrido publicado hace dos años pasa a afirmar algo
+-- que su autor no escribió. Nadie ha hecho nada mal; el corpus siguió andando,
+-- que es lo que se le pide.
+--
+-- Lo que Vera no hace es arreglarlo. No despublica —despublicar sería juzgar el
+-- argumento, y Vera no lee—, no reescribe la conectiva, y no marca el recorrido
+-- como sospechoso ante sus lectores. Le dice a quien lo compuso qué se movió y
+-- dónde, y ahí se acaba su parte: releer la conectiva a la luz de la premisa nueva
+-- es exactamente la clase de decisión por la que uno compone un recorrido.
+rule ARewrittenPremiseIsToldToItsGuide {
+    when: revision: core/Revision.created
+
+    let affected = Trails where walked.any(node => node.target = revision.page)
+
+    requires: revision.page != null
+
+    ensures:
+        for trail in affected:
+            PremiseMoved(
+                trail: trail,
+                node: revision.page,
+                revision: revision,
+                told_to: authorship_of(trail.page)
+            )
+
+    @invariant TheAuthorIsToldAndTheReaderIsNot
+        -- El aviso va al guía, no al lector. Un recorrido publicado no empieza a
+        -- llevar una advertencia porque una de sus premisas cambió: eso sería Vera
+        -- opinando sobre si el argumento sigue en pie, y decidir eso es lo que
+        -- hace quien lo escribió.
+
+    @invariant AnUnansweredWarningChangesNothing
+        -- Un guía que no conteste deja el recorrido exactamente como estaba,
+        -- publicado y afirmando lo que afirme. La alternativa —caducar los
+        -- recorridos que nadie revisa— convertiría en trabajo permanente lo que se
+        -- compuso una vez, y un argumento no caduca por no ser atendido.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant ATrailIsAPageOfItsGraph {
+    for trail in Trails:
+        trail.page.graph = trail.graph
+}
+
+invariant OnePageIsAtMostOneTrail {
+    for a in Trails:
+        for b in Trails:
+            a != b implies a.page != b.page
+}
+
+invariant EveryNodeIsANeighbour {
+    for trail in Trails:
+        trail.walked.all(node => node.target.graph = trail.graph)
+}
+
+-- Un recorrido no se cita a sí mismo como premisa. Puede ser nodo de otro
+-- recorrido —eso es lo que lo hace un texto y no un formato—, pero un argumento
+-- que se tuviera a sí mismo por premisa no diría nada.
+invariant ATrailIsNotItsOwnNode {
+    for trail in Trails:
+        trail.walked.all(node => node.target != trail.page)
+}
+
+-- Un recorrido publicado puede tener puertas cerradas, pero no puentes cortados.
+-- Son dos ausencias distintas: una puerta es un sitio que existe y no se puede
+-- leer, y se cuenta; un puente cortado es un sitio que ya no existe, y contarlo
+-- sería mandar al lector a ningún sitio.
+invariant APublishedTrailHasNoBrokenBridges {
+    for publication in core/Publications:
+        exists Trail{page: publication.page} implies
+            Trail{page: publication.page}.is_walkable
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor Guide {
+    within: core/Graph
+    identified_by: core/Participant
+        where core/Membership{participant: this, graph: within}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface TrailComposition {
+    facing guide: Guide
+    context workspace: workspace/Workspace
+
+    exposes:
+        workspace.navigation_history
+
+    provides:
+        SaveTrace(guide, workspace, from_step)
+
+    contracts:
+        fulfils ComposedRoute
+
+    @guarantee WalkingIsTheFirstDraft
+        -- Componer un recorrido empieza por haberlo andado. Lo que el taller ofrece
+        -- no es un compositor de rutas sino un gesto sobre el rastro que ya está en
+        -- pantalla: guardar esto. Lo que queda después es una página y el editor de
+        -- siempre.
+        --
+        -- Un compositor aparte —una lista donde arrastrar nodos, un panel donde
+        -- teclear conectivas— pediría saber el argumento antes de empezar a
+        -- componerlo, que es el orden inverso al que Vera defiende en cualquier otro
+        -- sitio. Se escribe para averiguar qué se piensa; se anda para averiguar por
+        -- dónde se iba.
+
+    @guarantee TheWorkIsWritingTheConnectives
+        -- Lo que queda por hacer sobre un borrador andado se ve de un vistazo:
+        -- entre qué dos nodos no hay todavía nada escrito. No es una barra de
+        -- progreso ni una lista de tareas —un recorrido puede querer dos nodos
+        -- seguidos sin nada entre ellos y eso también es decir algo—, es
+        -- simplemente que el hueco se ve porque está vacío.
+
+    @guarantee ComposingIsWritingAndNothingElse
+        -- No hay ninguna operación sobre un recorrido que no sea editar su página.
+        -- Reordenar es mover un bloque, podar es borrarlo, afinar un nodo es
+        -- reescribir una referencia, cambiar el propósito es editar una propiedad.
+        -- Todas pasan por change-application.allium, todas dejan revisión, y
+        -- ninguna necesita una autorización que escribir no necesite.
+
+    @guarantee ATrailIsFoundFromWhereItPasses
+        -- Un recorrido enlaza los sitios por los que pasa, así que aparece en los
+        -- backlinks de cada uno y en su vecindario del mapa. Quien está leyendo
+        -- `Casiopea` encuentra ahí el argumento que pasa por Casiopea, sin haber
+        -- ido a buscar recorridos y sin saber que existían. Y al abrirlo, ese nodo
+        -- se convierte en el hilo: ver TrailOnTheMap.
+        --
+        -- Es la diferencia entre un recorrido y un índice. Un índice hay que
+        -- abrirlo; un recorrido sale al paso.
+}
+
+-- Volver sobre un recorrido que ya se compuso.
+--
+-- Existe porque un argumento vivo pide volver, y volver es distinto de componer.
+-- Quien compone anda y escribe; quien vuelve viene a ver qué se movió debajo. Lo
+-- que esta superficie enseña es exactamente eso y nada más: dónde hay puentes
+-- cortados, qué premisas se reescribieron desde que esto se publicó, y entre qué
+-- nodos todavía no hay nada dicho.
+--
+-- No ofrece ninguna acción. Todo lo que hay que hacer al volver es escribir, y
+-- escribir ya tiene su sitio.
+surface TrailUnderRevision {
+    facing guide: Guide
+    context trail: Trail
+
+    exposes:
+        trail.route
+        trail.connectives
+        trail.conclusion
+        trail.broken
+        trail.length
+        trail.argues
+
+    @guarantee TheGapsAreVisibleWithoutBeingCounted
+        -- Los huecos entre nodos sin conectiva se ven porque están vacíos, y los
+        -- puentes cortados se ven porque el nodo no lleva a ningún sitio. No hay
+        -- porcentaje de completitud ni una lista de lo que falta: un recorrido con
+        -- huecos puede estar acabado, y un contador diría que no.
+
+    @guarantee AWarningPointsAtAConnectiveAndNotAtATrail
+        -- Cuando una premisa se movió, lo que se señala es la conectiva que la
+        -- usaba, no el recorrido entero. La pregunta que hay que contestar es «¿esto
+        -- que escribí sigue siendo verdad de lo que ahora dice esa página?», y es
+        -- una pregunta por frase.
+}
+
+-- Un recorrido abierto sobre el mapa.
+--
+-- Es la superficie donde el argumento deja de ser un texto y pasa a ser una forma.
+-- Y es donde se decide si un recorrido aporta algo que el corpus no tenía, porque
+-- lo que dibuja son exactamente las uniones que el grafo no hacía: si el hilo
+-- resulta ser un camino que ya estaba, el argumento no estaba argumentando.
+surface TrailOnTheMap {
+    facing reader: core/Participant
+    context trail: Trail
+
+    exposes:
+        trail.route
+        trail.walked
+        trail.broken
+
+    contracts:
+        demands ComposedRoute
+
+    @guarantee TheTrailsNodeBecomesTheThread
+        -- Mientras un recorrido está abierto, su propia página deja de dibujarse
+        -- como un nodo del mapa y se dibuja como el hilo que pasa por los suyos. No
+        -- es que desaparezca: es que un argumento no está *al lado* de sus premisas
+        -- sino *entre* ellas, y un nodo con doce aristas saliendo hacia sus paradas
+        -- dibuja lo contrario de lo que el recorrido dice.
+        --
+        -- Cerrado, vuelve a ser una página como cualquier otra, con su nodo y sus
+        -- enlaces, y así es como se le encuentra sin saber que existía.
+
+    @guarantee TheWholeShapeAtOnce
+        -- Se encienden todos los nodos a la vez, no uno a uno según se lee. La
+        -- forma del argumento —un tramo recto, un rodeo que vuelve, una estrella
+        -- desde un solo sitio— es en sí misma legible, y no se puede ver una forma
+        -- por partes. Es también lo que hace que un recorrido se recuerde: por su
+        -- dibujo, como se recuerda una región del mapa.
+
+    @guarantee TheThreadSewsWhatWasNotSewn
+        -- El hilo une páginas que el corpus no unía. Ésa es la aportación entera de
+        -- un recorrido dibujado: no enseña el grafo, enseña qué le faltaba al grafo
+        -- según alguien. Un hilo que coincidiera con caminos que ya existían estaría
+        -- diciendo lo que el corpus ya decía.
+
+    @guarantee TheConnectiveIsDrawnAsTheSegment
+        -- Lo que el guía escribió entre dos nodos se lee sobre el tramo que los
+        -- une. El pegamento se dibuja como pegamento, y no como una nota colgando
+        -- de un nodo: pertenece a los dos y a ninguno.
+
+    @guarantee AThreadIsNotAnEdge
+        -- Los tramos que un recorrido dibuja no son aristas del grafo: no cambian
+        -- distancias, ni grados, ni qué páginas caen dentro de un vecindario. Dos
+        -- páginas que un argumento hilvana están exactamente igual de lejos que
+        -- antes de que nadie las hilvanara.
+        --
+        -- Lo que sí es una arista es el enlace de la página del recorrido a cada
+        -- una de sus paradas, que ya existe y ya cuenta, como el de cualquier
+        -- página que nombra a otras. Afirmar algo sobre dos sitios y acercarlos son
+        -- dos cosas, y sólo la segunda cambiaría el mapa de quien no leyó el
+        -- argumento.
+
+    @guarantee ABrokenBridgeIsDrawnBroken
+        -- Un nodo que no lleva a ningún sitio conserva su número y su tramo, y se
+        -- dibuja cortado. El argumento sigue teniendo siete paradas aunque la
+        -- cuarta ya no exista, y renumerar para disimularlo cambiaría el argumento
+        -- para que el dibujo quedara limpio.
+}
+
+surface TrailReading {
+    facing reader: core/Participant
+    context trail: Trail
+
+    exposes:
+        trail.page.title
+        trail.intent
+        trail.route
+        trail.nodes
+        trail.connectives
+        trail.conclusion
+
+    contracts:
+        demands ComposedRoute
+
+    @guarantee TheTellingWalksInSingleFile
+        -- Los nodos y sus conectivas se entregan en el orden que el texto tiene, y
+        -- alternando, que es la forma que tiene un argumento. El lector puede
+        -- irse por el mapa cuando quiera, y volver, y no volver; lo que no puede es
+        -- recibir el recorrido en otro orden, porque el orden era lo que se le
+        -- estaba diciendo.
+
+    @guarantee TwoVoicesTwoTypographies
+        -- La conectiva y el nodo se leen como dos textos de dos manos. La conectiva
+        -- va con la voz de quien compuso; el sitio citado se presenta como lo que
+        -- es, una cita de otro sitio del corpus, con su título y su camino de
+        -- vuelta. Quien lee tiene que poder decir en cada línea quién está
+        -- hablando, y sobre todo tiene que poder no creerle al guía sin dejar de
+        -- creerle al corpus.
+
+    @guarantee TheMapShowsWhatIsWalkedAndWhatRemains
+        -- La ruta entera está encendida desde el principio; lo que la lectura mueve
+        -- es dónde se está dentro de ella. No se va revelando el recorrido paso a
+        -- paso: se ve entero y se ve por dónde se va, que son dos cosas distintas y
+        -- se necesitan las dos. Un argumento que se descubre a trozos no se puede
+        -- juzgar hasta el final, y saber cuánto falta es parte de decidir si se
+        -- sigue.
+
+    @guarantee WhatIsReadIsWhatTheCorpusSaysNow
+        -- Los nodos se leen como están hoy, no como estaban cuando se compuso el
+        -- recorrido. Un lector que siga un argumento de hace tres años y encuentre
+        -- que una premisa dice otra cosa está viendo el corpus, que es lo que vino
+        -- a ver. Vera no guarda una copia de la premisa vieja para que el argumento
+        -- siga cuadrando: eso sería enseñarle a alguien un corpus que ya nadie
+        -- tiene.
+
+    @guarantee ReadingLeavesItsOwnTrace
+        -- Haber leído un recorrido es haber pasado por sus sitios, así que el
+        -- rastro del lector los recoge como recogería cualquier otra navegación. El
+        -- recorrido de otro se convierte así en el rastro de uno, que es de donde
+        -- puede salir el recorrido siguiente. Es el gesto de Bush entero: los
+        -- recorridos de dos personas se entrelazan porque andar el de alguien deja
+        -- huella en el propio.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- Contestadas cuatro, y las cuatro por la misma razón: un recorrido es una página
+-- del corpus. La procedencia de la narración es la de cualquier bloque, con su
+-- mano y su origen hablado. La composición es edición. La publicación es la de
+-- core. Y el estado `proposed` desaparece: un recorrido que escribe Cotito es una
+-- página privada que escribió Cotito, y la decisión del dueño es publicarla o no,
+-- que es la que ya tenía.
+
+-- Contestada la que más apretaba, y no eliminando la ambigüedad sino dibujándola.
+-- Toda referencia del texto es un nodo, incluida la que se nombra de pasada dentro
+-- de una conectiva; el texto es lineal y su orden de lectura es el orden del
+-- recorrido, sin excepciones que aprender. Lo que hace que eso no sea un problema
+-- es la numeración: una mención al paso aparece numerada donde le toca, se ve en el
+-- acto, y quien la ve decide si quería decir eso. Ver
+-- @invariant TheOrdinalIsWhatMakesTheOrderDrawable.
+
+open question "Una conectiva puede acabar valiendo por sí sola, y entonces querría ser una página del corpus y no un fragmento dentro de un argumento. ¿Hay un gesto para promover una conectiva a página —dejando en su sitio un nodo que la cite— o eso es simplemente escribir la página y reescribir la conectiva, como cualquier otra cosa que se escribe dos veces?"
+
+open question "El rastro guarda páginas y un nodo afinado nombra un bloque, pero las referencias de bloque no se derivan como aristas en ningún sitio. ¿Debe graph-navigation derivarlas igual que deriva los enlaces —lo que haría de cada `((ref))` del corpus una arista y no sólo las de los recorridos— o hay una razón para que citar un bloque no acerque dos páginas en el mapa?"
+
+open question "Un recorrido que se anda deja rastro, y de ese rastro puede salir otro recorrido. ¿Debe el segundo saber que viene del primero —citándolo como un nodo más, o como una procedencia aparte— o es más honesto que un recorrido no sepa de dónde salió, como no lo sabe ningún otro texto?"
+
+open question "El gesto de Bush es darle un recorrido a un amigo. Al llegar a otra Vera, ¿sus nodos se resuelven contra el corpus que lo recibe —donde `Casiopea` quizá nombra otra cosa—, llegan como citas al corpus de origen, o llegan como enlaces sin resolver, que es lo que graph-navigation ya sabe sostener cuando algo se nombra y no está? Las conectivas, en cambio, viajan enteras: son lo único del recorrido que no depende de dónde aterrice."
+
+open question "Un recorrido andado al revés es otra experiencia y quizá otro argumento. ¿Es la vuelta una vista derivada del mismo recorrido, o hay que componerla, con lo que eso implica: que decir lo mismo en sentido contrario es escribir otro texto?"
+
+open question "Cotito puede escribir un recorrido, y nada en el corpus lo anuncia. ¿Lo trae a la ronda del día como un asunto más —lo que obligaría a que MatterKind, que hoy es corto y sobre el vocabulario, crezca hacia el contenido— o lo dice en el día sin ser un asunto, y entonces qué distingue lo que se contesta de lo que sólo se cuenta?"
+
+open question "Un recorrido publicado es un texto con sus nodos dentro, o una capa guiada sobre páginas que ya tienen su URL. Afecta a personal-site-projection.allium y decide si un lector que llega a un nodo desde fuera sabe que forma parte de un argumento."

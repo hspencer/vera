@@ -559,7 +559,7 @@ surface VeraWorkspace {
     -- pendiente: una lista de tareas se cierra, una garantía se cumple.
 
     @guarantee TheMapCarriesItsOwnControls
-        -- What governs the map — its dimension, its reach, its trail — belongs
+        -- What governs the map — its dimension, its reach, its trace — belongs
         -- in the map and not in a bar shared with everything else. A control
         -- placed away from what it governs makes a reader learn a mapping that
         -- the layout could have told them.
@@ -581,10 +581,17 @@ surface VeraWorkspace {
         -- picture rather than a place. Recognising a region by its shape is the
         -- whole reason for drawing it.
 
-    @guarantee TheTrailIsWhereOneIsLocated
+    @guarantee TheTraceIsWhereOneIsLocated
         -- Where a participant has been accumulates visibly, and any step of it
         -- can be returned to directly. It belongs with the map, because that is
         -- the surface for knowing where one stands.
+        --
+        -- It is a trace and not a trail, and the distinction is the whole of
+        -- trail.allium. A trace is the mark one leaves without meaning to:
+        -- automatic, private, authorless, and about oneself. A trail is the route
+        -- one draws on purpose, for somebody else, and it is an argument. They are
+        -- the same object at two moments, and the second begins when someone looks
+        -- at where they have been and decides that it was saying something.
 
     @guarantee TheMapIsBoundedByReach
         -- How much of the graph a map shows is the participant's to set, from

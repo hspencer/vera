@@ -396,6 +396,7 @@ deferred WorkspaceInterface.present     -- see: workspace-interface.allium
 deferred ControlledOntology.curate      -- see: controlled-ontology.allium
 deferred BibliographicIntegration.sync  -- see: bibliographic-integration.allium
 deferred IdentityAccess.authorize        -- see: identity-access.allium
+deferred Trail.compose                   -- see: trail.allium
 
 ------------------------------------------------------------
 -- Open Questions
