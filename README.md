@@ -85,9 +85,9 @@ El primer recorrido completo de Vera es el de un PKM basado en bloques:
 6. buscar y ejecutar queries sobre el grafo;
 7. registrar la procedencia de cada cambio.
 
-Los siete pasos están hechos. Sobre el corpus de `../mind` —1001 páginas,
-44 390 bloques, 49 364 operaciones— la instancia importa, navega, edita, busca,
-proyecta a Markdown y responde `[]` a la verificación de invariantes.
+Los siete pasos están hechos. Sobre un corpus real de más de mil páginas y
+decenas de miles de bloques, la instancia importa, navega, edita, busca, proyecta
+a Markdown y responde `[]` a la verificación de invariantes.
 
 La base local es la fuente canónica del grafo. Markdown es una proyección limpia,
 portable y versionable: no se insertan UUID técnicos en cada bloque. Este modelo
@@ -102,13 +102,14 @@ propia.
 - **Hipermedia preservable.** Markdown, imágenes, PDF, SVG, Mermaid y sketches
   JavaScript conservan su fuente editable además de su representación.
 - **Ontología curada.** Tags libres conviven con tipos componibles y propiedades
-  controladas. Vera sugiere clasificaciones; un curador las confirma y Herbert
-  mantiene la autoridad final.
+  controladas. Vera sugiere clasificaciones; un curador las confirma y el dueño
+  del grafo mantiene la autoridad final.
 - **Grafo aglutinador.** Sistemas especializados, inicialmente Zotero, proyectan
   sus entidades en Vera sin perder identidad ni procedencia. Zotero sigue siendo
   la autoridad bibliográfica y la sincronización inicial es unidireccional.
-- **Participación humano–agente.** Herbert, Cotito y futuros agentes operan por
-  el mismo contrato. No existe una puerta trasera editorial para los agentes.
+- **Participación humano–agente.** La persona dueña del grafo y los agentes que
+  admita operan por el mismo contrato. No existe una puerta trasera editorial
+  para los agentes.
 - **Publicación desde el corpus.** El sitio personal es una vista selectiva del
   mismo grafo, con autorización humana, URLs históricas estables, búsqueda, SEO
   y RSS; no un segundo corpus que mantener.
@@ -135,7 +136,8 @@ de implementarlo.
 - Sólo el propietario humano autoriza publicación pública.
 - Una página o bloque puede combinar varios tipos semánticos componibles.
 - Las sugerencias ontológicas requieren confirmación; no se aplican solas.
-- Las URLs públicas históricas de `herbertspencer.net` se preservan exactamente.
+- Las URLs públicas históricas del sitio que se proyecta se preservan
+  exactamente.
 - Las fuentes originales nunca son reemplazadas destructivamente por derivados.
 
 ## Especificaciones
@@ -225,7 +227,7 @@ npm install
 npm run typecheck                    # tsc --noEmit, raíz y PWA
 npm test                             # 360 tests, node --test, sin build
 npm run spec                         # allium check specs/
-npm run import -- ../mind            # ingesta del corpus
+npm run import -- <ruta-al-grafo>    # ingesta de un grafo Logseq
 npm run build                        # la PWA a packages/web/dist
 npm run serve                        # http://localhost:4173
 ```
@@ -236,18 +238,91 @@ Para desarrollo, `npm run dev --workspace @vera/web` levanta Vite aparte.
 La cobertura de pruebas y, sobre todo, lo que **no** cubre está en
 [docs/test-obligations.md](docs/test-obligations.md).
 
+## Portabilidad
+
+Vera se dice soberana, y una herramienta soberana que sólo corre en la máquina de
+quien la escribió no lo es. El instructivo completo para levantar una instancia
+propia está en **[docs/portabilidad.md](docs/portabilidad.md)**: qué instalar,
+qué reemplazar para que el repositorio sea tuyo, cómo exponerla con Tailscale,
+cómo llevarte el corpus y qué falta todavía.
+
+Lo esencial:
+
+```sh
+# haz un fork, no un clon: lo que arregles vuelve como pull request
+git clone git@github.com:TU-USUARIO/vera.git && cd vera
+npm install
+cp .env.example .env          # y editarlo: VERA_OWNER es lo primero
+npm run build
+npm run serve                 # http://localhost:4173
+```
+
+El repositorio **no contiene ningún corpus**: `data/`, `objects/` y `.env` están
+fuera de git desde el primer commit. Clonar Vera da el programa, no la memoria de
+nadie.
+
+`VERA_OWNER` no es cosmético. Sin credencial, todo lo que se escriba se firma
+como el dueño, y la procedencia es de lo que Vera trata. Un grafo vacío sin dueño
+declarado no arranca: Vera prefiere plantarse a inventar una identidad.
+
+Para escribir o modificar especificaciones hace falta **allium** — ver
+[el método](#método) y [docs/portabilidad.md](docs/portabilidad.md#2-instala-allium).
+
 ## Referencias locales
 
-- `../mind` — corpus actual y fuente principal de migración.
+Rutas hermanas del repositorio en la máquina donde se desarrolla. Quien clone
+Vera no las tiene, y no le hacen falta para levantarla.
+
+- `../mind` — corpus de trabajo y fuente principal de migración.
 - `../logseq` — implementación de referencia para destilar comportamiento.
 - `../logseq-constel` — navegación y visualización de referencia.
-- `../hspencer.github.io` — sitio Jekyll histórico que Vera deberá proyectar.
 
 ## Método
 
 Primero especificamos comportamiento y casos límite en Allium. Después elegimos
 arquitectura e implementación. Las decisiones técnicas deben servir a las
 garantías del producto, no sustituirlas.
+
+Esto no es una preferencia de estilo: es cómo se trabaja aquí, y es el criterio
+con que se revisa un pull request. Quien vaya a tocar `specs/` necesita
+**allium** instalado — se distribuye como plugin de Claude Code desde el
+marketplace de JUXT:
+
+```
+/plugin marketplace add juxt/claude-plugins
+/plugin install allium@juxt-plugins
+```
+
+```sh
+allium --version       # comprueba la versión de lenguaje que habla tu binario
+npm run spec           # allium check specs/ — validación estructural
+npm run spec:analyse   # flujo de datos, alcanzabilidad, conflictos
+```
+
+Fija la misma versión mayor de lenguaje que usan estas specs: con otra, `check`
+falla o —peor— acepta algo que aquí no vale.
+
+En la práctica, el ciclo es:
+
+1. **Antes de escribir código nuevo**, buscar la spec que lo cubra. Si existe, la
+   spec es la fuente de verdad, no el código.
+2. **Si no existe**, se escribe primero: `elicit` cuando el comportamiento aún no
+   está claro, `tend` cuando ya lo está.
+3. **Los invariantes y garantías se citan en el código** que los cumple
+   (`@invariant …`, `@guarantee …`), para poder ir del código a su razón y de la
+   razón al código.
+4. **Las preguntas abiertas se dejan escritas** (`open question "…"`). Son el
+   estado real de la elicitación, no defectos que ocultar.
+5. **`npm run spec` antes de cada commit** que toque `specs/`.
+
+El plugin trae seis skills que son el método en funcionamiento: `elicit` (sacar
+una spec de la nada), `tend` (escribirlas y corregirlas), `weed` (encontrar dónde
+spec e implementación divergieron), `distill` (extraer una spec de código que ya
+existe), `propagate` (derivar tests desde las obligaciones de una spec) y
+`allium` (el lenguaje).
+
+El instructivo completo, incluido qué reemplazar para hacer tuyo el repositorio,
+está en [docs/portabilidad.md](docs/portabilidad.md).
 
 ## Créditos gráficos
 
