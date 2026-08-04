@@ -767,7 +767,7 @@ function wireTheme(): void {
 
   // El alcance: cuántos saltos desde la página en foco. Saltos y no cantidad de
   // nodos, porque la pregunta que uno se hace es «qué tan lejos de aquí».
-  const reach = $<HTMLInputElement>('#map-reach input');
+  const reach = $<HTMLInputElement>('#map-panel input[type="range"]');
   const reachValue = $('#map-reach-value');
   reach.value = String(workspace.depth);
   reachValue.textContent = String(workspace.depth);

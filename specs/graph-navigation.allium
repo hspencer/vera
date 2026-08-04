@@ -166,6 +166,64 @@ rule OrphanLinksWhenTargetPageRemoved {
         -- named it intact and waiting, exactly as a page never written does.
 }
 
+-- Seguir una referencia a una página que todavía no existe.
+--
+-- La página se crea con el título que la referencia nombraba, se abre, y el
+-- cursor queda en su primer bloque, vacío y listo. Un solo gesto, porque un
+-- solo gesto es lo que la persona hizo: pulsó el nombre de algo sobre lo que
+-- quiere escribir.
+--
+-- No contradice @guarantee IntentToLinkSurvivesTheMissingPage, y la palabra que
+-- las distingue es «silently». Aquella prohíbe que Vera cree páginas por su
+-- cuenta al leer un enlace; ésta las crea porque alguien la pulsó. La diferencia
+-- entre las dos es quién actuó, y es la misma diferencia que separa procesar una
+-- página de clasificarla de oficio.
+--
+-- El enlace que la nombraba no se reescribe. Se resuelve solo, por
+-- ResolveWaitingLinksToNewPage, que es lo que ya pasa cuando una página esperada
+-- aparece por cualquier otra vía.
+rule FollowReferenceToAPageThatDoesNotExist {
+    when: FollowUnresolvedReference(participant, graph, block, title)
+
+    let membership = core/Membership{graph, participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: block.page.graph = graph
+    requires: not exists core/Page{graph: graph, title_key: title_key(title)}
+
+    ensures:
+        core/ParticipantSubmits(
+            participant: participant,
+            graph: graph,
+            origin_id: block.stable_id + title,
+            change: create_page(title, private),
+            channel: typed_text
+        )
+        UnresolvedReferenceFollowed(
+            participant: participant,
+            graph: graph,
+            title: title
+        )
+
+    @invariant ANewPageIsPrivate
+        -- The page is born private, like every page core.allium creates. Making
+        -- something exist is not deciding to publish it.
+
+    @invariant TheFirstBlockIsEmptyAndWaiting
+        -- What the participant lands on is an empty first block with the caret
+        -- in it. Nothing is written into the new page on their behalf — not the
+        -- title repeated as content, not a template, not the sentence that
+        -- linked here. They pressed a name because they had something to say,
+        -- and anything already sitting there is something to delete first.
+
+    @guidance
+        -- UnresolvedReferenceFollowed is what workspace-interface.allium listens
+        -- to in order to navigate and begin editing. It is emitted rather than
+        -- acted on here because where the caret goes is a fact about the
+        -- workspace, and this spec governs the graph.
+}
+
 rule BuildNeighbourhoodAroundPage {
     when: RequestNeighbourhood(participant, graph, centre, depth)
 
@@ -304,6 +362,7 @@ surface GraphNavigation {
 
     provides:
         RequestNeighbourhood(participant, graph, centre, depth)
+        FollowUnresolvedReference(participant, graph, block, title)
 
     contracts:
         fulfils NeighbourhoodTraversal
@@ -321,6 +380,19 @@ surface GraphNavigation {
     @guarantee IntentToLinkSurvivesTheMissingPage
         -- A reference to a page that does not exist stays legible on its block. Vera
         -- neither discards it nor silently creates the page it names.
+
+    @guarantee NamingAPageAndWritingItAreOneGesture
+        -- Following a reference to a page that does not exist creates it and
+        -- leaves the participant in its first empty block, ready to type. The
+        -- alternative — a dead link, or a dialog asking whether to create it —
+        -- puts a decision between someone and the thing they were already
+        -- writing, and that decision is the one they made when they typed the
+        -- name.
+        --
+        -- This does not weaken IntentToLinkSurvivesTheMissingPage. That
+        -- guarantee refuses creation Vera performs on its own; this one is
+        -- performed by a participant, on a page they named, in a gesture they
+        -- made.
 }
 
 ------------------------------------------------------------

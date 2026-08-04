@@ -33,6 +33,23 @@ enum ConceptRelationKind { broader | related | exact_match | close_match }
 -- Una migración se propone, se mira y sólo entonces corre.
 enum MigrationStatus { previewed | applied | discarded }
 
+-- Qué clase de valor admite una propiedad, que es lo que decide con qué se
+-- contesta.
+--
+-- Una propiedad sin dominio declarado sólo puede ofrecer un campo de texto, y un
+-- campo de texto es el peor instrumento posible para una pregunta cerrada: el
+-- corpus de Vera llegó con un `type` cuyo valor era `": "` y con otro que
+-- empaquetaba cinco tipos separados por barras. Ninguno de los dos es un
+-- descuido de quien escribió; son la consecuencia de preguntar en abierto algo
+-- que tenía tres respuestas posibles.
+--
+-- `free_text` no es la ausencia de dominio sino su declaración: hay propiedades
+-- cuyo valor es genuinamente una frase, y decirlo es distinto de no haberlo
+-- decidido nunca.
+enum PropertyValueKind {
+    boolean | one_of | concept | page_reference | date | number | free_text
+}
+
 ------------------------------------------------------------
 -- Entities and Variants
 ------------------------------------------------------------
@@ -43,6 +60,7 @@ entity Ontology {
     concepts: Concept with ontology = this
     relations: RelationDefinition with ontology = this
     assignments: TypeAssignment with ontology = this
+    property_definitions: PropertyDefinition with ontology = this
 }
 
 entity SemanticType {
@@ -144,11 +162,59 @@ entity AffectedCitation {
     rewritten: String
 }
 
+-- Qué se puede contestar a una propiedad, que es lo que permite dibujarla como
+-- un control y no como un campo vacío.
+--
+-- Es la pieza que faltaba. Sin dominio no hay forma de saber que `public` se
+-- contesta con un interruptor y `status` con una lista, así que todo termina
+-- siendo texto libre y la cabecera de una página termina siendo un formulario en
+-- blanco que hay que rellenar de memoria.
 entity PropertyDefinition {
-    semantic_type: SemanticType
+    ontology: Ontology
+    -- Nulo cuando la propiedad rige en todo el grafo y no sólo en un tipo. Hace
+    -- falta que pueda serlo: el corpus declara `lang` en seiscientas páginas de
+    -- las que once tienen tipo, y una definición que colgara sólo de un tipo
+    -- dejaría sin gobierno justamente a la propiedad más usada.
+    semantic_type: SemanticType?
     name: String
     description: String
     required: Boolean
+    value_kind: PropertyValueKind
+    -- Si admite varias respuestas a la vez. `tags` sí, `lang` no.
+    --
+    -- La cardinalidad es del modelo y no de la presentación: comprimir varios
+    -- valores en una cadena separada por comas o barras convierte una consulta
+    -- en una búsqueda de texto, y el corpus ya trae una página que lo hizo.
+    multiple: Boolean
+    options: PropertyOption with definition = this
+    status: VocabularyStatus
+
+    -- Lo que se puede ofrecer sin que nadie escriba nada.
+    offerable: options where status = approved
+}
+
+-- Una respuesta admisible para una propiedad.
+--
+-- Nace propuesta y rige aprobada, como toda palabra del vocabulario. Dos
+-- procedencias la producen y ninguna manda sobre la otra: alguien la declara, o
+-- el corpus ya la venía usando y Vera lo hace notar. La segunda es la que
+-- importa en un corpus heredado, donde el vocabulario real no está en ninguna
+-- declaración sino en lo que se escribió durante años.
+entity PropertyOption {
+    definition: PropertyDefinition
+    -- El valor tal como se escribe y se proyecta. Lo que cambia al elegir en un
+    -- control es qué se ofrece, nunca cómo se guarda: el Markdown sigue diciendo
+    -- `clave:: valor`, y un rediseño de la cabecera que cambiara el archivo
+    -- sería una migración disfrazada de interfaz.
+    value: String
+    -- El concepto que este valor nombra, cuando la propiedad se contesta con
+    -- vocabulario. Es lo que hace que `note` y `nota` no sean dos respuestas.
+    concept: Concept?
+    status: VocabularyStatus
+    -- Cuántas veces el corpus lo dice ya. Es la evidencia de la propuesta y se
+    -- enseña con ella: aprobar una palabra sabiendo que la usan cuatrocientas
+    -- páginas y aprobarla sabiendo que la usa una son dos decisiones distintas.
+    observed_uses: Integer
 }
 
 entity TypeAssignment {
@@ -163,8 +229,147 @@ entity TypeAssignment {
 }
 
 ------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    -- Cómo se lee una página que nadie ha clasificado.
+    --
+    -- No es una asignación: es lo que la página dice de sí misma mientras nadie
+    -- haya dicho otra cosa. Ver @guarantee AnUnclassifiedPageReadsAsANote.
+    default_semantic_type: String = "nota"
+
+    -- Cuántas veces tiene que aparecer un valor en el corpus para que Vera lo
+    -- proponga como respuesta admisible. Por debajo de esto es una errata tan
+    -- probablemente como un término.
+    domain_proposal_threshold: Integer = 3
+}
+
+------------------------------------------------------------
 -- Rules
 ------------------------------------------------------------
+
+-- Decir con qué se contesta una propiedad.
+--
+-- El acto que convierte un campo de texto en un control. Nada más: no reescribe
+-- ningún valor existente, ni siquiera los que el dominio recién declarado no
+-- admite. Lo que hace con ellos es dejarlos a la vista como lo que son, que es
+-- distinto de corregirlos por su cuenta.
+rule DeclarePropertyDomain {
+    when: DefinePropertyDomain(
+        participant, ontology, name, semantic_type, value_kind, multiple, required, description
+    )
+
+    requires: participant.kind = human
+    requires: semantic_type = null or semantic_type.ontology = ontology
+    requires: not exists PropertyDefinition{ontology: ontology, name: name}
+
+    ensures: PropertyDefinition.created(
+        ontology: ontology,
+        semantic_type: semantic_type,
+        name: name,
+        description: description,
+        required: required,
+        value_kind: value_kind,
+        multiple: multiple,
+        status: approved
+    )
+
+    @invariant DeclaringADomainRewritesNothing
+        -- Declaring what a property admits does not touch a single value the
+        -- corpus already carries, including the ones the new domain would not
+        -- admit. A property that has been answered in eleven different ways for
+        -- years is evidence about the vocabulary, and evidence that gets
+        -- corrected on contact is evidence destroyed.
+}
+
+-- Leer el corpus y decir qué respuestas ya se están dando.
+--
+-- El vocabulario de un corpus heredado no está en ninguna declaración: está en
+-- lo que se escribió durante años, y casi siempre nadie lo ha mirado junto. Esto
+-- lo mira junto y lo propone; no decide.
+--
+-- Es la misma forma que todo lo demás aquí y que la voz: la máquina propone, la
+-- persona declara.
+rule ProposePropertyDomainFromUsage {
+    when: ReadPropertyUsage(participant, ontology, definition)
+
+    let membership = core/Membership{graph: ontology.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: definition.ontology = ontology
+
+    ensures:
+        for observed in observed_values(ontology.graph, definition.name):
+            if observed.uses >= config.domain_proposal_threshold:
+                PropertyOption.created(
+                    definition: definition,
+                    value: observed.value,
+                    concept: null,
+                    status: proposed,
+                    observed_uses: observed.uses
+                )
+
+    @invariant ReadingUsageChangesNoPage
+        -- What this produces are proposals about the vocabulary. Not one page's
+        -- property is written, renamed or removed by it.
+}
+
+rule ApprovePropertyOption {
+    when: ApproveOption(participant, option)
+
+    requires: participant.kind = human
+    requires: option.status = proposed
+
+    ensures: option.status = approved
+}
+
+-- Escribir una respuesta que el vocabulario todavía no tenía.
+--
+-- Se escribe de inmediato y nace propuesta. Es deliberado y es lo contrario de
+-- lo que pide la intuición: un vocabulario cerrado que no crece en el punto de
+-- uso no produce un corpus limpio, produce un corpus donde se dejó de etiquetar,
+-- porque cada anotación pasó a costar un trámite. Lo que se gobierna no es que
+-- la palabra entre, sino que entre marcada.
+rule ParticipantAnswersWithANewWord {
+    when: AnswerProperty(participant, ontology, definition, page, value)
+
+    let membership = core/Membership{graph: ontology.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: definition.ontology = ontology
+    requires: not exists PropertyOption{definition: definition, value: value}
+
+    ensures:
+        PropertyOption.created(
+            definition: definition,
+            value: value,
+            concept: null,
+            status: proposed,
+            observed_uses: 0
+        )
+        core/ParticipantSubmits(
+            participant: participant,
+            graph: ontology.graph,
+            origin_id: page.id + definition.name + value,
+            change: set_property(page, definition.name, value),
+            channel: typed_text
+        )
+
+    @invariant WritingNeverWaitsForCuration
+        -- The value reaches the page in the same act that proposed the word.
+        -- Nothing is held pending approval, because a note that cannot be
+        -- finished until someone approves a word is a note that does not get
+        -- written.
+
+    @invariant AnsweringIsAnOrdinaryChange
+        -- The property reaches the page through the same set_property a
+        -- participant typing by hand would submit, with the same provenance and
+        -- the same ordering. A control is a way of asking the question, never a
+        -- shorter path to the graph.
+}
 
 rule SuggestPageSemanticType {
     when: SuggestPageType(participant, ontology, semantic_type, page, rationale)
@@ -458,8 +663,15 @@ surface OntologyCuration {
     exposes:
         ontology.types
         ontology.assignments
+        ontology.property_definitions
 
     provides:
+        DefinePropertyDomain(
+            participant, ontology, name, semantic_type, value_kind, multiple, required, description
+        )
+        ReadPropertyUsage(participant, ontology, definition)
+        ApproveOption(participant, option)
+        AnswerProperty(participant, ontology, definition, page, value)
         ProcessPage(participant, ontology, page)
         SuggestPageType(participant, ontology, semantic_type, page, rationale)
         SuggestBlockType(participant, ontology, semantic_type, block, rationale)
@@ -520,6 +732,46 @@ surface OntologyCuration {
     @guarantee SmallStarterOntology
         -- A new ontology starts with only Persona, Organizacion, Lugar,
         -- Proyecto, Tarea, Idea, Evento, Fuente and Publicacion.
+
+    @guarantee AGovernedPropertyIsChosenAndAnUngovernedOneIsTyped
+        -- A property with a declared domain is answered by choosing among what
+        -- the domain admits. A property without one is answered by typing, and
+        -- says so. The two must not look alike: a page whose front matter mixes
+        -- settled questions with unsettled ones, drawn identically, teaches its
+        -- reader that none of them are settled.
+
+    @guarantee AVocabularyGrowsAtThePointOfUse
+        -- Every controlled answer also accepts a word the vocabulary does not
+        -- have yet. The word is written immediately and marked proposed. A
+        -- vocabulary that can only grow through a curation screen stops growing,
+        -- and what stops with it is the labelling.
+
+    @guarantee AnUnclassifiedPageReadsAsANote
+        -- A page with no confirmed semantic type reads as a note. That reading
+        -- is not stored: no assignment is created, no participant is credited
+        -- with a decision they did not make, and the difference between "this is
+        -- a note" and "nobody has classified this yet" stays askable — which is
+        -- the same distinction between suggested and confirmed that governs
+        -- every other assignment here.
+
+    @guarantee AVocabularyWordIsAnOrdinaryPage
+        -- A word of the vocabulary is reached at the page that bears its name.
+        -- Not a namespace, not a settings screen: the page `proyecto`, which one
+        -- can write on, link to, and read the history of, exactly like any
+        -- other. That is what a Concept is for, and the corpus already half
+        -- believes it — `Memex` arrived as both a tag and a page.
+        --
+        -- What that page presents beyond what is written on it is the set of
+        -- pages that answer a property with its name. That is derived and
+        -- standing, in the same way backlinks are derived and standing, and it
+        -- is not a query anyone has to author.
+
+    @guarantee TheSameQuestionsOpenEveryPage
+        -- Every page is asked what it is, what it is about, when it was written
+        -- and when it was last touched — in that order, present even when
+        -- unanswered. A header whose shape depends on what happens to be filled
+        -- in cannot be learned, and an absent question reads as a question that
+        -- does not apply rather than one nobody has answered.
 }
 
 ------------------------------------------------------------
@@ -531,6 +783,14 @@ open question "When processing resolves a link, does the title it found belong i
 open question "What does processing do with an address it cannot reach — say nothing, propose the link as dead, or leave a standing question to retry later, given that unreachable today and gone for ever look identical from here?"
 open question "What happens when two composed semantic types define incompatible properties or lifecycles?"
 open question "Are semantic types assigned to pages and blocks equally, or do some types permit only one target kind?"
-open question "Does a Concept live as a page of the corpus — linkable, with its own backlinks and history — or as a record beside it, given that as a page it becomes something one can write about and that may be exactly the point?"
+-- Contestada: vive como página del corpus, la que lleva su nombre, y lo que
+-- muestra de más es derivado. Ver @guarantee AVocabularyWordIsAnOrdinaryPage.
+
+-- Lo que abre gobernar el front matter con controles. Está aquí y no en una
+-- lista aparte porque son decisiones sin tomar, no trabajo sin hacer.
+open question "Cuando una propiedad ya escrita no admite el dominio que después se le declaró — el `type` cuyo valor es `\": \"`, el que empaqueta cinco tipos con barras — ¿se enseña como discrepancia junto a su control, se deja sólo como texto, o se propone una migración por valor?"
+open question "¿Quién decide que una propiedad rige en todo el grafo y no en un tipo: se declara así, o se infiere de que la usan páginas de tipos distintos?"
+open question "Una propiedad definida como requerida por un tipo, ¿qué hace en las páginas de ese tipo que no la tienen — se enseña vacía y exigible, se propone un valor, o requerida sólo significa que no se puede borrar una vez puesta?"
+open question "El valor de una propiedad que nombra vocabulario, ¿tiene que ser el título de una página existente, o puede nombrar una que todavía no se ha escrito, como hace una cita?"
 open question "Can a relation be asserted between two entities whose types the relation's domain and range do not admit — refused, allowed with a warning, or allowed because the ontology is likely to be the thing that is wrong?"
 open question "Which relations are editable and which are necessarily derived from links, authorship, operations or external imports, given that a derived relation edited by hand would contradict the very thing it derives from?"

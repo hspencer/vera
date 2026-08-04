@@ -440,48 +440,92 @@ input {
   font-weight: 600;
 }
 
-/* --- Los controles del mapa, dentro del mapa --------------------------- */
+/* --- El ojo y su menú, dentro del mapa --------------------------------- */
 
 /*
- * Arriba a la izquierda, sobre el mapa. El ojo queda siempre; lo demás se
- * pliega. Un mapa es para mirarlo, y sus controles no pueden ocupar sitio
- * permanente sobre lo que se está mirando.
+ * Arriba a la izquierda. El ojo es lo único que queda a la vista; el menú cae
+ * debajo cuando se pide. Un mapa es para mirarlo, y sus controles no pueden
+ * ocupar sitio permanente sobre lo que se está mirando.
+ *
+ * El contenedor no tiene ancho propio —antes se estiraba de lado a lado del
+ * mapa— así que el menú mide lo que mide su contenido y nada más.
  */
 #map-controls {
   position: absolute;
   top: 0.5rem;
   left: 0.5rem;
-  right: 0.5rem;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.35rem;
-  z-index: 5;
-  /* El panel no captura el ratón donde no hay nada: el mapa de abajo se
-     arrastra y se acerca aunque el panel esté abierto. */
-  pointer-events: none;
+  z-index: 6;
 }
 
-#map-controls > *,
-#map-controls button,
-#map-controls label {
-  pointer-events: auto;
-}
-
-#map-panel-toggle,
-#map-panel button {
+#map-panel-toggle {
   display: flex;
   align-items: center;
-  font-family: var(--font-ui);
-  font-size: 0.72rem;
   color: var(--text-dim);
   background: color-mix(in srgb, var(--bg) 78%, transparent);
   border: 1px solid var(--rule);
   border-radius: 3px;
-  padding: 0.2rem 0.45rem;
+  padding: 0.25rem 0.35rem;
   cursor: pointer;
 }
 
 #map-panel-toggle:hover,
+#map-panel-toggle[aria-expanded='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+#map-panel-toggle .icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* El menú: cae bajo el ojo y crece hacia abajo según le pongamos más cosas. */
+#map-panel {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 13rem;
+  padding: 0.6rem 0.7rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 22%);
+}
+
+.map-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.map-field-name {
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--text-dim);
+}
+
+.map-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+#map-panel button {
+  font-family: var(--font-ui);
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+}
+
 #map-panel button:hover {
   color: var(--text);
 }
@@ -491,38 +535,9 @@ input {
   border-color: var(--accent);
 }
 
-#map-panel-toggle .icon {
-  width: 0.95rem;
-  height: 0.95rem;
-}
-
-#map-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  min-width: 0;
+#map-panel input[type='range'] {
   flex: 1 1 auto;
-}
-
-.map-panel-row {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-/* El alcance: cuántos saltos desde la página en foco. */
-#map-reach {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.12rem 0.45rem;
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
-  border: 1px solid var(--rule);
-  border-radius: 3px;
-}
-
-#map-reach input {
-  width: 4.5rem;
+  min-width: 0;
   accent-color: var(--accent);
 }
 
@@ -530,14 +545,15 @@ input {
   font-family: var(--font-mono);
   font-size: 0.72rem;
   color: var(--text-dim);
-  min-width: 0.6rem;
+  min-width: 0.7rem;
+  text-align: right;
 }
 
 /*
  * El rastro: por dónde se ha pasado, acumulándose.
  *
- * Al pie del mapa y fuera del panel que se pliega: es lo que uno mira para saber
- * dónde está, no algo que se abra para consultarlo.
+ * Al pie del mapa y fuera del menú: es lo que uno mira para saber dónde está, no
+ * algo que se abra para consultarlo.
  */
 #map-trail {
   position: absolute;
@@ -556,9 +572,6 @@ input {
 
 .trail-pill {
   pointer-events: auto;
-}
-
-.trail-pill {
   max-width: 11rem;
   overflow: hidden;
   text-overflow: ellipsis;

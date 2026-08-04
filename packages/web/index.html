@@ -110,32 +110,38 @@
           puede cerrar. Un mapa es para mirarlo: sus controles no pueden ocupar
           sitio permanente sobre lo que se está mirando.
         -->
+        <!--
+          El ojo y su menú.
+
+          Un mapa es para mirarlo: sus controles se despliegan cuando hacen falta
+          y se recogen cuando no. El menú cae bajo el ojo, como cualquier menú, y
+          crece hacia abajo a medida que le pongamos más cosas.
+        -->
         <div id="map-controls">
           <button
             id="map-panel-toggle"
             aria-label="Controles del mapa"
-            aria-expanded="true"
+            aria-expanded="false"
             aria-controls="map-panel"
-            title="Mostrar u ocultar los controles del mapa"
+            title="Controles del mapa"
           ></button>
 
-          <div id="map-panel">
-            <div class="map-panel-row">
-              <!-- Sin `title`: el globo del navegador aparecía sobre el mapa y
-                   tapaba justo lo que uno está mirando, para explicar «2D» a
-                   quien está leyendo «2D». -->
-              <button data-view="graph_2d">2D</button>
-              <button data-view="graph_3d">3D</button>
-              <!--
-                Hasta dónde llega el mapa, contado en saltos desde la página en
-                foco. Es distancia del grafo y no cantidad de nodos: la pregunta
-                que uno se hace es «qué tan lejos de aquí».
-              -->
-              <label id="map-reach">
+          <div id="map-panel" role="group" aria-label="Controles del mapa" hidden>
+            <label class="map-field">
+              <span class="map-field-name">dimensión</span>
+              <span class="map-choice">
+                <button data-view="graph_2d">2D</button>
+                <button data-view="graph_3d">3D</button>
+              </span>
+            </label>
+
+            <label class="map-field">
+              <span class="map-field-name">proximidad</span>
+              <span class="map-choice">
                 <input type="range" min="1" max="4" step="1" />
                 <span id="map-reach-value">2</span>
-              </label>
-            </div>
+              </span>
+            </label>
           </div>
         </div>
 

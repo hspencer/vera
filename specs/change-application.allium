@@ -101,7 +101,11 @@ rule ApplyCreatePage {
     ensures: core/Page.created(
         graph: operation.submission.graph,
         title: change.title,
-        visibility: change.visibility
+        visibility: change.visibility,
+        created_at: now,
+        -- Nulo salvo que quien envía sepa una fecha mejor, que en la práctica
+        -- es sólo la importación. Ver core/Page.authored_at.
+        origin_created_at: change.origin_created_at
     )
 }
 

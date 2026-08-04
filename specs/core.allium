@@ -73,6 +73,32 @@ entity Page {
     -- página. El corpus escribe [[LogSeq]] y [[Logseq]] para una sola, y
     -- resolverlas por separado partiría el grafo en pedazos falsos.
     title_key: title_key(title)
+
+    -- Cuándo esta página empezó a existir en Vera. Sale del registro, no se
+    -- edita, y para una página importada dice el día de la importación: es
+    -- cierto sobre Vera y no sobre lo que la página cuenta.
+    created_at: Timestamp
+
+    -- Cuándo se escribió, según el corpus del que vino, cuando se pudo
+    -- recuperar. Nulo cuando no se pudo.
+    --
+    -- Se guarda aparte de created_at y no lo sobreescribe porque son dos hechos
+    -- distintos con dos procedencias distintas, y colapsarlos pierde lo único
+    -- que permite volver sobre ellos: un importador que mañana lea una fuente
+    -- de fechas mejor no sabría a qué páginas aplicarla.
+    origin_created_at: Timestamp?
+
+    -- La fecha que se enseña, y si lo que se enseña es un hecho o un techo.
+    -- Sin fecha de origen lo único que se sabe es que la página no se escribió
+    -- después de entrar, y enseñar eso como si fuera el día en que se escribió
+    -- afirma algo que nadie comprobó.
+    authored_at: origin_created_at ?? created_at
+    authored_at_is_ceiling: origin_created_at = null
+
+    -- Cuándo se tocó por última vez, derivado del registro. No se almacena: dos
+    -- copias del mismo dato son dos ocasiones de discrepar, y la historia ya lo
+    -- sabe.
+    last_edited_at: last_revision_time(revisions)
 }
 
 entity PersonalSite {
@@ -114,6 +140,10 @@ entity Change {
     visibility: Visibility?
     property_key: String?
     property_value: String?
+    -- La fecha que el corpus de origen sabía. Como stable_id, sólo la usa la
+    -- importación, y por la misma razón: es un hecho que ya existía y que Vera
+    -- adopta en vez de inventar uno peor.
+    origin_created_at: Timestamp?
 }
 
 entity Submission {

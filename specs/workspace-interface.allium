@@ -14,6 +14,7 @@
 -- References: Logseq and logseq-constel are implementation and interaction references
 
 use "./core.allium" as core
+use "./controlled-ontology.allium" as ontology
 
 ------------------------------------------------------------
 -- Contracts
@@ -95,6 +96,62 @@ contract BlockManipulation {
         -- Removing a block from the workspace submits the same remove_block
         -- operation as any other participant would, with the same provenance and
         -- the same ordering. The interface has no shorter path to the graph.
+}
+
+-- La cabecera de una página: lo que se pregunta de ella antes de leerla.
+--
+-- Cuatro naturalezas distintas conviven ahí y la interfaz tiene que ser honesta
+-- sobre cuál es cuál, porque lo que se puede hacer con cada una es distinto:
+-- estado gobernado con sus propias reglas (la visibilidad), tipos y conceptos
+-- declarados sobre el vocabulario, propiedades libres que el corpus trae
+-- escritas, y hechos derivados del registro. Dibujarlas iguales es afirmar que
+-- se comportan igual.
+contract PageFrontMatter {
+    offer: (page: core/Page, key: String) -> PropertyControl
+    answer: (page: core/Page, key: String, value: String) -> core/Page
+
+    @invariant AControlledAnswerIsChosenNotTyped
+        -- A property whose domain the ontology governs is answered by choosing:
+        -- a switch where the answer is yes or no, a list where it is one of a
+        -- few, pills with completion where it is several words of a vocabulary.
+        -- The corpus is the argument: `type` was asked in the open eleven times
+        -- and came back with `": "` once and with five types packed into one
+        -- string another. Neither is carelessness; both are what an open field
+        -- does to a closed question.
+
+    @invariant CompletionConvergesOnWhatIsAlreadySaid
+        -- Completing a vocabulary answer offers what the corpus already uses,
+        -- including through its alternative labels, so that someone typing
+        -- `lang` is shown `language` when the two are one concept. A completion
+        -- that only matched the preferred label would let the vocabulary
+        -- re-fork at the exact moment it was being converged.
+
+    @invariant ANewWordIsAcceptedAndMarked
+        -- Every controlled answer also takes a word that is not in the
+        -- vocabulary. It is written at once and shown as proposed. Refusing it
+        -- would not produce a cleaner corpus; it would produce a corpus that
+        -- stopped being annotated.
+
+    @invariant GovernedStateIsAskedWhereItIsRead
+        -- Visibility is one of the questions the header asks, in the header,
+        -- among the others. It is not a badge somewhere else. A page that reads
+        -- `public  false` in one place and `private` in another is telling a
+        -- reader two things and giving them no way to know which governs.
+
+    @invariant WhatIsDerivedIsNotAField
+        -- Dates come from the record and are presented as readings, not as
+        -- inputs. A date one can type is a date that can lie, and in a system
+        -- whose premise is provenance that is not a cosmetic difference. Where
+        -- the date shown is only a ceiling — the corpus's date could not be
+        -- recovered and all that is known is that the page was not written
+        -- after it arrived — the header says so rather than presenting the day
+        -- of the import as the day of the writing.
+
+    @invariant TheControlChangesTheQuestionNotTheFile
+        -- What a control writes is the same `key:: value` line the projection
+        -- has always written. A redesign of the header that changed the Markdown
+        -- would be a migration wearing an interface's clothes, and would have to
+        -- be reviewed as one.
 }
 
 contract ResponsiveWorkspace {
@@ -185,6 +242,29 @@ entity QueryResult {
 entity ThemeApplication {
     theme: Theme
     scheme: ColourScheme
+}
+
+-- Con qué se contesta una propiedad en la cabecera de una página.
+--
+-- No es una decisión de estilo: sale del dominio que la ontología declaró, y por
+-- eso la interfaz no elige el control sino que lo lee. Una propiedad sin dominio
+-- declarado se contesta escribiendo, y se ve que es así.
+entity PropertyControl {
+    page: core/Page
+    key: String
+    -- Nula cuando nadie ha dicho todavía con qué se contesta esta propiedad.
+    -- Es el caso de casi todo el corpus importado y no es un error: es una
+    -- pregunta que sigue abierta, y la cabecera puede decirlo e invitar a
+    -- cerrarla.
+    definition: ontology/PropertyDefinition?
+    -- Lo que se ofrece ahora mismo, ya filtrado por lo que el vocabulario
+    -- aprueba.
+    offered: Set<String>
+    -- Lo que la página contesta hoy. Puede no estar entre lo ofrecido: el corpus
+    -- llegó antes que el dominio, y una discrepancia se enseña, no se corrige.
+    answered: Set<String>
+    governed: definition != null
+    consistent: governed implies answered_within(answered, offered)
 }
 
 -- What copying a reference puts in the participant's hands. It names the block's
@@ -312,6 +392,36 @@ rule ParticipantEditsDesignToken {
         token.dark_value = dark_value
 }
 
+-- Preguntarle a una página lo que se le pregunta a toda página.
+--
+-- El orden es fijo y las cuatro primeras están siempre, contestadas o no: qué es,
+-- de qué trata, cuándo se escribió y cuándo se tocó por última vez. Después, lo
+-- que esa página además lleve. Ver controlled-ontology/TheSameQuestionsOpenEveryPage.
+rule PresentPageFrontMatter {
+    when: OpenPageFrontMatter(participant, workspace, page)
+
+    requires: workspace.participant = participant
+    requires: page.graph = workspace.graph
+
+    ensures:
+        for key in front_matter_keys(page):
+            PropertyControl.created(
+                page: page,
+                key: key,
+                definition: governing_definition(workspace.graph, page, key),
+                offered: offered_values(workspace.graph, page, key),
+                answered: answered_values(page, key)
+            )
+
+    @guidance
+        -- governing_definition devuelve nulo cuando nadie ha declarado con qué se
+        -- contesta esa propiedad, que hoy es casi todo el corpus. No es un fallo
+        -- que haya que resolver antes de dibujar la cabecera: es el estado
+        -- normal de un corpus heredado, y la cabecera tiene que saber leerlo sin
+        -- perder la diferencia entre una pregunta sin gobierno y una sin
+        -- contestar.
+}
+
 rule ParticipantSearchesGraph {
     when: SearchGraph(participant, workspace, text)
 
@@ -384,6 +494,7 @@ surface VeraWorkspace {
         ChangeColourScheme(participant, workspace, colour_scheme)
         ApplyTheme(participant, workspace)
         NavigateToPage(participant, workspace, page)
+        OpenPageFrontMatter(participant, workspace, page)
         OpenMobileGraphNode(participant, workspace, page)
         EditThemeSource(participant, workspace, stylesheet_source)
         EditDesignToken(participant, workspace, token, light_value, dark_value)
@@ -395,6 +506,7 @@ surface VeraWorkspace {
         fulfils EditablePresentation
         fulfils NativeMarkdownEditing
         fulfils BlockManipulation
+        fulfils PageFrontMatter
         fulfils ResponsiveWorkspace
         fulfils InstallableWebApplication
 
@@ -495,6 +607,22 @@ surface VeraWorkspace {
         -- there the vocabulary is already settled by the delimiter typed —
         -- `[[` names a page, `#` a tag, `((` a block — and offering everything
         -- would undo a choice the participant already made.
+
+    @guarantee AVocabularyValueIsReachableFromWhereItIsAnswered
+        -- Beside a controlled answer there is a way to the page that bears its
+        -- name, where what that word means can be written and where every page
+        -- answering with it is listed. The value in a header is the near end of
+        -- a link; a value one can read but not follow makes the vocabulary a
+        -- label instead of a place.
+        --
+        -- Not the eye. That mark already means folding the map's controls in
+        -- this workspace, and a mark that means two things means neither.
+
+    @guarantee FollowingAMissingNameLandsInItsFirstBlock
+        -- Pressing a reference to a page that does not exist opens that page
+        -- with the caret in its first empty block. No dialog, no confirmation,
+        -- nothing pre-written. See graph-navigation.allium, where the change
+        -- itself is governed.
 
     @guarantee GraphNodesAreTheirNames
         -- A node in the map is the text of what it names, not a circle beside

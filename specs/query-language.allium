@@ -51,7 +51,7 @@ contract NativeGraphQuery {
 -- composition is expressed by the three combining variants rather than by precedence
 -- rules in a surface syntax.
 entity QueryExpression {
-    kind: TitleTerm | ContentTerm | TagTerm | PropertyTerm
+    kind: TitleTerm | ContentTerm | TagTerm | PropertyTerm | SemanticTypeTerm
         | LinksToTerm | LinkedFromTerm
         | AndTerm | OrTerm | NotTerm
 }
@@ -74,6 +74,27 @@ variant TagTerm : QueryExpression {
 variant PropertyTerm : QueryExpression {
     key: String
     value: String?
+}
+
+-- Qué clase de cosa es una página, que no es lo mismo que qué propiedad lleva
+-- escrita.
+--
+-- Existe aparte de PropertyTerm a propósito. `type:: proyecto` escrito a mano y
+-- un tipo semántico confirmado responden a preguntas distintas —lo que la página
+-- dice de sí misma y lo que el vocabulario ha decidido— y un solo término que
+-- respondiera las dos a la vez no podría distinguirlas, que es exactamente el
+-- fallo que controlled-ontology.allium llama TypeAndTopicAreNeverTheSameQuestion.
+--
+-- Esto hace de la ontología una dependencia del lenguaje de consulta, y conviene
+-- decirlo antes que descubrirlo: una consulta por tipo no se puede contestar sin
+-- leer las asignaciones, y por tanto no se puede contestar en un grafo cuya
+-- ontología no está poblada. Ahí devuelve vacío, que es la respuesta correcta.
+variant SemanticTypeTerm : QueryExpression {
+    type_name: String
+    -- Si cuentan también las sugeridas. Por omisión no: una sugerencia es una
+    -- pregunta pendiente, y una consulta que la contara como respuesta haría
+    -- pasar por decidido lo que nadie decidió.
+    include_suggested: Boolean
 }
 
 variant LinksToTerm : QueryExpression {
@@ -103,6 +124,33 @@ entity QueryEvaluation {
     evaluated_at: Timestamp
     matching_pages: Set<core/Page>
     matching_blocks: Set<core/Block>
+}
+
+-- Una consulta que una página lleva puesta y que se contesta cada vez que se
+-- lee, en vez de una vez y para siempre.
+--
+-- Dos procedencias, y la distinción importa porque decide qué se puede borrar.
+-- Una la escribe alguien y vive donde la puso. La otra no la escribió nadie: es
+-- lo que una página presenta por el hecho de que su título se usa como valor de
+-- una propiedad en otras páginas — la página `proyecto` enseñando los proyectos.
+-- Esa segunda es derivada en el mismo sentido en que lo son los retroenlaces, y
+-- por la misma razón no se edita ni se quita: no es un dato, es un índice.
+entity StandingQuery {
+    graph: core/Graph
+    -- La página que la lleva.
+    page: core/Page
+    expression: QueryExpression
+    origin: authored | derived
+    -- Quién la puso, cuando la puso alguien.
+    authored_by: core/Participant?
+
+    invariant DerivedStandingQueriesHaveNoAuthor {
+        origin = derived implies authored_by = null
+    }
+
+    invariant AuthoredStandingQueriesHaveOne {
+        origin = authored implies authored_by != null
+    }
 }
 
 -- A Logseq query carried in from the imported corpus. It is content, not behaviour:
@@ -141,6 +189,38 @@ rule EvaluateQueryAgainstGraph {
         -- select_pages and select_blocks are the recursive evaluation of the term tree.
         -- They are black boxes here because their cost model belongs to the store, not
         -- to the contract: what this spec fixes is the vocabulary and the scope.
+}
+
+rule ParticipantPutsAQueryOnAPage {
+    when: PlaceStandingQuery(participant, graph, page, expression)
+
+    let membership = core/Membership{graph, participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: page.graph = graph
+
+    ensures: StandingQuery.created(
+        graph: graph,
+        page: page,
+        expression: expression,
+        origin: authored,
+        authored_by: participant
+    )
+}
+
+rule ParticipantRemovesAStandingQuery {
+    when: RemoveStandingQuery(participant, query)
+
+    requires: query.origin = authored
+
+    ensures: not exists query
+
+    @guidance
+        -- Sólo las escritas. Una derivada no se quita porque no se puso: es lo
+        -- que la página resulta ser al mirar el resto del grafo, igual que sus
+        -- retroenlaces, y quitarla sería pedirle al corpus que dejara de decir
+        -- algo que dice.
 }
 
 rule PreserveUnportedLegacyQuery {
@@ -248,6 +328,8 @@ surface GraphQuerying {
 
     provides:
         EvaluateQuery(participant, graph, expression)
+        PlaceStandingQuery(participant, graph, page, expression)
+        RemoveStandingQuery(participant, query) when query.graph = graph
         PortLegacyQuery(participant, unported, expression) when unported.graph = graph
 
     contracts:
@@ -260,6 +342,20 @@ surface GraphQuerying {
     @guarantee LegacyQueriesAreVisibleWork
         -- An imported Logseq query reads as a preserved fragment awaiting a decision,
         -- never as a broken Vera query and never as a silently guessed translation.
+
+    @guarantee AStandingQueryIsAnsweredOnRead
+        -- A query a page carries is evaluated when the page is read, against the
+        -- graph as it is then. No result is stored. A stored result ages without
+        -- saying so, and a list claiming to be every project while missing last
+        -- week's is worse than no list: it is trusted and wrong.
+
+    @guarantee SearchingWithinAResultIsComposition
+        -- Narrowing a standing result by text is an AndTerm over the standing
+        -- expression and a ContentTerm. It is not a second mechanism, has no
+        -- separate index, and can be read as the expression it is. A "search
+        -- within these" that could not be written as a query would be a
+        -- capability the language cannot express, and the language is the place
+        -- where what Vera can be asked is enumerated.
 }
 
 ------------------------------------------------------------
@@ -272,7 +368,10 @@ deferred SearchIndex.find -- see: search-index.allium
 -- Open Questions
 ------------------------------------------------------------
 
-open question "Should a query be able to select on a confirmed semantic type once controlled-ontology.allium is implemented, and does that make the ontology a query dependency?"
+-- Contestadas las dos: sí se puede consultar por tipo semántico, y sí acopla la
+-- ontología al lenguaje —ver SemanticTypeTerm, donde queda dicho—; y sí se puede
+-- guardar una consulta en una página, con la distinción entre puesta y derivada
+-- que hace falta para saber qué se puede quitar. Ver StandingQuery.
 open question "Do property terms compare values as text only, or does Vera need typed comparison for dates and numbers to make the corpus's date properties useful?"
 open question "Can a participant save a query under a name and embed it in a page, the way the imported corpus embeds Logseq query macros?"
 open question "Does a query select blocks whose page the participant may read but whose own content is restricted, once permissions are finer than graph membership?"
