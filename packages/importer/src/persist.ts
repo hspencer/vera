@@ -1,9 +1,14 @@
-// Importa el corpus y lo deja escrito en la base canónica.
+// Importa un grafo Logseq y lo deja escrito en la base canónica.
 //
-//   node packages/importer/src/persist.ts ../mind data/vera.sqlite objects
+//   node packages/importer/src/persist.ts <grafo> [base] [objetos]
+//
+// Quién queda como dueño de lo importado sale de VERA_OWNER / VERA_OWNER_NAME,
+// igual que en el servidor. No hay valor por defecto a propósito: importar es
+// escribir decenas de miles de operaciones, y todas quedan firmadas por alguien.
 
-import { mkdirSync, readFileSync, rmSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { VeraGraph, checkInvariants } from '@vera/core';
 import {
@@ -18,19 +23,38 @@ import { mediaTypeFor, putObject, sniffMediaType } from '@vera/store/objects';
 
 import { importLogseqGraph } from './import.ts';
 
-const source = process.argv[2] ?? '../mind';
-const target = process.argv[3] ?? 'data/vera.sqlite';
-const objects = process.argv[4] ?? 'objects';
-const OWNER = 'participant:herbert';
+// El mismo `.env` que lee el servidor. Sin esto, quien lo hubiera llenado tenía
+// que repetir el dueño en la línea de comandos para importar, y ya sabemos qué
+// pasa cuando dos sitios declaran la misma cosa.
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
+const envFile = join(ROOT, '.env');
+if (existsSync(envFile)) process.loadEnvFile(envFile);
+
+const source = process.argv[2];
+if (source === undefined) {
+  console.error('falta la ruta del grafo Logseq a importar');
+  process.exit(1);
+}
+const target = process.argv[3] ?? process.env['VERA_DATABASE'] ?? 'data/vera.sqlite';
+const objects = process.argv[4] ?? process.env['VERA_OBJECTS'] ?? 'objects';
+
+const OWNER = process.env['VERA_OWNER'];
+const OWNER_NAME = process.env['VERA_OWNER_NAME'] ?? OWNER;
+if (OWNER === undefined || OWNER_NAME === undefined) {
+  console.error('declara VERA_OWNER y VERA_OWNER_NAME antes de importar: todo lo');
+  console.error('que se importe queda firmado por esa persona, y no se puede');
+  console.error('cambiar después sin reescribir de quién es lo ya escrito.');
+  process.exit(1);
+}
 
 mkdirSync(dirname(target), { recursive: true });
 for (const suffix of ['', '-wal', '-shm']) rmSync(`${target}${suffix}`, { force: true });
 
 const store = openStore({ path: target, graphName: 'mind' });
-saveParticipant(store, { id: OWNER, name: 'Herbert', kind: 'human' });
+saveParticipant(store, { id: OWNER, name: OWNER_NAME, kind: 'human' });
 
 const graph = VeraGraph.create({ name: 'mind', id: store.graphId });
-graph.addParticipant({ id: OWNER, name: 'Herbert', kind: 'human' });
+graph.addParticipant({ id: OWNER, name: OWNER_NAME, kind: 'human' });
 graph.admit(OWNER);
 
 console.log(`leyendo ${source} …`);

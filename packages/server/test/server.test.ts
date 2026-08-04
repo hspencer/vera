@@ -12,7 +12,7 @@ const PORT = 4271;
 const OWNER = 'participant:herbert';
 
 before(() => {
-  running = listen({ port: PORT, databasePath: ':memory:' });
+  running = listen({ port: PORT, databasePath: ':memory:', owner: { id: OWNER, name: 'Dueña' } });
   base = `http://localhost:${PORT}`;
 });
 
@@ -219,7 +219,7 @@ describe('lecturas', () => {
 describe('persistencia entre arranques', () => {
   it('reconstruye el grafo del log al volver a abrir la base', async () => {
     const path = `${process.env['TMPDIR'] ?? '/tmp'}/vera-restart-${Date.now()}.sqlite`;
-    const first = listen({ port: PORT + 1, databasePath: path });
+    const first = listen({ port: PORT + 1, databasePath: path, owner: { id: OWNER, name: 'Dueña' } });
     const response = await fetch(`http://localhost:${PORT + 1}/operations`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -232,7 +232,7 @@ describe('persistencia entre arranques', () => {
     assert.equal(response.status, 201);
     await first.close();
 
-    const second = listen({ port: PORT + 2, databasePath: path });
+    const second = listen({ port: PORT + 2, databasePath: path, owner: { id: OWNER, name: 'Dueña' } });
     const pages = (await (await fetch(`http://localhost:${PORT + 2}/pages`)).json()) as {
       title: string;
     }[];

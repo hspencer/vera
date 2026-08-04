@@ -1,21 +1,29 @@
 // Ejecuta la importación e imprime el informe de pérdida.
 //
-//   node packages/importer/src/cli.ts ../mind [límite-de-archivos]
+//   node packages/importer/src/cli.ts <grafo> [límite-de-archivos]
 
 import { VeraGraph, checkInvariants } from '@vera/core';
 import { importLogseqGraph } from './import.ts';
 
-const source = process.argv[2] ?? '../mind';
+const source = process.argv[2];
+if (source === undefined) {
+  console.error('falta la ruta del grafo Logseq a leer');
+  process.exit(1);
+}
+
+// Esto sólo lee y reporta: no persiste nada. El participante es una etiqueta
+// para el reporte, no una identidad que quede escrita en ninguna parte.
+const READER = process.env['VERA_OWNER'] ?? 'participant:lector';
 const limit = process.argv[3] === undefined ? undefined : Number(process.argv[3]);
 
 const graph = VeraGraph.create({ name: 'mind' });
-graph.addParticipant({ id: 'participant:herbert', name: 'Herbert', kind: 'human' });
-graph.admit('participant:herbert');
+graph.addParticipant({ id: READER, name: process.env['VERA_OWNER_NAME'] ?? 'Lector', kind: 'human' });
+graph.admit(READER);
 
 const started = Date.now();
 const report = importLogseqGraph({
   source,
-  participant: 'participant:herbert',
+  participant: READER,
   graph,
   ...(limit === undefined ? {} : { limit }),
 });

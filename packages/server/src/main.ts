@@ -41,10 +41,41 @@ const host = process.argv[4] ?? setting('VERA_HOST') ?? '127.0.0.1';
 const objectsRoot = process.argv[5] ?? setting('VERA_OBJECTS') ?? 'objects';
 const webRoot = setting('VERA_WEB_ROOT') ?? 'packages/web/dist';
 
-const { vera } = listen({ port, databasePath, host, webRoot, objectsRoot });
+/*
+ * De quién es este grafo.
+ *
+ * Sin decirlo, toda instancia nueva nacía con el dueño de la primera: el
+ * servidor traía un nombre escrito en el código y nadie se lo pisaba nunca. Para
+ * quien clona Vera y la levanta en su máquina eso no es un detalle cosmético
+ * —firmaría cada cosa que escriba con el nombre de otra persona— y la
+ * procedencia, que es de lo que Vera trata, diría algo falso desde el primer
+ * bloque.
+ *
+ * No hay valor por defecto, y esa es la decisión: un nombre escrito en el código
+ * es exactamente cómo se llegó al problema. Esto sólo sirve para sembrar un
+ * grafo que todavía no tiene dueño; en uno con historia manda el grafo, porque
+ * cambiar de dueño sería reescribir de quién es lo ya escrito.
+ */
+const ownerId = setting('VERA_OWNER');
+const ownerName = setting('VERA_OWNER_NAME');
+const declaredOwner =
+  ownerId === undefined ? undefined : { id: ownerId, name: ownerName ?? ownerId };
+
+const { vera } = listen({
+  port,
+  databasePath,
+  host,
+  webRoot,
+  objectsRoot,
+  ...(declaredOwner === undefined ? {} : { owner: declaredOwner }),
+});
 
 console.log(`Vera escucha en http://localhost:${port}`);
 console.log(`  base:     ${databasePath}`);
+// Quién firma lo que se escriba aquí. Se dice al arrancar porque el error que
+// evita es silencioso: escribir durante días como otra persona.
+const dueño = vera.graph.owner;
+console.log(`  dueño:    ${vera.graph.participant(dueño ?? '')?.name ?? '—'} (${dueño ?? 'sin dueño'})`);
 console.log(`  páginas:  ${vera.graph.pages().length}`);
 console.log(`  bloques:  ${vera.graph.allBlocks().length}`);
 console.log(`  secuencia:${vera.graph.log().lastSequence}`);

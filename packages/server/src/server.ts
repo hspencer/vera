@@ -251,15 +251,38 @@ function readOperation(body: SubmitBody): { error: string } | {
 
 export function createVeraServer(options: ServerOptions): VeraServer {
   const store = openStore({ path: options.databasePath, graphName: 'mind' });
-  const owner = options.owner ?? { id: 'participant:herbert', name: 'Herbert' };
-  saveParticipant(store, { id: owner.id, name: owner.name, kind: 'human' });
 
   // El grafo en memoria se reconstruye del log al arrancar y responde las
   // lecturas; el disco conserva la verdad.
   const graph = loadGraph(store, 'mind');
-  if (graph.participant(owner.id) === undefined) {
+
+  /*
+   * De quién es este grafo lo dice el grafo, no la configuración.
+   *
+   * Un grafo con historia ya tiene dueño: es quien firmó lo que hay dentro, y
+   * eso no lo puede cambiar una variable de entorno sin volver falsa la
+   * procedencia de todo lo escrito. La configuración sólo decide para un grafo
+   * que todavía no tiene a nadie, que es el caso de quien acaba de instalar.
+   *
+   * Antes había un nombre escrito aquí, así que toda instalación nueva nacía
+   * firmando como el dueño de la primera. Ya no hay ninguno: sin grafo previo y
+   * sin `VERA_OWNER`, Vera se planta en vez de inventar una identidad, porque
+   * escribir durante días como otra persona es un error que no avisa.
+   */
+  const established = graph.owner;
+  let owner: { id: ParticipantId; name: string };
+  if (established !== null) {
+    owner = { id: established, name: graph.participant(established)?.name ?? established };
+  } else if (options.owner !== undefined) {
+    owner = options.owner;
+    saveParticipant(store, { id: owner.id, name: owner.name, kind: 'human' });
     graph.addParticipant({ id: owner.id, name: owner.name, kind: 'human' });
     graph.admit(owner.id);
+  } else {
+    throw new Error(
+      'este grafo todavía no tiene dueño y nadie dijo quién es: ' +
+        'declara VERA_OWNER y VERA_OWNER_NAME en .env, o corre `npm run setup`',
+    );
   }
 
   const webRoot = options.webRoot === undefined ? null : resolve(options.webRoot);

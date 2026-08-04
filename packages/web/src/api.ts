@@ -156,7 +156,7 @@ export const api = {
     fetch('/folds', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ participant: 'participant:herbert', block, folded }),
+      body: JSON.stringify({ block, folded }),
     }),
 
   graph: (centre: string, depth: number) =>
@@ -166,9 +166,19 @@ export const api = {
     const response = await fetch('/operations', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      /*
+       * El cuerpo no dice quién escribe, y por eso funciona en cualquier
+       * instancia.
+       *
+       * Lo decía —con un nombre fijo— y el servidor rechaza con 403 cuando el
+       * cuerpo nombra a alguien que no es el dueño de ese grafo. En la instancia
+       * donde ese nombre era el dueño no se notaba nunca; en cualquier otra,
+       * toda escritura fallaba. Quién escribe lo decide el servidor a partir de
+       * la credencial o, sin ella, del dueño del grafo: es lo que su propio
+       * código ya declara, y afirmarlo aquí sólo podía contradecirlo.
+       */
       body: JSON.stringify({
         originId: originId(),
-        participant: 'participant:herbert',
         channel: 'typed_text',
         change,
       }),

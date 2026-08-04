@@ -18,7 +18,7 @@ let base: string;
 let running: ReturnType<typeof listen>;
 
 before(() => {
-  running = listen({ port: PORT, databasePath: ':memory:' });
+  running = listen({ port: PORT, databasePath: ':memory:', owner: { id: OWNER, name: 'Dueña' } });
   base = `http://localhost:${PORT}`;
 });
 
