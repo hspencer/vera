@@ -12,7 +12,7 @@ import { parseRoute, routeTo } from './router.ts';
 import { voice } from './voice.ts';
 import { brandMark, icon, type IconName } from './icons.ts';
 import { forgetPositions, renderGraph, selectNode } from './graph/render.ts';
-import { renderGraph3D, cleanupGraph3D } from './graph/render3d.ts';
+import { renderGraph3D, cleanupGraph3D, forgetCamera } from './graph/render3d.ts';
 import {
   applyTokens,
   loadTokens,
@@ -49,9 +49,18 @@ const workspace: Workspace = {
   depth: session.reach(),
 };
 
-/** Si el panel de controles del mapa está abierto. De este aparato, no del participante. */
+/**
+ * Si el panel de controles del mapa está abierto.
+ *
+ * Nace cerrado. Un mapa es para mirarlo, y sus controles son para cuando hacen
+ * falta: el ojo está para desplegarlos, y si ya estuvieran desplegados el ojo
+ * sólo serviría para quitarlos, que es lo contrario de lo que un ojo sugiere.
+ *
+ * Se recuerda en este aparato y no viaja: cuánto sitio puede gastarse en
+ * controles depende de la pantalla que se tiene delante.
+ */
 const PANEL_KEY = 'vera.mapPanel';
-let mapPanelOpen = localStorage.getItem(PANEL_KEY) !== 'false';
+let mapPanelOpen = localStorage.getItem(PANEL_KEY) === 'true';
 
 let tokens = loadTokens();
 let pages: PageSummary[] = [];
@@ -769,8 +778,10 @@ function wireTheme(): void {
   reach.addEventListener('change', () => {
     workspace.depth = Number(reach.value);
     session.setReach(workspace.depth);
-    // El alcance cambia qué nodos hay, así que lo colocado deja de valer.
+    // El alcance cambia qué nodos hay, así que lo colocado deja de valer, y
+    // tampoco tiene sentido volver a la cámara de un grafo que ya no es ese.
     forgetPositions();
+    forgetCamera();
     void refreshGraph();
   });
 

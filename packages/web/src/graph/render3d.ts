@@ -11,6 +11,21 @@ let activeGraph: any = null;
 let activeListeners: { target: EventTarget; event: string; fn: EventListener }[] = [];
 let activeTimers: ReturnType<typeof setTimeout>[] = [];
 
+/**
+ * Dónde está la cámara y qué mira, entre un dibujo y el siguiente.
+ *
+ * Lo mismo que `positions` y `heldTransform` en dos dimensiones, y por la misma
+ * razón: un mapa que se recoloca solo deja de poder recorrerse. `lookAt` es
+ * además el centro de la órbita, así que conservarlo es conservar en torno a qué
+ * se está girando.
+ */
+let heldCamera: { position: { x: number; y: number; z: number }; lookAt: { x: number; y: number; z: number } } | null = null;
+
+/** Olvida la cámara. Para cuando el grafo cambia de veras, como al variar el alcance. */
+export function forgetCamera(): void {
+  heldCamera = null;
+}
+
 export function cleanupGraph3D() {
   // Remove event listeners from previous render
   for (const { target, event, fn } of activeListeners) {
@@ -161,7 +176,9 @@ export function renderGraph3D(
     }
 
     const textBlockH = lines.length * lineHeight;
-    const padding = 8 * dpr;
+    // El margen tiene que dar cabida al desenfoque, o la placa se corta contra
+    // el borde del lienzo y vuelve a leerse como una caja.
+    const padding = 18 * dpr;
     const hPad = 24 * dpr;
 
     // El lienzo lo decide el texto y nada más: sin esfera no hay un mínimo que
@@ -182,8 +199,19 @@ export function renderGraph3D(
     if (showTitles && lines.length > 0) {
       const pillH = textBlockH + 12 * dpr;
       const pillW = maxLineW + hPad;
-      // Translúcida: se ve lo que hay detrás y el nombre se sigue leyendo.
-      ctx.globalAlpha = 0.72;
+      /*
+       * La placa va difuminada, no recortada.
+       *
+       * Con el borde duro se lee como una caja pegada detrás del nombre; con el
+       * borde desvanecido se lee como que el nombre trae su propia sombra y el
+       * mapa sigue siendo mapa.
+       *
+       * Es un desenfoque de la placa, no de lo que hay detrás: un sprite no
+       * puede leer la escena que tiene a su espalda sin un paso de render
+       * aparte, y ese precio no lo vale un fondo.
+       */
+      ctx.filter = `blur(${Math.round(6 * dpr)}px)`;
+      ctx.globalAlpha = 0.78;
       ctx.fillStyle = colors.bg;
       const rx = cx - pillW / 2, ry = cy - pillH / 2, rr = Math.min(pillH / 2, 12 * dpr);
       ctx.beginPath();
@@ -199,6 +227,8 @@ export function renderGraph3D(
       ctx.closePath();
       ctx.fill();
 
+      // El texto va nítido encima: el desenfoque era para el fondo.
+      ctx.filter = "none";
       ctx.globalAlpha = 1.0;
       ctx.fillStyle = textColor;
       const startY = cy - ((lines.length - 1) * lineHeight) / 2;
@@ -208,6 +238,11 @@ export function renderGraph3D(
     }
 
     const texture = new THREE.CanvasTexture(canvas);
+    // Sin declarar el espacio de color, three.js trata el lienzo como lineal y
+    // lo convierte a sRGB al pintar: la placa salía de un tono distinto al del
+    // fondo de Vera aunque el color fuera literalmente el mismo. Con esto, el
+    // `--bg` que se dibuja es el `--bg` que se ve.
+    texture.colorSpace = THREE.SRGBColorSpace;
     texture.needsUpdate = true;
     const spriteMaterial = new THREE.SpriteMaterial({
       map: texture,
@@ -263,24 +298,35 @@ export function renderGraph3D(
       lastClick = { id: node.id, at: now };
 
       if (touch || again) {
-        // Centrar sin acercarse ni alejarse: se mantiene la distancia a la que
-        // se estaba mirando y sólo cambia hacia dónde.
+        /*
+         * El nodo pasa a ser el centro de la órbita.
+         *
+         * No sólo se mira hacia él: se gira en torno a él. `lookAt` es el objetivo
+         * de los controles de órbita, así que cambiarlo es cambiar el marco de
+         * referencia de la cámara, y a partir de aquí arrastrar el ratón da
+         * vueltas alrededor de esta página y no del origen del grafo.
+         *
+         * Se conserva la distancia a la que se estaba mirando: acercarse o
+         * alejarse es decisión de quien mira, y saltar de página no lo es.
+         */
+        const at = { x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 };
         const camera = graph.cameraPosition();
-        const away = Math.hypot(
-          camera.x - (node.x ?? 0),
-          camera.y - (node.y ?? 0),
-          camera.z - (node.z ?? 0),
-        );
-        const ratio = away === 0 ? 1 : 1 + 120 / away;
-        graph.cameraPosition(
-          {
-            x: (node.x ?? 0) * ratio,
-            y: (node.y ?? 0) * ratio,
-            z: (node.z ?? 0) * ratio,
-          },
-          node,
-          600,
-        );
+        const target = (graph.controls() as { target?: { x: number; y: number; z: number } })
+          ?.target;
+        const from = target ?? { x: 0, y: 0, z: 0 };
+        // El vector de la cámara respecto de lo que orbitaba: se traslada tal
+        // cual al nodo nuevo, así que el ángulo de vista no cambia.
+        const offset = {
+          x: camera.x - from.x,
+          y: camera.y - from.y,
+          z: camera.z - from.z,
+        };
+        const position = { x: at.x + offset.x, y: at.y + offset.y, z: at.z + offset.z };
+
+        graph.cameraPosition(position, at, 600);
+        heldCamera = { position, lookAt: at };
+        // Ya se movió por decisión de alguien: no reencuadrar.
+        moved = true;
         onClickPage(node.name);
       }
     })
@@ -289,6 +335,25 @@ export function renderGraph3D(
     })
     .enableNavigationControls(true);
 
+  /*
+   * Las fuerzas, que hasta ahora eran las que la librería trae por defecto.
+   *
+   * Están pensadas para nodos que son puntos. Aquí un nodo es un nombre, y un
+   * nombre ocupa sitio: con la repulsión de fábrica el grafo quedaba apelmazado
+   * en un puño en el centro y las etiquetas se pisaban unas a otras, que es
+   * exactamente lo que en 2D se resolvió separando cajas.
+   *
+   * En tres dimensiones no hace falta separar cajas —la profundidad ya despeja—
+   * pero sí darles aire, y el aire lo dan estas dos.
+   */
+  const charge = graph.d3Force("charge");
+  if (charge !== undefined) charge.strength(settings.chargeStrength ?? -260);
+  const linkForce = graph.d3Force("link");
+  if (linkForce !== undefined) linkForce.distance(settings.linkDistance ?? 90);
+  // Cambiar una fuerza no reordena lo ya colocado: hay que volver a calentar la
+  // simulación, o el grafo se queda exactamente como estaba con las de fábrica.
+  graph.d3ReheatSimulation();
+
   // Encuadrar a los 500 ms dejaba la cámara dentro del cúmulo: a esa altura los
   // nodos siguen casi encima del origen, la simulación los separa después y ya
   // no había vuelta atrás, porque zoomToFit sólo aleja la cámara en la
@@ -296,16 +361,42 @@ export function renderGraph3D(
   // Por eso cada encuadre parte de una posición conocida, y se encuadra otra
   // vez cuando la simulación se detiene, que es cuando el grafo ya tiene su
   // tamaño definitivo.
+  /** Anota dónde quedó la cámara y en torno a qué está orbitando. */
+  const remember = (): void => {
+    const position = graph.cameraPosition();
+    // Los tipos de la librería declaran `controls()` como `object`; el objetivo
+    // de la órbita está ahí y es lo que hace falta para conservar el centro.
+    const target = (graph.controls() as { target?: { x: number; y: number; z: number } })?.target;
+    heldCamera = {
+      position: { x: position.x, y: position.y, z: position.z },
+      lookAt:
+        target === undefined
+          ? { x: 0, y: 0, z: 0 }
+          : { x: target.x, y: target.y, z: target.z },
+    };
+  };
+
   let moved = false;
-  const noteInteraction = (): void => {
+  const noteInteraction = (event: Event): void => {
+    // Los controles del mapa viven dentro del mapa, así que pulsarlos disparaba
+    // este mismo evento: abrir el panel o cambiar de dimensión contaba como
+    // haber movido la cámara, y el encuadre no llegaba a ocurrir nunca. Tocar un
+    // botón no es mover el grafo.
+    const from = event.target as HTMLElement | null;
+    if (from?.closest("#map-controls, #map-trail") != null) return;
+
     moved = true;
+    // Lo que la mano hizo se conserva: al repintar se vuelve a esta cámara en
+    // vez de reencuadrar. Se anota en el turno siguiente porque los controles
+    // actualizan la cámara después del evento.
+    setTimeout(remember, 0);
   };
   container.addEventListener("pointerdown", noteInteraction);
   container.addEventListener("wheel", noteInteraction, { passive: true });
 
   const fit = (): void => {
     // Encuadrar por encima de la mano del usuario sería quitarle el grafo.
-    if (moved) return;
+    if (moved || heldCamera !== null) return;
     graph.cameraPosition({ x: 0, y: 0, z: 400 }, { x: 0, y: 0, z: 0 }, 0);
     // El reencuadre va en el turno siguiente: pedido de inmediato, zoomToFit
     // calcula la dirección con la posición anterior de la cámara, y si esa
@@ -322,7 +413,20 @@ export function renderGraph3D(
   // los nodos siguen encimados, el encuadre acerca la cámara al centro del
   // cúmulo y ahí se queda hasta que la simulación termina.
   activeTimers = [];
-  graph.onEngineStop(fit);
+  graph.onEngineStop(() => {
+    fit();
+    // Y si ya había una cámara, se vuelve a ella: cada repintado reencuadraba
+    // desde el origen, así que abrir una página desde el mapa devolvía la vista
+    // al principio justo cuando uno acababa de llegar a alguna parte.
+    if (heldCamera !== null) {
+      graph.cameraPosition(heldCamera.position, heldCamera.lookAt, 0);
+    }
+  });
+
+  // Al llegar, se vuelve a donde se estaba mirando, sin esperar a la simulación.
+  if (heldCamera !== null) {
+    graph.cameraPosition(heldCamera.position, heldCamera.lookAt, 0);
+  }
 
   activeGraph = graph;
 
