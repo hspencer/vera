@@ -165,9 +165,86 @@ entity Authorship {
     written_at: Timestamp
 }
 
+-- Un permiso para hacer una vez un acto que está reservado a una persona.
+--
+-- Hay actos que Vera reserva a una mano humana: fusionar dos palabras del
+-- vocabulario, reescribir seiscientas citas, publicar una página. La razón nunca
+-- fue que una máquina no sepa hacerlos, sino que nadie debería descubrir que se
+-- hicieron. Y esa razón se satisface igual si la persona lo decidió y otro lo
+-- ejecutó, siempre que la decisión sea anterior, concreta y esté escrita.
+--
+-- Por eso es de un solo uso y nombra su objeto. Un permiso que valiera para «las
+-- fusiones» sería un cambio de régimen disfrazado de conveniencia: quien lo
+-- concede está diciendo que sí a un acto que ya ha visto, no abriendo una
+-- categoría. Gastarlo al usarlo es lo que impide que el sí de hoy autorice el
+-- de mañana.
+entity Delegation {
+    graph: core/Graph
+    -- Quién autoriza. Siempre una persona; es lo único que aquí no se delega.
+    granted_by: core/Participant
+    granted_to: core/Participant
+    -- Qué acto queda abierto, por el nombre de la regla que lo reserva.
+    act: String
+    -- Sobre qué cosa concreta. Es lo que impide que el permiso se estire.
+    subject: String
+    -- Por qué. Escrito por quien concede, y legible después por cualquiera que
+    -- se pregunte cómo llegó un agente a hacer esto.
+    reason: String
+    granted_at: Timestamp
+    spent: Boolean
+
+    transitions spent {
+        false -> true
+        terminal: true
+    }
+}
+
 ------------------------------------------------------------
 -- Rules
 ------------------------------------------------------------
+
+-- Autorizar un acto reservado, uno, sobre una cosa.
+rule OwnerDelegatesAReservedAct {
+    when: DelegateAct(owner, graph, agent, act, subject, reason)
+
+    let membership = core/Membership{graph, participant: agent}
+
+    requires: owner.kind = human
+    requires: agent.kind = agent
+    requires: exists membership
+    requires: membership.status = active
+    requires: reason != ""
+
+    ensures: Delegation.created(
+        graph: graph,
+        granted_by: owner,
+        granted_to: agent,
+        act: act,
+        subject: subject,
+        reason: reason,
+        granted_at: now,
+        spent: false
+    )
+
+    @invariant ADelegationNamesOneActAndOneThing
+        -- No delegation covers a class of acts or a class of subjects. There is
+        -- no way to authorise «merges» or «this vocabulary»: only this merge, of
+        -- this word, once. What cannot be expressed cannot be granted by
+        -- accident.
+}
+
+rule ADelegationIsSpentWhenItIsUsed {
+    when: DelegatedActPerformed(delegation)
+
+    requires: not delegation.spent
+
+    ensures: delegation.spent = true
+
+    @guidance
+        -- Gastarla es lo que hace que autorizar un acto no sea autorizar una
+        -- costumbre. Una delegación gastada se conserva: es el registro de cómo
+        -- un agente llegó a hacer algo que por sí solo no podía.
+}
 
 rule OwnerIssuesCredential {
     when: IssueCredential(owner, agent, scopes, label, digest)
@@ -370,6 +447,7 @@ surface CredentialAdministration {
     provides:
         IssueCredential(owner, agent, scopes, label, digest)
         RevokeCredential(owner, token)
+        DelegateAct(owner, instance.graph, agent, act, subject, reason)
 
     contracts:
         fulfils AgentCredentialing
@@ -383,6 +461,26 @@ surface CredentialAdministration {
         -- The owner can read every operation a credential submitted, in order,
         -- without leaving Vera. A credential whose work could not be reviewed
         -- would be a credential granted blind.
+
+    @guarantee ExecutionIsDelegableAndJudgementIsNot
+        -- An agent may perform an act reserved to a human when a human has
+        -- authorised that act, on that subject, once, in writing, beforehand.
+        -- What the reservation ever protected was that nobody should discover
+        -- such an act had happened, and that is satisfied by a decision made in
+        -- advance and recorded — not by whose process ran it.
+        --
+        -- Two acts stay reserved outright, and the line between them and the
+        -- rest is what they destroy. Deleting a property the corpus carried
+        -- cannot be walked back by reading a record, and overruling a decision
+        -- already taken is the mechanism by which a human keeps final authority
+        -- — delegating that one would be delegating the ability to stop
+        -- delegating.
+
+    @guarantee ADelegationIsReadableAfterTheFact
+        -- Every delegation keeps who granted it, to whom, for what, over what,
+        -- why and when — after being spent. «How did an agent come to merge
+        -- these two words» is answerable from the graph a year later, and it is
+        -- the question that decides whether delegation was safe.
 }
 
 surface AgentGraphParticipation {
@@ -413,7 +511,12 @@ surface AgentGraphParticipation {
 ------------------------------------------------------------
 
 open question "Should a credential carry a rate or a budget, so that a runaway agent is slowed by the graph rather than by noticing it?"
-open question "May an agent act on the owner's behalf for acts reserved to a human — publishing a page, validating a transcript — if the owner approves each one, or is delegation of those acts never possible?"
+-- Contestada: sí, acto por acto y cosa por cosa, con la autorización escrita
+-- antes y gastada al usarse. Ver entity Delegation y @guarantee
+-- ExecutionIsDelegableAndJudgementIsNot. Quedan fuera los actos que destruyen —
+-- borrar una propiedad que el corpus traía— y el que un humano usa para
+-- rectificar, porque delegarlo sería delegar la capacidad de dejar de delegar.
+open question "¿Debe una delegación caducar si nadie la gasta, dado que un permiso concedido hace seis meses sobre un vocabulario que ya cambió autoriza un acto que su autor ya no reconocería?"
 open question "Does authorship need to survive a split and a merge the way SpokenOrigin does, and if two blocks with different hands merge, whose hand does the result carry?"
 open question "Should the interface show authorship on every block, or only where it differs from the reader's own, so that a corpus that is mostly Herbert's does not become a wall of attributions?"
 open question "When an agent's membership is suspended, are its credentials revoked with it, or do they survive a suspension that might be lifted?"

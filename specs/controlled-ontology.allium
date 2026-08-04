@@ -11,6 +11,7 @@
 --   - Domain-specific lifecycle rules for individual semantic types
 
 use "./core.allium" as core
+use "./agent-participation.allium" as agent
 
 ------------------------------------------------------------
 -- Enumerations
@@ -243,6 +244,21 @@ config {
     -- proponga como respuesta admisible. Por debajo de esto es una errata tan
     -- probablemente como un término.
     domain_proposal_threshold: Integer = 3
+
+    -- Si lo que el bibliotecario declara sobre el grafo nace confirmado en vez
+    -- de sugerido.
+    --
+    -- Verdadero por ahora y a sabiendas de lo que suspende. La razón es que una
+    -- ontología vacía sobre mil páginas sin clasificar no se puebla a mano, y la
+    -- alternativa —una bandeja de mil sugerencias que hay que despachar una por
+    -- una— no produce más control sino una bandeja que se deja de mirar. Esto es
+    -- la base operativa desde la que empezar a corregir, no el régimen final.
+    --
+    -- Lo que lo hace reversible es que cada asignación queda atribuida a quien
+    -- la hizo. Se puede preguntar cuáles declaró un agente y devolverlas todas a
+    -- sugeridas el día que este parámetro vuelva a ser falso, y ninguna decisión
+    -- de una persona se pierde en esa vuelta.
+    agent_assignments_are_born_confirmed: Boolean = true
 }
 
 ------------------------------------------------------------
@@ -260,7 +276,13 @@ rule DeclarePropertyDomain {
         participant, ontology, name, semantic_type, value_kind, multiple, required, description
     )
 
-    requires: participant.kind = human
+    -- Una persona, o un agente al que una persona autorizó este acto sobre esta
+    -- propiedad. Ver agent/ExecutionIsDelegableAndJudgementIsNot.
+    let delegation = agent/Delegation{
+        granted_to: participant, act: "DefinePropertyDomain", subject: name
+    }
+
+    requires: participant.kind = human or (exists delegation and not delegation.spent)
     requires: semantic_type = null or semantic_type.ontology = ontology
     requires: not exists PropertyDefinition{ontology: ontology, name: name}
 
@@ -316,10 +338,60 @@ rule ProposePropertyDomainFromUsage {
         -- property is written, renamed or removed by it.
 }
 
+-- Absorber una propiedad de texto que decía lo que Vera ya gobierna.
+--
+-- El `public::` que llegó de Logseq es el caso que existe. Se lee, se convierte
+-- en visibilidad de verdad, y la línea desaparece. Ausente significa privada, que
+-- no es una interpretación: es lo que toda página es hasta que alguien decide lo
+-- contrario.
+--
+-- Sólo lo corre una persona. Es la única regla de este archivo que borra
+-- contenido del corpus, y esa es exactamente la clase de cosa que no se delega.
+rule AdoptImportedVisibilityProperty {
+    when: AdoptGovernedProperty(participant, ontology, page)
+
+    let written = core/PropertyAssignment{page: page, key: "public"}
+
+    requires: participant.kind = human
+    requires: page.graph = ontology.graph
+    requires: exists written
+
+    ensures:
+        core/ParticipantSubmits(
+            participant: participant,
+            graph: ontology.graph,
+            origin_id: "adopt-public" + page.id,
+            change: set_page_visibility(page, visibility_of(written.value)),
+            channel: typed_text
+        )
+        core/ParticipantSubmits(
+            participant: participant,
+            graph: ontology.graph,
+            origin_id: "drop-public" + page.id,
+            change: remove_property(page, "public"),
+            channel: typed_text
+        )
+
+    @invariant AbsentMeansPrivate
+        -- Any value that does not plainly say public reads as private. An
+        -- unparseable value is not a reason to publish something, and of the two
+        -- ways to be wrong here only one is recoverable.
+
+    @invariant AdoptionIsOrdinaryOperationsAndIsIdempotent
+        -- Both halves reach the graph through the same operations any
+        -- participant submits, so the change is attributed, ordered, auditable
+        -- and undoable one page at a time. Running it twice does nothing the
+        -- second time: the property is gone and the guard no longer holds.
+}
+
 rule ApprovePropertyOption {
     when: ApproveOption(participant, option)
 
-    requires: participant.kind = human
+    let delegation = agent/Delegation{
+        granted_to: participant, act: "ApproveOption", subject: option.value
+    }
+
+    requires: participant.kind = human or (exists delegation and not delegation.spent)
     requires: option.status = proposed
 
     ensures: option.status = approved
@@ -509,10 +581,14 @@ rule RelateConcepts {
 rule MergeConcepts {
     when: MergeConcept(participant, ontology, absorbed, surviving)
 
+    let delegation = agent/Delegation{
+        granted_to: participant, act: "MergeConcept", subject: absorbed.preferred_label
+    }
+
     requires: absorbed.ontology = ontology
     requires: surviving.ontology = ontology
     requires: absorbed != surviving
-    requires: participant.kind = human
+    requires: participant.kind = human or (exists delegation and not delegation.spent)
 
     ensures:
         -- El nombre del absorbido sobrevive como alias. Es lo que hace que una
@@ -548,7 +624,14 @@ rule MergeConcepts {
 rule MigrateCitations {
     when: MigrateCitationsTo(participant, migration)
 
-    requires: participant.kind = human
+    -- Aquí el objeto de la autorización es la migración concreta, ya vista. No
+    -- el par de palabras: una migración se aprueba habiendo mirado qué bloques
+    -- cambian y cuántos, y ese cálculo es lo que se autorizó.
+    let delegation = agent/Delegation{
+        granted_to: participant, act: "MigrateCitationsTo", subject: migration.id
+    }
+
+    requires: participant.kind = human or (exists delegation and not delegation.spent)
     requires: migration.status = previewed
 
     ensures:
@@ -672,6 +755,7 @@ surface OntologyCuration {
         ReadPropertyUsage(participant, ontology, definition)
         ApproveOption(participant, option)
         AnswerProperty(participant, ontology, definition, page, value)
+        AdoptGovernedProperty(participant, ontology, page)
         ProcessPage(participant, ontology, page)
         SuggestPageType(participant, ontology, semantic_type, page, rationale)
         SuggestBlockType(participant, ontology, semantic_type, block, rationale)
@@ -686,6 +770,28 @@ surface OntologyCuration {
     @guarantee SuggestionsAreNotSilentAssignments
         -- Automated classification creates a visible pending suggestion.
         -- It does not silently classify content as confirmed.
+        --
+        -- Suspended while config.agent_assignments_are_born_confirmed holds, and
+        -- suspended deliberately: an empty ontology over a thousand unclassified
+        -- pages is not populated by hand. What keeps the suspension from being a
+        -- loss is the word `silently`. Every assignment an agent makes is
+        -- attributed to it and answerable as such, so "which of these did the
+        -- librarian decide" is a question the corpus can answer, and returning
+        -- them all to suggested is one operation. A confirmation nobody can
+        -- trace is what this guarantee actually forbids, and that remains true
+        -- with the parameter on.
+
+    @guarantee GovernedStateAbsorbsTheTextThatDuplicatedIt
+        -- An imported property that says in text what Vera governs as state is
+        -- adopted into that state and then stops being a property. Visibility is
+        -- the case that exists: `public:: false` becomes a private page and the
+        -- line goes. Two places saying the same thing is one place too many, and
+        -- the corpus already has pages where the two disagree.
+        --
+        -- Absent means private. A page that never said anything about being
+        -- public is not making a claim Vera has to interpret; it is a page whose
+        -- owner never published it, which is what every page is until someone
+        -- decides otherwise.
 
     @guarantee ComposableTypes
         -- A page or block may have multiple confirmed semantic types.
@@ -765,6 +871,58 @@ surface OntologyCuration {
         -- pages that answer a property with its name. That is derived and
         -- standing, in the same way backlinks are derived and standing, and it
         -- is not a query anyone has to author.
+
+    @guarantee APropertyKeyIsAPageToo
+        -- `status` is not only a word in a header: it is the page `status`,
+        -- where what it means, what it admits and who approved those values can
+        -- be written and read. The corpus carries 231 distinct keys and not one
+        -- of them has anywhere to be defined, which is why nobody has defined
+        -- them.
+        --
+        -- Reached flat, with no prefix, exactly like a value. A `Property:`
+        -- namespace would keep keys from colliding with notes, and Vera declines
+        -- it for the reason it declines it for values: a namespace makes the
+        -- vocabulary a separate country one has to travel to, and the whole
+        -- point is that a word of the vocabulary is somewhere you already go.
+
+    @guarantee AVocabularyPageIsBornFurnished
+        -- Pressing a vocabulary word that has no page creates it, like pressing
+        -- any other name. What it creates is not blank: the page arrives already
+        -- carrying what the graph knows about that word — every page it
+        -- classifies or defines, and a search bounded to exactly those — and
+        -- room to write above it.
+        --
+        -- This is what makes creating on a press safe here. The objection to it
+        -- was hundreds of empty pages nobody asked for; a page that answers
+        -- «what is a proyecto in this corpus» the moment it exists is not empty,
+        -- it is the shortest useful page in Vera. What stays thin is its
+        -- Markdown file, which holds only what was typed, because the listing
+        -- and the search are derived and are rebuilt from the graph. A word with
+        -- nothing written on it projects as a title and nothing else, and that
+        -- is honest: nobody has written it yet.
+        --
+        -- Which words deserve to be written stops being a question about empty
+        -- files and becomes a matter for the librarian's round — «forty pages
+        -- answer with this word and nobody has said what it means» is a
+        -- decision someone can take, and an empty file is not.
+
+    @guarantee APageGathersEveryRoleItsNamePlays
+        -- One name, one page, however many jobs that name has. A page whose
+        -- title is also a property key and also a value shows all of it: what
+        -- was written there, the pages carrying that property, the pages
+        -- answering with that value, and what links to it. Each part says which
+        -- it is and none replaces the others.
+        --
+        -- No role wins, and that is the decision. Making the property page
+        -- shadow the note would lose writing to a naming coincidence; making the
+        -- note shadow the property would hide governance behind a word someone
+        -- happened to use as a title. Today two names in the corpus are in this
+        -- position — `Home` and `chatgpt-prompt` — and both are better read as
+        -- two answers than as one that had to win.
+        --
+        -- It is also what the corpus already expects. A page is where everything
+        -- about a name accumulates: that is what backlinks have always been, and
+        -- this is the same rule applied to the vocabulary.
 
     @guarantee TheSameQuestionsOpenEveryPage
         -- Every page is asked what it is, what it is about, when it was written
