@@ -228,16 +228,36 @@ describe('replay', () => {
         const live = runIntents(list);
         const replayed = live.replayFromLog();
 
+        // createdAt entra en la comparación a propósito. Sin él, reproducir
+        // volvía a estampar cada página con la hora del arranque y el test
+        // pasaba igual: el corpus entero decía haber nacido hoy y nada lo
+        // notaba, porque «el mismo grafo» se estaba comprobando sin las fechas.
         assert.deepEqual(
-          replayed.allBlocks().map((b) => [b.stableId, b.content, b.page]).sort(),
-          live.allBlocks().map((b) => [b.stableId, b.content, b.page]).sort(),
+          replayed.allBlocks().map((b) => [b.stableId, b.content, b.page, b.createdAt]).sort(),
+          live.allBlocks().map((b) => [b.stableId, b.content, b.page, b.createdAt]).sort(),
         );
         assert.deepEqual(
-          replayed.pages().map((p) => [p.id, p.title, p.visibility]).sort(),
-          live.pages().map((p) => [p.id, p.title, p.visibility]).sort(),
+          replayed.pages().map((p) => [p.id, p.title, p.visibility, p.createdAt]).sort(),
+          live.pages().map((p) => [p.id, p.title, p.visibility, p.createdAt]).sort(),
         );
       }),
     );
+  });
+
+  it('keeps the date the submission carried, not the date of the replay', () => {
+    const escrito = Date.parse('2024-03-15T10:00:00Z');
+    const live = inhabitedGraph();
+
+    const outcome = live.submitOperation({
+      originId: 'o1',
+      participant: OWNER,
+      change: { kind: 'create_page', title: 'Una página de 2024', visibility: 'private' },
+      submittedAt: escrito,
+    });
+    assert.equal(outcome.status, 'applied');
+
+    assert.equal(live.pages()[0]?.createdAt, escrito);
+    assert.equal(live.replayFromLog().pages()[0]?.createdAt, escrito);
   });
 });
 

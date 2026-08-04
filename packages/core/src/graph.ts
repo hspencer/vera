@@ -207,6 +207,32 @@ export class VeraGraph {
     return [...this.#propertiesBySubject.values()].flat();
   }
 
+  /**
+   * Qué valores se le han dado ya a una propiedad, y cuántas veces cada uno.
+   *
+   * El vocabulario real de un corpus heredado no está declarado en ninguna
+   * parte: está en lo que se escribió durante años. Esto lo lee, que es lo que
+   * permite ofrecer respuestas antes de que exista una ontología que las
+   * gobierne — y lo que después alimenta a rule ProposePropertyDomainFromUsage,
+   * cuando la haya.
+   *
+   * Sale ordenado por uso y luego alfabético: lo más dicho primero, porque es lo
+   * más probable, y el desempate estable para que la lista no baile entre dos
+   * lecturas.
+   */
+  observedValuesOf(key: string): { value: string; uses: number }[] {
+    const counts = new Map<string, number>();
+    for (const property of this.#allProperties()) {
+      if (property.key !== key) continue;
+      const value = property.value.trim();
+      if (value === '') continue;
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+    return [...counts]
+      .map(([value, uses]) => ({ value, uses }))
+      .sort((a, b) => b.uses - a.uses || a.value.localeCompare(b.value));
+  }
+
   links(): PageLink[] {
     return [...this.#linksByBlock.values()].flat();
   }
@@ -286,8 +312,10 @@ export class VeraGraph {
       return { status: 'rejected', reason: refusal };
     }
 
-    const at = Date.now();
-    const subjectId = this.#apply(input.change, null);
+    // Quien envía puede saber cuándo ocurrió esto —lo sabe la importación, y lo
+    // sabe la reproducción del registro—. Si no lo sabe nadie, es ahora.
+    const at = input.submittedAt ?? Date.now();
+    const subjectId = this.#apply(input.change, null, at);
     this.#recordAuthorship(input.change, subjectId, input.participant, channel, at);
 
     const submission: Submission = {
@@ -297,7 +325,7 @@ export class VeraGraph {
       change: input.change,
       channel,
       evidence: input.evidence,
-      submittedAt: input.submittedAt ?? at,
+      submittedAt: at,
       status: 'accepted',
     };
 
@@ -512,7 +540,18 @@ export class VeraGraph {
   // Aplicación: los `ensures` de change-application.allium
   // -------------------------------------------------------------------------
 
-  #apply(change: Change, recordedSubject: string | null): string {
+  /**
+   * `at` es cuándo ocurrió la operación, no cuándo se está aplicando.
+   *
+   * Importa porque aplicar pasa dos veces: al enviarse y al reproducir el
+   * registro, que es como se levanta el grafo en cada arranque. Con el reloj de
+   * la máquina, la segunda vez volvía a estampar cada página con la hora de
+   * arranque, y un corpus de años terminaba diciendo que nació hoy. Con la fecha
+   * de la operación, reproducir devuelve el mismo grafo — que es lo que
+   * @invariant ReplayReconstructsState pide, y esto lo estaba incumpliendo en
+   * silencio porque el único síntoma era una fecha.
+   */
+  #apply(change: Change, recordedSubject: string | null, at: number): string {
     switch (change.kind) {
       case 'create_page': {
         const id = recordedSubject ?? this.#nextId('page');
@@ -521,7 +560,7 @@ export class VeraGraph {
           graph: this.id,
           title: change.title,
           visibility: change.visibility,
-          createdAt: Date.now(),
+          createdAt: at,
         });
         this.#pageByTitleKey.set(titleKey(change.title), id);
         this.#resolveWaitingLinks(id);
@@ -568,7 +607,7 @@ export class VeraGraph {
           parent: change.parent,
           position: change.position,
           content: change.content,
-          createdAt: Date.now(),
+          createdAt: at,
         });
         this.#indexBlock(id, change.page, change.parent);
         this.#reseat(change.page, change.parent, id, change.position);
@@ -1071,7 +1110,7 @@ export class VeraGraph {
     // Las operaciones ya fueron validadas al admitirse: reproducir es aplicar,
     // reutilizando el sujeto que quedó registrado.
     for (const operation of [...this.#operations].sort((a, b) => a.sequence - b.sequence)) {
-      replayed.#apply(operation.submission.change, operation.subjectId);
+      replayed.#apply(operation.submission.change, operation.subjectId, operation.appliedAt);
       // La autoría es materialización del registro, no un hecho aparte: se
       // reconstruye reproduciendo, o @invariant ReplayReconstructsState dejaría
       // de cubrirla y el grafo reproducido no sabría de quién son las palabras.
