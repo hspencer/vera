@@ -189,6 +189,9 @@ input {
  */
 #bar {
   grid-area: bar;
+  /* El marco de referencia de lo que cuelga de la barra: hoy, la lista de
+     resultados, que se quiere del ancho de la barra y no del campo. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -261,7 +264,6 @@ input {
 /* El buscador toma el espacio que sobra: es lo único de la barra que mejora al
    ser más ancho, y antes lo desperdiciaba con un ancho fijo. */
 #search-wrap {
-  position: relative;
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -274,16 +276,23 @@ input {
   background: var(--bg);
 }
 
+/*
+ * La lista cae de la barra y la ocupa entera.
+ *
+ * De borde a borde y pegada al canto de abajo: así se lee como una continuación
+ * de la barra —de donde nace— y no como una caja suelta flotando encima del
+ * texto. Sin esquinas redondeadas arriba, por lo mismo: van unidas.
+ */
 #results {
   position: absolute;
-  top: 2.2rem;
+  top: 100%;
+  left: 0;
   right: 0;
-  width: 28rem;
   max-height: 60vh;
   overflow-y: auto;
   background: var(--bg-raised);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0 0 4px 4px;
   z-index: 20;
 }
 
@@ -369,12 +378,26 @@ input {
   height: 1.05rem;
 }
 
-/* El botón de hoy es la fecha. Sin icono al lado: el número dice a dónde lleva
-   mejor que cualquier dibujo, y dice además a qué día. */
-#hoy {
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  letter-spacing: 0.01em;
+/* Hoy vive fuera de `#nav` —está a la derecha del buscador— pero es el mismo
+   tipo de botón que atrás y adelante, y se ve igual. */
+#home {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding: 0.25rem 0.35rem;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+#home:hover {
+  color: var(--accent);
+}
+
+#home .icon {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 
 /*

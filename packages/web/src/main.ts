@@ -704,7 +704,12 @@ function wireSearch(): void {
     }
   });
   document.addEventListener('pointerdown', (event) => {
-    if (!wrap.contains(event.target as Node)) close();
+    // El campo y su lista son dos elementos, no uno: la lista cuelga de la barra
+    // para poder ocupar su ancho. Preguntar sólo por el campo dejaba «fuera» a
+    // los propios resultados, y pulsar uno los borraba antes de que el clic
+    // llegara a abrir la página.
+    const target = event.target as Node;
+    if (!wrap.contains(target) && !results.contains(target)) close();
   });
 }
 
@@ -726,21 +731,11 @@ function wireTheme(): void {
   $('#back').innerHTML = icon('chevron-left');
   $('#forward').innerHTML = icon('chevron-right');
 
-  // El botón de hoy es la fecha, sin icono. El número dice a dónde lleva mejor
-  // que un dibujo, y dice además a qué día: una casa al lado sólo repetiría
-  // peor lo que la fecha ya cuenta. En el orden en que se dice —día, mes, año—
-  // y no en el ISO del título, porque el título es identidad y esto es lectura.
-  const stamp = $('#hoy');
-  const drawToday = (): void => {
-    const now = new Date();
-    const pad = (n: number): string => String(n).padStart(2, '0');
-    stamp.textContent = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()}`;
-    stamp.setAttribute('datetime', today());
-  };
-  drawToday();
-  // Una sesión abierta pasada la medianoche seguiría enseñando el día de ayer, y
-  // el botón llevaría a otro sitio del que dice.
-  window.setInterval(drawToday, 60_000);
+  // Hoy es un calendario. Escrita, la fecha ocupaba en la barra el sitio de algo
+  // que se lee una vez —el día ya está en el título de la página que se abre— y
+  // obligaba además a un temporizador para que no mintiera pasada la medianoche.
+  // El icono no puede quedar viejo: nombra el destino, no lo enseña.
+  $('#home').innerHTML = icon('calendar');
   $('#back').addEventListener('click', () => window.history.back());
   $('#forward').addEventListener('click', () => window.history.forward());
   $('#home').addEventListener('click', () => void openToday());

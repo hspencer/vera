@@ -57,24 +57,29 @@
           <button data-layout="text_only" aria-label="Sólo el texto" title="Sólo el texto"></button>
         </div>
 
-        <!--
-          Atrás, adelante y hoy. La fecha es el botón: dice a dónde lleva sin que
-          haga falta un icono al lado que repita lo mismo peor.
-        -->
+        <!-- Atrás y adelante: los del navegador, uno al lado del otro. -->
         <nav id="nav" aria-label="Navegación">
           <button id="back" aria-label="Atrás" title="Atrás"></button>
           <button id="forward" aria-label="Adelante" title="Adelante"></button>
-          <button id="home" aria-label="Hoy" title="El día de hoy">
-            <time id="hoy"></time>
-          </button>
         </nav>
 
         <!-- El buscador toma el espacio que sobra: es lo único de la barra que
-             mejora al ser más ancho. -->
+             mejora al ser más ancho.
+
+             Lo que encuentra no cuelga del campo sino de la barra, y por eso
+             `#results` sale de aquí: ver más abajo. -->
         <div id="search-wrap">
           <input id="search" type="search" placeholder="buscar en el grafo" autocomplete="off" />
-          <div id="results" hidden></div>
         </div>
+
+        <!--
+          Hoy, a la derecha del buscador.
+
+          Un calendario y no una casa: al otro lado del botón está el día en
+          curso, no una portada. Va aquí y no entre atrás y adelante porque no es
+          un paso del historial: es un salto a un sitio, como buscar.
+        -->
+        <button id="home" aria-label="Hoy" title="El día de hoy"></button>
 
         <div id="controls">
           <!-- El contenido de estos tres lo pone icons.ts. El texto accesible
@@ -88,6 +93,18 @@
           <button id="scheme" aria-label="Claro u oscuro"></button>
           <button id="settings" aria-label="Ajustes" title="Ajustes de Vera"></button>
         </div>
+
+        <!--
+          Lo que el buscador encuentra, colgado de la barra entera.
+
+          Colgaba del campo, que mide lo que le sobre a la barra, y ahí un título
+          largo se partía en tres renglones dentro de una columna estrecha. La
+          lista es lo que se está leyendo cuando aparece: que ocupe el ancho de
+          donde nace, que es la barra. Por eso es hermana del campo y no hija
+          suya —una caja no puede desbordar a su propio contenedor y seguir
+          alineada con él—.
+        -->
+        <div id="results" hidden></div>
       </header>
 
       <!--
