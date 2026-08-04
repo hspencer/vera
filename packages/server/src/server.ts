@@ -84,6 +84,26 @@ const MIME: Record<string, string> = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
+/*
+ * Cuánto puede guardarse cada archivo del cliente.
+ *
+ * Sin decirlo, el navegador lo decide por su cuenta con una heurística, y una
+ * Vera instalada como aplicación puede quedarse corriendo una versión de hace
+ * días sin ninguna forma de enterarse. Que el código nuevo llegue a quien ya la
+ * tiene abierta no es una optimización: es la diferencia entre arreglar algo y
+ * que el arreglo exista sólo en el repositorio.
+ *
+ * La regla es el prefijo, no la forma del nombre. Todo lo que vite compila cae
+ * en `/build/` con una huella en el nombre: no puede cambiar de contenido sin
+ * cambiar de ruta, así que guardarlo un año no puede servir nunca una versión
+ * equivocada. Fuera de ahí —el index, el manifiesto, el propio service worker,
+ * los iconos, las fuentes— los nombres se repiten entre versiones, y por eso
+ * hay que volver a preguntar por ellos cada vez.
+ */
+const FINGERPRINTED = '/build/';
+const IMMUTABLE = 'public, max-age=31536000, immutable';
+const REVALIDATE = 'no-cache';
+
 export interface ServerOptions {
   databasePath: string;
   /** Raíz de archivos estáticos del cliente. */
@@ -266,7 +286,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     if (!target.startsWith(webRoot) || !existsSync(target) || !statSync(target).isFile()) {
       return false;
     }
-    response.writeHead(200, { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' });
+    response.writeHead(200, {
+      'content-type': MIME[extname(target)] ?? 'application/octet-stream',
+      'cache-control': wanted.startsWith(FINGERPRINTED) ? IMMUTABLE : REVALIDATE,
+    });
     createReadStream(target).pipe(response);
     return true;
   };
@@ -944,6 +967,16 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           title: page.title,
           visibility: page.visibility,
           properties: graph.propertiesOf(page.id).map((p) => ({ key: p.key, value: p.value })),
+          // Lo que el corpus ya contesta a cada una de estas claves. Es el
+          // vocabulario observado, no uno declarado: mientras no haya ontología
+          // es lo único que hay, y cuando la haya seguirá siendo la evidencia
+          // desde la que se propone. Sólo viajan las claves de esta página.
+          domains: Object.fromEntries(
+            [...new Set(graph.propertiesOf(page.id).map((p) => p.key))].map((key) => [
+              key,
+              graph.observedValuesOf(key),
+            ]),
+          ),
           blocks: graph
             .blocksOf(page.id)
             .map((block) => ({

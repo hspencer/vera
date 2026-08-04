@@ -6,8 +6,8 @@
 // defecto— porque quien escribe un argumento lo escribió para esta corrida, y
 // una configuración de archivo no puede pisarlo.
 
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { listen } from './server.ts';
@@ -48,6 +48,43 @@ console.log(`  base:     ${databasePath}`);
 console.log(`  páginas:  ${vera.graph.pages().length}`);
 console.log(`  bloques:  ${vera.graph.allBlocks().length}`);
 console.log(`  secuencia:${vera.graph.log().lastSequence}`);
+
+/*
+ * Lo que se sirve es el compilado, y el compilado puede estar viejo.
+ *
+ * La aplicación instalada no lee `packages/web/src`: lee `dist`, que sólo
+ * existe porque alguien corrió `npm run build`. Editar una fuente y recargar no
+ * cambia nada, y nada lo dice —la aplicación se ve igual de bien sirviendo
+ * código de hace tres días—. Es una forma cara de perder una tarde: se busca el
+ * error en un código que el navegador nunca llegó a recibir.
+ *
+ * Comparar las fechas es barato y responde la pregunta antes de que se haga.
+ */
+const newest = (root: string): number => {
+  if (!existsSync(root)) return 0;
+  const entry = statSync(root);
+  if (!entry.isDirectory()) return entry.mtimeMs;
+  return readdirSync(root).reduce((latest, name) => Math.max(latest, newest(join(root, name))), 0);
+};
+
+// `resolve` y no `join`: `VERA_WEB_ROOT` puede venir absoluto, y unirlo a la raíz
+// del repositorio daría una ruta que no existe —y con ella un «sin compilar» que
+// es mentira sobre un cliente que está perfectamente ahí.
+const built = newest(resolve(ROOT, webRoot, 'index.html'));
+const sources = Math.max(
+  newest(join(ROOT, 'packages/web/src')),
+  newest(join(ROOT, 'packages/web/public')),
+  newest(join(ROOT, 'packages/web/index.html')),
+);
+if (built === 0) {
+  console.log(`  cliente:  sin compilar en ${webRoot} — corre \`npm run build\``);
+} else if (sources > built) {
+  const age = Math.round((sources - built) / 60_000);
+  console.log(`  cliente:  ${webRoot} quedó atrás de las fuentes por ${age} min`);
+  console.log('            lo que se sirve es el compilado: corre `npm run build`');
+} else {
+  console.log(`  cliente:  ${webRoot}, al día`);
+}
 
 // Escuchar fuera de loopback sin que las personas se autentiquen entrega el
 // grafo a cualquiera que alcance el puerto. Se dice al arrancar, cada vez.
