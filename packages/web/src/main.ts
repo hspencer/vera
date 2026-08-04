@@ -50,17 +50,14 @@ const workspace: Workspace = {
 };
 
 /**
- * Si el panel de controles del mapa está abierto.
+ * Si el menú del mapa está abierto ahora mismo.
  *
- * Nace cerrado. Un mapa es para mirarlo, y sus controles son para cuando hacen
- * falta: el ojo está para desplegarlos, y si ya estuvieran desplegados el ojo
- * sólo serviría para quitarlos, que es lo contrario de lo que un ojo sugiere.
- *
- * Se recuerda en este aparato y no viaja: cuánto sitio puede gastarse en
- * controles depende de la pantalla que se tiene delante.
+ * No se recuerda entre visitas, y ese es el punto: un menú es transitorio. Se
+ * guardaba, así que quien lo hubiera abierto una vez lo encontraba abierto para
+ * siempre —tapando el mapa— y el ojo dejaba de tener nada que desplegar. Un menú
+ * que persiste abierto no es un menú, es un panel.
  */
-const PANEL_KEY = 'vera.mapPanel';
-let mapPanelOpen = localStorage.getItem(PANEL_KEY) === 'true';
+let mapPanelOpen = false;
 
 let tokens = loadTokens();
 let pages: PageSummary[] = [];
@@ -762,9 +759,6 @@ function wireTheme(): void {
   const setPanel = (open: boolean): void => {
     if (mapPanelOpen === open) return;
     mapPanelOpen = open;
-    // Abierto o cerrado se recuerda en este aparato y no viaja: cuánto sitio
-    // puede gastarse en controles depende de la pantalla que se tiene delante.
-    localStorage.setItem(PANEL_KEY, String(mapPanelOpen));
     drawPanel();
   };
 
