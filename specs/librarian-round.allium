@@ -1,0 +1,600 @@
+-- allium: 3
+-- librarian-round.allium
+
+-- Scope: La ronda diaria del bibliotecario sobre el vocabulario — lo que mira,
+--   lo que propone, cómo lo conversa y qué aprende de la respuesta
+-- Includes: La ronda como acto acotado y diario, el asunto como propuesta
+--   razonada, la conversación en el día, el acuerdo como cosa escrita, y la
+--   prohibición de volver a preguntar lo ya contestado
+-- Excludes:
+--   - El modelo del vocabulario: tipos, conceptos, dominios y migraciones
+--     (ver controlled-ontology.allium)
+--   - Cómo se acredita un agente y cómo se marca su mano
+--     (ver agent-participation.allium)
+--   - Qué es un día y cómo nace (ver daily-log.allium)
+--   - El modelo que lee las páginas y con qué acierto lo hace
+-- Dependencies: Graph, Page y Participant los gobierna core.allium; el
+--   vocabulario controlled-ontology.allium; el día daily-log.allium
+
+use "./core.allium" as core
+use "./controlled-ontology.allium" as ontology
+use "./agent-participation.allium" as agent
+use "./daily-log.allium" as daily
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- Que una propuesta esté razonada, que es distinto de que esté justificada.
+--
+-- Un agente que dice «fusiona lang y language» no ha razonado nada: ha emitido
+-- una orden con forma de sugerencia. Razonar es decir qué vio, cuánto pesa lo que
+-- vio, qué propone hacer con ello, y —lo que casi nunca se dice— qué se pierde si
+-- resulta que estaba equivocado.
+--
+-- Ese último punto es el que hace la diferencia entre conversar y despachar. Una
+-- fusión mal hecha se deshace mientras nadie haya reescrito una cita; una
+-- migración mal hecha toca seiscientos bloques. Son dos decisiones de riesgo
+-- distinto y presentarlas iguales le pide a quien decide que averigüe por su
+-- cuenta cuál era cuál.
+contract ReasonedProposal {
+    observe: (graph: core/Graph) -> Set<Matter>
+    weigh: (matter: Matter) -> String
+
+    @invariant EveryMatterCarriesItsEvidence
+        -- A matter states how much of the corpus it rests on: how many pages,
+        -- how many times, since when. «Este concepto no se usa» y «este concepto
+        -- no se usa en ninguna de las 1012 páginas» son la misma frase con dos
+        -- pesos distintos, y sólo la segunda se puede contestar.
+
+    @invariant EveryMatterSaysWhatBeingWrongCosts
+        -- A proposal states what is lost if it is accepted and turns out to be
+        -- wrong, and whether it can be undone. Without that, every proposal
+        -- looks equally safe, and the ones that are not get accepted at the same
+        -- speed as the ones that are.
+
+    @invariant TheLibrarianArguesInItsOwnWords
+        -- The reasoning is prose the librarian wrote, not a template with slots
+        -- filled in. What is being asked for is a judgement; a form that always
+        -- reads the same is a form that stops being read.
+
+    @invariant NoMatterIsRaisedWithoutSomethingToDecide
+        -- The librarian does not report that it looked. A round with nothing
+        -- worth deciding produces no matters, and saying so costs one line.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+-- Qué clase de cosa notó el bibliotecario.
+--
+-- La lista es corta a propósito y sale de lo que el corpus tiene roto hoy: 231
+-- claves de propiedad sin una sola definición, once `type` de los cuales dos son
+-- basura, y veintinueve páginas que son un nombre y nada más.
+enum MatterKind {
+    -- Una palabra del vocabulario que casi nadie usa. No es un archivo vacío que
+    -- limpiar: es una palabra mal puesta, o puesta para algo que después se dijo
+    -- de otra manera, y lo que hay que decidir es cuál de las dos.
+    unused_word |
+    -- Dos palabras que parecen ser una. `lang` y `language`, `nota` y `note`.
+    same_thing_twice |
+    -- Una propiedad que el corpus usa mucho y que nadie ha definido nunca.
+    undefined_key |
+    -- Un valor escrito que el dominio declarado no admite.
+    value_outside_its_domain |
+    -- Una página que existe sólo porque alguien la nombró, y sobre la que nadie
+    -- escribió nunca.
+    name_without_a_page |
+    -- Algo sobre las instrucciones bajo las que él mismo trabaja.
+    --
+    -- Se trae igual que todo lo demás y se decide igual. Es coherente con
+    -- special-pages/SelfDescription: si lo que gobierna a Cotito son páginas del
+    -- corpus, son parte del vocabulario que cuida, y excluirlas sería decir que
+    -- hay un trozo de Vera del que su bibliotecario no puede hablar aunque sea
+    -- quien mejor sabe dónde le aprieta.
+    own_instructions
+}
+
+-- En qué está un asunto.
+--
+-- `deferred` no es un limbo: es la respuesta honesta a «todavía no sé», y existe
+-- para que decir eso no obligue ni a aceptar ni a rechazar. Lo que no puede es
+-- volver mañana por su cuenta.
+enum MatterStatus { raised | accepted | refused | deferred }
+
+enum RoundStatus { gathering | presented | settled }
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+-- Lo que el bibliotecario hizo con el vocabulario un día.
+--
+-- Una al día y acotada. El límite no es de cortesía: hay 231 claves sin definir,
+-- y un agente que las presentara todas no estaría conversando sino vaciando una
+-- cola encima de alguien. Cinco asuntos se leen; doscientos treinta y uno se
+-- cierran.
+entity LibrarianRound {
+    graph: core/Graph
+    librarian: core/Participant
+    day: daily/DailyLog
+    status: RoundStatus
+    matters: Matter with round = this
+
+    transitions status {
+        gathering -> presented
+        presented -> settled
+        terminal: settled
+    }
+
+    unsettled: matters where status = raised
+}
+
+-- Algo que el bibliotecario notó y sobre lo que propone hacer algo.
+entity Matter {
+    round: LibrarianRound
+    kind: MatterKind
+    -- Sobre qué. Una palabra, una clave, una página.
+    subject: String
+    -- Qué vio, en sus palabras.
+    observation: String
+    -- Cuánto pesa lo que vio: en cuántas páginas, cuántas veces, desde cuándo.
+    evidence: String
+    -- Qué propone hacer.
+    proposal: String
+    -- Qué se pierde si esto se acepta y estaba mal, y si se puede deshacer.
+    cost_if_wrong: String
+    status: MatterStatus
+    -- El bloque donde esto se dijo, en el día. Es lo que hace que la
+    -- conversación tenga sitio en vez de pantalla.
+    said_at: core/Block
+
+    transitions status {
+        raised -> accepted
+        raised -> refused
+        raised -> deferred
+        deferred -> accepted
+        deferred -> refused
+        terminal: accepted, refused
+    }
+
+    settlement: Settlement with matter = this
+}
+
+-- Lo que se decidió y por qué.
+--
+-- Existe como entidad y no como un campo de estado porque el porqué es el dato.
+-- Un «no» sin razón enseña que ese asunto no se acepta; un «no, porque
+-- `institucion` y `Organizacion` no son lo mismo en esta escuela» enseña algo
+-- que sirve la próxima vez, y la próxima vez es lo que aquí se está construyendo.
+entity Settlement {
+    matter: Matter
+    decided_by: core/Participant
+    -- Por qué. Lo escribe quien decide, en el día, a mano.
+    reason: String
+    decided_at: Timestamp
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    -- Cuántos asuntos puede traer una ronda. Cinco se conversan.
+    matters_per_round: Integer = 5
+
+    -- Cuántas páginas tiene que tocar algo para que valga la pena traerlo. Por
+    -- debajo de esto es una anécdota del corpus, no una decisión sobre él.
+    evidence_floor: Integer = 2
+
+    -- Cuántas rondas seguidas sin una sola respuesta antes de callarse.
+    --
+    -- No contestar es una respuesta, y tratarla como si no lo fuera es lo que
+    -- convierte a un asistente en un incordio. Tres rondas es suficiente para
+    -- distinguir un par de días ocupados de un desinterés.
+    rounds_before_falling_silent: Integer = 3
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- El bibliotecario abre la ronda del día.
+--
+-- La abre él, cada día, pero no porque lo decida: porque una instrucción
+-- permanente que escribió el dueño dice que lo haga. Esa instrucción vive donde
+-- special-pages.allium pone las suyas —una página del corpus, de clase
+-- `instructions`, con autor y fecha— y cambiarla es editarla.
+--
+-- La diferencia importa. Una ronda que el agente decide tener es un agente con
+-- iniciativa propia sobre el ritmo de trabajo de otro; una que hay que pedir
+-- cada vez no llega a ser práctica. Esto es lo tercero: el dueño decidió una
+-- vez, por escrito, que esto pasa a diario, y puede dejar de decirlo cuando
+-- quiera.
+rule LibrarianOpensTheRoundOfTheDay {
+    when: OpenLibrarianRound(librarian, graph, day)
+
+    let membership = core/Membership{graph, participant: librarian}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: librarian.kind = agent
+    requires: not exists LibrarianRound{graph: graph, day: day}
+
+    ensures: LibrarianRound.created(
+        graph: graph,
+        librarian: librarian,
+        day: day,
+        status: gathering
+    )
+}
+
+-- Traer un asunto, razonado, al día.
+--
+-- Se dice escribiendo en el día, con la mano del bibliotecario, que
+-- agent-participation.allium ya obliga a marcar. No hay bandeja: lo que propone
+-- Cotito está donde está lo demás que pasó hoy, y se contesta ahí mismo.
+rule LibrarianRaisesAMatter {
+    when: RaiseMatter(
+        librarian, round, kind, subject, observation, evidence, proposal, cost_if_wrong
+    )
+
+    requires: round.librarian = librarian
+    requires: round.status = gathering
+    requires: round.matters.count < config.matters_per_round
+    -- Lo ya contestado no vuelve. Ver @invariant ASettledWordIsNotAskedAgain.
+    requires: not exists Settlement{matter: Matter{subject: subject, kind: kind}}
+
+    ensures:
+        let block = core/Block.created(
+            page: round.day.page,
+            content: observation + evidence + proposal + cost_if_wrong
+        )
+        Matter.created(
+            round: round,
+            kind: kind,
+            subject: subject,
+            observation: observation,
+            evidence: evidence,
+            proposal: proposal,
+            cost_if_wrong: cost_if_wrong,
+            status: raised,
+            said_at: block
+        )
+
+    @invariant RaisingChangesNoVocabulary
+        -- Raising a matter creates no type, merges no concept, deprecates no
+        -- word and touches no page's properties. What it leaves is a question
+        -- with an argument attached. A round that quietly did half of what it
+        -- proposed would make the conversation a formality.
+}
+
+-- Callarse cuando nadie contesta.
+--
+-- Tras unas cuantas rondas sin una sola respuesta, el bibliotecario deja de
+-- proponer y lo dice una vez: que para, cuántos asuntos quedan sin contestar y
+-- dónde están. Después, nada.
+--
+-- Es la regla que decide si esto se puede tener encendido durante años. Un
+-- agente que sigue escribiendo en un diario que nadie lee no está siendo
+-- diligente: está convirtiendo la bitácora en un sitio donde hay que saltarse
+-- cosas, y una vez que se aprende a saltarse a Cotito ya no se le vuelve a leer.
+rule LibrarianFallsSilent {
+    when: round: LibrarianRound.status transitions_to presented
+
+    let unanswered = rounds_without_any_settlement(round.graph)
+
+    requires: unanswered >= config.rounds_before_falling_silent
+
+    ensures:
+        core/Block.created(
+            page: round.day.page,
+            content: silence_notice(round.graph, unanswered)
+        )
+        LibrarianWentSilent(graph: round.graph, after: unanswered)
+
+    @invariant SayingItOnceIsSayingIt
+        -- The notice is written once, on the day it happens, and never repeated.
+        -- A reminder that recurs is the behaviour this rule exists to prevent,
+        -- and repeating it would only prove the point.
+
+    @invariant NothingProposedIsWithdrawn
+        -- Falling silent abandons no matter. What was raised stays where it was
+        -- raised, answerable whenever. Silence is the librarian stopping, not
+        -- the corpus forgetting.
+}
+
+-- Contestar uno cualquiera lo devuelve al trabajo.
+--
+-- Sin ceremonia y sin reactivar nada: la ronda de mañana ocurre porque contestaste
+-- hoy. Es la señal más barata que existe y no hace falta ninguna otra.
+rule AnAnswerBringsTheLibrarianBack {
+    when: settlement: Settlement.created
+
+    ensures: LibrarianResumed(graph: settlement.matter.round.graph)
+}
+
+rule LibrarianPresentsTheRound {
+    when: PresentRound(librarian, round)
+
+    requires: round.librarian = librarian
+    requires: round.status = gathering
+
+    ensures: round.status = presented
+}
+
+-- El dueño contesta, y dice por qué.
+--
+-- La razón es obligatoria y es lo único que aquí no es opcional. Sin ella la
+-- ronda de mañana repite el criterio de la de hoy sin haberlo aprendido, y lo
+-- que se construye no es un bibliotecario sino un generador de sugerencias con
+-- calendario.
+rule OwnerSettlesAMatter {
+    when: SettleMatter(owner, matter, decision, reason)
+
+    requires: owner.kind = human
+    requires: matter.status = raised or matter.status = deferred
+    requires: decision = accepted or decision = refused
+    requires: reason != ""
+
+    ensures:
+        matter.status = decision
+        Settlement.created(
+            matter: matter,
+            decided_by: owner,
+            reason: reason,
+            decided_at: now
+        )
+        -- Decir que sí es conceder el permiso. No son dos actos y no debe
+        -- haber un segundo botón: quien acaba de leer el argumento, la
+        -- evidencia y lo que cuesta equivocarse ya decidió, y pedirle que
+        -- además autorice convertiría el acuerdo en trámite. Lo que impide que
+        -- esto se estire es que el permiso nombra este acto y esta cosa, y se
+        -- gasta al usarse. Ver agent/ADelegationNamesOneActAndOneThing.
+        if decision = accepted:
+            agent/DelegateAct(
+                owner: owner,
+                graph: matter.round.graph,
+                agent: matter.round.librarian,
+                act: act_for(matter.kind),
+                subject: matter.subject,
+                reason: reason
+            )
+
+    @invariant ADecisionIsWrittenWhereItWasAsked
+        -- The answer is a block on the same day, in the owner's own hand, under
+        -- the matter it answers. It is not a button press recorded elsewhere: it
+        -- is the corpus keeping what was decided and why, in the place where
+        -- anyone reading the argument will also find the conclusion.
+}
+
+rule OwnerDefersAMatter {
+    when: DeferMatter(owner, matter, reason)
+
+    requires: owner.kind = human
+    requires: matter.status = raised
+    requires: reason != ""
+
+    ensures: matter.status = deferred
+
+    @guidance
+        -- Un asunto aplazado no vuelve solo. Lo trae de nuevo quien lo aplazó, o
+        -- lo trae el bibliotecario cuando la evidencia cambió — que es una
+        -- situación distinta y hay que decirla al traerlo.
+}
+
+-- Lo aceptado se hace con las operaciones de siempre.
+-- El bibliotecario hace lo que se aceptó.
+--
+-- Proponer y no ejecutar convierte cada «sí» en una tarea para quien dijo que sí,
+-- y una práctica que le deja trabajo a quien la aprueba se abandona por la misma
+-- razón por la que se abandona una bandeja: el coste de decir que sí acaba siendo
+-- mayor que el de no mirar.
+--
+-- Dos manos quedan escritas y son distintas. Quien decidió es el dueño, en su
+-- acuerdo; quien ejecutó es el bibliotecario, en las operaciones. Es la misma
+-- separación que ontology/MigratingLeavesTheHandAlone lleva al texto, y hace
+-- falta por la misma razón: «quién quiso esto» y «quién lo hizo» son dos
+-- preguntas y un corpus de varias manos necesita poder contestar las dos.
+rule LibrarianAppliesAnAcceptedMatter {
+    when: matter: Matter.status transitions_to accepted
+
+    let round = matter.round
+    let settlement = matter.settlement
+
+    requires: exists settlement
+    requires: settlement.decided_by.kind = human
+
+    ensures: MatterAccepted(
+        matter: matter,
+        graph: round.graph,
+        applied_by: round.librarian,
+        authorised_by: settlement.decided_by
+    )
+
+    @invariant ApplyingUsesTheOrdinaryActs
+        -- What a matter proposes reaches the graph only through the acts
+        -- controlled-ontology.allium already governs — MergeConcept,
+        -- DefinePropertyDomain, MigrateCitationsTo — with their own guards,
+        -- their own preview and their own reversibility. This rule opens no
+        -- second door into the vocabulary; it walks through the existing one
+        -- carrying a decision.
+
+    @invariant TheAuthorityIsTheSettlementAndNotTheHand
+        -- The librarian may perform an act reserved to a human because a human
+        -- settled this matter, on this subject, in writing, with a reason. The
+        -- authority is that settlement and it does not generalise: it does not
+        -- license the next merge, or a merge of something adjacent, or the same
+        -- merge again tomorrow.
+        --
+        -- Delegating execution is not delegating judgement, and the line between
+        -- them is exactly one settled matter wide.
+
+    @invariant ApplyingAMatterIsIdempotent
+        -- Running it twice does nothing the second time. A matter is accepted
+        -- once and its acts are the ones the ontology already defines, each of
+        -- which is idempotent on its own.
+
+    @invariant WhatCouldNotBeAppliedIsSaidInTheDay
+        -- If an accepted matter cannot be carried out — the word moved, the
+        -- page went, a guard refuses — the librarian writes that in the day
+        -- under the matter, in its own hand. An acceptance that quietly did
+        -- nothing is the one failure this practice cannot survive, because the
+        -- owner has already stopped tracking it.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant OneRoundPerDay {
+    for a in LibrarianRounds:
+        for b in LibrarianRounds:
+            a != b implies a.graph != b.graph or a.day != b.day
+}
+
+invariant ARoundIsHeldByAnAgent {
+    for round in LibrarianRounds:
+        round.librarian.kind = agent
+}
+
+invariant ARoundStaysWithinItsBound {
+    for round in LibrarianRounds:
+        round.matters.count <= config.matters_per_round
+}
+
+invariant ASettledMatterHasItsReason {
+    for matter in Matters:
+        matter.status in {accepted, refused} implies exists matter.settlement
+}
+
+invariant OnlyAHumanSettles {
+    for settlement in Settlements:
+        settlement.decided_by.kind = human
+}
+
+invariant EveryMatterIsSaidInItsOwnDay {
+    for matter in Matters:
+        matter.said_at.page = matter.round.day.page
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor Librarian {
+    within: core/Graph
+    identified_by: core/Participant
+        where this.kind = agent
+        and core/Membership{participant: this, graph: within}.status = active
+}
+
+actor RoundOwner {
+    within: core/Graph
+    identified_by: core/Participant
+        where this.kind = human
+        and core/Membership{participant: this, graph: within}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface TheDailyRound {
+    facing owner: RoundOwner
+    context round: LibrarianRound
+
+    exposes:
+        round.day
+        round.matters
+        round.unsettled
+
+    provides:
+        SettleMatter(owner, matter, decision, reason) when matter.round = round
+        DeferMatter(owner, matter, reason) when matter.round = round
+
+    contracts:
+        demands ReasonedProposal
+
+    @guarantee ARoundIsAConversationAndNotAQueue
+        -- The librarian's matters arrive as blocks in the day, in its own hand,
+        -- and are answered in the same page in the owner's. There is no separate
+        -- inbox. An inbox is where an agent's output goes to be triaged; a day is
+        -- where the two of them are working, and the difference decides whether
+        -- this gets read in six months.
+
+    @guarantee ASettledWordIsNotAskedAgain
+        -- Once a matter about a word has been answered, the librarian does not
+        -- raise it again. It may raise it once more only when the evidence
+        -- changed, and must say what changed. This is the rule that decides
+        -- whether the round survives contact with a real corpus: an agent that
+        -- re-proposes yesterday's refusal is one an owner learns to skim, and a
+        -- round that gets skimmed is worse than no round, because it looks like
+        -- governance while being noise.
+
+    @guarantee TheReasonIsWhatIsLearnt
+        -- What the librarian carries into the next round is what the owner
+        -- wrote when deciding, read back from the corpus. Not a preference
+        -- inferred from a click, and nothing stored outside the graph: the
+        -- reasons are pages, with authors and dates, and they can be read,
+        -- argued with and revised like anything else here.
+        --
+        -- This is the only kind of learning a sovereign memory can honestly
+        -- offer. A model that adapted invisibly would be a second memory beside
+        -- the corpus, unattributed and unauditable, and the whole premise of
+        -- Vera is that there is one memory and it belongs to its owner.
+
+    @guarantee TheRoundIsSmallOnPurpose
+        -- Five matters, not two hundred and thirty-one. The corpus has 231
+        -- undefined property keys, and there is no day on which presenting them
+        -- all is help. What a bounded round buys is that the same person is
+        -- still reading it in a month.
+
+    @guarantee ARefusalIsAsUsefulAsAnAcceptance
+        -- A refused matter and its reason stay readable where they were raised.
+        -- The librarian proposed merging `institucion` into `Organizacion` and
+        -- was told they are not the same thing in this school: that sentence is
+        -- worth more to the vocabulary than most of what gets accepted, and
+        -- discarding refusals throws away the half of the record that explains
+        -- the other half.
+
+    @guarantee TheCadenceIsAWrittenInstructionAndNotACodePath
+        -- That the round happens daily is something the owner said once, on a
+        -- page, and can stop saying. It is neither a constant compiled into
+        -- Vera nor a rhythm the librarian chose for itself. An agent that
+        -- decides how often it appears in someone's day has taken a decision
+        -- that was not its to take; one that must be summoned each time never
+        -- becomes a practice at all.
+
+    @guarantee SilenceIsAnAnswerAndIsHeard
+        -- After a few rounds nobody answers, the librarian stops and says so
+        -- once. Any single settlement brings it back. Treating unanswered as
+        -- unheard is how a helpful thing becomes a thing one skips, and the day
+        -- is not a surface that survives being skipped.
+
+    @guarantee TheLibrarianMaySpeakAboutItsOwnInstructions
+        -- Matters about the rules the librarian works under are raised like any
+        -- other and decided like any other. If what governs it lives in the
+        -- corpus as pages, it is part of the vocabulary it tends, and excluding
+        -- it would leave the one participant who knows where those rules chafe
+        -- with no way of saying so.
+
+    @guarantee NothingIsAppliedByPresenting
+        -- Presenting changes nothing. A round the owner never opens leaves the
+        -- graph exactly as it was, and a round left half-answered leaves the
+        -- unanswered half untouched rather than deciding it by default.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- Contestadas tres: la ronda ocurre a diario porque una instrucción permanente
+-- del dueño lo dice; se calla tras tres rondas sin respuesta y lo dice una vez;
+-- y sí puede opinar sobre sus propias instrucciones, con la misma forma que
+-- todo lo demás.
+
+open question "Cuando la evidencia de un asunto ya contestado cambia, ¿cuánto tiene que cambiar para que volver a traerlo no sea insistir?"
+open question "Las razones acumuladas son un criterio que nadie escribió como tal. ¿Debe el bibliotecario destilarlas alguna vez en algo legible de una sentada, y si lo hace, esa destilación es una página más o es una propuesta que también hay que contestar?"
+open question "Un asunto sobre las propias instrucciones del bibliotecario, ¿se aplica por la misma delegación que los demás, o cambiar sus reglas es de los actos que nunca se delegan — dado que ejecutar el cambio de su propio encargo es la única clase de acto en que quien ejecuta es también el interesado?"
