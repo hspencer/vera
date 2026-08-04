@@ -65,6 +65,23 @@
 }
 
 /*
+ * `hidden` significa oculto, dígalo quien lo diga.
+ *
+ * El navegador oculta lo marcado con una regla débil —`[hidden]`, un atributo—
+ * que cualquier `#id { display: flex }` posterior derrota sin decir nada. El
+ * elemento queda con su atributo puesto, la accesibilidad diciendo que no está,
+ * y a la vista de todos. Es lo que tuvo el menú del mapa: se cerraba en el
+ * código y seguía abierto en la pantalla.
+ *
+ * El `!important` es deliberado: `hidden` no es una sugerencia de presentación
+ * sino una afirmación sobre el documento, y ninguna regla de estilo debería
+ * poder contradecirla por accidente.
+ */
+[hidden] {
+  display: none !important;
+}
+
+/*
  * Un control de formulario no hereda el color del documento: usa el del
  * sistema, que es negro. Con un tema oscuro eso deja el texto que se escribe
  * en negro sobre fondo oscuro, ilegible justo donde más importa.
@@ -720,6 +737,54 @@ input {
   margin: 0;
 }
 
+/*
+ * Un valor de vocabulario: la palabra y su chevrón.
+ *
+ * La palabra pesa —es contenido, y lleva a algún sitio— y el chevrón no: es la
+ * puerta de un menú, y un menú cerrado no debería competir con lo que dice la
+ * página. Por eso uno hereda el color del texto y el otro se queda en el tenue
+ * hasta que se pasa por encima.
+ */
+.property-value:has(.property-word) {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.property-word {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.property-word:hover,
+.property-word:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  outline: none;
+}
+
+.property-choose {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.property-choose:hover,
+.property-choose:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
 .visibility {
   font-family: var(--font-ui);
   font-size: 0.7rem;
@@ -1044,6 +1109,27 @@ input {
   flex: none;
   color: var(--text-dim);
   font-size: 0.75rem;
+}
+
+/*
+ * El selector de fecha de `/fecha`.
+ *
+ * Se apoya sobre el bloque que se está escribiendo, como el menú y la lista de
+ * autocompletado, y comparte su capa: son todos lo mismo —algo que se despliega
+ * sobre el texto y se va— y ponerlos a alturas distintas los haría taparse entre
+ * ellos en el peor momento.
+ */
+.date-picker {
+  position: absolute;
+  z-index: 40;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 0.3rem 0.45rem;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 22%);
 }
 
 .block-menu {
@@ -1566,6 +1652,7 @@ code {
   overflow: hidden;
   border-right: 1px solid var(--rule);
 }
+
 
 /* --- Panel de tokens --------------------------------------------------- */
 

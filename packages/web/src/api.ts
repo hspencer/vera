@@ -44,6 +44,14 @@ export interface PageView {
   title: string;
   visibility: 'private' | 'public';
   properties: { key: string; value: string }[];
+  /**
+   * Lo que el corpus ya contesta a cada clave de esta página, por uso.
+   *
+   * Es lo que se ofrece en el desplegable. Vocabulario observado y no declarado:
+   * la ontología que lo gobernaría todavía no existe, y hasta que exista lo que
+   * el corpus dice es mejor guía que una lista inventada.
+   */
+  domains: Record<string, { value: string; uses: number }[]>;
   blocks: BlockView[];
   assets: AssetView[];
   blockRefs: BlockRefView[];

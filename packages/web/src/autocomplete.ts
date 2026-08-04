@@ -104,20 +104,50 @@ export function completionFor(
   const command = COMMANDS.find((entry) => entry.name === choice);
   if (command === undefined) return { buffer, cursor };
 
+  const written = typeof command.inserts === 'function' ? command.inserts() : command.inserts;
   // El comando se come su propia barra: `/cita` deja una cita, no `/> `.
   const withoutSlash = head.slice(0, -1);
   return {
-    buffer: withoutSlash + command.inserts + tail,
-    cursor: withoutSlash.length + command.caret,
+    buffer: withoutSlash + written + tail,
+    cursor: withoutSlash.length + (command.caret ?? written.length),
   };
+}
+
+/**
+ * La fecha de hoy tal como la escribe el calendario.
+ *
+ * El reloj es el de esta máquina, no el del servidor: quien escribe está aquí, y
+ * si son las once de la noche del lunes para él, es lunes, aunque el servidor
+ * viva en otro huso. daily-log.allium deja abierto qué pasa cuando esos dos
+ * relojes no son el mismo; mientras la instancia sea de una persona en una
+ * máquina, la pregunta no se hace.
+ */
+export function today(): string {
+  return calendarDate(new Date());
+}
+
+/** `YYYY-MM-DD` en horario local, que es como se titula un día. */
+export function calendarDate(date: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 export interface Command {
   name: string;
   hint: string;
-  inserts: string;
-  /** Dónde cae el cursor dentro de lo insertado. */
-  caret: number;
+  /**
+   * Lo que deja escrito.
+   *
+   * Casi siempre un literal. Es una función cuando lo que escribe depende de
+   * cuándo se escribe: `/hoy` no puede ser una constante porque mañana sería
+   * mentira.
+   */
+  inserts: string | (() => string);
+  /**
+   * Dónde cae el cursor dentro de lo insertado. Omitido, al final — que es lo
+   * que quiere un comando que deja algo terminado en vez de algo que rellenar.
+   */
+  caret?: number;
   /**
    * Lo que el comando hace además de escribir.
    *
@@ -125,7 +155,7 @@ export interface Command {
    * ese punto de la escritura, y quien atiende el comando es el outliner, porque
    * el hecho ocurre en el grafo y no en el texto.
    */
-  acts?: 'hablar';
+  acts?: 'hablar' | 'elegir-fecha';
 }
 
 /**
@@ -149,6 +179,17 @@ export const COMMANDS: Command[] = [
   { name: 'nota', hint: 'referencia a nota al pie', inserts: '[^1]', caret: 3 },
   { name: 'pagina', hint: 'enlace a otra página', inserts: '[[]]', caret: 2 },
   { name: 'audio', hint: 'hablar aquí mismo', inserts: '', caret: 0, acts: 'hablar' },
+  // Fechas. Un día es una página, así que fechar algo es enlazarlo: escribir
+  // «hoy» como texto deja una palabra que dentro de un mes será falsa, y
+  // escribir el enlace deja algo que sigue llevando al día en que se dijo.
+  { name: 'hoy', hint: 'el día de hoy, enlazado a su diario', inserts: () => `[[${today()}]]` },
+  {
+    name: 'fecha',
+    hint: 'elegir un día en el calendario',
+    inserts: '',
+    caret: 0,
+    acts: 'elegir-fecha',
+  },
 ];
 
 /** Lo que un comando hace además de escribir, si hace algo. */

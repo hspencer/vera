@@ -23,6 +23,7 @@ import {
   detectTrigger,
   matchingCommands,
   queryOf,
+  today,
   type Open,
 } from './autocomplete.ts';
 import {
@@ -344,6 +345,87 @@ async function moveBlock(
  * editor de bloque completo sería desproporcionado. `commit` devuelve si el
  * cambio se aplicó; si no, el texto vuelve a lo que era y no se pierde nada.
  */
+/** Cuántas respuestas se ofrecen sin que el menú deje de leerse de un vistazo. */
+const OFFERED_AT_MOST = 12;
+
+/** Qué parte del uso tienen que concentrar para que la pregunta sea cerrada. */
+const CLOSED_QUESTION_SHARE = 0.6;
+
+/**
+ * Si una propiedad se contesta eligiendo o escribiendo.
+ *
+ * Provisional, y a la vista de que lo es: lo correcto es que la ontología
+ * declare el dominio de cada propiedad, y eso todavía no existe en el almacén.
+ * Mientras tanto se infiere de lo que el corpus ya dice, que es la misma
+ * evidencia desde la que rule ProposePropertyDomainFromUsage lo propondrá.
+ *
+ * Lo que decide no es cuántos valores hay sino si unos pocos concentran el uso.
+ * Contar valores distintos parece lo natural y se equivoca justo donde importa:
+ * `type` toma treinta y ocho valores en este corpus y aun así es una pregunta
+ * cerrada, porque doce de ellos cubren el 94% y el resto es cola —erratas,
+ * sinónimos, cosas dichas una vez—. `tags`, con quinientos sesenta y cinco, no
+ * concentra nada: sus doce más usados cubren el 7%, y eso no es un vocabulario
+ * sino texto.
+ *
+ * La cola, además, no es ruido que ocultar: es exactamente lo que la ronda del
+ * bibliotecario tiene que traer. «`bibliography` aparece una vez y `bibliografia`
+ * treinta» es una decisión que alguien puede tomar.
+ */
+function isChoosable(offered: { value: string; uses: number }[]): boolean {
+  if (offered.length < 2) return false;
+  const total = offered.reduce((sum, option) => sum + option.uses, 0);
+  if (total === 0) return false;
+  const head = offered.slice(0, OFFERED_AT_MOST).reduce((sum, option) => sum + option.uses, 0);
+  return head / total >= CLOSED_QUESTION_SHARE;
+}
+
+/**
+ * Elegir un día en el calendario.
+ *
+ * Usa el selector del propio navegador y no uno dibujado aquí. Un calendario es
+ * de las pocas cosas que todo sistema ya resuelve bien y en el idioma y con la
+ * semana que quien mira espera —lunes o domingo primero, según dónde viva—, y
+ * reimplementarlo sería reimplementar eso también, peor.
+ *
+ * Se descarta al perder el foco y no deja rastro: mientras no se elija un día,
+ * no ha pasado nada.
+ */
+function pickDate(anchor: HTMLElement, onPick: (date: string) => void): void {
+  const input = document.createElement('input');
+  input.type = 'date';
+  input.className = 'date-picker';
+  input.value = today();
+
+  const rect = anchor.getBoundingClientRect();
+  input.style.left = `${Math.round(rect.left + window.scrollX)}px`;
+  input.style.top = `${Math.round(rect.bottom + window.scrollY)}px`;
+
+  const dismiss = (): void => input.remove();
+  input.addEventListener('change', () => {
+    const chosen = input.value;
+    dismiss();
+    if (chosen !== '') onPick(chosen);
+  });
+  input.addEventListener('blur', dismiss);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      dismiss();
+      anchor.focus();
+    }
+  });
+
+  document.body.append(input);
+  input.focus();
+  // Abrir el calendario sin obligar a pulsar el iconito. No todos los
+  // navegadores lo permiten, y donde no, el campo sigue sirviendo.
+  try {
+    (input as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
+  } catch {
+    // El navegador exige un gesto suyo para abrirlo. El campo ya está enfocado.
+  }
+}
+
 function editInPlace(
   host: HTMLElement,
   original: string,
@@ -773,7 +855,61 @@ export function renderOutliner(
   const properties = document.createElement('dl');
   properties.className = 'properties';
 
-  for (const property of page.properties) {
+  /*
+   * Público o privado, entre las demás propiedades y no en un botón aparte.
+   *
+   * Era una marca al pie que decía «privada» mientras el front matter, dos
+   * centímetros más arriba, decía `public:: false`. Dos sitios diciendo lo mismo
+   * con palabras distintas, y ninguna forma de saber cuál mandaba — la respuesta
+   * era ésta, y no se veía.
+   *
+   * Ahora es una fila más, y la única que además gobierna: lo que se lee aquí es
+   * el estado de verdad, el que decide si la página se proyecta al sitio
+   * personal. La propiedad de texto que traía el corpus importado no se dibuja
+   * al lado, porque duplicarla es el problema que esto resuelve.
+   *
+   * Se ve distinta de las demás a propósito. Una propiedad de texto se edita
+   * escribiendo; ésta se contesta con un interruptor porque su dominio no está
+   * por decidir: es sí o no, y siempre lo fue. Ver el contrato PageFrontMatter
+   * en workspace-interface.allium.
+   */
+  const publica = page.visibility === 'public';
+
+  const visibilityKey = document.createElement('dt');
+  visibilityKey.className = 'property-key';
+  visibilityKey.textContent = 'public';
+
+  const visibilityValue = document.createElement('dd');
+  visibilityValue.className = 'property-value governed';
+
+  const badge = document.createElement('button');
+  badge.type = 'button';
+  badge.className = `visibility ${page.visibility}`;
+  badge.textContent = publica ? 'pública' : 'privada';
+  badge.setAttribute('role', 'switch');
+  badge.setAttribute('aria-checked', String(publica));
+  badge.title = publica
+    ? 'Pública: se proyecta al sitio personal. Pulsa para hacerla privada.'
+    : 'Privada: no sale de aquí. Pulsa para publicarla.';
+  badge.addEventListener('click', () => {
+    void submitAndReload(
+      {
+        kind: 'set_page_visibility',
+        page: page.id,
+        visibility: publica ? 'private' : 'public',
+      },
+      callbacks,
+    );
+  });
+  visibilityValue.append(badge);
+  properties.append(visibilityKey, visibilityValue);
+
+  // La `public::` heredada de Logseq no se dibuja: la fila de arriba dice lo
+  // mismo y además manda. Sigue en el corpus hasta que se adopte, y adoptarla
+  // es un acto aparte y deliberado — ver rule AdoptImportedVisibilityProperty.
+  const written = page.properties.filter((property) => property.key !== 'public');
+
+  for (const property of written) {
     const key = document.createElement('dt');
     key.className = 'property-key';
     key.textContent = property.key;
@@ -800,23 +936,69 @@ export function renderOutliner(
 
     const value = document.createElement('dd');
     value.className = 'property-value';
-    value.textContent = property.value;
-    value.tabIndex = 0;
-    value.title = 'editar el valor';
-    value.addEventListener('click', () => {
-      editInPlace(value, property.value, `valor de ${property.key}`, async (next) => {
-        if (next === property.value) return true;
-        return submitAndReload(
-          {
-            kind: 'set_property',
-            page: page.id,
-            propertyKey: property.key,
-            propertyValue: next,
-          },
-          callbacks,
-        );
+
+    const answer = async (next: string): Promise<boolean> => {
+      if (next === property.value) return true;
+      return submitAndReload(
+        { kind: 'set_property', page: page.id, propertyKey: property.key, propertyValue: next },
+        callbacks,
+      );
+    };
+
+    const offered = page.domains?.[property.key] ?? [];
+
+    if (isChoosable(offered)) {
+      /*
+       * Un valor de vocabulario se contesta eligiendo y se sigue pulsando, y son
+       * dos cosas distintas con dos sitios distintos.
+       *
+       * La palabra lleva a su página —qué es una bitácora, y todas las que hay—,
+       * y el chevrón de al lado abre lo que se puede contestar. Compartir
+       * destino los enfrentaría: quien sólo quiere saber qué significa
+       * «bitácora» tendría que asignarla para averiguarlo. Ver @invariant
+       * BothHalvesOfAPropertyAreFollowable.
+       */
+      const follow = document.createElement('button');
+      follow.type = 'button';
+      follow.className = 'property-word';
+      follow.textContent = property.value;
+      follow.title = `ir a ${property.value}`;
+      follow.addEventListener('click', (event) => {
+        event.stopPropagation();
+        callbacks.onNavigate(property.value);
       });
-    });
+
+      const choose = document.createElement('button');
+      choose.type = 'button';
+      choose.className = 'property-choose';
+      choose.innerHTML = icon('chevron-down');
+      choose.setAttribute('aria-label', `elegir ${property.key}`);
+      choose.title = `elegir ${property.key}`;
+      choose.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openBlockMenu(choose, [
+          // Los más dichos, y sólo esos. La cola larga de una propiedad son sus
+          // erratas; ofrecerlas al mismo nivel que los términos las volvería a
+          // sembrar, que es cómo se llegó a tener treinta y ocho tipos.
+          ...offered.slice(0, OFFERED_AT_MOST).map((option) => ({
+            label: option.value === property.value ? `${option.value} ·` : option.value,
+            run: () => void answer(option.value),
+          })),
+          // Un vocabulario que no crece donde se usa deja de crecer, y con él
+          // deja de etiquetarse. Ver @guarantee AVocabularyGrowsAtThePointOfUse.
+          { label: 'escribir otro…', run: () => editInPlace(value, property.value, `valor de ${property.key}`, answer) },
+        ]);
+      });
+
+      value.append(follow, choose);
+    } else {
+      value.textContent = property.value;
+      value.tabIndex = 0;
+      value.title = 'editar el valor';
+      value.addEventListener('click', () => {
+        editInPlace(value, property.value, `valor de ${property.key}`, answer);
+      });
+    }
 
     const drop = document.createElement('button');
     drop.type = 'button';
@@ -864,39 +1046,6 @@ export function renderOutliner(
   });
 
   header.append(properties, add);
-
-  /*
-   * Público o privado, como interruptor.
-   *
-   * Era una etiqueta que sólo decía el estado, así que cambiarlo no tenía dónde
-   * hacerse. Nace apagado —una página es privada hasta que alguien decide lo
-   * contrario— y sólo lo mueve una persona: @invariant OnlyTheOwnerPublishes.
-   *
-   * El `public::` que traen las páginas importadas de Logseq es otra cosa: una
-   * propiedad de texto que duplica esto sin gobernarlo. Se sigue viendo en el
-   * front matter porque es contenido del corpus, y quien manda es este.
-   */
-  const badge = document.createElement('button');
-  badge.type = 'button';
-  const publica = page.visibility === 'public';
-  badge.className = `visibility ${page.visibility}`;
-  badge.textContent = publica ? 'pública' : 'privada';
-  badge.setAttribute('role', 'switch');
-  badge.setAttribute('aria-checked', String(publica));
-  badge.title = publica
-    ? 'Pública: se proyecta al sitio personal. Pulsa para hacerla privada.'
-    : 'Privada: no sale de aquí. Pulsa para publicarla.';
-  badge.addEventListener('click', () => {
-    void submitAndReload(
-      {
-        kind: 'set_page_visibility',
-        page: page.id,
-        visibility: publica ? 'private' : 'public',
-      },
-      callbacks,
-    );
-  });
-  header.append(badge);
 
   /*
    * Lo que se puede hacer con la página entera, en un menú.
@@ -1678,6 +1827,25 @@ function startEditing(
     // grabación necesita un bloque vacío que le guarde el lugar.
     if (acts === 'hablar') {
       void callbacks.onSpeak?.(block.stableId, editor.value.trim());
+      return;
+    }
+
+    // Fechar algo es enlazarlo al día. El comando ya se borró a sí mismo, así
+    // que lo elegido cae donde estaba escribiéndose. El sitio se guarda ahora y
+    // no se vuelve a leer después: entre abrir el calendario y elegir un día
+    // pasa tiempo, y el cursor puede haberse ido a otra parte.
+    if (acts === 'elegir-fecha') {
+      const at = applied.cursor;
+      pickDate(editor, (date) => {
+        const written = `[[${date}]]`;
+        editor.value = editor.value.slice(0, at) + written + editor.value.slice(at);
+        const after = at + written.length;
+        editor.setSelectionRange(after, after);
+        session.type(editor.value);
+        autosize();
+        scheduleSave();
+        editor.focus();
+      });
       return;
     }
 

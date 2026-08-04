@@ -5,10 +5,13 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  COMMANDS,
+  actionOf,
   completionFor,
   detectTrigger,
   matchingCommands,
   queryOf,
+  today,
   type Open,
 } from '../src/autocomplete.ts';
 
@@ -125,6 +128,35 @@ describe('completionFor', () => {
     const result = completionFor(open, 'codigo', '/cod', 4);
     assert.equal(result.buffer, '```\n\n```');
     assert.equal(result.cursor, 4, 'dentro del cercado, no al final');
+  });
+
+  it('/hoy deja el día de hoy enlazado a su diario', () => {
+    const open: Open = { trigger: 'comando', queryStart: 1 };
+    const result = completionFor(open, 'hoy', '/ho', 3);
+
+    // Enlace y no texto: dentro de un mes «hoy» sería falso y el enlace sigue
+    // llevando al día en que se escribió.
+    assert.equal(result.buffer, `[[${today()}]]`);
+    assert.equal(result.cursor, result.buffer.length, 'queda terminado, no a medias');
+  });
+
+  it('/hoy se resuelve al usarse y no al definirse', () => {
+    const open: Open = { trigger: 'comando', queryStart: 1 };
+    const command = COMMANDS.find((entry) => entry.name === 'hoy');
+
+    // Si fuese una constante, el día en que se cargó la aplicación se quedaría
+    // pegado: quien deja Vera abierta toda la semana escribiría el lunes cada vez.
+    assert.equal(typeof command?.inserts, 'function');
+    assert.equal(completionFor(open, 'hoy', '/ho', 3).buffer, `[[${today()}]]`);
+  });
+
+  it('/fecha no escribe nada por sí solo', () => {
+    const open: Open = { trigger: 'comando', queryStart: 1 };
+
+    // Lo que deja es el sitio limpio: el día lo elige el calendario después, y
+    // hasta que se elija no ha pasado nada.
+    assert.deepEqual(completionFor(open, 'fecha', '/fec', 4), { buffer: '', cursor: 0 });
+    assert.equal(actionOf('fecha'), 'elegir-fecha');
   });
 
   it('conserva lo que había alrededor', () => {
