@@ -1724,12 +1724,23 @@ code {
 }
 
 .settings-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
-  color: var(--accent);
+  color: var(--text-dim);
   cursor: pointer;
-  font-size: 0.8rem;
-  text-decoration: underline;
+  padding: 0.2rem;
+}
+
+.settings-close:hover {
+  color: var(--accent);
+}
+
+.settings-close .icon {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 
 .settings-tabs {

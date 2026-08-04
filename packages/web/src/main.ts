@@ -752,17 +752,40 @@ function wireTheme(): void {
   const drawPanel = (): void => {
     mapPanel.hidden = !mapPanelOpen;
     panelToggle.setAttribute('aria-expanded', String(mapPanelOpen));
-    panelToggle.innerHTML = icon(mapPanelOpen ? 'eye' : 'eye-off');
-    panelToggle.title = mapPanelOpen ? 'Ocultar los controles' : 'Mostrar los controles';
+    // Siempre el mismo ojo. Tacharlo diría «no se ve» de algo que sí se ve —el
+    // mapa— y el estado del menú ya lo dice el menú, que está o no está.
+    panelToggle.innerHTML = icon('eye');
+    panelToggle.title = mapPanelOpen ? 'Ocultar los controles' : 'Controles del mapa';
   };
   drawPanel();
 
-  panelToggle.addEventListener('click', () => {
-    mapPanelOpen = !mapPanelOpen;
+  const setPanel = (open: boolean): void => {
+    if (mapPanelOpen === open) return;
+    mapPanelOpen = open;
     // Abierto o cerrado se recuerda en este aparato y no viaja: cuánto sitio
     // puede gastarse en controles depende de la pantalla que se tiene delante.
     localStorage.setItem(PANEL_KEY, String(mapPanelOpen));
     drawPanel();
+  };
+
+  panelToggle.addEventListener('click', (event) => {
+    // Sin esto, el mismo clic que lo abre llega al documento y lo cierra.
+    event.stopPropagation();
+    setPanel(!mapPanelOpen);
+  });
+
+  /*
+   * Un menú abierto se cierra pulsando fuera, como cualquier menú.
+   *
+   * Es lo que la mano ya espera, y aquí además hace falta: el menú del mapa no
+   * tiene botón de cerrar —es un ojo, no un diálogo— así que sin esto la única
+   * forma de recogerlo sería volver a dar con el mismo botón.
+   */
+  document.addEventListener('click', (event) => {
+    if (!mapPanelOpen) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('#map-controls') != null) return;
+    setPanel(false);
   });
 
   // El alcance: cuántos saltos desde la página en foco. Saltos y no cantidad de
@@ -879,9 +902,24 @@ function wireTheme(): void {
     else closeSettings();
   });
 
+  /*
+   * La configuración se cierra pulsando fuera, igual que el menú del mapa.
+   *
+   * `mousedown` y no `click`: mientras se edita un token, soltar el ratón fuera
+   * del panel tras arrastrar un selector de color llegaría como un clic de
+   * cierre, y el panel se iría a mitad de un ajuste.
+   */
+  document.addEventListener('mousedown', (event) => {
+    if (panel.hidden) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('#tokens, #settings') != null) return;
+    closeSettings();
+  });
+
   // Escape cierra la configuración, como cierra cualquier cosa abierta encima.
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !panel.hidden) closeSettings();
+    if (event.key === 'Escape' && mapPanelOpen) setPanel(false);
   });
 
 }

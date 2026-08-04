@@ -507,7 +507,9 @@ async function processPage(
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'settings-close';
-  close.textContent = 'cerrar';
+  close.setAttribute('aria-label', 'Cerrar');
+  close.title = 'Cerrar';
+  close.innerHTML = icon('x');
   close.addEventListener('click', () => {
     panel.hidden = true;
     panel.innerHTML = '';

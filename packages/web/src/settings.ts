@@ -10,6 +10,7 @@
 // valor a ciegas en un campo de texto.
 
 import { BINDINGS, TRIGGERS } from './bindings.ts';
+import { icon } from './icons.ts';
 import {
   DEFAULT_TOKENS,
   FONT_STACKS,
@@ -83,7 +84,9 @@ export function renderSettings(
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'settings-close';
-  close.textContent = 'cerrar';
+  close.setAttribute('aria-label', 'Cerrar');
+  close.title = 'Cerrar';
+  close.innerHTML = icon('x');
   close.addEventListener('click', () => handlers.onClose());
   head.append(close);
   host.append(head);
