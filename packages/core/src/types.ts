@@ -14,11 +14,21 @@ export type ParticipantKind = (typeof PARTICIPANT_KINDS)[number];
 export const PARTICIPANT_STATUSES = ['active', 'suspended'] as const;
 export type ParticipantStatus = (typeof PARTICIPANT_STATUSES)[number];
 
+// Por qué vía llegó a Vera lo que un participante produjo.
+//
+// `walked` es el cuarto y el que menos se parece a los otros: no se tecleó, no
+// se dijo y no lo generó nadie más. Es lo que alguien produjo andando por el
+// corpus, y existe porque hay un texto de Vera que ninguno de los otros tres
+// explicaría — el testimonio de un cruce, que dice cómo se pasó de una página a
+// la siguiente. Admitirlo es afirmar que caminar es producir; la alternativa era
+// que Vera firmara ese testimonio, y entonces habría texto en el corpus que
+// ningún participante puso.
 export const CONTRIBUTION_CHANNELS = [
   'typed_text',
   'authenticated_voice',
   'agent_generation',
   'import',
+  'walked',
 ] as const;
 export type ContributionChannel = (typeof CONTRIBUTION_CHANNELS)[number];
 
@@ -189,6 +199,16 @@ export interface OperationInput {
   readonly channel?: ContributionChannel | undefined;
   readonly evidence?: OriginEvidence | undefined;
   readonly submittedAt?: number | undefined;
+  /**
+   * Sobre qué recae, cuando ya se sabe.
+   *
+   * Sólo lo trae la reproducción del registro, que no está pidiendo un cambio
+   * nuevo sino rehaciendo uno que ya ocurrió y del que se guardó el sujeto. Sin
+   * esto, reproducir volvía a *derivar* los identificadores contando en el mismo
+   * orden, y bastaba con que una regla consumiera un identificador de más para
+   * que todo lo posterior se desplazara y el registro dejara de poder leerse.
+   */
+  readonly subjectId?: string | undefined;
 }
 
 export interface PageLink {

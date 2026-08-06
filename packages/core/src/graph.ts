@@ -11,6 +11,7 @@ import {
   queryMacroText,
   referencedTags,
   referencedTitles,
+  retitleLinks,
   titleKey,
 } from './text.ts';
 import type { QueryExpression } from './query.ts';
@@ -315,7 +316,7 @@ export class VeraGraph {
     // Quien envía puede saber cuándo ocurrió esto —lo sabe la importación, y lo
     // sabe la reproducción del registro—. Si no lo sabe nadie, es ahora.
     const at = input.submittedAt ?? Date.now();
-    const subjectId = this.#apply(input.change, null, at);
+    const subjectId = this.#apply(input.change, input.subjectId ?? null, at);
     this.#recordAuthorship(input.change, subjectId, input.participant, channel, at);
 
     const submission: Submission = {
@@ -552,6 +553,7 @@ export class VeraGraph {
    * silencio porque el único síntoma era una fecha.
    */
   #apply(change: Change, recordedSubject: string | null, at: number): string {
+    if (recordedSubject !== null) this.#observeId(recordedSubject);
     switch (change.kind) {
       case 'create_page': {
         const id = recordedSubject ?? this.#nextId('page');
@@ -568,15 +570,55 @@ export class VeraGraph {
       }
       case 'rename_page': {
         const page = this.#pages.get(change.page);
-        if (page) {
-          this.#pageByTitleKey.delete(titleKey(page.title));
-          page.title = change.title;
-          this.#pageByTitleKey.set(titleKey(change.title), change.page);
+        if (page === undefined) return change.page;
+        const before = page.title;
+
+        /*
+         * Renombrar arrastra a los enlaces que la nombraban.
+         *
+         * Antes no: la frase que decía el título viejo no había cambiado, así
+         * que su enlace volvía a quedar esperando. Era coherente y dejaba el
+         * grafo peor, porque un enlace roto no le sirve a nadie: la conexión
+         * existía, nadie la deshizo, y la única razón de que se perdiera era que
+         * el nombre se escribe en dos sitios. Que Vera sepa cuáles son esos dos
+         * sitios es exactamente lo que la hace capaz de repararlo.
+         *
+         * Se reescribe sólo lo que está entre corchetes. El mismo nombre suelto
+         * en la prosa no es un enlace y no se toca: cambiarlo sería reescribir
+         * lo que alguien dijo, no a dónde apuntaba.
+         *
+         * Va dentro de aplicar el renombrado y no como operaciones aparte. Un
+         * corpus donde renombrar deja treinta `edit_block` a nombre de quien
+         * renombró convierte un gesto en treinta hechos falsos sobre quién
+         * escribió qué. Aquí es un solo hecho —se renombró— con la consecuencia
+         * que le corresponde, y @invariant ReplayReconstructsState se sostiene
+         * porque reproducir el registro vuelve a hacer la misma reescritura.
+         */
+        const naming = [...(this.#linksByTarget.get(change.page) ?? [])].map(
+          (link) => link.sourceBlock,
+        );
+
+        this.#pageByTitleKey.delete(titleKey(before));
+        page.title = change.title;
+        this.#pageByTitleKey.set(titleKey(change.title), change.page);
+
+        for (const id of new Set(naming)) {
+          const block = this.#blocks.get(id);
+          if (block === undefined) continue;
+          const next = retitleLinks(block.content, before, change.title);
+          if (next === block.content) continue;
+          block.content = next;
+          // Recalcular el bloque entero, como cualquier otro cambio de texto:
+          // así el enlace nuevo nace por el mismo camino que los demás.
+          this.#settleBlock(id);
         }
-        // Un enlace nombró el título viejo: deja de resolver, y los que
-        // esperaban el nuevo se conectan.
+
+        // Lo que quede nombrando el título viejo —prosa que el corchete no
+        // cubría, o un enlace que ya esperaba— se recoloca aquí.
         for (const link of [...(this.#linksByTarget.get(change.page) ?? [])]) {
-          this.#setLinkTarget(link, null);
+          if (titleKey(link.targetTitle) !== titleKey(change.title)) {
+            this.#setLinkTarget(link, null);
+          }
         }
         this.#resolveWaitingLinks(change.page);
         return change.page;
@@ -1144,5 +1186,17 @@ export class VeraGraph {
   #nextId(prefix: string): string {
     this.#counter += 1;
     return `${prefix}:${this.#counter}`;
+  }
+
+  /**
+   * Mantiene el contador por delante de un identificador que vino dado.
+   *
+   * Al reproducir el registro los identificadores salen de él y no del contador,
+   * así que el contador no avanza solo. Sin esto, lo primero que se creara
+   * después de arrancar tomaría un número ya usado y pisaría algo.
+   */
+  #observeId(id: string): void {
+    const n = Number(id.slice(id.indexOf(':') + 1));
+    if (Number.isFinite(n) && n > this.#counter) this.#counter = n;
   }
 }

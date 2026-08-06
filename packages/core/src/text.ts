@@ -26,6 +26,29 @@ export function referencedTitles(content: string): string[] {
   return titles;
 }
 
+/**
+ * Reescribe los `[[enlaces]]` que nombran un título para que nombren otro.
+ *
+ * Sólo toca lo que está entre corchetes dobles: el mismo nombre escrito en la
+ * prosa se queda como está. Una frase que dice «como cuenta la página Vera» no
+ * es un enlace, y cambiarla sería reescribir lo que alguien dijo en vez de a
+ * dónde apunta.
+ *
+ * Compara sin distinguir mayúsculas ni espacios de sobra, que es como el grafo
+ * identifica un título en todas partes: un enlace escrito `[[vera]]` apunta a la
+ * página «Vera» y tiene que seguir a su lado cuando ésta cambie de nombre.
+ *
+ * Conserva lo que el enlace llevara pegado dentro —un alias, un espacio— sólo en
+ * la medida en que el título es todo el contenido del corchete; si el corchete
+ * dice otra cosa, no es este enlace y no se toca.
+ */
+export function retitleLinks(content: string, from: string, to: string): string {
+  const wanted = from.trim().toLowerCase();
+  return content.replace(LINK, (whole, inner: string) =>
+    inner.trim().toLowerCase() === wanted ? `[[${to}]]` : whole,
+  );
+}
+
 /** Etiquetas de un bloque, sin repetir. */
 export function referencedTags(content: string): string[] {
   const seen = new Set<string>();

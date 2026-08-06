@@ -128,18 +128,32 @@ rule RecomputeLinksForSettledBlock {
 }
 
 rule RelinkAroundRenamedPage {
-    when: change/PageRenamed(page)
+    when: change/PageRenamed(page, former_title)
 
     ensures:
-        for named in PageLinks where target = page and target_title != page.title:
-            named.target = null
+        for source in Blocks where exists link in PageLinks with
+                link.source_block = source and link.target = page:
+            source.content = source.content with every `[[former_title]]` written `[[page.title]]`
         for waiting in PageLinks where target = null and target_title = page.title and graph = page.graph:
             waiting.target = page
 
     @guidance
-        -- Renaming is the one operation that both breaks and makes connections. A
-        -- sentence that named the old title has not changed, so it goes back to
-        -- waiting; one that named the new title has been waiting all along.
+        -- Renaming carries its links with it. Until this was so, a sentence that
+        -- named the old title went back to waiting: the sentence had not changed,
+        -- so its link no longer resolved. That was coherent and it left the graph
+        -- worse. The connection existed, nobody undid it, and the only reason it
+        -- was lost is that a title is written in two places. Knowing which two is
+        -- exactly what makes a graph able to repair it, and a broken link serves
+        -- no one.
+        -- Only what sits inside double brackets is rewritten. The same name loose
+        -- in the prose is something a person said, not a pointer, and changing it
+        -- would rewrite what was said rather than where it led.
+        -- The rewriting is part of applying the rename and not a set of separate
+        -- edits. A corpus where renaming leaves thirty block edits credited to
+        -- whoever renamed turns one gesture into thirty false statements about who
+        -- wrote what. One fact — it was renamed — with the consequence that
+        -- belongs to it, and @invariant ReplayReconstructsState still holds because
+        -- replaying performs the same rewriting.
 }
 
 rule ResolveWaitingLinksToNewPage {

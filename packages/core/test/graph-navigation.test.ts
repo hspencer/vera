@@ -288,3 +288,70 @@ describe('neighbourhood traversal', () => {
     );
   });
 });
+
+describe('renaming a page carries its links along', () => {
+  it('rewrites the links that named it, and they stay connected', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    const target = makePage(graph, 'Destino');
+    const block = makeBlock(graph, source, 'ver [[Destino]] para el detalle');
+
+    applied(submit(graph, { kind: 'rename_page', page: target, title: 'Llegada' }));
+
+    assert.equal(graph.block(block)?.content, 'ver [[Llegada]] para el detalle');
+    const links = linksFrom(graph, block);
+    assert.equal(links.length, 1);
+    assert.equal(links[0]?.targetTitle, 'Llegada');
+    assert.equal(links[0]?.target, target, 'el enlace sigue apuntando a la misma página');
+  });
+
+  it('matches the link however it was capitalised', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    const target = makePage(graph, 'Destino');
+    const block = makeBlock(graph, source, 'ver [[destino]] y [[DESTINO]]');
+
+    applied(submit(graph, { kind: 'rename_page', page: target, title: 'Llegada' }));
+
+    assert.equal(graph.block(block)?.content, 'ver [[Llegada]] y [[Llegada]]');
+    assert.equal(linksFrom(graph, block)[0]?.target, target);
+  });
+
+  it('leaves the same name alone when it is prose and not a link', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    const target = makePage(graph, 'Destino');
+    // El nombre suelto es algo que alguien dijo; sólo el corchete es un enlace.
+    const block = makeBlock(graph, source, 'Destino es un buen nombre, ver [[Destino]]');
+
+    applied(submit(graph, { kind: 'rename_page', page: target, title: 'Llegada' }));
+
+    assert.equal(graph.block(block)?.content, 'Destino es un buen nombre, ver [[Llegada]]');
+  });
+
+  it('still connects a link that had been waiting for the new title', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    const target = makePage(graph, 'Destino');
+    const waiting = makeBlock(graph, source, 'algún día [[Llegada]]');
+    assert.equal(linksFrom(graph, waiting)[0]?.target, null);
+
+    applied(submit(graph, { kind: 'rename_page', page: target, title: 'Llegada' }));
+
+    assert.equal(linksFrom(graph, waiting)[0]?.target, target);
+  });
+
+  it('reconstructs the same graph when the log is replayed', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    const target = makePage(graph, 'Destino');
+    const block = makeBlock(graph, source, 'ver [[Destino]]');
+    applied(submit(graph, { kind: 'rename_page', page: target, title: 'Llegada' }));
+
+    // @invariant ReplayReconstructsState: la reescritura es consecuencia del
+    // renombrado, así que reproducir el registro la vuelve a producir.
+    const again = graph.replayFromLog();
+    assert.equal(again.block(block)?.content, 'ver [[Llegada]]');
+    assert.equal(again.links().filter((l) => l.sourceBlock === block)[0]?.target, target);
+  });
+});

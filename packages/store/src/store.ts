@@ -17,6 +17,8 @@ import { fileURLToPath } from 'node:url';
 import { VeraGraph, titleKey } from '@vera/core';
 import type { Change, Operation, ParticipantId, ParticipantKind } from '@vera/core';
 
+import { isFreshDatabase, migrate } from './migrations.ts';
+
 const SCHEMA = join(dirname(fileURLToPath(import.meta.url)), '../../../schema/schema.sql');
 
 export interface Store {
@@ -38,6 +40,11 @@ export interface OpenOptions {
  * `CREATE TABLE IF NOT EXISTS` no toca una tabla que ya existe, así que una
  * columna nueva no llegaría nunca a la base de alguien que viene usando Vera. Se
  * añade aquí, y como sólo se agrega lo que falta, correrlo de nuevo no hace nada.
+ *
+ * No crece más. Es anterior a migrations.ts y se queda por lo que ya arregla: hay
+ * bases en `user_version = 0` a las que les falta alguna de estas tres columnas,
+ * y ninguna migración se las va a añadir porque la migración 1 no sabe de ellas.
+ * Todo cambio nuevo de esquema va a migrations.ts, incluido añadir una columna.
  */
 const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
   {
@@ -60,8 +67,12 @@ function addMissingColumns(db: DatabaseSync): void {
 
 export function openStore(options: OpenOptions): Store {
   const db = new DatabaseSync(options.path);
+  // Antes de aplicar el esquema, porque después una base nueva y una vieja sin
+  // migrar son indistinguibles. Ver isFreshDatabase().
+  const fresh = isFreshDatabase(db);
   db.exec(readFileSync(SCHEMA, 'utf8'));
   addMissingColumns(db);
+  migrate(db, fresh);
 
   const graphId = options.graphId ?? 'graph:1';
   db.prepare('INSERT OR IGNORE INTO graphs (id, name) VALUES (?, ?)').run(
@@ -668,6 +679,10 @@ export function loadGraph(store: Store, graphName = 'mind'): VeraGraph {
       channel: row.channel as 'typed_text' | 'authenticated_voice' | 'agent_generation' | 'import',
       change: JSON.parse(row.change_payload) as Change,
       submittedAt: row.submitted_at,
+      // El sujeto sale del registro y no se vuelve a derivar. Ver `subjectId` en
+      // OperationInput: derivarlo ataba la legibilidad del registro a que
+      // ninguna regla cambiara jamás cuántos identificadores consume.
+      ...(row.subject_id === null ? {} : { subjectId: row.subject_id }),
       ...(row.evidence_reference === null
         ? {}
         : {
