@@ -2,7 +2,7 @@
   <img src="packages/web/public/assets/vera_vera-logo.svg" width="128" alt="Logo de Vera">
 </p>
 <p align="center">
-  <strong style='font-size:180%; letter-spacing: .5ex'>VERA</strong><br>
+  <strong style='font-size:280%; letter-spacing: .5ex'>VERA</strong><br>
   <em style='font-size:120%; text-transform:capitalize'>versionable, editable, replicable, auditable.</em>
 </p>
 

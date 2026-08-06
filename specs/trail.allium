@@ -1228,6 +1228,209 @@ surface TrailReading {
 }
 
 ------------------------------------------------------------
+-- La relación explicada
+------------------------------------------------------------
+
+-- Elicitado el 2026-08-06. Lo que sigue libera la conectiva del recorrido: hasta
+-- aquí, decir por qué dos páginas tienen que ver exigía componer un argumento
+-- entero. La mayor parte de lo que alguien sabe sobre su corpus no llega nunca a
+-- ser un argumento; es una frase suelta sobre por qué esto y aquello se tocan, y
+-- no tenía dónde ponerse.
+
+-- De qué modo vale una relación, leída desde donde se escribió.
+--
+-- `directed` es el caso corriente: alguien dice que de A se sigue B, y decirlo al
+-- revés sería otra afirmación. `mutual` es cuando lo dicho no tiene sentido —«se
+-- oponen en su idea de X» vale igual desde los dos lados— y entonces se lee en
+-- las dos columnas de las dos páginas, sin recíproco que escribir.
+enum CrossingSense { directed | mutual }
+
+-- Una relación que alguien explicó: de un bloque a una página, con lo que dijo.
+--
+-- Sale de un bloque y no de una página, y ahí está la decisión. Una página no
+-- afirma nada: lo afirma una frase concreta dentro de ella, y es esa frase la que
+-- el lector de la otra página necesita ver para saber de qué le están hablando.
+-- El extracto que aparece en la columna no es un adorno: es el sujeto de la
+-- afirmación.
+--
+-- Llega a una página y no a un bloque, y eso es una carencia y no una decisión.
+-- Vera sabe citar un bloque —`((ref))`— pero no deriva esas citas como aristas,
+-- así que hoy no hay a qué agarrarse del otro lado. Queda como pregunta abierta.
+--
+-- No cuelga del enlace derivado, y ésa es la diferencia que la hace utilizable.
+-- @invariant nav/EdgesAreDerivedFromContent manda que ningún enlace sobreviva a
+-- la frase que lo produjo: los enlaces de un bloque se destruyen y se recalculan
+-- enteros cada vez que se toca su texto. Una explicación colgada de ahí moriría
+-- al corregir una tilde, y con ella una grabación que quizá costó decir. La clave
+-- es el bloque y la página, que no se recalculan, así que la explicación
+-- sobrevive a cualquier reescritura de la frase que la ocasionó.
+--
+-- Y por eso mismo no necesita que haya mención. El bloque es el ancla; que además
+-- exista una frase nombrando a la página destino es otra cosa, que la cara
+-- derivada contesta y esta entidad no pregunta. Explicar por qué dos páginas se
+-- tocan es un acto de escritura por derecho propio, y a campo través es
+-- exactamente donde más falta hace: nadie las había unido todavía.
+entity Crossing {
+    graph: core/Graph
+
+    -- Desde dónde se afirma. El bloque conserva su autor y su procedencia, así que
+    -- una relación explicada hereda de quién es sin tener que declararlo aparte.
+    from_block: core/Block
+
+    -- Hacia dónde. La página, no un bloque suyo — ver arriba.
+    to_page: core/Page
+
+    -- Lo que se dijo. Es un bloque y no un texto, y de ahí sale gratis todo lo que
+    -- hace falta: se edita como se edita cualquier bloque, se puede grabar con la
+    -- voz porque voice-capture ya sabe pegar audio a un bloque, y conserva de qué
+    -- mano salió — que en un corpus donde también escribe un agente no es un
+    -- detalle. Es la conectiva de siempre, fuera de un recorrido.
+    connective: core/Block
+
+    sense: CrossingSense
+
+    -- De qué clase es la relación, cuando quien la explica quiere decirlo. Sale
+    -- del vocabulario de relaciones que gobierna la página de ontología, y falta
+    -- mientras nadie lo ponga: la prosa es obligatoria y el término no.
+    --
+    -- Es la mitad consultable de esto. Con prosa sola, un corpus se lee; con
+    -- término, además se le puede preguntar qué contradice a qué. Que sea opcional
+    -- es lo que impide que explicar exija clasificar: nadie debería tener que
+    -- decidir en qué cajón va una relación antes de poder decir por qué existe.
+    term: RelationTerm?
+
+    is_mutual: sense = mutual
+    -- La cara derivada, calculada al mirar y nunca guardada. Ver crossing_kind.
+    kind: CrossingKind
+}
+
+-- Un término del vocabulario de relaciones, con su recíproco.
+--
+-- Es la cuarta capa de la ontología de Vera, y la única que habla de una página
+-- respecto de otra: el tipo dice qué es una página, el concepto de qué trata, la
+-- propiedad qué atributos tiene, y esto qué es respecto de aquélla. Es el
+-- predicado de RDF, y es donde Vera se parece a la web semántica de verdad.
+--
+-- Cada término nombra su inverso porque un término de relación no se lee igual en
+-- los dos extremos. «Contradice» dicho desde A se lee «es contradicha por» desde
+-- B, y sin el par la columna de entrantes mentiría sobre quién afirma qué. Los
+-- términos simétricos —«se oponen», «dialogan»— son su propio inverso, y eso es
+-- lo que los hace aptos para un cruce `mutual`.
+--
+-- Vive en la página de ontología y no aquí. @invariant DefaultsLiveInTheCode: lo
+-- que Vera trae es un mínimo, y lo que rige es lo que esa página diga.
+value RelationTerm {
+    name: String
+    inverse: String
+    is_symmetric: inverse = name
+}
+
+-- Explicar una relación es escribir, y se registra como escritura.
+rule ExplainingARelation {
+    when: ExplainRelation(participant, graph, from_block, to_page, sense, term?)
+
+    let membership = core/Membership{graph: graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: from_block.graph = graph
+    requires: to_page.graph = graph
+    -- Una página no se explica respecto de sí misma: no diría nada.
+    requires: from_block.page != to_page
+
+    ensures:
+        let connective = core/Block.created(page: from_block.page, author: participant)
+        Crossing.created(
+            graph: graph,
+            from_block: from_block,
+            to_page: to_page,
+            connective: connective,
+            sense: sense,
+            term: term
+        )
+
+    @guidance
+        -- La conectiva nace en la página del bloque de origen y no en un sitio
+        -- propio. Es texto de esa página como cualquier otro: se busca con ella,
+        -- se proyecta con ella, y desaparece si ella desaparece. Un corpus donde
+        -- las explicaciones vivieran aparte tendría una segunda memoria al lado de
+        -- la primera, que es justamente lo que ATrailIsAPageOfItsGraph evita para
+        -- los recorridos.
+}
+
+-- Un bloque dice una sola cosa sobre una página. Explicar dos veces la misma
+-- relación desde la misma frase daría dos afirmaciones sin forma de saber cuál
+-- rige; si hay más que decir, se dice en la conectiva, que es un bloque y crece.
+invariant OneCrossingPerBlockAndTarget {
+    for a in Crossings:
+        for b in Crossings:
+            a != b implies (a.from_block != b.from_block or a.to_page != b.to_page)
+}
+
+invariant AMutualCrossingNeedsASymmetricTerm {
+    for crossing in Crossings where crossing.is_mutual and crossing.term != null:
+        crossing.term.is_symmetric
+}
+
+invariant TheExplainedFaceIsWrittenAndTheDerivedFaceIsNot {
+    for crossing in Crossings:
+        crossing.connective.page = crossing.from_block.page
+}
+
+-- Las dos columnas al pie de una página.
+--
+-- Entrantes y salientes, y la diferencia entre ellas es quién lo dijo. Un
+-- saliente es una afirmación de esta página sobre otra; un entrante es una
+-- afirmación de otra página sobre ésta. Separarlas no es organizar: es distinguir
+-- lo que uno sostiene de lo que sostienen sobre uno, que en un corpus con
+-- procedencia es la distinción entera.
+--
+-- Cada fila lleva el título de la otra página y el extracto del bloque desde el
+-- que se afirma. El extracto es lo que hace legible un entrante: sin él, la
+-- columna diría que alguien habló de esto sin decir en qué términos, y habría que
+-- ir a la otra página para averiguarlo — que es exactamente lo que un backlink
+-- sin extracto obliga a hacer hoy.
+--
+-- Una relación mutua se lee en las dos columnas de las dos páginas. No hay
+-- tercera columna: lo mutuo no es una clase aparte de relación sino una que vale
+-- en los dos sentidos, y darle su propio sitio la separaría de las que dice lo
+-- mismo con dirección.
+surface PageRelations {
+    facing reader: core/Participant
+    context page: core/Page
+
+    exposes:
+        page.crossings_out
+        page.crossings_in
+
+    provides:
+        ExplainRelation(reader, page.graph, from_block, to_page, sense, term?)
+
+    @guarantee EachRelationSaysWhereItIsAffirmedFrom
+        -- Toda fila, entrante o saliente, enseña el bloque desde el que se afirma.
+        -- Una relación sin su frase es una flecha sin sujeto: dice que hay algo y
+        -- no qué, y obliga a irse de la página para saberlo.
+
+    @guarantee AnIncomingRelationIsReadFromItsOwnSide
+        -- Un entrante se lee con el recíproco del término, no con el término. Lo
+        -- que A afirma es que contradice a B; lo que B tiene que leer es que es
+        -- contradicha por A. Enseñar el término tal cual invertiría el sujeto de
+        -- la afirmación sin avisar, y una página parecería estar diciendo algo que
+        -- dijo otra.
+
+    @guarantee TheColumnsHoldRelationsAndNotLinks
+        -- Se ven las relaciones explicadas, existan o no menciones entre las dos
+        -- páginas, y no se ven las menciones que nadie explicó. Son dos preguntas
+        -- distintas —quién nombró esto, y quién dijo algo sobre esto— y la segunda
+        -- es la que estas columnas contestan.
+
+    @guarantee ExplainingIsAvailableWhereReadingHappens
+        -- Se explica desde aquí, sobre la relación que se está leyendo, sin ir a
+        -- ningún otro sitio. El momento en que alguien sabe por qué dos páginas se
+        -- tocan es el momento en que las está mirando juntas.
+}
+
+------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
 
@@ -1289,3 +1492,13 @@ open question "Un recorrido andado al revés es otra experiencia y quizá otro a
 open question "Cotito puede escribir un recorrido, y nada en el corpus lo anuncia. ¿Lo trae a la ronda del día como un asunto más —lo que obligaría a que MatterKind, que hoy es corto y sobre el vocabulario, crezca hacia el contenido— o lo dice en el día sin ser un asunto, y entonces qué distingue lo que se contesta de lo que sólo se cuenta?"
 
 open question "Un recorrido publicado es un texto con sus nodos dentro, o una capa guiada sobre páginas que ya tienen su URL. Afecta a personal-site-projection.allium y decide si un lector que llega a un nodo desde fuera sabe que forma parte de un argumento."
+
+open question "Una relación llega a una página y no a un bloque suyo, porque las citas `((ref))` no se derivan como aristas en ningún sitio. Es la misma carencia que ya nombra la pregunta sobre el rastro y los nodos afinados. ¿Se deriva la cita de bloque como arista —lo que daría un destino fino a las relaciones y de paso a los recorridos— o hay una razón para que citar un bloque no acerque dos páginas?"
+
+open question "El cruce de un recorrido va de un nodo al siguiente; la relación explicada va de un bloque a una página. Se decidió que la conectiva es la misma cosa liberada, y las dos formas no se han unificado todavía. ¿Es el cruce de un recorrido el caso particular en que el bloque de origen pertenece a la página del propio recorrido, o son dos portadores distintos de una misma clase de pegamento?"
+
+open question "Dos recorridos pasan de A a B y hay además una relación explicada entre ellas. ¿Leen los tres lo mismo —una sola frase para un solo paso, coherente con que un nodo cite y nunca copie— o puede un argumento necesitar un pegamento propio que no vale fuera de él?"
+
+open question "El vocabulario de relaciones —contradice, respalda, profundiza, ejemplifica, con sus recíprocos— tiene que nacer en alguna parte. controlled-ontology.allium gobierna hoy tipos, conceptos y propiedades, y esta es una cuarta capa que habla de una página respecto de otra. ¿Crece esa spec para acogerla, o un vocabulario de aristas es cosa distinta de un vocabulario de nodos y merece su propio sitio?"
+
+open question "No hay superficie que conteste «enséñame todos mis recorridos». Un recorrido es una página y se encuentra como cualquier página —buscándola, o tropezando con ella desde una de sus paradas—, lo que basta para volver a uno que se recuerda y no para descubrir el que se olvidó. ¿Es eso una carencia o es la consecuencia correcta de que un recorrido no sea una entidad aparte?"
