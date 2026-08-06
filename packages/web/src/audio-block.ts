@@ -121,15 +121,31 @@ export function renderRecorder(
       stop.disabled = true;
       cancel.disabled = true;
       elapsed.textContent = 'guardando…';
-      void started.stop().then(async ({ audio, durationMs }) => {
-        const captured = await voice.capture(audio, durationMs, block);
-        if ('error' in captured) {
-          handlers.notify(captured.error);
+      /*
+       * Detener no puede dejar la interfaz esperando para siempre.
+       *
+       * No había `catch`: si detener fallaba —y fallaba, cuando el sistema ya
+       * había parado la captura con la pantalla apagada— la promesa se rompía
+       * sin que nadie la recogiera y el botón se quedaba en «guardando…» con el
+       * audio dentro y sin forma de sacarlo. Ahora cualquier final, bueno o
+       * malo, devuelve el bloque a un estado del que se pueda seguir.
+       */
+      void started
+        .stop()
+        .then(async ({ audio, durationMs }) => {
+          const captured = await voice.capture(audio, durationMs, block);
+          if ('error' in captured) {
+            handlers.notify(captured.error);
+            host.innerHTML = '';
+            return;
+          }
+          handlers.onSettled();
+        })
+        .catch(() => {
+          handlers.notify('no se pudo cerrar la grabación; lo dicho hasta ahí se ha perdido');
           host.innerHTML = '';
-          return;
-        }
-        handlers.onSettled();
-      });
+          handlers.onSettled();
+        });
     });
   });
 }

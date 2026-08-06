@@ -49,34 +49,117 @@ export async function startRecording(): Promise<{
     return { error: why };
   }
 
+  /*
+   * Se vuelca un trozo por segundo, no uno solo al final.
+   *
+   * Sin intervalo, `MediaRecorder` acumula la grabación entera y la entrega de
+   * una vez al detener. Si el sistema interrumpe la captura antes —y en un
+   * teléfono la interrumpe: la pantalla se apaga, la aplicación pasa a segundo
+   * plano, otra cosa pide el micrófono— ese único trozo no llega nunca y lo
+   * dicho se pierde entero. Volcando por segundo, una interrupción cuesta como
+   * mucho el último segundo, que es la diferencia entre una grabación truncada y
+   * ninguna grabación.
+   */
   const chunks: Blob[] = [];
   const recorder = new MediaRecorder(stream);
   recorder.addEventListener('dataavailable', (event) => {
     if (event.data.size > 0) chunks.push(event.data);
   });
-  recorder.start();
+  recorder.start(1000);
   const began = Date.now();
 
+  /*
+   * Que la pantalla no se apague mientras se habla.
+   *
+   * Es la causa y no el síntoma. Dictando, nadie toca la pantalla —para eso se
+   * dicta— así que el teléfono se duerme a mitad de frase y con él se va la
+   * captura. El bloqueo se pide al empezar y se vuelve a pedir al volver al
+   * frente, porque el sistema lo retira al pasar a segundo plano y no lo
+   * devuelve solo.
+   *
+   * Que falle no impide grabar: hay navegadores que no lo tienen, y grabar con
+   * riesgo de que se apague la pantalla sigue siendo mejor que no grabar.
+   */
+  let awake: WakeLockSentinel | null = null;
+  const keepAwake = async (): Promise<void> => {
+    try {
+      awake = (await navigator.wakeLock?.request('screen')) ?? null;
+    } catch {
+      awake = null;
+    }
+  };
+  const reacquire = (): void => {
+    if (document.visibilityState === 'visible' && awake === null) void keepAwake();
+  };
+  document.addEventListener('visibilitychange', reacquire);
+  void keepAwake();
+
   const close = (): void => {
+    document.removeEventListener('visibilitychange', reacquire);
+    void awake?.release().catch(() => undefined);
+    awake = null;
     for (const track of stream.getTracks()) track.stop();
   };
+
+  const captured = (): { audio: Blob; durationMs: number } => ({
+    audio: new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }),
+    durationMs: Date.now() - began,
+  });
+
+  /*
+   * Un solo sitio donde la grabación termina, y termina una sola vez.
+   *
+   * Antes se escuchaba el final *dentro* de `stop()`, es decir, después de
+   * pedirlo. Un final que ocurriera antes —porque el sistema paró la captura
+   * mientras la pantalla estaba apagada— no lo oía nadie: al volver y pulsar
+   * «detener», la promesa se quedaba esperando un evento que ya había pasado y
+   * no volvería, y el botón se quedaba en «guardando…» para siempre con el audio
+   * dentro. Ese es el fallo que hacía falta arreglar.
+   *
+   * Ahora se escucha desde el principio y por las tres vías por las que esto
+   * puede acabar: que se pida, que el grabador falle, o que el sistema retire el
+   * micrófono. La primera que llegue cierra; las demás no hacen nada.
+   */
+  let settle: ((result: { audio: Blob; durationMs: number }) => void) | null = null;
+  let finished: { audio: Blob; durationMs: number } | null = null;
+
+  const finish = (): void => {
+    if (finished !== null) return;
+    finished = captured();
+    close();
+    settle?.(finished);
+  };
+
+  recorder.addEventListener('stop', finish);
+  // El grabador se rinde: lo grabado hasta aquí es lo que hay, y vale.
+  recorder.addEventListener('error', finish);
+  // El sistema retiró el micrófono —otra aplicación lo pidió, o se acabó el
+  // permiso—. La pista termina sin que el grabador se entere.
+  for (const track of stream.getTracks()) track.addEventListener('ended', finish);
 
   return {
     stop: () =>
       new Promise((done) => {
-        recorder.addEventListener('stop', () => {
-          close();
-          done({
-            audio: new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }),
-            durationMs: Date.now() - began,
-          });
-        });
-        recorder.stop();
+        if (finished !== null) {
+          done(finished);
+          return;
+        }
+        settle = done;
+        try {
+          // Puede estar ya inactivo si el sistema lo paró: entonces esto lanza,
+          // y lo que corresponde es cerrar con lo que haya en vez de esperar un
+          // evento que no va a llegar.
+          if (recorder.state === 'inactive') finish();
+          else recorder.stop();
+        } catch {
+          finish();
+        }
       }),
     cancel: () => {
       // Cancelar no sube nada: una grabación descartada nunca existió.
+      finished = captured();
       try {
-        recorder.stop();
+        if (recorder.state !== 'inactive') recorder.stop();
       } catch {
         /* ya estaba detenido */
       }

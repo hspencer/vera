@@ -50,16 +50,12 @@ export const DEFAULT_TOKENS: DesignToken[] = [
   { name: '--node-fill', light: '#9aa0ab', dark: '#6d7480' },
   { name: '--link-stroke', light: '#d5d7d2', dark: '#333842' },
   { name: '--warm', light: '#ef7a1c', dark: '#ef7a1c' },
-  // Hablar: el botón de la barra en reposo, y el mismo botón mientras graba.
-  //
-  // Rojo el de reposo porque es el color con que se dice «grabar» desde antes de
-  // que existiera esta aplicación, y en un teléfono es el botón que hay que
-  // encontrar sin buscarlo. Verde el otro porque lo que hace falta ahí no es un
-  // aviso sino una confirmación: alguien está hablando y necesita saber que se
-  // le está oyendo. Rojo parpadeante habría dicho «atención», que es lo
-  // contrario de lo que uno quiere sentir mientras dicta.
+  // Grabando. El rojo se reserva para cuando la grabación está corriendo, que
+  // es lo que significa en toda grabadora desde antes de que existiera esta
+  // aplicación. En reposo el botón va perfilado: un rojo permanente deja de
+  // decir nada por costumbre, y entonces no queda color con que avisar el día
+  // que hace falta saber de un vistazo si se está oyendo.
   { name: '--voice', light: '#c0392b', dark: '#e05545' },
-  { name: '--voice-live', light: '#1f8b4c', dark: '#2fbb6a' },
   // Cuánto se agranda todo en una pantalla de teléfono.
   //
   // Un token y no un número en la hoja: la talla cómoda depende del aparato y de

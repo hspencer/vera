@@ -2325,10 +2325,32 @@ code {
 }
 
 /* Mientras se graba, el bloque es una sola línea: hay poco que decidir. */
+/*
+ * Grabando, el bloque mide lo que mide el reproductor.
+ *
+ * Crecía: más relleno, botones que se estiraban a lo alto y una fila que en un
+ * teléfono no cabía. El bloque saltaba de alto al empezar a grabar y volvía a
+ * saltar al terminar, y saltaba justo cuando alguien está hablando y mirando la
+ * pantalla para confirmar que se le oye.
+ *
+ * No hay interfaz nativa de grabación en ningún navegador —`<audio controls>` es
+ * un reproductor, y `MediaRecorder` no trae widget— así que lo más parecido a
+ * usar la del sistema es ocupar exactamente su sitio: misma altura, mismo aire,
+ * y el bloque no se mueve al pasar de grabar a poder oírse.
+ */
 .audio-block.recording {
   flex-direction: row;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
+  min-height: 2rem;
+  padding: 0.3rem 0.5rem;
+  /* Antes de estrujar los botones, la fila se desplaza. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.audio-block.recording::-webkit-scrollbar {
+  display: none;
 }
 
 .audio-dot {
@@ -2406,14 +2428,19 @@ code {
   gap: 0.4rem;
 }
 
+/* No se encogen ni parten su palabra: un botón que dice «dete\nner» no dice
+   nada. Antes de estrecharse, la fila que los lleva se desplaza. */
 .audio-action {
   font-family: var(--font-ui);
   font-size: 0.78rem;
+  line-height: 1.2;
   color: var(--text-dim);
   background: none;
   border: 1px solid var(--rule);
   border-radius: 4px;
-  padding: 0.3rem 0.7rem;
+  padding: 0.25rem 0.7rem;
+  flex: none;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -2623,38 +2650,42 @@ code {
 /* --- Hablar ---------------------------------------------------------------- */
 
 /*
- * El botón de hablar no se busca: se ve.
+ * El botón de hablar se ve sin gritar, y el rojo se reserva para grabar.
  *
- * Era un icono gris entre otros tres iconos grises. En un teléfono —donde
- * hablar es lo que más se va a hacer, y a menudo con una mano y andando— eso es
- * pedirle a alguien que lea una fila de dibujos para encontrar el que necesita.
- * Con fondo, es el único botón de color de la barra y se acierta sin mirar.
+ * Estuvo al revés —rojo en reposo, verde grabando— y era una inversión de la
+ * convención que todo el mundo trae aprendida: en cualquier grabadora el rojo
+ * significa «está corriendo», no «puedes empezar». Un botón rojo permanente
+ * además deja de decir nada por costumbre, que es justo lo contrario de lo que
+ * hace falta el día que uno necesita saber de un vistazo si se le está oyendo.
+ *
+ * En reposo va perfilado: se distingue de los iconos de al lado sin competir
+ * con el texto de la página.
+ *
+ * Se nombran `#controls` y el botón porque `#controls button` gana por
+ * especificidad a `#insert-voice` a secas.
  */
-/* `#controls button` gana por especificidad a `#insert-voice` a secas, y su
-   `background: none` dejaba este botón gris. Se nombran los dos. */
 #controls button#insert-voice {
-  background: var(--voice);
-  color: #fff;
-  border-color: transparent;
+  border-color: var(--rule);
   border-radius: 4px;
 }
 
 #controls button#insert-voice:hover {
-  /* Sin `color-mix` sobre el fondo: aclararlo lo acercaría al verde de grabar, y
-     esos dos estados no pueden parecerse. */
-  filter: brightness(1.12);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /*
- * Verde mientras se graba: la confirmación que faltaba.
+ * Rojo mientras se graba: la confirmación que faltaba.
  *
- * Sin esto no había forma de saber que había empezado —ni de saber que había
+ * Sin ella no había forma de saber que había empezado —ni de saber que había
  * terminado— y lo que uno hace entonces es repetirse, o callarse a media frase
  * para ir a comprobarlo. El pulso es lento a propósito: dice «sigo aquí», no
  * «pasa algo».
  */
 #controls button#insert-voice.live {
-  background: var(--voice-live);
+  background: var(--voice);
+  color: #fff;
+  border-color: transparent;
   animation: voice-pulse 2s ease-in-out infinite;
 }
 
