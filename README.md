@@ -1,10 +1,12 @@
-<p align="center">
+<p align="center" style='text-align:center'>
   <img src="packages/web/public/assets/vera_vera-logo.svg" width="128" alt="Logo de Vera">
+</p>
+<p align="center">
+  <strong style='font-size:180%; letter-spacing: .5ex'>VERA</strong><br>
+  <em style='font-size:120%; text-transform:capitalize'>versionable, editable, replicable, auditable.</em>
 </p>
 
 # Vera
-
-**Vera** — _versionable, editable, replicable y auditable_.
 
 Vera es una memoria personal soberana: un corpus versionado y distribuido,
 habitado por personas y agentes, con procedencia explícita y publicación
@@ -222,18 +224,49 @@ Un monorepo de npm workspaces, en TypeScript, sin paso de build fuera de la PWA:
 materialización y los índices derivados son reconstruibles. Nada fuera de
 `submitOperation()` escribe en ellas.
 
+### Los comandos
+
+Todo se puede hacer con npm; el `Makefile` está para no tener que recordar en
+qué orden.
+
 ```sh
 npm install
-npm run typecheck                    # tsc --noEmit, raíz y PWA
-npm test                             # 360 tests, node --test, sin build
-npm run spec                         # allium check specs/
-npm run import -- <ruta-al-grafo>    # ingesta de un grafo Logseq
-npm run build                        # la PWA a packages/web/dist
-npm run serve                        # http://localhost:4173
+
+make check                # typecheck + pruebas + allium check, sin publicar nada
+make dev                  # servidor y recompilación del cliente, juntos
+make build                # la PWA a packages/web/dist
+
+make start                # el servidor en segundo plano, y espera a que conteste
+make status               # ¿está en pie? ¿con qué corpus?
+make restart              # detener y volver a arrancar
+make stop
+
+make deploy m="qué cambió y por qué"
 ```
 
-El servidor sirve la PWA ya construida, así que `build` va antes de `serve`.
-Para desarrollo, `npm run dev --workspace @vera/web` levanta Vite aparte.
+Y los de npm, por si se prefieren directos:
+
+```sh
+npm run typecheck                    # tsc --noEmit, raíz y PWA
+npm test                             # node --test, sin build
+npm run spec                         # allium check specs/
+npm run import -- <ruta-al-grafo>    # ingesta de un grafo Logseq
+npm run serve                        # en primer plano, http://localhost:4173
+```
+
+**El servidor sirve la PWA ya construida**, así que `build` va antes de `serve`.
+Si `dist` se queda atrás de las fuentes, el servidor lo dice al arrancar.
+
+**Cuándo hay que reiniciar.** El cliente se recompila y el servidor lo relee
+solo. El dominio no: `@vera/core` y `@vera/store` se cargan al arrancar, así que
+un cambio en las reglas no llega a la instancia hasta que el proceso vuelve a
+nacer — y no avisa, porque la aplicación sigue respondiendo con las reglas
+viejas. Después de tocar `packages/core` o `packages/store`, `make restart`.
+
+**`make deploy`** comprueba, compila, commitea, empuja y —lo que importa—
+verifica que el servidor está sirviendo la huella recién compilada, que es la
+condición para que un aparato instalado la reciba. Se detiene al primer fallo:
+publicar algo que no compila es publicar un problema y taparlo con un commit.
 
 La cobertura de pruebas y, sobre todo, lo que **no** cubre está en
 [docs/test-obligations.md](docs/test-obligations.md).

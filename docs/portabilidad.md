@@ -224,8 +224,21 @@ El servidor sirve la PWA **ya construida**, así que `build` va antes de `serve`
 Si editas código del cliente y no reconstruyes, el navegador sigue con la versión
 vieja: el servidor te avisa al arrancar si `dist` quedó atrás de las fuentes.
 
-Para desarrollo, `npm run dev` levanta el servidor y un `vite build --watch`
-juntos, así el `dist` se rehace solo.
+Para desarrollo, `make dev` levanta el servidor y un `vite build --watch`
+juntos, así el `dist` se rehace solo. Para convivir con él —dejarlo corriendo y
+alcanzarlo desde el teléfono— están `make start`, `make status`, `make restart`
+y `make stop`, que lo llevan en segundo plano y dejan su registro en
+`.vera-server.log`.
+
+**Cuándo hay que reiniciar.** El cliente se recompila y el servidor lo relee
+solo; el dominio no. `@vera/core` y `@vera/store` se cargan al arrancar, así que
+un cambio en las reglas no llega hasta que el proceso vuelve a nacer, y no avisa:
+la aplicación sigue respondiendo con las reglas viejas. Tras tocar
+`packages/core` o `packages/store`, `make restart`.
+
+Y para publicar, `make deploy m="qué cambió"`: comprueba, compila, commitea,
+empuja y verifica que el servidor sirve la huella recién compilada — que es la
+condición para que un aparato instalado la reciba.
 
 Una instancia vacía es utilizable desde el primer momento: abre en el día de hoy
 y el día empieza a existir con lo primero que escribas. No hace falta importar
