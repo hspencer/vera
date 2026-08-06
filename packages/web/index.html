@@ -43,7 +43,15 @@
         <!-- La marca la dibuja icons.ts, para que el icono tenga una sola
              definición y no se separe del que usa el resto de la interfaz. El
              nombre sigue estando, en la etiqueta accesible y en el título. -->
-        <span id="brand" title="Vera" role="img" aria-label="Vera"></span>
+        <!--
+          La marca lleva al día de hoy.
+          Un logotipo que no hace nada es un adorno ocupando el sitio más
+          alcanzable de la barra, y en toda aplicación con marca arriba a la
+          izquierda esa marca lleva a casa. Aquí la casa es hoy: el sitio desde
+          donde se escribe sin haber decidido antes dónde. Con esto sobra el
+          calendario, que decía lo mismo con un icono más.
+        -->
+        <button id="brand" title="El día de hoy" aria-label="Ir al día de hoy"></button>
 
         <!--
           El switch de la vista, de tres posiciones y en el orden del espacio que
@@ -68,18 +76,18 @@
 
              Lo que encuentra no cuelga del campo sino de la barra, y por eso
              `#results` sale de aquí: ver más abajo. -->
+        <!--
+          En un teléfono el buscador se pliega en su lupa y se despliega encima
+          de la barra al pulsarla. Un campo vacío esperando ocupa media barra
+          para no decir nada; el icono ocupa lo que ocupa un botón, y el campo
+          aparece cuando hay algo que buscar. En pantalla ancha no hace falta:
+          allí el buscador cabe y estar visible es parte de lo que ofrece.
+        -->
+        <button id="search-open" aria-label="Buscar" title="Buscar en el grafo"></button>
+
         <div id="search-wrap">
           <input id="search" type="search" placeholder="buscar en el grafo" autocomplete="off" />
         </div>
-
-        <!--
-          Hoy, a la derecha del buscador.
-
-          Un calendario y no una casa: al otro lado del botón está el día en
-          curso, no una portada. Va aquí y no entre atrás y adelante porque no es
-          un paso del historial: es un salto a un sitio, como buscar.
-        -->
-        <button id="home" aria-label="Hoy" title="El día de hoy"></button>
 
         <div id="controls">
           <!-- El contenido de estos tres lo pone icons.ts. El texto accesible
@@ -90,7 +98,6 @@
             aria-label="Insertar voz"
             title="Hablar: lo grabado queda en el día de hoy"
           ></button>
-          <button id="scheme" aria-label="Claro u oscuro"></button>
           <button id="settings" aria-label="Ajustes" title="Ajustes de Vera"></button>
         </div>
 

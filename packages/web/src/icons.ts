@@ -32,6 +32,12 @@ const SHAPES = {
     '<line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>' +
     '<line x1="3" y1="10" x2="21" y2="10"/>',
 
+  // La lupa. En un teléfono el campo de búsqueda ocupa media barra para estar
+  // esperando; plegado en su icono, ocupa lo que ocupa un botón.
+  search:
+    '<circle cx="11" cy="11" r="7"/>' +
+    '<line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+
   settings:
     '<circle cx="12" cy="12" r="3"/>' +
     '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 ' +
@@ -59,8 +65,10 @@ const SHAPES = {
 
   x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
 
-  'more-horizontal':
-    '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  // Verticales y no horizontales: el menú cae hacia abajo, y tres puntos en
+  // columna dicen hacia dónde se abre lo que hay detrás.
+  'more-vertical':
+    '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>',
 
   eye:
     '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',

@@ -5,9 +5,10 @@
 
 import './styles.css';
 
-import { api, type PageSummary } from './api.ts';
-import { renderOutliner, speakInto } from './outliner.ts';
-import { today } from './autocomplete.ts';
+import { api, type PageSummary, type PageView } from './api.ts';
+import { renderOutliner, speakInto, type OutlinerCallbacks } from './outliner.ts';
+import { onRecording } from './audio-block.ts';
+import { isDay, today } from './autocomplete.ts';
 import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
 import { voice } from './voice.ts';
@@ -24,6 +25,7 @@ import {
   type GraphViewMode,
   type WorkspaceLayout,
 } from './tokens.ts';
+import { pagesOf, walked, type NavigationGesture, type TraceStep } from './trace.ts';
 
 const PHONE = 640;
 
@@ -35,7 +37,11 @@ interface Workspace {
   focusRoot: string | null;
   scheme: ColourScheme;
   divider: number;
-  history: string[];
+  /**
+   * El rastro: por dónde se ha pasado, y cómo. Llegadas y no páginas — ver
+   * trace.ts. @guarantee TheTraceRemembersHowAndNotOnlyWhere.
+   */
+  trace: TraceStep[];
   depth: number;
 }
 
@@ -46,7 +52,7 @@ const workspace: Workspace = {
   focusRoot: null,
   scheme: session.scheme(),
   divider: session.divider(),
-  history: [],
+  trace: [],
   depth: session.reach(),
 };
 
@@ -183,7 +189,8 @@ function drawMemory(host: HTMLElement): void {
       } else {
         item.addEventListener('click', () => {
           closeSettings();
-          void openPage(page.id);
+          // Del menú: se llegó de fuera, sin que nada de lo leído lo explique.
+          void openPage(page.id, null, { gesture: 'opened_directly' });
         });
       }
       special.append(item);
@@ -253,7 +260,7 @@ async function openToday(): Promise<void> {
   const date = today();
   const existing = dayPage(date);
   if (existing !== undefined) {
-    await openPage(existing.id);
+    await openPage(existing.id, null, { gesture: 'opened_directly' });
     return;
   }
   drawUnstartedDay(date);
@@ -341,7 +348,7 @@ async function startDay(date: string, content = ''): Promise<string | null> {
     notice(`no se pudo escribir en el día: ${block.reason}`);
     return null;
   }
-  await openPage(pageId, { block: block.subjectId, at: 0 });
+  await openPage(pageId, { block: block.subjectId, at: 0 }, { gesture: 'opened_directly' });
   return block.subjectId;
 }
 
@@ -349,12 +356,19 @@ async function startDay(date: string, content = ''): Promise<string | null> {
 // Navegación
 // ---------------------------------------------------------------------------
 
-const HISTORY = 50;
-
+/**
+ * Abre una página.
+ *
+ * `options.gesture` decide si esto es una navegación o un redibujado, y no hay
+ * valor por defecto a propósito. @invariant RedrawingAPageIsNotWalkingToIt:
+ * volver a dibujar la página en la que ya se está —porque se guardó algo, porque
+ * cambió el foco— no es navegar y no deja paso en el rastro. Sin gesto, no hay
+ * paso; con gesto, lo pone quien lo recibió y nadie lo deduce después.
+ */
 async function openPage(
   id: string,
   focus: { block: string; at: number } | null = null,
-  options: { fromUrl?: boolean; reveal?: string | null } = {},
+  options: { fromUrl?: boolean; reveal?: string | null; gesture?: NavigationGesture } = {},
 ): Promise<void> {
   let page;
   try {
@@ -365,6 +379,25 @@ async function openPage(
     notice(`No se pudo abrir la página: ${error instanceof Error ? error.message : 'error'}.`);
     return;
   }
+
+  // De dónde se venía, antes de que activePage deje de decirlo.
+  const from = workspace.activePage;
+
+  /*
+   * Redibujar la página en la que ya se está no debe mover la vista.
+   *
+   * Cada guardado, cada propiedad, cada plegado rehace `#text` entero —es lo
+   * correcto: el grafo es quien sabe cómo quedó el árbol— y rehacerlo pone el
+   * desplazamiento a cero. En una página corta se nota poco; en un diario leído
+   * de corrido devuelve al principio de la jornada de hoy desde donde fuera que
+   * se estuviera escribiendo, y hay que volver a bajar a mano cada vez.
+   *
+   * Sólo cuando es la misma página. Navegar a otra sí empieza arriba, que es
+   * donde empieza un texto que no se había leído.
+   */
+  const text = $('#text');
+  const staying = from === page.id;
+  const keptScroll = staying ? text.scrollTop : 0;
 
   // La identidad manda a partir de aquí: la URL pudo nombrarla por su título.
   workspace.activePage = page.id;
@@ -380,20 +413,167 @@ async function openPage(
     }
   }
 
-  // Volver a la misma página no la repite en el rastro, y el rastro no crece
-  // sin término durante una sesión larga.
-  if (workspace.history.at(-1) !== id) workspace.history.push(id);
-  if (workspace.history.length > HISTORY) workspace.history.splice(0, workspace.history.length - HISTORY);
+  // El rastro guarda llegadas, no páginas, y no deduplica: volver a un sitio por
+  // otro camino es una segunda llegada y dice algo. Ver trace.ts.
+  if (options.gesture !== undefined) {
+    workspace.trace = walked(workspace.trace, {
+      page: id,
+      from,
+      gesture: options.gesture,
+      at: Date.now(),
+    });
+  }
 
-  renderOutliner($('#text'), page, {
-    onNavigate: (title) => void openTitle(title),
-    onOpen: (target) => void openPage(target),
+  renderOutliner(text, page, callbacksFor(page), focus, workspace.focusRoot);
+
+  // Un día no se lee solo: se sigue leyendo hacia atrás. Ver `continueBackwards`.
+  if (isDay(page.title) && workspace.focusRoot === null) {
+    continueBackwards(page.title, staying ? keptScroll : 0);
+  } else if (staying && focus === null) {
+    // Con bloque enfocado no se toca: el propio outliner lo trae a la vista, y
+    // eso es más preciso que devolver un número de píxeles.
+    text.scrollTop = keptScroll;
+  }
+
+  if (!isPhone() && workspace.layout !== 'text_only') void drawGraph();
+}
+
+/**
+ * La bitácora se lee de corrido, no día por día.
+ *
+ * Un día no es un documento: es un tramo de algo que sigue. Abrir el martes y
+ * tener que volver, buscar el lunes y abrirlo convierte en tres gestos lo que en
+ * un cuaderno es bajar la vista, y rompe justo lo que un diario tiene de útil,
+ * que es la continuidad. Debajo del día abierto se van montando los anteriores a
+ * medida que se llega a ellos.
+ *
+ * Hacia atrás y no hacia delante porque el futuro no está escrito: bajar es ir
+ * hacia lo que ya pasó, que es el único sitio donde hay algo que leer.
+ *
+ * Sólo los días que existen. Un día sin nada escrito no es una jornada en
+ * blanco que haya que mostrar: es un día en el que no pasó nada digno de
+ * escribirse, y dibujarlo sería llenar el desplazamiento de vacío.
+ *
+ * La dirección no cambia al bajar. Lo que se abrió es el día que se pidió; lo de
+ * abajo es contexto que se alcanzó leyendo, y reescribir la URL por desplazarse
+ * dejaría el botón de atrás contando pasos que nadie dio.
+ */
+/**
+ * Hasta qué día se había llegado leyendo hacia atrás.
+ *
+ * Se recuerda porque redibujar la página rehace `#text` entero y se lleva los
+ * tramos por delante. Sin esto, guardar un bloque del martes en un diario donde
+ * se había bajado hasta la semana pasada devolvía la columna a un solo día:
+ * conservar el desplazamiento no habría servido de nada, porque ya no había
+ * dónde desplazarse.
+ */
+let journalDepth = 0;
+
+/** El oyente del desplazamiento en curso, para no apilar uno por redibujado. */
+let journalPull: (() => void) | null = null;
+
+function continueBackwards(from: string, keptScroll: number): void {
+  const text = $('#text');
+
+  if (journalPull !== null) {
+    text.removeEventListener('scroll', journalPull);
+    journalPull = null;
+  }
+
+  // Los días que hay, del más reciente al más antiguo. `YYYY-MM-DD` ordena igual
+  // como texto que como fecha, así que no hace falta interpretarlo.
+  const days = pages
+    .filter((candidate) => isDay(candidate.title))
+    .sort((a, b) => b.title.localeCompare(a.title));
+
+  const here = days.findIndex((candidate) => candidate.title === from);
+  let next = here + 1;
+
+  // Reponer sólo si se estaba en esta misma página. Llegar de nuevo a un día
+  // —desde el mapa, desde un enlace— es empezar a leerlo, no continuar.
+  const refill = keptScroll > 0 ? journalDepth : 0;
+  journalDepth = 0;
+
+  let settled = refill === 0;
+  const settle = (): void => {
+    if (settled) return;
+    settled = true;
+    text.scrollTop = keptScroll;
+  };
+
+  if (here < 0 || next >= days.length) {
+    text.scrollTop = keptScroll;
+    return;
+  }
+
+  const CERCA = 600;
+  let loading = false;
+
+  const pull = (): void => {
+    if (loading || next >= days.length) return;
+    // Mientras queden tramos por reponer se tira sin mirar la distancia al
+    // fondo: la vista todavía no está donde debe, así que medirla no diría nada.
+    const reponiendo = journalDepth < refill;
+    if (!reponiendo && text.scrollHeight - text.scrollTop - text.clientHeight > CERCA) return;
+
+    const day = days[next];
+    next += 1;
+    if (day === undefined) return;
+    loading = true;
+
+    void api
+      .page(day.id)
+      .then((older) => {
+        const slice = document.createElement('section');
+        slice.className = 'day-slice';
+        // Cada tramo se dibuja con el mismo outliner que el día de arriba: se
+        // edita igual, se pliega igual y habla con las mismas teclas. Un diario
+        // que sólo se pudiera leer hacia atrás sería un archivo, no un cuaderno.
+        renderOutliner(slice, older, callbacksFor(older), null, null);
+        text.append(slice);
+        journalDepth += 1;
+        if (journalDepth >= refill) settle();
+      })
+      .catch(() => {
+        // Sin red se deja de tirar del hilo y lo ya leído se queda: insistir
+        // contra un servidor que no está sólo llenaría la consola.
+        next = days.length;
+        settle();
+      })
+      .finally(() => {
+        loading = false;
+        // Encadena: si el tramo recién puesto tampoco llena la pantalla, sigue.
+        pull();
+      });
+  };
+
+  journalPull = pull;
+  text.addEventListener('scroll', pull, { passive: true });
+  pull();
+}
+
+/**
+ * Lo que el outliner puede pedirle al espacio de trabajo, para una página dada.
+ *
+ * Era un literal dentro de `openPage`, y sirvió mientras se dibujaba una página
+ * por vez. La lectura continua monta varios días en la misma pantalla y cada uno
+ * necesita los suyos: algunos cierran sobre la página —hablar en un bloque
+ * necesita saber de cuál es hijo— y compartirlos habría hecho que escribir en el
+ * día de abajo creara bloques en el de arriba.
+ */
+function callbacksFor(page: PageView): OutlinerCallbacks {
+  return {
+    // Pulsar el nombre de otra página dentro del texto que se lee.
+    onNavigate: (title) => void openTitle(title, 'followed_reference'),
+    onOpen: (target, gesture) => void openPage(target, null, { gesture }),
     onChanged: () => void refreshGraph(),
     // @invariant ReferenceResolvesToItsBlock: seguir una referencia deja al
     // participante en el bloque que nombra, no sólo en su página. Llegar a una
     // página de cien bloques y tener que buscarlo no es haberla seguido.
     onOpenBlock: (target, block) => {
-      void openPage(target, null, { reveal: block }).then(() => revealBlock(block));
+      void openPage(target, null, { reveal: block, gesture: 'followed_reference' }).then(() =>
+        revealBlock(block),
+      );
     },
     // Un cambio estructural rehace la página desde el grafo y devuelve el cursor
     // donde el modelo dice que quedó. Parchear el árbol dibujado en vez de
@@ -443,9 +623,7 @@ async function openPage(
       speakInto(place);
       if (workspace.activePage !== null) await openPage(workspace.activePage);
     },
-  }, focus, workspace.focusRoot);
-
-  if (!isPhone() && workspace.layout !== 'text_only') void drawGraph();
+  };
 }
 
 /**
@@ -472,7 +650,9 @@ async function applyRoute(): Promise<void> {
   }
 
   workspace.focusRoot = route.focus;
-  await openPage(route.page, null, { fromUrl: true });
+  // Una dirección pegada, un enlace de fuera o el botón de atrás. Vera no puede
+  // distinguirlos y no los distingue: los tres son llegar sin venir de dentro.
+  await openPage(route.page, null, { fromUrl: true, gesture: 'opened_directly' });
   if (route.block !== null) revealBlock(route.block);
 }
 
@@ -500,20 +680,65 @@ function notice(message: string): void {
   text.prepend(paragraph);
 }
 
+/**
+ * El índice de títulos que la sesión lleva en memoria.
+ *
+ * Ordenado por conectividad y no por tamaño: la página más grande del corpus es
+ * una transcripción sin un solo enlace, y abrirla de entrada mostraría un mapa
+ * vacío. Se vuelve a pedir cuando nace una página, o el autocompletado seguiría
+ * sin conocerla el resto de la sesión.
+ */
+async function loadPages(): Promise<void> {
+  pages = (await api.pages()).sort(
+    (a, b) => b.linkCount - a.linkCount || b.blockCount - a.blockCount,
+  );
+}
+
 /** Abrir por título es lo que hace un [[enlace]]. */
-async function openTitle(title: string): Promise<void> {
+async function openTitle(title: string, gesture: NavigationGesture): Promise<void> {
   const found = pages.find((page) => page.title.toLowerCase() === title.toLowerCase());
-  if (found === undefined) {
-    // La página no existe todavía: se dice, no se inventa.
-    notice(`«${title}» aún no existe. La referencia queda esperando.`);
+  if (found !== undefined) {
+    await openPage(found.id, null, { gesture });
     return;
   }
-  await openPage(found.id);
+
+  /*
+   * Un enlace a una página que no existe la crea al pulsarlo.
+   *
+   * Antes se avisaba —«aún no existe, la referencia queda esperando»— y ahí
+   * moría: para escribir sobre eso había que ir a crear la página por otro
+   * camino, con su título escrito otra vez a mano y sin que nada la conectara
+   * con el enlace que la nombró. El enlace quedaba esperando para siempre,
+   * porque nadie completa a mano lo que ya había dicho al escribirlo.
+   *
+   * Escribir `[[algo]]` es nombrar algo que existe en la cabeza de quien
+   * escribe; pulsarlo es ir a ello. No hay ambigüedad que proteger: nace vacía
+   * y privada, y una página vacía no afirma nada. Que se cree al seguirla y no
+   * al escribirla sí importa —el texto se corrige, y un enlace tecleado por
+   * error no debe dejar rastro— pero pulsar es haber decidido.
+   */
+  let created;
+  try {
+    created = await api.submit({ kind: 'create_page', title, visibility: 'private' });
+  } catch {
+    notice(`no se pudo crear «${title}»: sin conexión con el servidor`);
+    return;
+  }
+
+  if (created.status === 'rejected') {
+    notice(`no se pudo crear «${title}»: ${created.reason}`);
+    return;
+  }
+
+  // El índice de títulos vive en memoria y lo usa el autocompletado: sin esto,
+  // la página recién creada seguiría sin existir para el resto de la sesión.
+  await loadPages();
+  await openPage(created.subjectId, null, { gesture });
 }
 
 /*
  * El rastro ya no se dibuja en la barra: al lado de la marca era un texto que
- * repetía el título que la página ya tiene debajo. `workspace.history` se sigue
+ * repetía el título que la página ya tiene debajo. `workspace.trace` se sigue
  * llevando, porque el rastro vuelve —como nav-pills en el panel del mapa, donde
  * pertenece: el mapa es donde uno se ubica.
  */
@@ -565,14 +790,17 @@ async function drawGraph(): Promise<void> {
   const onClick = (id: string): void => {
     // @invariant GraphNodeOpensTextPage: en un teléfono, tocar un nodo abre su
     // página y cambia a la vista de texto.
-    void openPage(id).then(() => {
+    void openPage(id, null, { gesture: 'pressed_on_the_map' }).then(() => {
       if (isPhone()) setLayout('text_only');
     });
   };
 
   const settings = {
     dark: workspace.scheme === 'dark',
-    history: workspace.history,
+    // El mapa colorea por dónde se ha pasado, y para eso le basta la lista de
+    // páginas. El rastro guarda llegadas —con su gesto y de dónde se venía—,
+    // que es más de lo que el mapa necesita y menos de lo que sabría usar.
+    history: pagesOf(workspace.trace),
     showEdges: true,
     showTitles: true,
     // El nodo es su nombre. @guarantee GraphNodesAreTheirNames: un círculo al
@@ -600,7 +828,7 @@ async function drawGraph(): Promise<void> {
  *
  * Vive en el mapa y no en la barra porque el mapa es la superficie de saber
  * dónde está uno: el rastro es una respuesta a esa misma pregunta.
- * @guarantee TheTrailIsWhereOneIsLocated.
+ * @guarantee TheTraceIsWhereOneIsLocated.
  */
 function drawTrail(): void {
   const trail = $('#map-trail');
@@ -609,7 +837,8 @@ function drawTrail(): void {
   // dos veces en el rastro.
   const seen = new Set<string>();
   const recent: string[] = [];
-  for (const id of [...workspace.history].reverse()) {
+  // `pagesOf` ya devuelve una lista nueva, así que invertirla no toca el rastro.
+  for (const id of pagesOf(workspace.trace).reverse()) {
     if (seen.has(id)) continue;
     seen.add(id);
     recent.push(id);
@@ -689,7 +918,7 @@ function wireSearch(): void {
         item.addEventListener('click', () => {
           close();
           input.value = '';
-          void openPage(hit.page);
+          void openPage(hit.page, null, { gesture: 'searched' });
         });
         results.append(item);
       }
@@ -723,6 +952,7 @@ function wireTheme(): void {
   // La marca y el micrófono no cambian nunca, así que se dibujan una vez.
   $('#brand').innerHTML = brandMark();
   $('#insert-voice').innerHTML = icon('mic');
+  $('#search-open').innerHTML = icon('search');
   $('#settings').innerHTML = icon('settings');
 
   // Atrás y adelante son los del navegador, no un rastro propio: cada documento
@@ -735,10 +965,9 @@ function wireTheme(): void {
   // que se lee una vez —el día ya está en el título de la página que se abre— y
   // obligaba además a un temporizador para que no mintiera pasada la medianoche.
   // El icono no puede quedar viejo: nombra el destino, no lo enseña.
-  $('#home').innerHTML = icon('calendar');
   $('#back').addEventListener('click', () => window.history.back());
   $('#forward').addEventListener('click', () => window.history.forward());
-  $('#home').addEventListener('click', () => void openToday());
+  $('#brand').addEventListener('click', () => void openToday());
 
   /*
    * El ojo abre y cierra el panel de controles del mapa.
@@ -818,28 +1047,6 @@ function wireTheme(): void {
     if (shape !== undefined) button.innerHTML = icon(shape);
   }
 
-  // El botón muestra a dónde lleva, no dónde se está: con el tema oscuro
-  // puesto ofrece el sol, que es lo que se obtiene al pulsarlo.
-  const scheme = $('#scheme');
-  const drawScheme = (): void => {
-    const toLight = workspace.scheme === 'dark';
-    scheme.innerHTML = icon(toLight ? 'sun' : 'moon');
-    scheme.title = toLight ? 'Pasar al tema claro' : 'Pasar al tema oscuro';
-  };
-  drawScheme();
-
-  scheme.addEventListener('click', () => {
-    workspace.scheme = workspace.scheme === 'dark' ? 'light' : 'dark';
-    session.setScheme(workspace.scheme);
-    applyTokens(tokens, workspace.scheme);
-    drawScheme();
-    void refreshGraph();
-    // El texto sigue al tema por variables CSS, pero un diagrama Mermaid ya
-    // está dibujado con los colores del tema anterior y no puede repintarse:
-    // hay que volver a dibujarlo.
-    if (workspace.activePage !== null) void openPage(workspace.activePage);
-  });
-
   // La configuración vive en su propia superficie, no en un panel suelto: son
   // varias secciones y van a ser más.
   const panel = $('#tokens');
@@ -850,6 +1057,18 @@ function wireTheme(): void {
     renderSettings(panel, tokens, section, {
       drawMemory,
       scheme: () => workspace.scheme,
+      onScheme: (next) => {
+        if (next === workspace.scheme) return;
+        workspace.scheme = next;
+        session.setScheme(next);
+        applyTokens(tokens, next);
+        void refreshGraph();
+        // Se redibuja la página: el texto sigue al tema por variables CSS, pero
+        // un diagrama Mermaid ya está pintado con los colores del anterior y no
+        // puede repintarse solo.
+        if (workspace.activePage !== null) void openPage(workspace.activePage);
+        openSettings();
+      },
       onTokenChange: (token, value) => {
         // Cada token guarda su valor por esquema, así que editar el oscuro no
         // puede pisar el claro.
@@ -887,6 +1106,45 @@ function wireTheme(): void {
    * En un teléfono es la razón de ser de la aplicación: se saca del bolsillo, se
    * habla, y lo dicho ya está en el día que le corresponde.
    */
+  /*
+   * El buscador plegado, en un teléfono.
+   *
+   * Se despliega al pulsar la lupa y se recoge al terminar. «Terminar» es
+   * cerrarlo con Escape o salir de él sin haber escrito nada: si hay texto
+   * escrito se queda abierto, porque recoger un buscador con una búsqueda dentro
+   * sería esconder lo que alguien acaba de pedir.
+   *
+   * La clase va en la barra y no en el campo: lo que cambia es la barra entera
+   * —el campo pasa a ocuparla— y el CSS de una pantalla ancha la ignora, donde
+   * el buscador está siempre a la vista porque ahí sí cabe.
+   */
+  const bar = $('#bar');
+  const search = $<HTMLInputElement>('#search');
+
+  const openSearch = (): void => {
+    bar.classList.add('searching');
+    search.focus();
+  };
+  const closeSearch = (): void => {
+    if (search.value !== '') return;
+    bar.classList.remove('searching');
+  };
+
+  $('#search-open').addEventListener('click', () => {
+    if (bar.classList.contains('searching')) closeSearch();
+    else openSearch();
+  });
+  search.addEventListener('blur', () => window.setTimeout(closeSearch, 120));
+  search.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    // El propio buscador ya vacía el campo con Escape; esto recoge lo que queda.
+    window.setTimeout(() => bar.classList.remove('searching'), 0);
+  });
+
+  // La barra dice si se está grabando. Ver `onRecording` en audio-block.ts: el
+  // estado lo lleva quien lo conoce, y aquí sólo se pinta.
+  onRecording((on) => $('#insert-voice').classList.toggle('live', on));
+
   $('#insert-voice').addEventListener('click', () => {
     void (async () => {
       const block = await startDay(today());
@@ -999,12 +1257,7 @@ async function start(): Promise<void> {
   // Memoria y se pinta cuando alguien lo abre.
   corpus = await api.health();
 
-  // Ordenadas por conectividad y no por tamaño: la página más grande del
-  // corpus es una transcripción sin un solo enlace, y abrirla de entrada
-  // mostraría un mapa vacío.
-  pages = (await api.pages()).sort(
-    (a, b) => b.linkCount - a.linkCount || b.blockCount - a.blockCount,
-  );
+  await loadPages();
 
   applyLayout();
   await applyRoute();
@@ -1155,4 +1408,22 @@ if (running != null) {
 
   document.addEventListener('visibilitychange', () => void compareBuild());
   window.addEventListener('focus', () => void compareBuild());
+
+  /*
+   * Y además cada tanto, porque hay ventanas que nunca hacen ninguna de las dos
+   * cosas.
+   *
+   * Volver al frente y recibir el foco son transiciones: sirven para quien deja
+   * Vera y vuelve. No sirven para una Vera instalada que se queda abierta en una
+   * segunda pantalla, visible y enfocada durante días — no pierde la visibilidad
+   * porque se ve, ni recupera el foco porque nunca lo perdió, así que no había
+   * nada que la hiciera preguntar y se quedaba con la versión del día que se
+   * abrió. Es exactamente el caso que este mecanismo existe para resolver.
+   *
+   * Un cuarto de hora entre preguntas: la respuesta son siete kilobytes contra
+   * el servidor de uno mismo. La comprobación se abstiene sola si la ventana no
+   * está a la vista, así que una dejada de fondo no pregunta nada.
+   */
+  const CADA = 15 * 60 * 1000;
+  window.setInterval(() => void compareBuild(), CADA);
 }

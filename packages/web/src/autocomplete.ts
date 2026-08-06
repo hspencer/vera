@@ -126,6 +126,18 @@ export function today(): string {
   return calendarDate(new Date());
 }
 
+/**
+ * Si un título nombra un día.
+ *
+ * @invariant ADayIsNamedByItsDate, de daily-log.allium: el título de un día es
+ * su fecha y nada más — no es una etiqueta puesta sobre el día, es su identidad.
+ * Por eso la pregunta se contesta mirando el título y no una propiedad: una
+ * página titulada como una fecha es un día, la haya hecho quien la haya hecho.
+ */
+export function isDay(title: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(title);
+}
+
 /** `YYYY-MM-DD` en horario local, que es como se titula un día. */
 export function calendarDate(date: Date): string {
   const pad = (n: number): string => String(n).padStart(2, '0');

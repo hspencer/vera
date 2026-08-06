@@ -394,30 +394,133 @@ export function renderGraph3D(
   container.addEventListener("pointerdown", noteInteraction);
   container.addEventListener("wheel", noteInteraction, { passive: true });
 
+  /**
+   * Cuánto sitio se deja alrededor del grafo al encuadrarlo.
+   *
+   * Más que 1 porque el radio se mide entre centros de nodo, y en este mapa el
+   * nodo *es* su nombre: la palabra sobresale bastante más allá del punto que se
+   * midió. Sin margen, los nombres del borde quedan cortados por el canto.
+   */
+  const MARGEN = 1.35;
+
+  /*
+   * Encuadrar el grafo entero, calculando la cámara en vez de pedírsela a la
+   * librería.
+   *
+   * Aquí estaba `zoomToFit`, y hace lo que dice sólo cuando la cámara ya mira
+   * desde donde debe. Medido en esta escena —23 nodos, unas 50 unidades de
+   * lado— dejaba la cámara a z=1.9 mirando a z=-998: dentro del cúmulo y con el
+   * objetivo de la órbita mil unidades detrás del grafo, así que los nombres se
+   * apilaban unos sobre otros y no había forma de salir de ahí. Sin llamarlo, la
+   * cámara se quedaba en el z=1000 con que nace la librería, veinte veces más
+   * lejos de lo que este grafo necesita: una mancha ilegible en una esquina.
+   * Fallaba en las dos direcciones, y de ahí vienen los tres intentos que este
+   * archivo lleva encima.
+   *
+   * La caja del grafo la sabemos nosotros: son las posiciones de los nodos. Con
+   * su centro, su radio y el campo de visión de la cámara, la distancia es una
+   * cuenta de trigonometría que no depende del estado interno de nadie. Se toma
+   * el menor de los dos semiángulos —vertical y horizontal— porque el panel del
+   * mapa suele ser más alto que ancho, y encuadrar sólo en vertical dejaría el
+   * grafo desbordando por los lados.
+   */
   const fit = (): void => {
     // Encuadrar por encima de la mano del usuario sería quitarle el grafo.
     if (moved || heldCamera !== null) return;
-    graph.cameraPosition({ x: 0, y: 0, z: 400 }, { x: 0, y: 0, z: 0 }, 0);
-    // El reencuadre va en el turno siguiente: pedido de inmediato, zoomToFit
-    // calcula la dirección con la posición anterior de la cámara, y si esa
-    // quedó dentro del cúmulo el encuadre no sale de ahí.
-    activeTimers.push(
-      setTimeout(() => {
-        if (!moved) graph.zoomToFit(400, 60);
-      }, 80),
-    );
+
+    const nodes = (graph.graphData() as { nodes: { x?: number; y?: number; z?: number }[] }).nodes
+      .filter((n) => Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z));
+    // Antes de la primera vuelta de simulación los nodos no tienen posición, y
+    // encuadrar la nada pondría la cámara en cualquier parte.
+    if (nodes.length === 0) return;
+
+    const centre = { x: 0, y: 0, z: 0 };
+    for (const node of nodes) {
+      centre.x += node.x ?? 0;
+      centre.y += node.y ?? 0;
+      centre.z += node.z ?? 0;
+    }
+    centre.x /= nodes.length;
+    centre.y /= nodes.length;
+    centre.z /= nodes.length;
+
+    let radius = 0;
+    for (const node of nodes) {
+      const d = Math.hypot((node.x ?? 0) - centre.x, (node.y ?? 0) - centre.y, (node.z ?? 0) - centre.z);
+      if (d > radius) radius = d;
+    }
+    // Un solo nodo tiene radio cero, y dividir por su seno daría infinito.
+    if (radius === 0) radius = 1;
+
+    const camera = graph.camera() as { fov?: number };
+    const halfV = (((camera.fov ?? 50) * Math.PI) / 180) / 2;
+    const halfH = Math.atan(Math.tan(halfV) * (graph.width() / graph.height()));
+    const half = Math.min(halfV, halfH);
+    // El `+ radius` es para no meterse dentro de la esfera que se quiere ver.
+    const distance = (radius / Math.sin(half)) * MARGEN + radius;
+
+    graph.cameraPosition({ x: centre.x, y: centre.y, z: centre.z + distance }, centre, 0);
   };
 
-  // Un único encuadre, cuando la simulación se detiene y el grafo ya tiene su
-  // tamaño definitivo. Encuadrar antes no es adelantar el resultado: mientras
-  // los nodos siguen encimados, el encuadre acerca la cámara al centro del
-  // cúmulo y ahí se queda hasta que la simulación termina.
+  /*
+   * Encuadrar cuando el grafo deja de moverse, mirándolo en vez de que nos
+   * avisen.
+   *
+   * Esto colgaba de `onEngineStop`, que es lo que la librería ofrece para
+   * decirte que la simulación terminó. Medido: no llega nunca. Ni al cargar, ni
+   * al cambiar de dimensión, ni forzando `d3ReheatSimulation()` y esperando
+   * diecisiete segundos con un `cooldownTime` de quince mil. Los nodos sí se
+   * quedan quietos —la simulación termina de verdad— pero el aviso no sale, así
+   * que el encuadre no ocurría y la cámara se quedaba en el z=1000 con que nace
+   * la librería: para un grafo de cincuenta unidades de lado, veinte veces
+   * demasiado lejos. Eso es el mapa que se veía como una mancha ilegible.
+   *
+   * Esperar un aviso que no llega no tiene arreglo desde aquí. Mirar si el grafo
+   * todavía se mueve, sí: se mide su radio cada poco, y cuando dos medidas
+   * seguidas son iguales el grafo ya tiene su tamaño definitivo. Es la misma
+   * pregunta que el evento pretendía contestar, hecha directamente.
+   *
+   * El tope existe para un grafo que nunca se aquiete: más vale un encuadre
+   * aproximado que ninguno.
+   */
   activeTimers = [];
-  graph.onEngineStop(() => {
+  /*
+   * El encuadre acompaña al grafo mientras se acomoda, en vez de adivinar
+   * cuándo terminó.
+   *
+   * Intenté detectar el reposo comparando el tamaño entre dos medidas, y falla
+   * por donde no se ve: al empezar, todos los nodos están casi encima del
+   * origen, así que dos medidas seguidas salen iguales y el grafo parece quieto
+   * cuando aún no ha empezado a separarse. Cualquier umbral que evite ese falso
+   * positivo llega tarde en un grafo grande, y cualquiera que llegue a tiempo lo
+   * provoca en uno pequeño.
+   *
+   * Encuadrar en cada vuelta quita la adivinanza: la cámara sigue al grafo
+   * mientras crece y la última vuelta lo deja bien encuadrado, sea cual sea el
+   * tiempo que tardó. Se paran en cuanto una mano toca el mapa.
+   *
+   * La ventana cubre la vida del motor —`cooldownTime` son quince segundos— y no
+   * menos: con seis, el grafo seguía acomodándose después del último encuadre y
+   * la vista quedaba holgada de nuevo. Ochenta cuentas de trigonometría no le
+   * cuestan nada a nadie.
+   */
+  const FOLLOW_MS = 200;
+  const FOLLOW_LOOKS = 85;
+
+  let looks = 0;
+  const follow = (): void => {
+    // Encuadrar por encima de la mano del usuario sería quitarle el grafo.
+    if (moved || heldCamera !== null) return;
     fit();
-    // Y si ya había una cámara, se vuelve a ella: cada repintado reencuadraba
-    // desde el origen, así que abrir una página desde el mapa devolvía la vista
-    // al principio justo cuando uno acababa de llegar a alguna parte.
+    looks += 1;
+    if (looks < FOLLOW_LOOKS) activeTimers.push(setTimeout(follow, FOLLOW_MS));
+  };
+  activeTimers.push(setTimeout(follow, FOLLOW_MS));
+
+  // Y si ya había una cámara, se vuelve a ella: cada repintado reencuadraba
+  // desde el origen, así que abrir una página desde el mapa devolvía la vista al
+  // principio justo cuando uno acababa de llegar a alguna parte.
+  graph.onEngineStop(() => {
     if (heldCamera !== null) {
       graph.cameraPosition(heldCamera.position, heldCamera.lookAt, 0);
     }

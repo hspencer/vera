@@ -21,6 +21,7 @@ import {
   actionOf,
   completionFor,
   detectTrigger,
+  isDay,
   matchingCommands,
   queryOf,
   today,
@@ -32,6 +33,7 @@ import {
   type AudioBlockHandlers,
 } from './audio-block.ts';
 import { audioUrl, voice, type Recording } from './voice.ts';
+import { type NavigationGesture } from './trace.ts';
 import {
   resolveArrow,
   resolveBackspaceAtStart,
@@ -44,7 +46,14 @@ import {
 
 export interface OutlinerCallbacks {
   onNavigate(title: string): void;
-  onOpen(page: string): void;
+  /**
+   * Abrir otra página, diciendo por qué gesto.
+   *
+   * El gesto lo nombra quien lo recibió —este módulo, que sabe si se pulsó un
+   * backlink o un resultado de búsqueda— y no quien navega, que ya no puede
+   * saberlo. @invariant TheGestureIsObservedAndNeverInferred.
+   */
+  onOpen(page: string, gesture: NavigationGesture): void;
   onChanged(): void;
   /** Seguir una referencia hasta el bloque que nombra. */
   onOpenBlock?(page: string, block: string): void;
@@ -272,7 +281,22 @@ async function removeBlock(
     return;
   }
 
+  /*
+   * Se vuelve a dibujar la página, no se recorta la fila.
+   *
+   * Quitaba el `<div>` del DOM y ya. Con eso basta mientras quede algo, pero si
+   * el bloque era el último la página quedaba literalmente muerta: una lista
+   * vacía, sin nada donde pulsar, sin forma de volver a escribir. El sitio donde
+   * una página vacía ofrece dónde empezar vive dentro del dibujo, y recortando a
+   * mano no se pasaba nunca por ahí — recargar la página lo arreglaba, que es
+   * tanto como no tener arreglo.
+   *
+   * Redibujar cuesta una petición y hace que borrar termine en el mismo estado
+   * al que se llega abriendo la página. Un atajo que produce un estado que el
+   * dibujo no sabe producir es un atajo que va a divergir.
+   */
   row.remove();
+  callbacks.onReload(null);
   callbacks.onChanged();
 }
 
@@ -525,7 +549,9 @@ async function createPage(callbacks: OutlinerCallbacks): Promise<void> {
     toast(`rechazado: ${result.reason}`);
     return;
   }
-  callbacks.onOpen(result.subjectId);
+  // Una página recién creada desde el buscador de la barra: se llegó a por
+  // ella, no siguiendo nada de lo que se estaba leyendo.
+  callbacks.onOpen(result.subjectId, 'searched');
 }
 
 /** El Markdown de la página, pedido al servidor para que sea el mismo que git recibiría. */
@@ -833,22 +859,34 @@ export function renderOutliner(
   const header = document.createElement('header');
   header.className = 'page-header';
 
-  // El título es contenido, así que se edita como contenido. Renombrar una
-  // página es una operación como cualquier otra.
+  const day = isDay(page.title);
+
+  /*
+   * El título es contenido y se edita como contenido — salvo el de un día.
+   *
+   * @invariant ADayIsNamedByItsDate: el título de un día no es una etiqueta
+   * puesta sobre él, es su identidad. Renombrarlo movería un testimonio a una
+   * fecha en la que no ocurrió, y lo escrito el martes pasaría a decir que pasó
+   * el jueves. Aquí se podía: el campo se abría igual que en cualquier otra
+   * página, y el dominio habría aceptado el `rename_page` sin saber que estaba
+   * mintiendo sobre cuándo pasaron las cosas.
+   */
   const title = document.createElement('h1');
-  title.className = 'page-title';
+  title.className = day ? 'page-title day' : 'page-title';
   title.textContent = page.title;
-  title.tabIndex = 0;
-  title.title = 'renombrar la página';
-  title.addEventListener('click', () => {
-    editInPlace(title, page.title, 'el título de la página', async (next) => {
-      if (next.trim() === '' || next === page.title) return true;
-      return submitAndReload(
-        { kind: 'rename_page', page: page.id, title: next.trim() },
-        callbacks,
-      );
+  if (!day) {
+    title.tabIndex = 0;
+    title.title = 'renombrar la página';
+    title.addEventListener('click', () => {
+      editInPlace(title, page.title, 'el título de la página', async (next) => {
+        if (next.trim() === '' || next === page.title) return true;
+        return submitAndReload(
+          { kind: 'rename_page', page: page.id, title: next.trim() },
+          callbacks,
+        );
+      });
     });
-  });
+  }
   header.append(title);
 
   // El front matter no es decoración: son propiedades del grafo, y se editan.
@@ -902,7 +940,10 @@ export function renderOutliner(
     );
   });
   visibilityValue.append(badge);
-  properties.append(visibilityKey, visibilityValue);
+  // En un día tampoco va el interruptor: publicar una jornada entera no es un
+  // gesto que se ofrezca de paso, y repetido sobre cada fecha de la lectura
+  // continua sería la fila más ruidosa de todas.
+  if (!day) properties.append(visibilityKey, visibilityValue);
 
   // La `public::` heredada de Logseq no se dibuja: la fila de arriba dice lo
   // mismo y además manda. Sigue en el corpus hasta que se adopte, y adoptarla
@@ -1045,7 +1086,24 @@ export function renderOutliner(
     });
   });
 
-  header.append(properties, add);
+  /*
+   * Un día no lleva front matter: lleva su fecha.
+   *
+   * En una página el front matter dice de qué trata y cómo se publica, y eso hay
+   * que poder contestarlo. Un día no trata de nada: es cuándo. Su fecha ya lo
+   * dice entero, y `public` y `+ propiedad` repetidos encima de cada jornada son
+   * ruido que separa lo escrito el martes de lo escrito el miércoles —
+   * justamente lo que la lectura continua junta.
+   *
+   * Lo que el día traiga escrito sí se dibuja: esconderlo sería esconder algo
+   * que alguien puso, y una propiedad de un día es contenido como cualquier
+   * otro. Lo que se retira es el aparato para poner más, no lo puesto.
+   */
+  if (!day) {
+    header.append(properties, add);
+  } else if (written.length > 0) {
+    header.append(properties);
+  }
 
   /*
    * Lo que se puede hacer con la página entera, en un menú.
@@ -1062,7 +1120,7 @@ export function renderOutliner(
   more.setAttribute('aria-label', 'Más de esta página');
   more.setAttribute('aria-haspopup', 'menu');
   more.title = 'Más de esta página';
-  more.innerHTML = icon('more-horizontal');
+  more.innerHTML = icon('more-vertical');
   more.addEventListener('click', (event) => {
     event.stopPropagation();
     openBlockMenu(more, [
@@ -1244,7 +1302,7 @@ export function renderOutliner(
         }
         // No sirve `a?.() ?? b()`: la primera devuelve void, así que el `??`
         // dispararía también la segunda y se navegaría dos veces.
-        if (callbacks.onOpenBlock === undefined) callbacks.onOpen(ref.page);
+        if (callbacks.onOpenBlock === undefined) callbacks.onOpen(ref.page, 'followed_reference');
         else callbacks.onOpenBlock(ref.page, ref.id);
         return;
       }
@@ -1311,24 +1369,68 @@ export function renderOutliner(
 
   // Una página sin bloques no tenía dónde pulsar, así que crearla dejaba a
   // quien la creó mirando una página en la que no podía escribir.
+  /*
+   * Una página sin bloques ofrece dónde escribir, no un botón que lo prometa.
+   *
+   * Aquí había un botón que decía «escribir el primer bloque». Cumplía de
+   * palabra y fallaba de hecho: obligaba a leer una etiqueta, apuntarle y
+   * pulsarla para llegar al sitio donde se escribe, cuando el sitio donde se
+   * escribe podía estar ahí desde el principio. Escribir es lo único que se
+   * puede hacer en una página vacía; pedir un gesto para desbloquearlo es poner
+   * una puerta delante de la única habitación.
+   *
+   * Así que se dibuja el bloque: su viñeta y su renglón, con el cursor dentro.
+   * Es lo mismo que se ve al borrar el último bloque de una página, y es lo que
+   * uno espera de un editor de bloques desde hace quince años.
+   *
+   * El bloque nace al recibir el foco, no al dibujarse. Crearlo por el mero
+   * hecho de mirar dejaría una operación firmada en el registro cada vez que
+   * alguien abre una página vacía, y el registro de Vera dice quién hizo qué:
+   * no puede llenarse de cosas que nadie hizo. Poner el cursor ahí sí es haber
+   * decidido escribir.
+   */
   if (tree.length === 0) {
-    const empty = document.createElement('button');
-    empty.type = 'button';
-    empty.className = 'first-block';
-    empty.textContent = 'escribir el primer bloque';
-    empty.addEventListener('click', () => {
+    const row = document.createElement('div');
+    row.className = 'block';
+
+    const mark = document.createElement('span');
+    mark.className = 'bullet phantom';
+    mark.textContent = '•';
+    mark.setAttribute('aria-hidden', 'true');
+
+    const body = document.createElement('div');
+    body.className = 'body';
+
+    const editor = document.createElement('textarea');
+    editor.className = 'editor';
+    editor.rows = 1;
+    editor.setAttribute('aria-label', 'Escribir el primer bloque');
+    editor.placeholder = 'escribe aquí';
+
+    let born = false;
+    editor.addEventListener('focus', () => {
+      // Una sola vez: el foco vuelve a este campo mientras la página se rehace.
+      if (born) return;
+      born = true;
       void api
         .submit({ kind: 'create_block', page: page.id, parent: null, position: 0, content: '' })
         .then((result) => {
           if (result.status === 'rejected') {
+            born = false;
             toast(`rechazado: ${result.reason}`);
             return;
           }
           callbacks.onReload({ block: result.subjectId, at: 0 });
         })
-        .catch(() => toast('no se pudo crear el bloque: sin conexión con el servidor'));
+        .catch(() => {
+          born = false;
+          toast('no se pudo crear el bloque: sin conexión con el servidor');
+        });
     });
-    list.append(empty);
+
+    body.append(editor);
+    row.append(mark, body);
+    list.append(row);
   }
 
   // Un cambio estructural rehace la página y pide seguir editando donde el
@@ -1370,7 +1472,8 @@ export function renderOutliner(
       excerpt.textContent = backlink.excerpt;
 
       link.append(where, excerpt);
-      link.addEventListener('click', () => callbacks.onOpen(backlink.page));
+      // Un backlink: la pregunta era quién había hablado de esto.
+      link.addEventListener('click', () => callbacks.onOpen(backlink.page, 'followed_backlink'));
       item.append(link);
       list.append(item);
     }
@@ -1630,7 +1733,27 @@ function startEditing(
   editor.value = block.content;
   editor.rows = 1;
 
+  /*
+   * El audio sobrevive a la edición de su texto.
+   *
+   * `body` tiene dos cosas cuando el bloque fue hablado: la grabación arriba y
+   * su texto debajo. Editar vaciaba el `body` entero para poner el campo, así
+   * que tocar el texto se llevaba el audio por delante, y al volver a la vista
+   * normal ya no estaba. La grabación seguía en el grafo —pegada a su bloque,
+   * intacta— pero no había forma de oírla sin recargar la página.
+   *
+   * Eso incumple @guarantee TheRecordingIsAlwaysReachable: mientras el audio
+   * existe se oye desde donde se leen sus palabras, sin abrir nada. Una
+   * grabación que hay que ir a buscar es una que se deja de contrastar, y
+   * contrastar el texto con lo que se dijo es justo lo que uno hace mientras lo
+   * corrige.
+   *
+   * Se aparta antes de vaciar y se devuelve: lo que se edita es el texto, y el
+   * audio no es texto de nadie.
+   */
+  const spoken = body.querySelector('.audio-block');
   body.innerHTML = '';
+  if (spoken !== null) body.append(spoken);
   body.append(editor);
 
   /**
@@ -1660,8 +1783,21 @@ function startEditing(
   editor.focus();
   editor.setSelectionRange(at, at);
 
+  /** Volver a la vista de lectura, conservando la grabación por el mismo motivo. */
   const render = (content: string): void => {
-    body.innerHTML = renderMarkdown(content, options);
+    const heldAudio = body.querySelector('.audio-block');
+    body.innerHTML = '';
+    if (heldAudio !== null) body.append(heldAudio);
+
+    // El mismo envoltorio que usa el dibujo inicial. Antes esto escribía el
+    // markdown directamente en `body`, así que un bloque recién editado tenía
+    // una estructura distinta de la de su vecino y el audio no habría tenido
+    // dónde volver.
+    const text = document.createElement('div');
+    text.className = 'body-text';
+    text.innerHTML = renderMarkdown(content, options);
+    body.append(text);
+
     markMissingImages(body);
     void renderMermaid(body);
   };

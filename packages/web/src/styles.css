@@ -229,9 +229,16 @@ input {
   justify-content: center;
 }
 
+/* La marca es el botón que lleva al día de hoy: sin fondo ni borde, pero se
+   pulsa, así que lo dice el cursor. */
 #brand {
   display: flex;
   align-items: center;
+  flex: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
   /* La marca ya no es la palabra sino el icono, así que el tamaño lo fija aquí
      el `font-size` del que cuelga el `1em` del SVG. */
   font-size: 1.6rem;
@@ -263,6 +270,12 @@ input {
 
 /* El buscador toma el espacio que sobra: es lo único de la barra que mejora al
    ser más ancho, y antes lo desperdiciaba con un ancho fijo. */
+/* En pantalla ancha el buscador cabe y estar a la vista es parte de lo que
+   ofrece: la lupa sólo aparece donde el espacio obliga a elegir. */
+#search-open {
+  display: none;
+}
+
 #search-wrap {
   flex: 1 1 auto;
   min-width: 0;
@@ -409,8 +422,15 @@ input {
  *
  * Quedan fuera a propósito las tablas, las imágenes, los diagramas, el código y
  * el audio. Una tabla estrecha se vuelve ilegible por el otro lado.
+ *
+ * El selector nombra los dos niveles porque el texto vive dentro de
+ * `.body-text` y no como hijo directo de `.body`. Apuntando sólo a `.body >`
+ * acertaba al envoltorio —que no es prosa y no tiene por qué estrecharse— y
+ * dejaba los párrafos llegando al borde: el token existía, valía 45em, y no
+ * gobernaba nada. Es el mismo descuido que tenía el reinicio de márgenes.
  */
-.body > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, dl) {
+.body > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, dl),
+.body-text > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, dl) {
   max-width: var(--content-width, 45em);
 }
 
@@ -826,11 +846,18 @@ input {
   margin-top: 1.4rem;
 }
 
+/*
+ * La fila no añade alto.
+ *
+ * Tenía un pelo de relleno arriba y abajo, y multiplicado por cada bloque era lo
+ * que sacaba al texto de su rejilla: dos bloques seguidos no quedaban a la misma
+ * distancia que dos renglones del mismo bloque, que es la comparación que el ojo
+ * hace sin proponérselo.
+ */
 .block {
   display: flex;
   gap: 0.5rem;
   align-items: baseline;
-  padding: 0.05rem 0;
 }
 
 /* El control de plegado. Está siempre en la columna —vacío en las hojas— para
@@ -847,11 +874,22 @@ input {
  * es la única señal de que hay algo escondido debajo y esconderla sería esconder
  * contenido sin decirlo.
  */
+/*
+ * Alto de un renglón, y fuera de la alineación por línea base.
+ *
+ * Medían 1.6rem —más que la interlínea— y se alineaban por su línea base, que
+ * cae a otra altura que la del texto porque su tipografía es otra. Entre las dos
+ * cosas empujaban el cuerpo 7,6 px hacia abajo y estiraban la fila a 32,4 px
+ * para un texto de 24,8. Con la altura del renglón y alineados arriba, la fila
+ * mide lo que mide su texto; la marca se sigue centrando sola —para eso es un
+ * botón— y queda a la altura del primer renglón también en un bloque largo.
+ */
 .fold {
   position: relative;
   flex: none;
+  align-self: flex-start;
   width: 1.4rem;
-  height: 1.6rem;
+  height: 1.55rem;
   font-size: 1.05rem;
   color: var(--text-dim);
   background: none;
@@ -1044,8 +1082,10 @@ input {
   background: none;
   border: none;
   padding: 0;
+  align-self: flex-start;
   width: 1.4rem;
-  height: 1.6rem;
+  /* La misma razón que en `.fold`: la fila la mide su texto, no sus marcas. */
+  height: 1.55rem;
   line-height: 1;
   border-radius: 50%;
 }
@@ -1236,7 +1276,8 @@ input {
   min-width: 0;
   outline: none;
   border-radius: 3px;
-  padding: 0.1rem 0.25rem;
+  /* Sólo a los lados: el alto lo pone la interlínea y nada más. */
+  padding: 0 0.25rem;
   /*
    * Un bloque vacío no renderiza nada, así que medía cero de alto y quedaba como
    * una rendija imposible de acertar con el cursor — justo el bloque que uno
@@ -1244,7 +1285,7 @@ input {
    * que va a ocupar en cuanto tenga texto: el sitio donde se pulsa es el mismo
    * donde aparecerá lo escrito.
    */
-  min-height: calc(1.55em + 0.2rem);
+  min-height: 1.55em;
 }
 
 .body:hover {
@@ -1350,11 +1391,28 @@ code {
   overflow-wrap: anywhere;
 }
 
-.body > :first-child {
+/*
+ * El primer y el último elemento de un bloque no traen margen propio.
+ *
+ * La regla existía, pero apuntaba a los hijos de `.body` y el texto vive un
+ * nivel más adentro, dentro de `.body-text`. Acertaba al envoltorio —que no
+ * tiene margen— y dejaba intacto el párrafo, así que cada bloque cargaba los
+ * `0.5em` de arriba y los de abajo: dieciséis píxeles de más, siempre los
+ * mismos, tuviera el bloque un renglón o cinco.
+ *
+ * Medido: un bloque de una línea ocupaba 1,64 veces la interlínea en vez de 1, y
+ * uno de cinco, 5,84 en vez de 5. El texto perdía su rejilla justo donde más se
+ * nota, que es leyendo bloques cortos uno tras otro.
+ *
+ * Entre párrafos del mismo bloque el margen sigue: ahí sí separa dos cosas.
+ */
+.body > :first-child,
+.body-text > :first-child {
   margin-top: 0;
 }
 
-.body > :last-child {
+.body > :last-child,
+.body-text > :last-child {
   margin-bottom: 0;
 }
 
@@ -1680,6 +1738,33 @@ code {
 /* --- Panel de tokens --------------------------------------------------- */
 
 @media (max-width: 640px) {
+  /*
+   * Todo más grande en un teléfono.
+   *
+   * Un solo sitio y no una lista de excepciones: la interfaz está medida en
+   * `rem`, así que mover el tamaño de base mueve botones, texto, viñetas y
+   * separaciones a la vez, y todo conserva su proporción. Ajustar cada cosa por
+   * separado habría sido reconstruir el mismo sistema con otras cifras.
+   *
+   * El factor es un token editable desde dentro de Vera: cuánto es cómodo
+   * depende del aparato y de quién lo sostiene.
+   */
+  html {
+    font-size: calc(100% * var(--phone-scale, 1.35));
+  }
+
+  /*
+   * En un teléfono el switch tiene dos posiciones, no tres.
+   *
+   * La vista dividida reparte una pantalla que aquí no sobra: a lo ancho de un
+   * teléfono, mapa y texto a la vez no dan ni un mapa legible ni una columna
+   * legible. `applyLayout` ya la traducía a texto, así que el botón ofrecía algo
+   * que no iba a pasar. Quedan las dos que sí son: el mapa o lo escrito.
+   */
+  #view-switch [data-layout='split'] {
+    display: none;
+  }
+
   #vera-root,
   #vera-root[data-layout='split'],
   #vera-root[data-layout='text_only'],
@@ -1713,35 +1798,84 @@ code {
     display: none;
   }
 
-  /* Con la barra a lo ancho de un teléfono, marca, buscador y ocho botones no
-     caben en una línea: se atropellaban unos a otros. Van en dos filas, y los
-     controles se desplazan en horizontal si aun así no entran. */
+  /*
+   * Una sola fila.
+   *
+   * Iban en dos porque el buscador ocupaba media barra estando vacío. Plegado en
+   * su lupa sobra sitio, y una fila es lo que hay que mirar: dos filas de iconos
+   * obligan a recorrer un damero para encontrar uno, y la de abajo —donde caía
+   * el micrófono— era además la que menos se ve con el pulgar encima.
+   *
+   * Si en un aparato muy estrecho aun así no cupieran, la barra se desplaza en
+   * horizontal antes que partirse: perder de vista un botón al final es más
+   * llevadero que cambiar de sitio todos.
+   */
   #bar {
-    flex-wrap: wrap;
-    gap: 0.5rem 0.7rem;
-    padding-bottom: 0.45rem;
+    flex-wrap: nowrap;
+    /* Repartidos a lo ancho en vez de apiñados a la izquierda: en un teléfono se
+       llega a la barra con el pulgar, y lo que importa es que cada botón tenga
+       su sitio holgado, no que estén juntos. */
+    justify-content: space-between;
+    gap: 0.35rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  #bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /*
+   * El buscador plegado en su lupa.
+   *
+   * Un campo vacío esperando gasta media barra para no decir nada, y en un
+   * teléfono esa media barra es lo que hace que el resto se atropelle. Plegado
+   * ocupa lo que un botón; desplegado ocupa la barra entera, que es lo que hace
+   * falta mientras se escribe y no antes.
+   */
+  #search-open {
+    display: flex;
+    align-items: center;
+    flex: none;
+    padding: 0.25rem 0.35rem;
+    border: 0;
+    background: none;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+
+  #search-open .icon {
+    width: 1.05rem;
+    height: 1.05rem;
   }
 
   #search-wrap {
-    flex: 1 1 auto;
-    min-width: 0;
+    display: none;
   }
 
-  #search {
+  /* Desplegado se pone encima de la primera fila, que es de donde salió. */
+  #bar.searching #search-wrap {
+    display: block;
+    position: absolute;
+    left: calc(0.7rem + env(safe-area-inset-left));
+    right: calc(0.7rem + env(safe-area-inset-right));
+    top: calc(0.5rem + env(safe-area-inset-top));
+    z-index: 25;
+  }
+
+  #bar.searching #search {
     width: 100%;
   }
 
+  /* Ya no es una fila aparte: son tres botones más de la única que hay. */
   #controls {
-    flex: 1 0 100%;
-    overflow-x: auto;
-    /* Que la fila de botones no empuje el ancho de la barra. */
-    min-width: 0;
-    scrollbar-width: none;
-    padding-bottom: 0.1rem;
+    flex: none;
+    gap: 0.35rem;
   }
 
-  #controls::-webkit-scrollbar {
-    display: none;
+  /* Nada de la barra se encoge hasta desaparecer: antes de eso, se desplaza. */
+  #bar > * {
+    flex: none;
   }
 
   /* El indicador de inicio del teléfono se sienta sobre el final del texto. */
@@ -2059,23 +2193,26 @@ code {
   border-color: var(--accent);
 }
 
-/* Una página vacía tiene que ofrecer por dónde empezar. */
-.first-block {
-  font-family: var(--font-ui);
-  font-size: 0.85rem;
+/*
+ * La viñeta del bloque que todavía no existe.
+ *
+ * Se ve como cualquier otra pero no se pulsa: no hay bloque al que abrirle un
+ * menú. Está para que el renglón vacío se lea como un bloque —que es lo que va a
+ * ser en cuanto se escriba— y no como un campo suelto en medio de la página.
+ */
+.bullet.phantom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  flex: none;
+  width: 1.4rem;
+  height: 1.55rem;
   color: var(--text-dim);
-  background: none;
-  border: 1px dashed var(--rule);
-  border-radius: 4px;
-  padding: 0.5rem 0.9rem;
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-}
-
-.first-block:hover {
-  color: var(--accent);
-  border-color: var(--accent);
+  font-size: 1.15rem;
+  line-height: 1;
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 /* --- Insertar voz ------------------------------------------------------- */
@@ -2164,8 +2301,16 @@ code {
  * ninguna consume a la otra. Compacto a propósito —un chorizo con su
  * reproductor y tres botones— para que lo que se lee siga siendo el texto.
  */
+/*
+ * El texto no hereda el alto mínimo de su contenedor.
+ *
+ * Lo heredaba, así que se estiraba a la altura que `.body` reserva para un
+ * bloque vacío —relleno incluido— y `.body` volvía a sumar el suyo encima: el
+ * mismo alto contado dos veces. Un bloque vacío sigue siendo alcanzable con el
+ * cursor porque de eso se encarga `.body`, que es donde se pulsa.
+ */
 .body-text {
-  min-height: inherit;
+  min-height: 0;
 }
 
 .audio-block {
@@ -2448,4 +2593,128 @@ code {
   height: 0.62rem;
   margin: 0.4rem 0.39rem;
   border-radius: 50%;
+}
+
+/* --- La bitácora, leída de corrido ---------------------------------------- */
+
+/*
+ * Cada día que se alcanza bajando. La línea de arriba es lo único que los
+ * separa: no son documentos distintos, son tramos de lo mismo, y encerrar cada
+ * uno en su caja diría lo contrario de lo que la lectura continua quiere decir.
+ */
+.day-slice {
+  display: block;
+  margin-top: 2.4rem;
+  padding-top: 1.6rem;
+  border-top: 1px solid var(--rule);
+}
+
+/* La fecha de un día no se pulsa —no se renombra— así que tampoco se ofrece:
+   sin cursor de mano y sin el fondo que invita a editar los demás títulos. */
+.page-title.day {
+  cursor: default;
+}
+
+/* Lo que dispara traer el día anterior. No se ve; sólo mide dónde está. */
+.day-sentinel {
+  height: 1px;
+}
+
+/* --- Hablar ---------------------------------------------------------------- */
+
+/*
+ * El botón de hablar no se busca: se ve.
+ *
+ * Era un icono gris entre otros tres iconos grises. En un teléfono —donde
+ * hablar es lo que más se va a hacer, y a menudo con una mano y andando— eso es
+ * pedirle a alguien que lea una fila de dibujos para encontrar el que necesita.
+ * Con fondo, es el único botón de color de la barra y se acierta sin mirar.
+ */
+/* `#controls button` gana por especificidad a `#insert-voice` a secas, y su
+   `background: none` dejaba este botón gris. Se nombran los dos. */
+#controls button#insert-voice {
+  background: var(--voice);
+  color: #fff;
+  border-color: transparent;
+  border-radius: 4px;
+}
+
+#controls button#insert-voice:hover {
+  /* Sin `color-mix` sobre el fondo: aclararlo lo acercaría al verde de grabar, y
+     esos dos estados no pueden parecerse. */
+  filter: brightness(1.12);
+}
+
+/*
+ * Verde mientras se graba: la confirmación que faltaba.
+ *
+ * Sin esto no había forma de saber que había empezado —ni de saber que había
+ * terminado— y lo que uno hace entonces es repetirse, o callarse a media frase
+ * para ir a comprobarlo. El pulso es lento a propósito: dice «sigo aquí», no
+ * «pasa algo».
+ */
+#controls button#insert-voice.live {
+  background: var(--voice-live);
+  animation: voice-pulse 2s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  50% {
+    filter: brightness(1.25);
+  }
+}
+
+/* Quien pide no animarse, no se anima. La información la lleva el color. */
+@media (prefers-reduced-motion: reduce) {
+  #controls button#insert-voice.live {
+    animation: none;
+  }
+}
+
+/* --- Claro u oscuro, en Ajustes ------------------------------------------- */
+
+.scheme-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.scheme-choice .settings-label {
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin-right: 0.2rem;
+}
+
+.scheme-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Los dos miden lo mismo: elegir entre dos cosas equivalentes no debe
+     parecerse a elegir entre una grande y una pequeña. */
+  width: 2.2rem;
+  height: 1.9rem;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.scheme-option .icon {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.scheme-option:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* El que rige se marca, no se deduce del color de la pantalla. */
+.scheme-option.here {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }

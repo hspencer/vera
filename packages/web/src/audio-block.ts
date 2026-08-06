@@ -18,6 +18,33 @@ export interface AudioBlockHandlers {
   onChanged(recording: Recording): void;
 }
 
+/*
+ * Si hay una grabación en curso, y quién quiere enterarse.
+ *
+ * Vive aquí porque aquí es donde se sabe. La barra necesita decirlo —el botón de
+ * hablar se pone verde mientras se graba— y sin esto tendría que adivinarlo
+ * mirando el DOM, que es preguntarle a la consecuencia por la causa.
+ *
+ * Se enciende cuando la grabación ha empezado de verdad, no al pulsar: entre una
+ * cosa y otra está el permiso del micrófono, que puede negarse. Un botón que se
+ * pone verde antes de que haya micrófono está diciendo algo que todavía no es
+ * cierto, y en una interfaz de voz esa mentira cuesta lo que se dijo creyéndola.
+ */
+let live = false;
+const watchers = new Set<(on: boolean) => void>();
+
+/** Avisa cuando una grabación empieza o termina. */
+export function onRecording(watcher: (on: boolean) => void): void {
+  watchers.add(watcher);
+  watcher(live);
+}
+
+function setLive(on: boolean): void {
+  if (live === on) return;
+  live = on;
+  for (const watcher of watchers) watcher(on);
+}
+
 /** Lo que duró, en minutos y segundos. */
 function clock(ms: number): string {
   const total = Math.round(ms / 1000);
@@ -68,13 +95,18 @@ export function renderRecorder(
   void startRecording().then((started) => {
     if ('error' in started) {
       window.clearInterval(tick);
+      setLive(false);
       handlers.notify(started.error);
       host.innerHTML = '';
       return;
     }
 
+    // Hay micrófono y está entrando sonido: ahora sí.
+    setLive(true);
+
     cancel.addEventListener('click', () => {
       window.clearInterval(tick);
+      setLive(false);
       started.cancel();
       // Nada que guardar: no llegó a haber grabación.
       host.innerHTML = '';
@@ -83,6 +115,9 @@ export function renderRecorder(
 
     stop.addEventListener('click', () => {
       window.clearInterval(tick);
+      // Se apaga al detener y no al terminar de guardar: lo que el verde dice es
+      // «te estoy oyendo», y ya no.
+      setLive(false);
       stop.disabled = true;
       cancel.disabled = true;
       elapsed.textContent = 'guardando…';

@@ -23,6 +23,8 @@ export type Section = 'memoria' | 'teclado' | 'apariencia';
 
 export interface SettingsHandlers {
   scheme(): ColourScheme;
+  /** Cambiar entre el esquema claro y el oscuro. */
+  onScheme(next: ColourScheme): void;
   onTokenChange(token: DesignToken, value: string): void;
   onReset(): void;
   onClose(): void;
@@ -193,6 +195,49 @@ function drawAppearance(
   handlers: SettingsHandlers,
 ): void {
   const scheme = handlers.scheme();
+
+  /*
+   * Claro u oscuro, aquí y no en la barra.
+   *
+   * Era un botón permanente entre los de arriba, y en un teléfono la barra es el
+   * recurso más escaso que hay: cada icono que se queda ahí es uno que compite
+   * con hablar, buscar y volver al día. El tema se cambia dos veces al día como
+   * mucho —al anochecer y poco más— y lo que se usa dos veces al día no vive
+   * donde lo que se usa veinte.
+   *
+   * Y aquí está en su sitio: debajo se editan los colores de ese mismo esquema,
+   * así que elegir cuál se está mirando es la primera decisión de esta página.
+   */
+  const chooser = document.createElement('div');
+  chooser.className = 'scheme-choice';
+
+  const label = document.createElement('span');
+  label.className = 'settings-label';
+  label.textContent = 'Esquema';
+  chooser.append(label);
+
+  // Con icono y no con palabra: «claro» y «oscuro» miden distinto, y dos
+  // botones de anchos distintos para elegir entre dos cosas equivalentes leen
+  // como si una pesara más. El sol y la luna miden lo mismo y se reconocen sin
+  // leerse. El nombre sigue estando donde hace falta, en la etiqueta accesible.
+  const options: { value: ColourScheme; shape: 'sun' | 'moon'; text: string }[] = [
+    { value: 'light', shape: 'sun', text: 'claro' },
+    { value: 'dark', shape: 'moon', text: 'oscuro' },
+  ];
+  for (const option of options) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'scheme-option';
+    button.innerHTML = icon(option.shape);
+    button.setAttribute('aria-label', `Esquema ${option.text}`);
+    button.title = `Esquema ${option.text}`;
+    const here = scheme === option.value;
+    button.setAttribute('aria-pressed', String(here));
+    if (here) button.classList.add('here');
+    button.addEventListener('click', () => handlers.onScheme(option.value));
+    chooser.append(button);
+  }
+  host.append(chooser);
 
   const intro = document.createElement('p');
   intro.className = 'settings-note';

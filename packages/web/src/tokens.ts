@@ -50,6 +50,24 @@ export const DEFAULT_TOKENS: DesignToken[] = [
   { name: '--node-fill', light: '#9aa0ab', dark: '#6d7480' },
   { name: '--link-stroke', light: '#d5d7d2', dark: '#333842' },
   { name: '--warm', light: '#ef7a1c', dark: '#ef7a1c' },
+  // Hablar: el botón de la barra en reposo, y el mismo botón mientras graba.
+  //
+  // Rojo el de reposo porque es el color con que se dice «grabar» desde antes de
+  // que existiera esta aplicación, y en un teléfono es el botón que hay que
+  // encontrar sin buscarlo. Verde el otro porque lo que hace falta ahí no es un
+  // aviso sino una confirmación: alguien está hablando y necesita saber que se
+  // le está oyendo. Rojo parpadeante habría dicho «atención», que es lo
+  // contrario de lo que uno quiere sentir mientras dicta.
+  { name: '--voice', light: '#c0392b', dark: '#e05545' },
+  { name: '--voice-live', light: '#1f8b4c', dark: '#2fbb6a' },
+  // Cuánto se agranda todo en una pantalla de teléfono.
+  //
+  // Un token y no un número en la hoja: la talla cómoda depende del aparato y de
+  // la vista de quien lo sostiene, y esto es exactamente la clase de cosa que
+  // @guarantee EditableDesignSystem existe para poder ajustar sin recompilar.
+  // Multiplica el tamaño de base, así que arrastra todo lo medido en `rem` — la
+  // interfaz y el texto a la vez, que es como debe crecer.
+  { name: '--phone-scale', light: '1.35', dark: '1.35' },
   // Hasta dónde llega una línea de prosa.
   //
   // Una línea muy ancha se lee mal: el ojo pierde el comienzo de la siguiente al
