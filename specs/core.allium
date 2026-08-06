@@ -27,7 +27,19 @@ value OriginEvidence {
 
 enum ParticipantKind { human | agent }
 enum ParticipantStatus { active | suspended }
-enum ContributionChannel { typed_text | authenticated_voice | agent_generation | import }
+-- Por qué vía llegó a Vera lo que un participante produjo.
+--
+-- `walked` es el cuarto y el que menos se parece a los otros tres: no se tecleó,
+-- no se dijo y no lo generó nadie más. Es lo que alguien produjo andando por el
+-- corpus, y entra porque hay un texto de Vera que ninguno de los otros tres
+-- explicaría — el testimonio de un cruce, que dice cómo se pasó de una página a
+-- la siguiente (ver trail.allium).
+--
+-- Admitirlo es afirmar que caminar es producir. La alternativa era que Vera
+-- escribiera ese testimonio de su cuenta, y entonces habría texto en el corpus
+-- que ningún participante puso: es exactamente lo que la autoría por bloque
+-- existe para impedir.
+enum ContributionChannel { typed_text | authenticated_voice | agent_generation | import | walked }
 enum Visibility { private | public }
 -- The change vocabulary of the first usable Vera. Links between pages are not a
 -- change kind: they are derived from block content and therefore a consequence of

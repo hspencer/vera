@@ -209,6 +209,33 @@ enum WorkspaceLayout { text_only | graph_only | split }
 enum GraphViewMode { graph_2d | graph_3d }
 enum ColourScheme { light | dark }
 
+-- Qué hizo alguien para llegar a la página en la que está.
+--
+-- No son maneras de moverse: son maneras de leer, y por eso el rastro las
+-- guarda. Seguir una referencia es ir a donde el texto que se leía apuntaba;
+-- entrar por un backlink es preguntar quién habló de esto; pulsar en el mapa es
+-- haber visto una forma; buscar es ir a por algo que se sabía que se quería;
+-- volver es regresar sobre el propio rastro; y abrir directamente es llegar sin
+-- que nada de lo que se estaba leyendo lo explique — una dirección pegada, el
+-- día de hoy, una página del menú.
+--
+-- `opened_directly` es el que se descubrió implementando y merece su nota. Es la
+-- generalización de que el primer paso de un rastro sea inmotivado: se llega de
+-- fuera, y el corpus no tiene nada que decir sobre por qué. Lo que se descubrió
+-- es que eso no le pasa sólo al primer paso. Puede pasar en mitad de un rastro,
+-- las veces que haga falta, y una lista de gestos que no lo admitiera obligaría a
+-- llamar «búsqueda» a abrir el día de hoy.
+--
+-- Es lo único que el taller sabe y el texto no puede recuperar. Una página
+-- escrita dice a qué otras nombra; no dice, ni podrá decir nunca, que su autor
+-- llegó a la tercera de ellas buscando quién había hablado de la segunda. Por eso
+-- se guarda aquí y sólo aquí: ver trail.allium, donde este gesto deja de ser un
+-- dato y se vuelve prosa.
+enum NavigationGesture {
+    followed_reference | followed_backlink | pressed_on_the_map |
+    searched | returned | opened_directly
+}
+
 ------------------------------------------------------------
 -- Entities
 ------------------------------------------------------------
@@ -221,8 +248,25 @@ entity Workspace {
     split_divider_position: Decimal
     graph_view: GraphViewMode
     colour_scheme: ColourScheme
-    navigation_history: List<core/Page>
+    navigation_history: List<TraceStep>
     theme: Theme
+}
+
+-- Un paso del rastro: no una página, sino una llegada a una página.
+--
+-- El cambio respecto de guardar sólo la página es el que decide todo lo que
+-- trail.allium hace después. Una lista de páginas dice por dónde se pasó; una
+-- lista de llegadas dice cómo se pasó de cada una a la siguiente, y eso es lo
+-- único que hay de un cruce mientras nadie escriba sobre él.
+--
+-- `from` es la página desde la que se llegó, nula en el primer paso. Que el
+-- primer paso no tenga origen no es una carencia que haya que rellenar: todo
+-- rastro empieza con un acto que el corpus no explica.
+value TraceStep {
+    page: core/Page
+    from: core/Page?
+    gesture: NavigationGesture
+    at: Timestamp
 }
 
 entity Theme {
@@ -363,14 +407,48 @@ rule ParticipantDiscardsEmptyBlock {
 }
 
 rule ParticipantNavigatesToPage {
-    when: NavigateToPage(participant, workspace, page)
+    when: NavigateToPage(participant, workspace, page, gesture)
 
     requires: workspace.participant = participant
     requires: page.graph = workspace.graph
 
     ensures:
         workspace.active_page = page
-        workspace.navigation_history = append(workspace.navigation_history, page)
+        workspace.navigation_history = append(
+            workspace.navigation_history,
+            TraceStep{
+                page: page,
+                from: workspace.active_page,
+                gesture: gesture,
+                at: now
+            }
+        )
+
+    @invariant TheGestureIsObservedAndNeverInferred
+        -- El gesto lo pone la superficie que lo recibió, porque es la única que
+        -- lo sabe. Vera no lo deduce después mirando si existía una referencia
+        -- entre las dos páginas: eso contestaría qué había en el corpus, y la
+        -- pregunta es qué hizo alguien. Las dos cosas se separan a propósito y
+        -- pueden discrepar — ver trail.allium.
+        --
+        -- De lo que se sigue que no hay gesto por defecto. Un sitio que no sepa
+        -- decir cómo se llegó no puede poner un paso en el rastro, y eso es la
+        -- garantía y no una molestia: el día que alguien añada una forma nueva de
+        -- abrir una página, el rastro no se llena de pasos que dicen «se llegó de
+        -- alguna manera».
+
+    @invariant RedrawingAPageIsNotWalkingToIt
+        -- Volver a dibujar la página en la que ya se está —porque se guardó algo,
+        -- porque cambió el foco, porque se colocó un audio— no es navegar y no
+        -- deja paso. Un rastro que contara los redibujados diría dónde estuvo el
+        -- programa, no dónde estuvo quien lee.
+        --
+        -- Es la distinción que el código tenía por accidente, quedándose sólo con
+        -- la página nueva si era distinta de la última. Funcionaba y decía otra
+        -- cosa: que llegar dos veces seguidas al mismo sitio es imposible. Y sí es
+        -- posible —se puede volver a una página desde otra y luego regresar— así
+        -- que lo que hay que preguntar no es si la página cambió sino si alguien
+        -- se movió.
 }
 
 rule ParticipantOpensGraphNodeOnPhone {
@@ -382,7 +460,77 @@ rule ParticipantOpensGraphNodeOnPhone {
     ensures:
         workspace.active_page = page
         workspace.layout = text_only
-        workspace.navigation_history = append(workspace.navigation_history, page)
+        workspace.navigation_history = append(
+            workspace.navigation_history,
+            TraceStep{
+                page: page,
+                from: workspace.active_page,
+                gesture: pressed_on_the_map,
+                at: now
+            }
+        )
+}
+
+-- Quitar un paso del rastro.
+--
+-- Se anda por sitios a los que no se iba: la página que se abrió por error, la
+-- que resultó no ser lo que su título prometía, el rodeo para comprobar una
+-- fecha. Un rastro que no se puede podar obliga a que todo eso llegue al
+-- argumento, y entonces lo primero que se hace con un argumento recién nacido es
+-- limpiarlo, que es la peor manera de empezar a pensar.
+rule ParticipantDropsATraceStep {
+    when: DropTraceStep(participant, workspace, step)
+
+    requires: workspace.participant = participant
+    requires: workspace.navigation_history.any(s => s = step)
+
+    ensures:
+        workspace.navigation_history = without(workspace.navigation_history, step)
+
+    @invariant DroppingAStepLeavesNoRecord
+        -- No queda constancia de que ese paso estuvo. El rastro no tiene historia
+        -- porque no es una página: es dónde está uno, y dónde estuvo uno hace diez
+        -- minutos y ya no quiere contar no es asunto de nadie.
+        --
+        -- Es lo contrario de lo que ocurre en cuanto el rastro se promueve, y la
+        -- diferencia es deliberada. Ver trail/PruningIsEditingOnceItIsAPage.
+}
+
+-- Reordenar el rastro.
+--
+-- Y aquí el rastro deja de ser sólo un registro. Mientras nadie lo toca dice por
+-- dónde se anduvo; en cuanto alguien arrastra un paso, dice por dónde alguien
+-- quiere que se lea. Son dos cosas y conviven en un mismo objeto, que es
+-- exactamente lo que hace falta: componer un argumento empieza mucho antes de
+-- decidir que se está componiendo uno.
+rule ParticipantReordersTheTrace {
+    when: ReorderTraceStep(participant, workspace, step, position)
+
+    requires: workspace.participant = participant
+    requires: workspace.navigation_history.any(s => s = step)
+    requires: position >= 0
+    requires: position < workspace.navigation_history.count
+
+    ensures:
+        workspace.navigation_history = moved_to(workspace.navigation_history, step, position)
+
+    @invariant ReorderingDoesNotRewriteWhatHappened
+        -- Un paso arrastrado conserva su gesto y la página desde la que se llegó a
+        -- él, que son hechos sobre lo que ocurrió y no cambian porque el paso
+        -- cambie de sitio. Lo que cambia es de quién es vecino.
+        --
+        -- Con lo cual las dos cosas pueden discrepar: un paso puesto en tercer
+        -- lugar puede recordar que se llegó a él desde una página que ahora está
+        -- la séptima. No es un error que reparar y no se repara. Es la distancia
+        -- entre por dónde se anduvo y por dónde se quiere llevar a alguien, que es
+        -- justamente lo que un argumento añade a un paseo.
+
+    @invariant TheTraceKeepsAccumulatingWhileItIsBeingArranged
+        -- Ordenar el rastro no lo cierra ni lo congela. Se sigue navegando y los
+        -- pasos nuevos siguen llegando al final, junto a los que ya se colocaron.
+        -- Nadie tiene que terminar de componer para volver a leer, que es el orden
+        -- en que esto ocurre de verdad: se lee, se ve una forma, se mueve una
+        -- pieza, se sigue leyendo.
 }
 
 rule ParticipantEditsThemeSource {
@@ -505,7 +653,9 @@ surface VeraWorkspace {
         ChangeGraphView(participant, workspace, graph_view)
         ChangeColourScheme(participant, workspace, colour_scheme)
         ApplyTheme(participant, workspace)
-        NavigateToPage(participant, workspace, page)
+        NavigateToPage(participant, workspace, page, gesture)
+        DropTraceStep(participant, workspace, step)
+        ReorderTraceStep(participant, workspace, step, position)
         OpenPageFrontMatter(participant, workspace, page)
         OpenMobileGraphNode(participant, workspace, page)
         EditThemeSource(participant, workspace, stylesheet_source)
@@ -604,6 +754,49 @@ surface VeraWorkspace {
         -- one draws on purpose, for somebody else, and it is an argument. They are
         -- the same object at two moments, and the second begins when someone looks
         -- at where they have been and decides that it was saying something.
+
+    @guarantee TheTraceRemembersHowAndNotOnlyWhere
+        -- Each step keeps the gesture that produced it, and that is the one thing
+        -- the workspace knows which no text can ever recover. A page says which
+        -- others it names; nothing in it says that its author reached the third of
+        -- them by asking who had spoken about the second.
+        --
+        -- It is kept because it is perishable. A crossing's other face — whether
+        -- the corpus had a sentence joining those two pages — can be recomputed at
+        -- any moment from the graph, so there is no reason to store it. The gesture
+        -- can be recomputed never. Vera stores what would otherwise be lost and
+        -- derives what would otherwise be duplicated, and the two faces of a
+        -- crossing fall on opposite sides of that line.
+
+    @guarantee TheTraceIsArrangeableWhereItIsSeen
+        -- Los pasos del rastro se arrastran para reordenarlos y se quitan uno a
+        -- uno, en el mapa, donde están. No hay un modo de edición del rastro ni una
+        -- ventana aparte donde componerlo: se toca lo que se está mirando.
+        --
+        -- Ordenar el rastro es la primera mitad de componer un argumento y ocurre
+        -- antes de que nadie haya decidido componer ninguno. Por eso vive aquí y
+        -- no en trail.allium: es una cosa que se hace mientras se lee.
+
+    @guarantee PromotingIsOneSmallGesture
+        -- El rastro lleva una sola marca para promoverlo, discreta, con su nombre
+        -- en un tooltip y no escrito al lado. Pulsarla no abre un diálogo, no pide
+        -- un título y no pregunta nada: sale una página, y lo que hay que decidir
+        -- se decide escribiéndola.
+        --
+        -- Discreta a propósito. Lo que hay detrás de esa marca es grande —de aquí
+        -- sale un texto que puede acabar publicado y en manos de otro— y una
+        -- marca que anunciara ese tamaño haría que se pulsara sólo cuando alguien
+        -- ya estuviera seguro de tener algo que decir. Justo al revés de como
+        -- pasa: uno pulsa porque le pareció que quizá había algo ahí, y se entera
+        -- de si lo había al escribirlo.
+
+    @guarantee TheTraceKeepsItsGestureAndNotItsReason
+        -- What is recorded is what someone did, not what they meant by it. A
+        -- gesture is checkable, is about the walker, and was performed; a reason is
+        -- an assertion about the corpus, and Vera has no standing to make one.
+        --
+        -- The whole of trail.allium rests on this line holding here, at the cheap
+        -- end, where nothing has been claimed yet.
 
     @guarantee TheMapIsBoundedByReach
         -- How much of the graph a map shows is the participant's to set, from

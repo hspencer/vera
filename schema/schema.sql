@@ -31,6 +31,14 @@
 -- Regla que gobierna todo lo demás: `operations` es el registro canónico. Las
 -- tablas de estado son su materialización y los índices derivados son
 -- reconstruibles. Nada fuera de submitOperation() escribe en ellas.
+--
+-- Este archivo describe la forma de DESTINO, no la historia. Es lo que se crea
+-- en una base nueva, de una vez y ya al día. Una base que ya existía no llega
+-- aquí sola: `CREATE TABLE IF NOT EXISTS` no toca una tabla que está, así que
+-- cualquier cambio sobre una tabla existente —una columna, un CHECK, un índice—
+-- pide además una migración en packages/store/src/migrations.ts. Las dos cosas
+-- se escriben juntas o la base de quien ya venía usando Vera se queda atrás sin
+-- que nada lo diga. Ver SCHEMA_VERSION allí.
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -132,7 +140,7 @@ CREATE TABLE IF NOT EXISTS operations (
     subject_id             TEXT NOT NULL,
     channel                TEXT NOT NULL CHECK (
                                channel IN ('typed_text', 'authenticated_voice',
-                                           'agent_generation', 'import')),
+                                           'agent_generation', 'import', 'walked')),
     evidence_reference     TEXT,
     evidence_captured_at   INTEGER,
     submitted_at           INTEGER NOT NULL,
@@ -423,7 +431,7 @@ CREATE TABLE IF NOT EXISTS block_authorship (
     participant_id  TEXT NOT NULL REFERENCES participants (id),
     channel         TEXT NOT NULL CHECK (
                         channel IN ('typed_text', 'authenticated_voice',
-                                    'agent_generation', 'import')),
+                                    'agent_generation', 'import', 'walked')),
     written_at      INTEGER NOT NULL
 ) STRICT;
 

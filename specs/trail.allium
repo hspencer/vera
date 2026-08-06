@@ -1,13 +1,14 @@
 -- allium: 3
 -- trail.allium
 
--- Scope: El recorrido — una ruta compuesta a través del grafo, y el argumento
---   que esa ruta hace
--- Includes: El rastro que se guarda y se vuelve borrador, el recorrido como
---   página del corpus, los nodos derivados del texto que la página lleva, las
---   conectivas que los unen y que son lo único que el recorrido aporta, el
---   argumento que sigue vivo porque sus premisas lo están, y la publicación de un
---   argumento cuyas premisas no siempre son legibles
+-- Scope: El cruce — la unidad de la que están hechos el mapa y el texto — y el
+--   recorrido, que es una cadena de cruces sobre la que alguien declaró algo
+-- Includes: El cruce y sus dos caras, el rastro que se guarda y se vuelve
+--   borrador, el recorrido como página del corpus, los nodos derivados del texto
+--   que la página lleva, las conectivas que los unen y que son lo único que el
+--   recorrido aporta, el testimonio de cómo se anduvo, el argumento que sigue
+--   vivo porque sus premisas lo están, y la publicación de un argumento cuyas
+--   premisas no siempre son legibles
 -- Excludes:
 --   - El rastro mismo: cómo se acumula, cómo se dibuja y cómo se vuelve a él
 --     (ver workspace-interface.allium)
@@ -19,15 +20,118 @@
 --     (ver agent-participation.allium)
 -- Dependencies: Graph, Page, Block, Participant, Publication y la propia
 --   publicación los gobierna core.allium; PageLink lo deriva
---   graph-navigation.allium; el rastro lo lleva workspace-interface.allium
+--   graph-navigation.allium; el rastro y el gesto los lleva
+--   workspace-interface.allium
 --
 -- Linaje: los trails del Memex de Vannevar Bush (1945) — secuencias asociativas,
 -- compuestas, persistentes, y entregables a un amigo para que sus recorridos y
 -- los nuestros se entrelacen.
+--
+-- Y una segunda deuda, con el recorrido de Lectografo, que hace lo contrario y
+-- por eso enseña. Allí un texto se despliega en grafo y el recorrido lo vuelve a
+-- linealizar: la frase que une dos conceptos ya estaba escrita, en el texto de
+-- origen, y andar es encontrarla. Aquí no hay texto de origen y las aristas no
+-- llevan frase: andar es escribirla. Los dos sistemas son la misma operación
+-- recorrida en sentidos opuestos, y se tocan en un solo punto, que es el que este
+-- módulo nombra.
+--
+-- Ese punto es el cruce. En los dos hay un objeto sin nombre que no es nodo ni
+-- arista: el paso de A a B. Lectografo lo nombra y lo deja morir con la sesión;
+-- Vera lo tenía y no lo nombraba, y por eso hasta ahora había que decir de la
+-- conectiva que «pertenece a los dos y a ninguno», que es la firma de una cosa
+-- que existe y no se ha declarado.
 
 use "./core.allium" as core
 use "./graph-navigation.allium" as nav
 use "./workspace-interface.allium" as workspace
+
+------------------------------------------------------------
+-- El cruce
+------------------------------------------------------------
+
+-- Qué había en el corpus entre estas dos páginas, en el momento de mirar.
+--
+-- Dos valores y no más, y la brevedad es la decisión. Las aristas de Vera son
+-- menciones: una página nombró a otra en una frase. Una mención tiene un sentido
+-- inscrito —alguien la escribió desde algún lado— pero ese sentido no significa
+-- lo bastante como para leerse como flecha argumental. Que la página de 2019
+-- nombre a la de 2024 y no al revés dice cuál se escribió antes, no cuál se
+-- sigue de cuál.
+--
+-- Por eso la cara que el mapa aporta al cruce contesta una sola pregunta, y es
+-- la única que en Vera tiene respuesta: ¿había algo aquí, o lo pone el guía?
+enum CrossingKind { by_path | across_open_ground }
+
+-- El cruce: la unidad de la que están hechos el mapa y el texto.
+--
+-- Tiene dos caras y ninguna es la primaria. La cara derivada la pone el grafo —si
+-- había una frase uniendo estas dos páginas— y no se guarda en ninguna parte
+-- porque se puede volver a calcular siempre. La cara escrita la pone el guía —la
+-- conectiva— y no se deriva de nada porque no la había.
+--
+-- Ahí está lo que hacía falta decir y no se decía. El mapa es lo que queda de los
+-- cruces cuando se les quita la voz; el texto es lo que queda cuando se les quita
+-- la topología. No son dos cosas entre las que un recorrido tuviera que mediar:
+-- son dos lecturas de la misma materia, y el recorrido no es una tercera cosa
+-- entre ellas sino la materia misma con las dos caras a la vista.
+--
+-- Por eso el cruce no es privativo de los recorridos. Un rastro es una cadena de
+-- cruces sobre los que nadie ha escrito todavía. Una página cualquiera es una
+-- cadena de cruces sobre los que nadie ha declarado nada. Un recorrido es una
+-- cadena de cruces declarada. Es la misma frase tres veces, y es la razón de que
+-- @invariant AnyPageCouldBeSeenAsAThread no sea una observación bonita sino una
+-- identidad.
+--
+-- Es un `value` y no una entidad, y eso lo dice todo sobre dónde vive: no tiene
+-- identidad, no se persiste, no se referencia desde ningún sitio y no aparece en
+-- el `ensures` de ninguna regla. Se calcula cuando alguien mira. Un cruce no es
+-- algo que Vera guarde: es algo que Vera ve.
+value Crossing {
+    from: nav/PageLink
+    to: nav/PageLink
+
+    -- La cara escrita. Lo que el guía puso entre un nodo y el siguiente, vacío
+    -- mientras no haya puesto nada.
+    connective: String
+
+    -- El testimonio: cómo se anduvo este cruce, cuando se anduvo. Nulo en un
+    -- recorrido que no salió de un rastro, y nulo también en cuanto el guía lo
+    -- borre, que puede hacer como con cualquier otra cosa escrita.
+    testimony: String?
+
+    -- La cara derivada. No es un dato del recorrido: lo rellena crossing_kind en
+    -- el momento en que alguien mira, y por eso un mismo cruce puede contestar
+    -- distinto mañana. Ver crossing_kind más abajo.
+    kind: CrossingKind
+
+    is_open_ground: kind = across_open_ground
+    -- Un cruce dicho: hay algo escrito sobre él, sea del guía o del caminante.
+    is_spoken_for: connective != "" or testimony != null
+}
+
+-- crossing_kind(from, to)                                        -- caja negra
+--     `by_path` si existe hoy un nav/PageLink resuelto entre las dos páginas en
+--     cualquiera de los dos sentidos; `across_open_ground` si no existe ninguno.
+--
+--     Excluye los enlaces que salen de la propia página del recorrido. Un
+--     recorrido enlaza a todas sus paradas —es lo que lo hace encontrable desde
+--     cada una— y contar esos enlaces haría que todo cruce fuera by_path por
+--     construcción, con lo que la distinción no distinguiría nada. Lo que se
+--     pregunta es si el corpus unía estas dos páginas antes de que alguien
+--     escribiera este argumento sobre ellas.
+--
+--     Se calcula en tiempo presente y por eso puede cambiar sin que el recorrido
+--     se toque: alguien escribe la frase que faltaba y un cruce a campo través
+--     pasa a ser por camino. Ver @invariant TheDerivedFaceIsSpokenInThePresent.
+--
+--     Un cruce que toca un puente cortado contesta `across_open_ground`, y ahí el
+--     binario confunde dos cosas: «nadie unió estas dos páginas» y «no se puede
+--     saber, porque una de ellas ya no existe». La confusión se deja a la vista en
+--     vez de repararse con un tercer valor, porque el puente cortado ya se dibuja
+--     como lo que es —ver ABrokenBridgeIsDrawnBroken— y quien lo vea sabrá que el
+--     campo través de ese cruce no es una afirmación del guía sino una ausencia
+--     del corpus. Un tercer valor sería una palabra más que aprender para decir
+--     algo que el dibujo ya dice. Ver preguntas abiertas.
 
 ------------------------------------------------------------
 -- Contracts
@@ -53,9 +157,97 @@ use "./workspace-interface.allium" as workspace
 contract ComposedRoute {
     nodes: (trail: Trail) -> List<nav/PageLink>
     ordinal: (node: nav/PageLink) -> Integer
+    crossings: (trail: Trail) -> List<Crossing>
     connective: (node: nav/PageLink) -> String
     conclusion: (trail: Trail) -> String
     guide: (trail: Trail) -> core/Participant
+
+    @invariant TheCrossingIsTheAtomAndTheTrailIsAChainOfThem
+        -- Un recorrido no es una lista de nodos con texto intercalado: es una
+        -- cadena de cruces. La diferencia se nota en dónde vive la conectiva. Con
+        -- nodos, la conectiva no tiene sitio y hay que decir de ella que pertenece
+        -- a dos cosas y a ninguna; con cruces, pertenece al cruce, que es
+        -- exactamente el objeto que va entre dos nodos y no es ninguno de ellos.
+        --
+        -- Es también lo que hace que reordenar cambie el argumento y no sólo la
+        -- presentación. Mover el nodo 4 al puesto 2 no mueve un nodo: destruye dos
+        -- cruces y crea dos nuevos, y los cruces son donde estaba todo lo dicho.
+
+    @invariant TheDerivedFaceIsBinary
+        -- La cara que el mapa aporta contesta si había camino o no lo había, y
+        -- nada más. No dice en qué sentido, porque las aristas de Vera son
+        -- menciones y su sentido no es una flecha argumental; no dice por cuál de
+        -- varias menciones, porque las menciones no están tipadas y elegir entre
+        -- ellas sería inventarse una distinción que el corpus no hace.
+        --
+        -- La tentación es la contraria y hay que nombrarla para resistirla: sería
+        -- fácil leer «A menciona a B» como «A lleva a B» y montar sobre eso una
+        -- semántica de la dirección. Daría una lectura más rica y estaría
+        -- apoyada en nada.
+
+    @invariant TheDerivedFaceIsSpokenInThePresent
+        -- Un cruce dice qué hay entre dos páginas hoy, no qué había cuando se
+        -- compuso el recorrido. Alguien escribe la frase que faltaba y un cruce a
+        -- campo través pasa a ser por camino sin que el guía haya tocado nada;
+        -- alguien borra una frase y ocurre al revés.
+        --
+        -- Es la misma decisión que ANodeCitesAndNeverCopies, aplicada a lo que hay
+        -- *entre* los nodos en vez de a lo que hay en ellos. Guardar la cara
+        -- derivada convertiría al recorrido en el testigo de un mapa que ya no
+        -- existe, y un argumento que se apoya en un mapa viejo se sostiene por una
+        -- razón falsa.
+
+    @invariant OpenGroundIsWhereTheGuideIsAlone
+        -- En un cruce por camino, la conectiva se apoya en algo: había una frase
+        -- en el corpus uniendo esas dos páginas, y el lector puede ir a leerla. En
+        -- un cruce a campo través no hay nada debajo. Lo único que sostiene esa
+        -- adyacencia es que alguien la afirmó.
+        --
+        -- No es un defecto y es justamente la aportación: el hilo cose lo que no
+        -- estaba cosido. Pero es una afirmación de otra clase y se lee como otra
+        -- clase, porque un lector tiene derecho a saber en qué punto de un
+        -- argumento se le está pidiendo confianza en vez de ofreciéndole
+        -- comprobación.
+        --
+        -- Y es donde la conectiva más falta hace. Un cruce por camino sin nada
+        -- escrito todavía dice algo —el corpus lo dice por él—; uno a campo través
+        -- y en silencio no dice nada en absoluto.
+
+    @invariant TheProportionOfOpenGroundIsWhatTheTrailAdds
+        -- Cuántos de los cruces de un recorrido van a campo través es la medida
+        -- exacta de lo que ese recorrido añade al corpus, y sale sola de la
+        -- definición sin que haya que calcular nada aparte.
+        --
+        -- Los dos extremos se leen y ninguno está mal. Un recorrido todo por
+        -- camino es una lectura guiada: no afirma vínculos nuevos, ordena y
+        -- comenta los que había. Uno todo a campo través afirma un mapa entero que
+        -- el corpus no tiene, y puede ser lo mejor que alguien haya escrito o
+        -- puede no apoyarse en nada.
+        --
+        -- Lo que esto no es, y hay que decirlo porque se le parece mucho: una
+        -- medida de calidad, un porcentaje de completitud ni un aviso. Ver
+        -- @guarantee TheGapsAreVisibleWithoutBeingCounted, que sigue en pie. Una
+        -- tipología dice de qué clase es cada hueco; un contador diría cuántos
+        -- faltan, y de un recorrido no falta nada que su autor no eche en falta.
+
+    @invariant TheGestureBecomesProseAndStopsBeingData
+        -- El taller sabe cómo se anduvo cada cruce —se pulsó una referencia, se
+        -- entró por un backlink, se llegó buscando— y eso es lo único de un cruce
+        -- que ningún texto puede recuperar después. Al guardar el rastro, ese
+        -- gesto se escribe. Y en cuanto está escrito deja de ser un dato: es una
+        -- frase de la página, con su mano y su revisión, que el guía puede
+        -- reescribir, contradecir o borrar como cualquier otra cosa escrita.
+        --
+        -- Lectografo dice que la dirección deja de ser restricción y pasa a ser
+        -- memoria. En Vera va un paso más lejos y es más raro: la dirección deja
+        -- de ser dato y pasa a ser prosa. No sobrevive como campo en ninguna
+        -- parte. Sobrevive porque alguien la escribió, que es la única forma en
+        -- que algo se afirma en este corpus.
+        --
+        -- Y entonces el testimonio y la cara derivada pueden discrepar: el
+        -- testimonio dice que aquí se pulsó una referencia y el mapa dice que hoy
+        -- no hay ninguna. No es un error que reparar. Es el corpus habiéndose
+        -- movido debajo del argumento, dicho por el argumento mismo.
 
     @invariant TheOrdinalIsWhatMakesTheOrderDrawable
         -- Cada nodo lleva su número, y el número no es una comodidad de lectura.
@@ -187,6 +379,21 @@ entity Trail {
     -- se lee justo antes de llegar ahí.
     connectives: connective_texts(page, route)
 
+    -- Los cruces: la ruta leída como lo que es, una cadena de pasos de un nodo al
+    -- siguiente. No es una segunda estructura y no hay nada que mantener — un
+    -- recorrido de siete nodos tiene seis cruces, y cada uno es el par de nodos
+    -- consecutivos con lo que hay escrito entre ellos.
+    crossings: crossings_of(page, route)
+
+    -- Por dónde el corpus ya iba, y por dónde sólo va este recorrido.
+    on_path: crossings where kind = by_path
+    open_ground: crossings where kind = across_open_ground
+
+    -- Los cruces a campo través sobre los que todavía no hay nada dicho. Es el
+    -- único sitio de un recorrido donde no hay ni corpus ni guía: dos páginas
+    -- adyacentes porque sí. Se enseñan al componer y no se cuentan al leer.
+    silent_ground: open_ground where not is_spoken_for
+
     -- Lo que se escribe después del último nodo. Vacío mientras el recorrido no
     -- concluya nada, que es el estado normal de un borrador recién andado.
     conclusion: text_after_last(page, route)
@@ -203,6 +410,14 @@ entity Trail {
     argues: connectives.count >= 1
 }
 
+-- crossings_of(page, route)                                      -- caja negra
+--     Los pares de nodos consecutivos de la ruta, cada uno con la conectiva que
+--     hay entre ellos y el testimonio que lleve, si lleva. Un recorrido de n
+--     nodos da n-1 cruces.
+--
+--     La conclusión no es un cruce y ésa es su definición: no tiene segundo
+--     extremo. Ver @invariant TheLastConnectiveLeadsNowhere.
+
 ------------------------------------------------------------
 -- Rules
 ------------------------------------------------------------
@@ -215,14 +430,21 @@ entity Trail {
 -- otro propósito. El rastro se acumula solo, en el mapa, sin que nadie lo componga
 -- (workspace-interface.allium). Nadie ha decidido nada todavía.
 --
--- Uno. Alguien mira por dónde anduvo y le parece que eso decía algo. Guarda el
--- rastro. Nace una página privada, con `type:: trail`, un bloque por paso, ningún
--- texto propio y un título provisional. Es SaveTheTraceAsADraftTrail, y es el
+-- Cero bis, y es un medio paso que importa. Alguien quita del rastro un sitio al
+-- que fue por error, o arrastra uno para ponerlo antes que otro. Sigue sin haber
+-- decidido nada —no ha creado nada, no ha nombrado nada, no hay página— y ya está
+-- componiendo. Es la primera mitad del gesto, ocurre sin ceremonia y se puede
+-- deshacer no haciendo nada.
+--
+-- Uno. Alguien mira ese rastro y le parece que eso decía algo. Lo promueve. Nace
+-- una página privada, con `type:: argumento`, un bloque por cita y un bloque
+-- vacío entre cada dos —los cruces, que son lo que hay que escribir—, ningún
+-- texto propio y un título provisional. Es PromoteTheTraceAsAnArgument, y es el
 -- único acto de esta spec que no es escribir.
 --
 -- Uno bis. O no hubo rastro ninguno: alguien estaba escribiendo una página, se dio
 -- cuenta a mitad de que lo que tenía entre manos era un argumento, y le puso la
--- propiedad. Es DeclaringAPageToBeATrail. Los dos nacimientos acaban en lo mismo
+-- propiedad. Es DeclaringAPageToBeAnArgument. Los dos nacimientos acaban en lo mismo
 -- —una página que lleva la propiedad— y por eso no hay un acto de crear
 -- recorridos: hay dos maneras de que una página resulte serlo.
 --
@@ -247,12 +469,18 @@ entity Trail {
 -- de Bush entero y no hace falta ningún mecanismo para tenerlo: sale de que leer
 -- deje huella y de que la huella se pueda guardar.
 
--- Guardar por dónde se anduvo, y que eso sea el primer borrador.
+-- Promover el rastro a argumento.
 --
 -- El mapa ya lleva el rastro: dónde ha estado un participante, acumulado solo, sin
--- que nadie lo componga. `workspace/TheTraceIsWhereOneIsLocated` existe para saber
--- dónde está uno. Esta regla es el momento en que ese rastro deja de ser propio y
--- empieza a ser para otro.
+-- que nadie lo componga, y desde ahí podado y reordenado a mano si a alguien le
+-- pareció que sobraba o que iba en otro orden (ver workspace-interface.allium).
+-- Esta regla es el momento en que ese rastro deja de ser propio y empieza a ser
+-- para otro.
+--
+-- El gesto es uno y es pequeño, y tiene que serlo. No hay diálogo, no hay que
+-- ponerle título antes, no hay que decidir nada: se marca el rastro y sale una
+-- página. Decidir de qué trata es lo que se va a hacer *escribiéndola*, y pedir
+-- esa decisión en la puerta es cómo se consigue que nadie entre.
 --
 -- El parentesco entre las dos cosas es el hallazgo y no una coincidencia de
 -- nombres. Un rastro es la huella que uno deja sin querer: automática, privada,
@@ -260,21 +488,25 @@ entity Trail {
 -- autor, para alguien. Son el mismo objeto en dos momentos, y el segundo empieza
 -- cuando uno mira por dónde anduvo y decide que eso era un argumento.
 --
--- Por eso el borrador nace lleno de sitios y vacío de palabras. Lo que el rastro
--- sabe es la ruta; lo que no sabe, y es todo lo que hace falta, es por qué.
+-- Por eso el borrador nace lleno de sitios y casi vacío de palabras. Lo que el
+-- rastro sabe es la ruta y cómo se anduvo cada tramo; lo que no sabe, y es todo
+-- lo que hace falta, es por qué. Y la distancia entre esas dos cosas —entre haber
+-- entrado por un backlink y sostener que una página se sigue de la otra— es
+-- exactamente el trabajo que un guía hace.
 --
 -- Y lo que ocurre aquí es que el rastro deja de ser un rastro. Sale del taller y
 -- entra en el corpus, y la señal de que eso pasó es que ahora tiene título. Un
 -- breadcrumb no tiene nombre y no puede tenerlo: por eso no se puede [[enlazar]],
 -- ni citar, ni ser el nodo de otro recorrido, ni entregárselo a nadie. Es dónde
 -- está uno, y sólo sirve mientras uno está ahí.
-rule SaveTheTraceAsADraftTrail {
-    when: SaveTrace(participant, workspace, from_step)
+rule PromoteTheTraceAsAnArgument {
+    when: PromoteTraceAsArgument(participant, workspace, from_step)
 
     let graph = workspace.graph
     let membership = core/Membership{graph, participant}
-    -- El tramo del breadcrumb que se guarda: desde el paso elegido hasta donde se
-    -- está ahora, sin repeticiones seguidas y conservando los regresos.
+    -- El tramo del breadcrumb que se promueve: desde el paso elegido hasta donde
+    -- se está ahora, en el orden en que el rastro esté — que es el de la
+    -- navegación si nadie lo tocó, y el que su dueño le haya dado si lo tocó.
     let trace = trace_from(workspace.navigation_history, from_step)
     let title = provisional_title(trace, now)
 
@@ -296,7 +528,7 @@ rule SaveTheTraceAsADraftTrail {
             participant: participant,
             graph: graph,
             origin_id: origin_id_for_declaration(participant, trace),
-            change: set_property("type", "trail"),
+            change: set_property("type", "argumento"),
             channel: typed_text
         )
         for step in trace:
@@ -304,8 +536,23 @@ rule SaveTheTraceAsADraftTrail {
                 participant: participant,
                 graph: graph,
                 origin_id: origin_id_for_step(participant, trace, step),
-                change: create_block(link_to(step.title)),
+                change: create_block(link_to(step.page.title)),
                 channel: typed_text
+            )
+        for step in trace where from != null:
+            core/ParticipantSubmits(
+                participant: participant,
+                graph: graph,
+                origin_id: origin_id_for_crossing(participant, trace, step),
+                change: create_block(""),
+                channel: typed_text
+            )
+            core/ParticipantSubmits(
+                participant: participant,
+                graph: graph,
+                origin_id: origin_id_for_testimony(participant, trace, step),
+                change: set_block_property("crossed", testimony_for(step)),
+                channel: walked
             )
         TrailSeeded(
             participant: participant,
@@ -333,28 +580,110 @@ rule SaveTheTraceAsADraftTrail {
         -- es haber decidido enseñárselo a nadie, y un rastro que se publicara solo
         -- convertiría el mapa en una cámara.
 
-    @invariant TheFirstDraftIsNodesWithoutConnectives
-        -- Cada paso del rastro llega como un bloque con la referencia y nada más.
-        -- No se escribe conectiva por cuenta de nadie: ni el título repetido, ni un
-        -- resumen de la página citada, ni una frase de plantilla que diga «y
-        -- después». Lo que nace es un argumento con todas sus premisas y ningún
-        -- razonamiento, que es exactamente lo que el rastro sabía y exactamente
-        -- hasta dónde puede llegar una máquina sin ponerse a afirmar.
+    @invariant TheFirstDraftSaysWhatHappenedAndNotWhatItMeant
+        -- Cada paso del rastro llega como un bloque con la referencia, y cada
+        -- cruce con el testimonio de cómo se anduvo. Nace un argumento con todas
+        -- sus premisas, el registro de por dónde se pasó de una a otra, y ningún
+        -- razonamiento.
+        --
+        -- La línea que esto no cruza es la que separa el testimonio de la
+        -- conectiva, y hay que saber decirla porque las dos se parecen mucho:
+        --
+        --   testimonio  «se llegó aquí por quién nombra a [[X]]»
+        --               un hecho, comprobable, sobre el caminante, ya ocurrido
+        --   conectiva   «y por eso [[X]] no podía sostenerse»
+        --               una afirmación, discutible, sobre el corpus, del guía
+        --
+        -- Vera transcribe lo primero y no escribe lo segundo nunca. No hay título
+        -- repetido, ni resumen de la página citada, ni una frase de plantilla que
+        -- diga «y después». Un «y después» sería lo peor de los dos mundos: tiene
+        -- la forma de una conectiva y no afirma nada, así que ocupa el sitio donde
+        -- había que pensar y engaña sobre que ya se pensó.
         --
         -- El cursor espera entre el primer nodo y el segundo, que es donde va la
         -- primera cosa que este recorrido va a decir.
 
-    @invariant PruningIsEditing
+    @invariant TheTestimonyIsWrittenByWhoeverWalked
+        -- El testimonio entra con `channel: walked` y con la mano de quien anduvo,
+        -- no con la de Vera. Es la razón de que ese canal exista: caminar es
+        -- producir, y lo que produce es esto.
+        --
+        -- La alternativa era que Vera lo firmara, y entonces habría en el corpus
+        -- texto que ningún participante puso. Un recorrido cuyo primer borrador
+        -- lleva frases sin mano sería el único sitio de Vera donde la autoría por
+        -- bloque no contesta quién dijo qué, y es justamente el sitio donde más
+        -- falta hace que conteste: en un argumento, saber quién afirma cada cosa
+        -- es el argumento.
+
+    @invariant TheCrossingIsBornAsAnEmptyBlock
+        -- La página nace alternando: cita, bloque vacío, cita, bloque vacío, cita.
+        -- El bloque vacío es el cruce, y está ahí como bloque y no como concepto
+        -- porque un hueco que no ocupa sitio no se ve, y lo que hay que ver al
+        -- abrir esta página es cuántas cosas quedan por decir y dónde.
+        --
+        -- Es la traducción material de que el cruce sea el átomo. Un recorrido no
+        -- es una lista de citas de la que cuelgan comentarios: es una cadena en la
+        -- que la mitad de los eslabones están puestos y la otra mitad hay que
+        -- ponerlos. Puesto así, el trabajo que falta tiene forma, y la forma es
+        -- una columna de renglones en blanco entre cosas que ya dicen algo.
+        --
+        -- Los bloques vacíos no son un andamio que Vera retire después. Son
+        -- bloques como cualquier otro: se escriben, se borran, se parten, se
+        -- funden con la cita de al lado si a alguien le viene mejor así. Que
+        -- nazcan separados dice dónde va la escritura, no dónde tiene que
+        -- quedarse.
+
+    @invariant TheTestimonyIsAPropertyAndNotTheProse
+        -- El testimonio va como propiedad del bloque del cruce, no como su texto.
+        -- El renglón donde va la conectiva nace vacío y sigue vacío, porque un
+        -- borrador que llegara con algo escrito en el sitio de escribir obligaría
+        -- a borrar antes de pensar, y lo primero que se hace con una página es
+        -- leerla, no limpiarla.
+        --
+        -- Así el bloque del cruce dice dos cosas a la vez y en dos registros: por
+        -- dónde se pasó de verdad, arriba y en pequeño, como una anotación al
+        -- margen; y nada todavía, en el renglón, que es donde va lo que se afirma.
+        -- Es el cruce entero —sus dos caras— cabiendo en un bloque.
+        --
+        -- Y como propiedad se comporta como cualquier otra: se ve, se busca, se
+        -- edita y se borra. Un guía que no quiera enseñar por dónde anduvo quita
+        -- la línea, y no queda constancia de que la hubo — que es lo que
+        -- corresponde a algo que era suyo y privado antes de que él decidiera
+        -- promoverlo.
+
+    @invariant PruningIsEditingOnceItIsAPage
         -- Podar un nodo, reordenar dos, partir una frase en dos o unir dos en una
         -- son ediciones de la página, con sus revisiones y su mano. No hay actos de
         -- composición aparte de escribir, y por tanto no hay ninguna operación
         -- sobre un recorrido de la que su historia no dé cuenta.
+        --
+        -- Antes de la promoción no es así, y no puede serlo: podar y reordenar el
+        -- rastro no deja historia porque no hay dónde dejarla. El rastro no es una
+        -- página, no tiene revisiones y no está en el corpus. Es estado del taller,
+        -- como lo es dónde está el divisor de la pantalla.
+        --
+        -- La línea no es entre dos clases de edición sino entre dos clases de
+        -- cosa. Lo que se hace con un rastro no se registra porque un rastro no es
+        -- de nadie más; lo que se hace con un argumento se registra entero porque
+        -- un argumento es para otro. Y la promoción es exactamente el punto donde
+        -- se pasa de lo uno a lo otro: a partir de ahí, todo lo que se toque queda
+        -- dicho.
 
     @guidance
         -- El rastro guarda páginas, no bloques, así que el borrador cita páginas.
         -- Afinar un nodo hasta un bloque concreto es una edición posterior y una
         -- decisión distinta: el guía primero dice por dónde se pasa, y sólo
         -- después, si hace falta, señala dónde exactamente hay que mirar.
+        --
+        -- testimony_for(step) es caja negra y su trabajo entero es decir el gesto
+        -- del paso en castellano llano, sin adjetivos y sin causa: qué se pulsó,
+        -- desde dónde. Cinco gestos, cinco frases, ninguna con un «porque» dentro.
+        -- La tentación de que escriba mejor es la tentación de que escriba el
+        -- recorrido, y es la única cosa que esta regla no puede hacer.
+        --
+        -- El primer paso no lleva testimonio porque no hubo cruce: se llegó de
+        -- fuera. Todo rastro empieza con un acto que el corpus no explica, y no
+        -- hay nada honesto que escribir en el sitio de esa explicación.
         --
         -- TrailSeeded es lo que workspace-interface.allium escucha para abrir la
         -- página nueva y dejar el cursor donde va la primera conectiva. Se emite en
@@ -369,12 +698,24 @@ rule SaveTheTraceAsADraftTrail {
 -- aporta—, así que la mitad del corpus lleva años siendo recorridos sin decirlo.
 -- La propiedad no añade estructura, porque la estructura ya estaba: añade una
 -- afirmación del autor sobre ella, que es que el orden estaba pensado.
-rule DeclaringAPageToBeATrail {
+--
+-- La palabra es `argumento` y no `trail`, y la elección dice algo. `trail` nombra
+-- la forma —una línea por el mapa— y `argumento` nombra lo que se está
+-- afirmando. Como esta spec sostiene desde la primera línea que la forma es el
+-- argumento, la palabra que se escribe en la página debería ser la segunda: es la
+-- que hace que ponerla se sienta como lo que es, que no es clasificar un texto
+-- sino responder por él.
+--
+-- Que el corpus mezcle castellano e inglés en sus propiedades no cuesta nada
+-- aquí: controlled-ontology.allium absorbe las variantes como alt_labels del
+-- mismo tipo semántico, que es lo que ya hace con `lang` y `language`. Lo que se
+-- escribió `trail` antes de esta decisión sigue valiendo y sigue siendo lo mismo.
+rule DeclaringAPageToBeAnArgument {
     when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
 
     requires: change.kind = set_property
     requires: change.property_key = "type"
-    requires: change.property_value = "trail"
+    requires: change.property_value = "argumento"
 
     ensures: Trail.created(
         graph: graph,
@@ -536,6 +877,32 @@ invariant ATrailIsAPageOfItsGraph {
         trail.page.graph = trail.graph
 }
 
+-- Un cruce de siete nodos son seis pasos. Es aritmética y está escrita porque es
+-- lo que impide que los cruces se conviertan en una lista aparte capaz de tener
+-- más o menos elementos que la ruta de la que salen.
+invariant ACrossingForEveryNodeButTheFirst {
+    for trail in Trails:
+        trail.length >= 1 implies trail.crossings.count = trail.length - 1
+}
+
+-- No hay cruces sueltos. Los dos extremos de un cruce son nodos de su propio
+-- recorrido, lo que dicho al revés es que un cruce no puede unir dos páginas por
+-- las que este recorrido no pasa.
+invariant BothEndsOfACrossingAreNodesOfItsTrail {
+    for trail in Trails:
+        trail.crossings.all(c => trail.route contains c.from and trail.route contains c.to)
+}
+
+-- Los dos extremos de un cruce son distintos, por la misma razón por la que
+-- NeighbourhoodHasNoSelfEdge existe: un paso de una página a sí misma no es un
+-- paso. Una página nombrada dos veces en un recorrido da dos nodos y por tanto
+-- puede haber un cruce que salga de ella y otro que llegue, pero ninguno que
+-- haga las dos cosas a la vez.
+invariant ACrossingDoesNotStayWhereItWas {
+    for trail in Trails:
+        trail.crossings.all(c => c.from != c.to)
+}
+
 invariant OnePageIsAtMostOneTrail {
     for a in Trails:
         for b in Trails:
@@ -587,22 +954,38 @@ surface TrailComposition {
         workspace.navigation_history
 
     provides:
-        SaveTrace(guide, workspace, from_step)
+        PromoteTraceAsArgument(guide, workspace, from_step)
+
+    -- Los cruces del borrador que se está componiendo, con la cara que el corpus
+    -- pone y la que falta por poner.
+    exposes:
+        Trail.crossings
+        Trail.open_ground
+        Trail.silent_ground
 
     contracts:
         fulfils ComposedRoute
 
     @guarantee WalkingIsTheFirstDraft
         -- Componer un recorrido empieza por haberlo andado. Lo que el taller ofrece
-        -- no es un compositor de rutas sino un gesto sobre el rastro que ya está en
-        -- pantalla: guardar esto. Lo que queda después es una página y el editor de
-        -- siempre.
+        -- no es un compositor de rutas sino dos gestos sobre el rastro que ya está
+        -- en pantalla: ordenarlo, y promoverlo. Lo que queda después es una página
+        -- y el editor de siempre.
         --
         -- Un compositor aparte —una lista donde arrastrar nodos, un panel donde
         -- teclear conectivas— pediría saber el argumento antes de empezar a
         -- componerlo, que es el orden inverso al que Vera defiende en cualquier otro
         -- sitio. Se escribe para averiguar qué se piensa; se anda para averiguar por
         -- dónde se iba.
+        --
+        -- Que arrastrar pasos del rastro sea exactamente eso —arrastrar nodos en
+        -- una lista— y aun así no sea un compositor es la distinción fina y hay
+        -- que sostenerla. La diferencia no está en el gesto sino en de dónde sale
+        -- lo que se arrastra: en un compositor uno pone los nodos que cree que
+        -- necesita, y en el rastro ya están porque uno pasó por ahí. Se poda algo
+        -- que sobra, no se convoca algo que falta. Por eso ordenar el rastro no
+        -- pide saber el argumento de antemano: es lo que uno hace mientras se
+        -- entera de cuál era.
 
     @guarantee TheWorkIsWritingTheConnectives
         -- Lo que queda por hacer sobre un borrador andado se ve de un vistazo:
@@ -610,6 +993,29 @@ surface TrailComposition {
         -- progreso ni una lista de tareas —un recorrido puede querer dos nodos
         -- seguidos sin nada entre ellos y eso también es decir algo—, es
         -- simplemente que el hueco se ve porque está vacío.
+
+    @guarantee TheGapsAreNotAllTheSameGap
+        -- Un hueco sobre un cruce por camino y un hueco sobre un cruce a campo
+        -- través son dos silencios distintos, y se distinguen. En el primero el
+        -- corpus habla por el guía: hay una frase en algún sitio uniendo esas dos
+        -- páginas, y el lector puede ir a leerla. En el segundo no hay nada
+        -- debajo, y lo único que queda es dos páginas juntas porque sí.
+        --
+        -- Sigue sin haber contador y sigue sin haber aviso: un cruce a campo
+        -- través en silencio puede ser exactamente lo que su autor quería, y el
+        -- taller no tiene opinión sobre eso. Lo que enseña es de qué clase es cada
+        -- silencio, que es una cosa que se ve, y no cuántos quedan, que sería una
+        -- cosa que se reclama.
+
+    @guarantee ComposingSeesTheTwoFacesAtOnce
+        -- Mientras se compone, cada cruce enseña sus dos caras juntas: lo que el
+        -- corpus tenía ahí y lo que se está escribiendo encima. Es la única
+        -- postura desde la que se puede decidir qué escribir, porque la pregunta
+        -- que el guía se hace en cada tramo es exactamente ésa — ¿estoy diciendo
+        -- lo que el corpus ya decía, o estoy afirmando algo que no está en ninguna
+        -- parte?
+        --
+        -- Las dos respuestas son buenas y la mala es no saber cuál se está dando.
 
     @guarantee ComposingIsWritingAndNothingElse
         -- No hay ninguna operación sobre un recorrido que no sea editar su página.
@@ -650,12 +1056,26 @@ surface TrailUnderRevision {
         trail.broken
         trail.length
         trail.argues
+        trail.crossings
+        trail.on_path
+        trail.open_ground
 
     @guarantee TheGapsAreVisibleWithoutBeingCounted
         -- Los huecos entre nodos sin conectiva se ven porque están vacíos, y los
         -- puentes cortados se ven porque el nodo no lleva a ningún sitio. No hay
         -- porcentaje de completitud ni una lista de lo que falta: un recorrido con
         -- huecos puede estar acabado, y un contador diría que no.
+
+    @guarantee TheGroundCanMoveUnderACrossing
+        -- Un cruce que iba por camino puede haber quedado a campo través, y al
+        -- revés, sin que el guía tocara nada. Volver es también enterarse de eso.
+        --
+        -- Las dos direcciones se leen distinto y las dos importan. Que un cruce
+        -- haya quedado a campo través significa que la frase en la que se apoyaba
+        -- ya no está: lo que se escribió encima sigue diciendo lo mismo y ahora lo
+        -- dice solo. Que un cruce haya pasado a ir por camino significa que el
+        -- corpus terminó por decir lo que este argumento afirmaba antes que él, y
+        -- eso no pide corregir nada — pide, si acaso, saberlo.
 
     @guarantee AWarningPointsAtAConnectiveAndNotAtATrail
         -- Cuando una premisa se movió, lo que se señala es la conectiva que la
@@ -705,10 +1125,33 @@ surface TrailOnTheMap {
         -- según alguien. Un hilo que coincidiera con caminos que ya existían estaría
         -- diciendo lo que el corpus ya decía.
 
+    @guarantee TheStitchesAreVisibleWhereThereWasNoSeam
+        -- Los tramos del hilo se dibujan distintos según pasen por donde ya había
+        -- una frase o por donde no había nada. Es la cara derivada del cruce
+        -- puesta en el sitio donde se lee de un vistazo, y es la única cosa que un
+        -- recorrido dibujado puede decir y un recorrido leído no.
+        --
+        -- Lo que se ve entonces es la aportación con forma. Un hilo que va casi
+        -- todo por caminos existentes se dibuja pegado al grafo; uno que va casi
+        -- todo a campo través se dibuja cruzando el vacío, y la figura que hace es
+        -- literalmente la de una tesis sobre lo que faltaba. No hay que contar
+        -- nada: se ve por dónde va la costura y por dónde va sola la aguja.
+        --
+        -- Y es en tiempo presente, como la cara que dibuja. El mismo recorrido
+        -- abierto dentro de un año puede tener un tramo menos en el vacío porque
+        -- alguien escribió por fin la frase que unía esas dos páginas — que es el
+        -- corpus alcanzando a un argumento que iba por delante.
+
     @guarantee TheConnectiveIsDrawnAsTheSegment
         -- Lo que el guía escribió entre dos nodos se lee sobre el tramo que los
         -- une. El pegamento se dibuja como pegamento, y no como una nota colgando
-        -- de un nodo: pertenece a los dos y a ninguno.
+        -- de un nodo: es del cruce, que es el objeto que hay entre dos nodos y no
+        -- es ninguno de los dos.
+        --
+        -- Ésta es la garantía que obligó a declarar el cruce. Antes había que
+        -- decir de la conectiva que «pertenece a los dos y a ninguno», que es una
+        -- frase que sólo se escribe cuando existe una cosa a la que se le ha
+        -- negado el nombre.
 
     @guarantee AThreadIsNotAnEdge
         -- Los tramos que un recorrido dibuja no son aristas del grafo: no cambian
@@ -802,6 +1245,36 @@ surface TrailReading {
 -- es la numeración: una mención al paso aparece numerada donde le toca, se ve en el
 -- acto, y quien la ve decide si quería decir eso. Ver
 -- @invariant TheOrdinalIsWhatMakesTheOrderDrawable.
+
+-- Contestada la que Lectografo dejó abierta sobre la persistencia del recorrido
+-- —si debe pasar de `value` a `entity`— y la respuesta es que la pregunta tenía
+-- una alternativa falsa dentro. No hay que elegir: son dos objetos y hacen falta
+-- los dos. El rastro es el `value` (taller, privado, sin autor, se evapora) y el
+-- recorrido es la entidad (una página del corpus, con mano, historia y título), y
+-- entre ellos hay un gesto, no una conversión de tipo. Lo que Lectografo llama
+-- «el recorrido es un gesto y no una obra» sigue siendo verdad — de su mitad.
+
+-- Contestada también, y por el camino contrario, la de Lectografo sobre si un
+-- recorrido debe marcar el origen de cada arista que cruza. Allí la pregunta es
+-- si distinguir una arista citada del texto de una inventada para reparar la
+-- topología; aquí no hay aristas inventadas, así que la distinción que queda es
+-- otra y es más simple: si el corpus unía estas dos páginas o las une este
+-- argumento. Ver @invariant OpenGroundIsWhereTheGuideIsAlone. La respuesta de las
+-- dos, dicha una vez: sí, se marca, y se marca al leer y no sólo al validar,
+-- porque es al leer cuando alguien decide si creer.
+
+-- Contestada la del `walk` frente al `trail`, y no eligiendo sino notando que en
+-- Vera no era una elección. La ruta se deriva del texto y una página puede
+-- nombrar a otra dos veces, así que la repetición no se puede prohibir sin
+-- prohibir escribir. El objeto es un walk. Y hace bien en serlo, por la razón que
+-- da Lectografo: volver es significativo, y prohibirlo sería prohibir leer un
+-- círculo como círculo.
+
+open question "El binario del cruce confunde «nadie unió estas dos páginas» con «no se puede saber, porque una de ellas ya no existe». Se deja a la vista apoyándose en que el puente cortado se dibuja aparte. ¿Aguanta eso cuando el recorrido se lee como texto y no como dibujo, donde no hay tramo que dibujar roto?"
+
+open question "El testimonio de un cruce y su cara derivada pueden discrepar —«se llegó aquí siguiendo una referencia» y hoy no hay ninguna—, y esa discrepancia se ha declarado informativa y no un error. ¿Debe verse cuando ocurre, como se ve una premisa que se movió, o enseñarla convertiría en aviso algo que ni siquiera es del guía sino del caminante que fue?"
+
+open question "Un rastro reordenado a mano ya es una composición, y sigue llamándose rastro. Si alguien arrastra veinte pasos durante media hora y cierra la pestaña, lo pierde todo sin que nada se lo haya advertido, porque el rastro es estado del taller y el estado del taller no se promete. ¿Es eso el precio correcto de que ordenar no cueste nada, o hay un punto —y cuál— a partir del cual un rastro ha dejado de ser estado y merece sobrevivir a la sesión?"
 
 open question "Una conectiva puede acabar valiendo por sí sola, y entonces querría ser una página del corpus y no un fragmento dentro de un argumento. ¿Hay un gesto para promover una conectiva a página —dejando en su sitio un nodo que la cite— o eso es simplemente escribir la página y reescribir la conectiva, como cualquier otra cosa que se escribe dos veces?"
 

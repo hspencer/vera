@@ -9,7 +9,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 
-import { VeraGraph, checkInvariants } from '@vera/core';
+import { VeraGraph, checkInvariants, CONTRIBUTION_CHANNELS } from '@vera/core';
 import type { Change, ContributionChannel, OriginEvidence, ParticipantId } from '@vera/core';
 import {
   createRecording,
@@ -64,7 +64,10 @@ const CHANGE_KINDS = new Set([
   'remove_property',
 ]);
 
-const CHANNELS = new Set(['typed_text', 'authenticated_voice', 'agent_generation', 'import']);
+// Del dominio y no repetida aquí: una lista copiada es una lista que se queda
+// atrás el día que el vocabulario crece, y el borde HTTP rechazaría por
+// desconocido algo que @vera/core acepta.
+const CHANNELS: ReadonlySet<string> = new Set<string>(CONTRIBUTION_CHANNELS);
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',

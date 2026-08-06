@@ -111,9 +111,30 @@ La regla que gobierna todo lo demás: `operations` es el registro canónico. Las
 tablas de estado son su materialización y los índices derivados son
 reconstruibles. Nada fuera de `submitOperation()` escribe en ellas.
 
-No hay migraciones todavía. El esquema se aplica completo sobre una base nueva y
-el corpus se reimporta. Eso deja de alcanzar en cuanto exista estado que no
-provenga de `mind`.
+**Migraciones**, versionadas con `PRAGMA user_version` en
+`packages/store/src/migrations.ts`. El reparto es el siguiente y conviene tenerlo
+claro antes de tocar el esquema:
+
+- `schema/schema.sql` describe la **forma de destino**. Está escrito con
+  `CREATE TABLE IF NOT EXISTS`, así que sobre una base nueva la crea entera y ya
+  al día, y sobre una base que ya existe no toca una sola tabla.
+- `migrations.ts` describe el **camino**. Cada migración lleva un entero que sólo
+  sube; una base nueva se sella en la versión de destino sin ejecutar ninguna.
+
+Un cambio sobre una tabla existente —una columna, un `CHECK`, un índice— se
+escribe en los dos sitios o la base de quien ya venía usando Vera se queda atrás
+sin que nada lo diga. Es duplicación y es a propósito: derivar el camino leyendo
+el destino pide un motor de diffs de esquema, y un motor de diffs se equivoca en
+silencio justo el día que toca migrar el registro canónico.
+
+Cambiar un `CHECK` obliga a reconstruir la tabla —crear, copiar, soltar,
+renombrar, rehacer índices—, que es lo que hace `rebuildTable()`. Cada migración
+corre en su propia transacción con las claves foráneas apagadas, y termina con un
+`PRAGMA foreign_key_check`: si una falla, la base queda en la anterior y no a
+medio camino de ninguna.
+
+`ADDED_COLUMNS` en `store.ts` es anterior y no crece más. Se queda por las bases
+en `user_version = 0` a las que les falta alguna de esas tres columnas.
 
 PostgreSQL queda como ruta de escalamiento si una futura Vera necesita muchos
 escritores simultáneos o alojamiento multi-tenant. No es requisito de v0.

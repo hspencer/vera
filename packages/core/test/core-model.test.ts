@@ -37,13 +37,20 @@ describe('enumerations', () => {
     assert.ok(!CHANGE_KINDS.includes('link_pages' as never));
   });
 
-  it('declares the four contribution channels', () => {
+  it('declares the five contribution channels', () => {
     assert.deepEqual([...CONTRIBUTION_CHANNELS].sort(), [
       'agent_generation',
       'authenticated_voice',
       'import',
       'typed_text',
+      'walked',
     ]);
+  });
+
+  // Caminar es producir: el testimonio de un cruce lo escribe quien anduvo, y sin
+  // este canal lo firmaría Vera. Ver trail/TheTestimonyIsWrittenByWhoeverWalked.
+  it('admits what someone produced by walking', () => {
+    assert.ok(CONTRIBUTION_CHANNELS.includes('walked'));
   });
 
   it('declares two visibilities', () => {

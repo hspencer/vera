@@ -1,0 +1,202 @@
+// Migraciones del esquema, versionadas con `PRAGMA user_version`.
+//
+// El problema que resuelven, dicho una vez: `schema/schema.sql` está escrito con
+// `CREATE TABLE IF NOT EXISTS`, así que describe la forma de destino y no sabe
+// llevar a nadie hasta ella. Sobre una base nueva crea todo ya al día; sobre una
+// base que ya existe no toca una sola tabla. Añadir una columna se salvaba con
+// ADDED_COLUMNS en store.ts, pero cambiar un CHECK, un índice o el tipo de una
+// columna no se salva con nada: en SQLite eso pide reconstruir la tabla.
+//
+// De aquí en adelante, un cambio sobre una tabla que ya existe se escribe dos
+// veces —en schema.sql, que es la forma de destino, y aquí, que es el camino— y
+// las dos tienen que coincidir. Es duplicación y es a propósito: la alternativa
+// es derivar el camino leyendo el destino, que obliga a un motor de diffs de
+// esquema, y un motor de diffs se equivoca en silencio justo el día que toca
+// migrar el registro canónico.
+//
+// La versión es un entero y sólo sube. `user_version` vale 0 en toda base
+// anterior a este archivo, que es exactamente lo que hace falta para reconocerla.
+
+import type { DatabaseSync } from 'node:sqlite';
+
+export interface Migration {
+  readonly version: number;
+  readonly name: string;
+  /** Se ejecuta dentro de una transacción, con las claves foráneas apagadas. */
+  apply(db: DatabaseSync): void;
+}
+
+/**
+ * Reconstruye una tabla para cambiar algo que ALTER TABLE no alcanza.
+ *
+ * Es el procedimiento que documenta SQLite: crear la nueva con la forma que se
+ * quiere, copiar, soltar la vieja, renombrar, rehacer los índices. Se le pasan
+ * las columnas explícitamente en vez de `SELECT *` porque el orden importa y
+ * porque un `*` copiaría en silencio una columna que la migración quería tirar.
+ */
+function rebuildTable(
+  db: DatabaseSync,
+  table: string,
+  createNew: string,
+  columns: readonly string[],
+  indexes: readonly string[],
+): void {
+  const list = columns.join(', ');
+  db.exec(createNew);
+  db.exec(`INSERT INTO ${table}_new (${list}) SELECT ${list} FROM ${table}`);
+  db.exec(`DROP TABLE ${table}`);
+  db.exec(`ALTER TABLE ${table}_new RENAME TO ${table}`);
+  for (const index of indexes) db.exec(index);
+}
+
+/**
+ * 1 — el canal `walked`.
+ *
+ * core.allium admite un cuarto canal de contribución: lo que alguien produjo
+ * andando por el corpus, que es de donde sale el testimonio de un cruce (ver
+ * trail.allium). Dos CHECK lo rechazaban, y un CHECK no se cambia sin rehacer la
+ * tabla.
+ *
+ * `revisions.channel` no aparece aquí porque no lleva CHECK: es TEXT a secas y
+ * acepta el valor nuevo sin tocarla.
+ */
+const addWalkedChannel: Migration = {
+  version: 1,
+  name: 'canal walked',
+  apply(db) {
+    rebuildTable(
+      db,
+      'operations',
+      `CREATE TABLE operations_new (
+          id                     TEXT PRIMARY KEY,
+          graph_id               TEXT NOT NULL REFERENCES graphs (id),
+          origin_id              TEXT NOT NULL,
+          sequence               INTEGER NOT NULL,
+          participant_id         TEXT NOT NULL REFERENCES participants (id),
+          change_kind            TEXT NOT NULL,
+          change_payload         TEXT NOT NULL,
+          subject_id             TEXT NOT NULL,
+          channel                TEXT NOT NULL CHECK (
+                                     channel IN ('typed_text', 'authenticated_voice',
+                                                 'agent_generation', 'import', 'walked')),
+          evidence_reference     TEXT,
+          evidence_captured_at   INTEGER,
+          submitted_at           INTEGER NOT NULL,
+          applied_at             INTEGER NOT NULL,
+          CHECK (channel <> 'authenticated_voice' OR evidence_reference IS NOT NULL)
+      ) STRICT`,
+      [
+        'id',
+        'graph_id',
+        'origin_id',
+        'sequence',
+        'participant_id',
+        'change_kind',
+        'change_payload',
+        'subject_id',
+        'channel',
+        'evidence_reference',
+        'evidence_captured_at',
+        'submitted_at',
+        'applied_at',
+      ],
+      [
+        'CREATE UNIQUE INDEX operations_origin ON operations (graph_id, origin_id)',
+        'CREATE UNIQUE INDEX operations_sequence ON operations (graph_id, sequence)',
+      ],
+    );
+
+    rebuildTable(
+      db,
+      'block_authorship',
+      `CREATE TABLE block_authorship_new (
+          block_id        TEXT PRIMARY KEY REFERENCES blocks (id) ON DELETE CASCADE,
+          participant_id  TEXT NOT NULL REFERENCES participants (id),
+          channel         TEXT NOT NULL CHECK (
+                              channel IN ('typed_text', 'authenticated_voice',
+                                          'agent_generation', 'import', 'walked')),
+          written_at      INTEGER NOT NULL
+      ) STRICT`,
+      ['block_id', 'participant_id', 'channel', 'written_at'],
+      ['CREATE INDEX block_authorship_by_participant ON block_authorship (participant_id)'],
+    );
+  },
+};
+
+export const MIGRATIONS: readonly Migration[] = [addWalkedChannel];
+
+/** La versión a la que llega una base nueva sin correr una sola migración. */
+export const SCHEMA_VERSION = MIGRATIONS.reduce((top, m) => Math.max(top, m.version), 0);
+
+function userVersion(db: DatabaseSync): number {
+  const row = db.prepare('PRAGMA user_version').get() as { user_version: number } | undefined;
+  return row?.user_version ?? 0;
+}
+
+function setUserVersion(db: DatabaseSync, version: number): void {
+  // PRAGMA no acepta parámetros ligados; el valor es un entero de este módulo,
+  // nunca de fuera.
+  db.exec(`PRAGMA user_version = ${version}`);
+}
+
+/**
+ * Si esta base acaba de nacer.
+ *
+ * Hay que preguntarlo ANTES de aplicar schema.sql, y ahí está toda la sutileza
+ * del asunto: después de aplicarlo, una base nueva y una base vieja sin migrar
+ * son indistinguibles —las dos tienen todas las tablas y `user_version` en 0— y
+ * correrle las migraciones a la nueva sería reconstruir tablas recién creadas
+ * con la forma que ya tenían.
+ */
+export function isFreshDatabase(db: DatabaseSync): boolean {
+  const row = db
+    .prepare(`SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'operations'`)
+    .get() as { n: number } | undefined;
+  return (row?.n ?? 0) === 0;
+}
+
+/**
+ * Lleva la base hasta SCHEMA_VERSION, corriendo lo que le falte y nada más.
+ *
+ * Una base nueva se sella en la versión de destino sin ejecutar ninguna
+ * migración: schema.sql ya la creó con esa forma. Una que venía de antes corre
+ * las que le falten, en orden, cada una en su propia transacción — si la tercera
+ * falla, la base queda en la segunda y no a medio camino de ninguna.
+ */
+export function migrate(db: DatabaseSync, fresh: boolean): void {
+  if (fresh) {
+    setUserVersion(db, SCHEMA_VERSION);
+    return;
+  }
+
+  const from = userVersion(db);
+  const pending = MIGRATIONS.filter((m) => m.version > from).sort((a, b) => a.version - b.version);
+  if (pending.length === 0) return;
+
+  for (const migration of pending) {
+    // Fuera de la transacción a propósito: SQLite ignora este PRAGMA dentro de
+    // una, y reconstruir una tabla a la que otras apuntan necesita que esté
+    // apagado. Se restaura pase lo que pase.
+    db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      db.exec('BEGIN');
+      try {
+        migration.apply(db);
+        setUserVersion(db, migration.version);
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+
+      const broken = db.prepare('PRAGMA foreign_key_check').all();
+      if (broken.length > 0) {
+        throw new Error(
+          `La migración ${migration.version} (${migration.name}) dejó ${broken.length} referencias rotas`,
+        );
+      }
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+}
