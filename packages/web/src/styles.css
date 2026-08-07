@@ -1292,21 +1292,53 @@ input {
   background: var(--bg-raised);
 }
 
+/*
+ * Editar es seguir leyendo el mismo texto, no abrir otra cosa encima.
+ *
+ * El campo era de otro mundo: monoespaciada donde la lectura es proporcional,
+ * 14,4px donde el texto mide 16, interlínea de 21,6 donde la línea mide 24,8, y
+ * encima un borde y un fondo propios. Cinco cambios a la vez, y el primer
+ * carácter saltaba 7,4 píxeles a la derecha — medido. Tocar un bloque para
+ * escribir en él movía el texto bajo el dedo justo en el momento en que alguien
+ * está apuntando a una palabra concreta.
+ *
+ * Ahora hereda la tipografía de la lectura y empieza exactamente donde empezaba
+ * el párrafo: sin borde y sin relleno, el origen del campo es el origen del
+ * texto. Lo que se ve al entrar es lo mismo que había, con el Markdown a la
+ * vista; lo que cambia es que ahora se puede escribir.
+ *
+ * Que se esté editando lo dice la barra de `.body.editing` y el propio cursor.
+ * Un borde alrededor no era una señal: era una caja, y una caja dice «esto es
+ * otra cosa» de algo que es el mismo párrafo.
+ */
 .editor {
   width: 100%;
-  border: 1px solid var(--accent);
-  border-radius: 3px;
-  background: var(--bg-raised);
-  padding: 0.25rem 0.4rem;
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  line-height: 1.5;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.55;
   /* El alto lo fija el contenido. Con `overflow` visible, `scrollHeight` mediría
      la barra de desplazamiento en vez del texto, y el campo crecería solo. */
   overflow-y: hidden;
   /* Redimensionar a mano dejó de tener sentido: el siguiente carácter escrito
      devolvería el campo al alto de su contenido. */
   resize: none;
+}
+
+/*
+ * Dónde se está escribiendo, dicho sin mover nada.
+ *
+ * Una barra en el margen izquierdo, con sombra interior: no ocupa sitio, no
+ * empuja el texto y no encierra el bloque. Dice dónde está el cursor a quien
+ * mire la página entera, que es lo que un borde intentaba decir moviéndolo todo.
+ */
+.body.editing {
+  box-shadow: inset 2px 0 0 var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border-radius: 2px;
 }
 
 /*

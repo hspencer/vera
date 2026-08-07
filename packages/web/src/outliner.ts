@@ -1983,6 +1983,7 @@ function startEditing(
   body.innerHTML = '';
   if (spoken !== null) body.append(spoken);
   body.append(editor);
+  body.classList.add('editing');
 
   /**
    * El alto sigue al contenido.
@@ -2013,6 +2014,7 @@ function startEditing(
 
   /** Volver a la vista de lectura, conservando la grabación por el mismo motivo. */
   const render = (content: string): void => {
+    body.classList.remove('editing');
     const heldAudio = body.querySelector('.audio-block');
     body.innerHTML = '';
     if (heldAudio !== null) body.append(heldAudio);
