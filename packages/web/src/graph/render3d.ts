@@ -532,23 +532,33 @@ export function renderGraph3D(
   activeGraph = graph;
 
   // Listen for external zoom/center events from controls toolbar
+  //
+  // Acercarse es acortar la distancia a lo que se orbita, no a un origen del
+  // mundo que puede estar en cualquier parte: multiplicar la posición por un
+  // factor arrastraba el grafo fuera de cuadro en cuanto se había centrado en un
+  // nodo lejos del origen.
   const onZoom = ((e: CustomEvent) => {
-    const pos = graph.cameraPosition();
+    const camera = graph.cameraPosition();
+    const target =
+      (graph.controls() as { target?: { x: number; y: number; z: number } })?.target ??
+      { x: 0, y: 0, z: 0 };
     const factor = e.detail === "in" ? 0.67 : 1.5;
-    graph.cameraPosition(
-      { x: pos.x * factor, y: pos.y * factor, z: pos.z * factor },
-      undefined, // keep same lookAt
-      300
-    );
+    const position = {
+      x: target.x + (camera.x - target.x) * factor,
+      y: target.y + (camera.y - target.y) * factor,
+      z: target.z + (camera.z - target.z) * factor,
+    };
+    graph.cameraPosition(position, target, 300);
+    // Acercarse es una decisión, y las decisiones se conservan.
+    moved = true;
+    heldCamera = { position, lookAt: { x: target.x, y: target.y, z: target.z } };
   }) as EventListener;
+  // Centrar es volver al encuadre de partida, así que es olvidar lo que la mano
+  // había hecho y dejar que el encuadre vuelva a decidir.
   const onCenter = (() => {
-    // Reset camera to look at origin, then fit all nodes
-    graph.cameraPosition(
-      { x: 0, y: 0, z: 200 },  // camera position
-      { x: 0, y: 0, z: 0 },    // look-at
-      600                        // transition ms
-    );
-    setTimeout(() => graph.zoomToFit(400, 40), 650);
+    moved = false;
+    heldCamera = null;
+    fit(600);
   }) as EventListener;
   document.addEventListener("constel:zoom", onZoom);
   document.addEventListener("constel:center", onCenter);
