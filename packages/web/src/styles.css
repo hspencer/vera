@@ -2895,22 +2895,56 @@ code {
   opacity: 0.5;
 }
 
+/* La cruz y el visto, del mismo tamaño: las dos decisiones pesan igual. */
 .suggestion-decide {
-  font-family: var(--font-ui);
-  font-size: 0.76rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: none;
+}
+
+.suggestion-no,
+.suggestion-yes {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.7rem;
   color: var(--text-dim);
   background: none;
   border: 1px solid var(--rule);
   border-radius: 3px;
-  padding: 0.15rem 0.55rem;
-  flex: none;
-  white-space: nowrap;
   cursor: pointer;
 }
 
-.suggestion-decide:hover {
+.suggestion-no .icon,
+.suggestion-yes .icon {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.suggestion-no:hover:not(:disabled) {
+  color: var(--voice);
+  border-color: var(--voice);
+}
+
+.suggestion-yes:hover:not(:disabled) {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+.suggestion-no:disabled,
+.suggestion-yes:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Varios valores de una propiedad: separados de verdad, no una cadena con comas.
+   Cada palabra se resalta y se sigue por su cuenta. */
+.property-words {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
 }
 
 /*

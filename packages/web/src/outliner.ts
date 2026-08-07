@@ -789,6 +789,74 @@ async function processPage(
   list.className = 'suggestions';
   body.append(list);
 
+  /** Las que siguen a la vista, sin decidir. */
+  const abiertas = new Set<Suggestion>();
+
+  /*
+   * Lo que la página ya dice, para no pisarlo y para poder sumar.
+   *
+   * `set_property` guarda un valor por clave, así que escribir un tipo nuevo sin
+   * mirar lo que había borraría los anteriores. Se lleva aquí el estado y se
+   * actualiza a cada escritura: así aplicar de una en una acumula igual que
+   * aplicar todas de golpe, que es lo que alguien espera al pulsar dos vistos
+   * seguidos.
+   */
+  const held = new Map<string, string[]>();
+  for (const property of page.properties ?? []) {
+    held.set(
+      property.key,
+      property.value.split(',').map((v) => v.trim()).filter((v) => v !== ''),
+    );
+  }
+
+  /** Escribe un grupo de sugerencias. Devuelve si todo lo pedido se escribió. */
+  const write = async (chosen: Suggestion[]): Promise<boolean> => {
+    const byKey = new Map<string, string[]>();
+    const others: Suggestion[] = [];
+    for (const suggestion of chosen) {
+      if (suggestion.change.kind !== 'set_property') {
+        others.push(suggestion);
+        continue;
+      }
+      const key = suggestion.change.propertyKey;
+      const values = byKey.get(key) ?? [...(held.get(key) ?? [])];
+      if (!values.includes(suggestion.change.propertyValue)) {
+        values.push(suggestion.change.propertyValue);
+      }
+      byKey.set(key, values);
+    }
+
+    let entero = true;
+
+    for (const [key, values] of byKey) {
+      const result = await api.submit({
+        kind: 'set_property',
+        page: page.id,
+        propertyKey: key,
+        propertyValue: values.join(', '),
+      });
+      if (result.status === 'rejected') {
+        step(`rechazado: ${result.reason} · ${key}`, 'bad');
+        entero = false;
+        continue;
+      }
+      held.set(key, values);
+      step(`${key}:: ${values.join(', ')}`, 'ok');
+    }
+
+    for (const suggestion of others) {
+      const result = await api.submit(suggestion.change);
+      if (result.status === 'rejected') {
+        step(`rechazado: ${result.reason} · ${suggestion.what}`, 'bad');
+        entero = false;
+        continue;
+      }
+      step(suggestion.what, 'ok');
+    }
+
+    return entero;
+  };
+
   for (const suggestion of suggestions) {
     const row = document.createElement('div');
     row.className = 'suggestion';
@@ -803,27 +871,61 @@ async function processPage(
     detail.textContent = suggestion.detail;
     text.append(what, detail);
 
-    const decide = document.createElement('button');
-    decide.type = 'button';
+    /*
+     * Dos botones y no un interruptor.
+     *
+     * Aceptar y descartar son dos gestos distintos, no dos estados de uno: con
+     * un interruptor hay que leer qué dice ahora para saber qué va a hacer, y
+     * eso es una pregunta de más por cada renglón. Con la cruz y el visto se
+     * pulsa lo que se quiere hacer.
+     *
+     * Los dos hacen desaparecer la fila, y por la misma razón: una vez decidido
+     * ya no es una sugerencia. Lo aplicado está en la página, que es donde se
+     * lee; lo descartado no está en ninguna parte, que es lo que se pidió.
+     */
+    const decide = document.createElement('div');
     decide.className = 'suggestion-decide';
 
-    const draw = (): void => {
-      row.classList.toggle('ignored', !suggestion.approved);
-      decide.textContent = suggestion.approved ? 'ignorar' : 'aprobar';
-      decide.setAttribute('aria-pressed', String(!suggestion.approved));
-      decide.title = suggestion.approved
-        ? 'Dejar esta fuera de lo que se aplique'
-        : 'Volver a incluirla';
-    };
-    decide.addEventListener('click', () => {
-      suggestion.approved = !suggestion.approved;
-      draw();
+    const drop = document.createElement('button');
+    drop.type = 'button';
+    drop.className = 'suggestion-no';
+    drop.innerHTML = icon('x');
+    drop.setAttribute('aria-label', `Descartar: ${suggestion.what}`);
+    drop.title = 'Descartar';
+    drop.addEventListener('click', () => {
+      suggestion.approved = false;
+      row.remove();
+      abiertas.delete(suggestion);
       count();
     });
-    draw();
 
+    const take = document.createElement('button');
+    take.type = 'button';
+    take.className = 'suggestion-yes';
+    take.innerHTML = icon('check');
+    take.setAttribute('aria-label', `Aplicar: ${suggestion.what}`);
+    take.title = 'Aplicar';
+    take.addEventListener('click', () => {
+      void (async () => {
+        take.disabled = true;
+        drop.disabled = true;
+        const ok = await write([suggestion]);
+        if (!ok) {
+          take.disabled = false;
+          drop.disabled = false;
+          return;
+        }
+        row.remove();
+        abiertas.delete(suggestion);
+        count();
+        callbacks?.onReload(null);
+      })();
+    });
+
+    decide.append(drop, take);
     row.append(text, decide);
     list.append(row);
+    abiertas.add(suggestion);
   }
 
   /*
@@ -847,105 +949,43 @@ async function processPage(
   cancel.textContent = 'cancelar';
   cancel.addEventListener('click', shut);
 
+  foot.append(apply, cancel);
+
   const count = (): void => {
-    const n = suggestions.filter((s) => s.approved).length;
-    apply.textContent = n === 0 ? 'aplicar' : `aplicar ${n}`;
+    const n = abiertas.size;
+    apply.textContent = n === 1 ? 'aplicar' : `aplicar los ${n}`;
     apply.disabled = n === 0;
+    if (n === 0) {
+      // Sin nada que decidir, el panel deja de ser un panel de sugerencias.
+      heading.remove();
+      list.remove();
+      foot.remove();
+    }
   };
-  count();
 
   apply.addEventListener('click', () => {
     void (async () => {
       apply.disabled = true;
       cancel.disabled = true;
-      const chosen = suggestions.filter((s) => s.approved);
-      step(`aplicando ${chosen.length} cambios…`);
+      const chosen = [...abiertas];
+      step(`aplicando ${chosen.length} sugerencias…`);
 
-      /*
-       * Las propiedades se juntan por clave antes de escribirse.
-       *
-       * `set_property` guarda un valor por clave, así que mandar tres conceptos
-       * como tres cambios escribía tres veces la misma clave y sólo sobrevivía
-       * el último: aprobar tres y quedarse con uno, sin que nada lo dijera. Un
-       * aplicar que descarta en silencio lo que alguien acaba de decidir es peor
-       * que no aplicar.
-       *
-       * Y los valores son componibles —una página puede ser varias cosas y
-       * tratar de varias— así que lo correcto no era elegir uno sino escribirlos
-       * juntos, separados por comas, que es como el corpus ya lo escribe.
-       *
-       * Se conserva lo que la página ya decía. Procesar propone; no reemplaza lo
-       * que había, que lo escribió alguien y no está en discusión.
-       */
-      const held = new Map<string, string[]>();
-      for (const property of page.properties ?? []) {
-        held.set(
-          property.key,
-          property.value.split(',').map((value) => value.trim()).filter((value) => value !== ''),
-        );
-      }
+      const entero = await write(chosen);
+      for (const suggestion of chosen) abiertas.delete(suggestion);
 
-      const byKey = new Map<string, string[]>();
-      const others: Suggestion[] = [];
-      for (const suggestion of chosen) {
-        if (suggestion.change.kind !== 'set_property') {
-          others.push(suggestion);
-          continue;
-        }
-        const key = suggestion.change.propertyKey;
-        const values = byKey.get(key) ?? [...(held.get(key) ?? [])];
-        if (!values.includes(suggestion.change.propertyValue)) {
-          values.push(suggestion.change.propertyValue);
-        }
-        byKey.set(key, values);
-      }
-
-      let written = 0;
-      let asked = 0;
-
-      for (const [key, values] of byKey) {
-        asked += 1;
-        const result = await api.submit({
-          kind: 'set_property',
-          page: page.id,
-          propertyKey: key,
-          propertyValue: values.join(', '),
-        });
-        if (result.status === 'rejected') {
-          step(`rechazado: ${result.reason} · ${key}`, 'bad');
-          continue;
-        }
-        written += 1;
-        step(`${key}:: ${values.join(', ')}`, 'ok');
-      }
-
-      for (const suggestion of others) {
-        asked += 1;
-        const result = await api.submit(suggestion.change);
-        if (result.status === 'rejected') {
-          step(`rechazado: ${result.reason} · ${suggestion.what}`, 'bad');
-          continue;
-        }
-        written += 1;
-        step(suggestion.what, 'ok');
-      }
-
-      // Aplicado deja de ser sugerencia: la lista se retira entera. Lo que se
-      // aplicó está ahora en la página, que es donde se lee.
+      // Aplicado deja de ser sugerencia: la lista se retira entera, y lo que se
+      // escribió está ya en la página, que es donde se lee.
       list.remove();
       heading.remove();
       foot.remove();
-      // Se cuentan escrituras, no sugerencias: varias propuestas de la misma
-      // clave se escriben en un solo cambio, y decir «3 de 5» sería mentir sobre
-      // lo que se hizo.
-      step(`aplicados ${written} de ${asked} cambios`, written === asked ? 'ok' : 'bad');
-      notify(`aplicados ${written} cambios en «${page.title}»`);
+      step(entero ? 'aplicadas todas' : 'algunas no se pudieron aplicar', entero ? 'ok' : 'bad');
+      notify(`procesada «${page.title}»`);
       callbacks?.onReload(null);
     })();
   });
 
-  foot.append(apply, cancel);
   body.append(foot);
+  count();
 }
 
 async function copyPageMarkdown(page: string): Promise<void> {
@@ -1227,15 +1267,35 @@ export function renderOutliner(
        * «bitácora» tendría que asignarla para averiguarlo. Ver @invariant
        * BothHalvesOfAPropertyAreFollowable.
        */
-      const follow = document.createElement('button');
-      follow.type = 'button';
-      follow.className = 'property-word';
-      follow.textContent = property.value;
-      follow.title = `ir a ${property.value}`;
-      follow.addEventListener('click', (event) => {
-        event.stopPropagation();
-        callbacks.onNavigate(property.value);
-      });
+      /*
+       * Un valor por palabra, no una cadena con comas dentro.
+       *
+       * Una propiedad de vocabulario puede llevar varios valores —una página es
+       * varias cosas a la vez— y se guardan separados por comas, que es como el
+       * corpus ya lo escribe. Dibujarlos como un solo botón los volvía una sola
+       * palabra: se resaltaban juntos al pasar por encima, y pulsarlos llevaba a
+       * una página llamada «entrada diaria, página especial», que no existe ni va
+       * a existir.
+       *
+       * Aquí la coma es separador y no texto, porque los valores salen de un
+       * vocabulario: ninguno lleva una coma dentro. Donde no hay vocabulario el
+       * valor se deja entero, que ahí una coma sí puede ser parte de la frase.
+       */
+      const words = document.createElement('span');
+      words.className = 'property-words';
+      for (const one of property.value.split(',').map((v) => v.trim()).filter((v) => v !== '')) {
+        const follow = document.createElement('button');
+        follow.type = 'button';
+        follow.className = 'property-word';
+        follow.textContent = one;
+        follow.title = `ir a ${one}`;
+        follow.addEventListener('click', (event) => {
+          event.stopPropagation();
+          callbacks.onNavigate(one);
+        });
+        words.append(follow);
+      }
+      const follow = words;
 
       const choose = document.createElement('button');
       choose.type = 'button';

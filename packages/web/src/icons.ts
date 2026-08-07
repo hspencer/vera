@@ -65,6 +65,10 @@ const SHAPES = {
 
   x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
 
+  // El visto. Va con la cruz: aceptar y descartar son dos gestos, no uno con dos
+  // estados, y se dibujan como los dos que son.
+  check: '<polyline points="20 6 9 17 4 12"/>',
+
   // Verticales y no horizontales: el menú cae hacia abajo, y tres puntos en
   // columna dicen hacia dónde se abre lo que hay detrás.
   'more-vertical':
