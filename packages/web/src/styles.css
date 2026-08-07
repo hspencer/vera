@@ -2749,3 +2749,143 @@ code {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
+
+/* --- Procesar una página --------------------------------------------------- */
+
+/*
+ * La bitácora de lo que está pasando.
+ *
+ * Monoespaciada y a renglón corrido: es un registro, no prosa, y se lee de un
+ * vistazo buscando la línea que falló. Se queda cuando el proceso termina —
+ * cuando algo sale mal, es la única explicación que va a haber.
+ */
+.process-log {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  line-height: 1.5;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.process-step {
+  color: var(--text-dim);
+  padding: 0.05rem 0;
+}
+
+/* En curso: se distingue de lo ya hecho sin animarse, porque la línea siguiente
+   la va a empujar hacia arriba en un segundo. */
+.process-step.doing::before { content: '· '; }
+.process-step.ok::before { content: '✓ '; color: var(--accent); }
+.process-step.bad { color: var(--voice); }
+.process-step.bad::before { content: '✗ '; }
+
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--rule);
+}
+
+/*
+ * Un renglón por cambio propuesto, con su decisión al final.
+ *
+ * Lo que se lee primero es qué cambia; el detalle va en gris al lado porque
+ * contesta la segunda pregunta —en qué se convierte— y no la primera.
+ */
+.suggestion {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.suggestion-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.suggestion-what {
+  font-family: var(--font-ui);
+  font-size: 0.84rem;
+  color: var(--text);
+}
+
+.suggestion-detail {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+/* Ignorada se sigue viendo: se tachó, no se escondió. Esconderla obligaría a
+   recordar qué se descartó para poder cambiar de opinión. */
+.suggestion.ignored .suggestion-what,
+.suggestion.ignored .suggestion-detail {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.suggestion-decide {
+  font-family: var(--font-ui);
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.15rem 0.55rem;
+  flex: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.suggestion-decide:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/*
+ * Aplicar y cancelar: a la izquierda y como texto.
+ *
+ * Aplicar es la consecuencia de lo que se acaba de decidir renglón a renglón, no
+ * la acción principal de la página. Dibujarlo como un botón lo pondría por
+ * encima de la lectura, que es a lo que se vino.
+ */
+.suggestions-foot {
+  display: flex;
+  justify-content: flex-start;
+  gap: 1.1rem;
+  padding: 0.9rem 0 0.2rem;
+}
+
+.suggestion-apply,
+.suggestion-cancel {
+  font-family: var(--font-ui);
+  font-size: 0.84rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.suggestion-apply {
+  color: var(--accent);
+}
+
+.suggestion-cancel {
+  color: var(--text-dim);
+}
+
+.suggestion-apply:disabled {
+  color: var(--text-dim);
+  opacity: 0.5;
+  cursor: default;
+  text-decoration: none;
+}

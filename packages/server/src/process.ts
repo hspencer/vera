@@ -171,6 +171,8 @@ export interface ProcessOptions {
 export async function readLinks(
   text: string,
   options: ProcessOptions = {},
+  /** Se llama con cada enlace en cuanto se resuelve, para poder contarlo mientras pasa. */
+  onLink?: (link: LinkReading, done: number, total: number) => void,
 ): Promise<PageReading> {
   const timeoutMs = options.timeoutMs ?? 8000;
   const concurrency = options.concurrency ?? 4;
@@ -188,7 +190,11 @@ export async function readLinks(
   const links: LinkReading[] = [];
   for (let at = 0; at < urls.length; at += concurrency) {
     const batch = urls.slice(at, at + concurrency);
-    links.push(...(await Promise.all(batch.map((url) => read(url, timeoutMs)))));
+    const read_ = await Promise.all(batch.map((url) => read(url, timeoutMs)));
+    for (const link of read_) {
+      links.push(link);
+      onLink?.(link, links.length, urls.length);
+    }
     if (at + concurrency < urls.length) await delay(200);
   }
 

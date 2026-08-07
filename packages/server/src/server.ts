@@ -778,23 +778,68 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               return listed.length > 0 ? listed : STARTER_TYPES;
             })();
 
-      void Promise.all([readLinks(text), readPage(page.title, text, vocabulary)]).then(
-        ([reading, understood]) => {
-          // @invariant TheModelIsLocalOrThereIsNone y @guarantee
-          // ProcessingSaysWhatItDidAndWhatItCouldNot: lo que no se pudo hacer se
-          // dice, porque un resultado parcial callado se lee como uno completo.
-          const notDone = [...reading.notDone];
-          if ('error' in understood) notDone.push(understood.error);
+      /*
+       * Procesar se cuenta mientras pasa, no al terminar.
+       *
+       * Antes era una sola respuesta al final: leer una página con veinte
+       * enlaces y un modelo local tarda, y en todo ese rato la interfaz decía
+       * «leyendo…» sin más. Quien mira no puede distinguir eso de algo colgado,
+       * y lo que hace entonces es volver a pulsar.
+       *
+       * Se transmite en NDJSON —una línea por hecho, según ocurre— porque lo que
+       * hace falta no es una barra que avanza sino saber qué está haciendo: qué
+       * dirección está consultando ahora, cuál no contestó, si el modelo local
+       * está ahí. Esa es la verbosidad que sirve.
+       */
+      response.writeHead(200, {
+        'content-type': 'application/x-ndjson; charset=utf-8',
+        'cache-control': 'no-store',
+      });
+      const say = (event: Record<string, unknown>): void => {
+        response.write(`${JSON.stringify(event)}\n`);
+      };
 
-          send(response, 200, {
-            page: page.id,
-            links: reading.links,
-            types: 'error' in understood ? [] : understood.types,
-            concepts: 'error' in understood ? [] : understood.concepts,
-            notDone,
-          });
-        },
-      );
+      const blocks = graph.blocksOf(page.id);
+      say({ step: 'reading', blocks: blocks.length, chars: text.length });
+
+      // Dónde vive cada dirección, para poder proponer el arreglo sobre el
+      // bloque que la lleva y no sobre la página entera.
+      const holder = (url: string): { block: string; content: string } | null => {
+        const found = blocks.find((block) => block.content.includes(url));
+        return found === undefined ? null : { block: found.stableId, content: found.content };
+      };
+
+      say({ step: 'model', state: 'asking' });
+      const asked = readPage(page.title, text, vocabulary).then((understood) => {
+        say(
+          'error' in understood
+            ? { step: 'model', state: 'failed', why: understood.error }
+            : { step: 'model', state: 'done', types: understood.types, concepts: understood.concepts },
+        );
+        return understood;
+      });
+
+      const followed = readLinks(text, {}, (link, done, total) => {
+        say({ step: 'link', done, total, url: link.url, title: link.title, kind: link.kind, unreachable: link.unreachable });
+      });
+
+      void Promise.all([followed, asked]).then(([reading, understood]) => {
+        // @invariant TheModelIsLocalOrThereIsNone y @guarantee
+        // ProcessingSaysWhatItDidAndWhatItCouldNot: lo que no se pudo hacer se
+        // dice, porque un resultado parcial callado se lee como uno completo.
+        const notDone = [...reading.notDone];
+        if ('error' in understood) notDone.push(understood.error);
+
+        say({
+          step: 'done',
+          page: page.id,
+          links: reading.links.map((link) => ({ ...link, ...(holder(link.url) ?? { block: null, content: null }) })),
+          types: 'error' in understood ? [] : understood.types,
+          concepts: 'error' in understood ? [] : understood.concepts,
+          notDone,
+        });
+        response.end();
+      });
       return;
     }
 

@@ -573,6 +573,10 @@ interface PageReading {
     title: string | null;
     kind: string | null;
     unreachable: string | null;
+    /** El bloque que lleva esta dirección, para poder arreglarla donde está. */
+    block: string | null;
+    /** Y lo que ese bloque dice ahora, que es sobre lo que se propone el cambio. */
+    content: string | null;
   }[];
   types: string[];
   concepts: string[];
@@ -580,29 +584,39 @@ interface PageReading {
 }
 
 /**
- * Procesa la página y enseña lo que se leyó.
+ * Un cambio propuesto, con su decisión.
  *
- * Nada de esto se aplica: lo que se ve es una lectura, y quien decide qué hacer
- * con ella es quien la pidió. @invariant ProcessingProposesAndNothingMore.
+ * Nace aprobado. La decisión que Vera protege es la de *aplicar* —que es un acto
+ * aparte, explícito y con su propio botón— y no la de cada renglón: obligar a
+ * marcar veinte casillas para aceptar veinte títulos de enlace que ya se están
+ * leyendo convierte en trabajo lo que era una revisión. Lo que hace falta es
+ * poder decir que no a los que sobren, y eso es «ignorar».
+ */
+interface Suggestion {
+  /** Qué se lee en el renglón. */
+  what: string;
+  /** El detalle, en gris: de dónde sale o en qué se convierte. */
+  detail: string;
+  change: Change;
+  approved: boolean;
+}
+
+/** Las claves con que se guarda lo que el bibliotecario propone. */
+const TYPE_KEY = 'type';
+const CONCEPT_KEY = 'concepto';
+
+/**
+ * Procesa la página, cuenta lo que va haciendo, y propone cambios.
+ *
+ * @invariant ProcessingProposesAndNothingMore: nada se escribe aquí. Lo que
+ * aparece son proposiciones, y hasta que alguien pulsa «aplicar» la página está
+ * exactamente como estaba. Cerrar el panel la deja igual.
  */
 async function processPage(
-  page: { id: string; title: string },
+  page: { id: string; title: string; properties?: { key: string; value: string }[] },
   notify: (message: string) => void,
+  callbacks?: OutlinerCallbacks,
 ): Promise<void> {
-  notify('leyendo la página y sus enlaces…');
-  let reading: PageReading;
-  try {
-    const answer = await fetch(`/pages/${encodeURIComponent(page.id)}/process`, { method: 'POST' });
-    if (!answer.ok) {
-      notify('no se pudo procesar la página');
-      return;
-    }
-    reading = (await answer.json()) as PageReading;
-  } catch {
-    notify('no se pudo procesar: sin conexión con el servidor');
-    return;
-  }
-
   const panel = document.querySelector<HTMLElement>('#tokens');
   if (panel === null) return;
   panel.hidden = false;
@@ -611,17 +625,18 @@ async function processPage(
   const head = document.createElement('header');
   head.className = 'settings-head';
   const title = document.createElement('h2');
-  title.textContent = `Lectura de «${page.title}»`;
+  title.textContent = `Procesando «${page.title}»`;
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'settings-close';
   close.setAttribute('aria-label', 'Cerrar');
   close.title = 'Cerrar';
   close.innerHTML = icon('x');
-  close.addEventListener('click', () => {
+  const shut = (): void => {
     panel.hidden = true;
     panel.innerHTML = '';
-  });
+  };
+  close.addEventListener('click', shut);
   head.append(title, close);
   panel.append(head);
 
@@ -629,95 +644,308 @@ async function processPage(
   body.className = 'settings-body';
   panel.append(body);
 
-  const note = document.createElement('p');
-  note.className = 'settings-note';
-  note.textContent =
-    'Esto es una lectura, no un cambio. Nada de lo que aparece aquí se ha escrito ' +
-    'en la página: procesarla y luego cerrar esto la deja exactamente como estaba.';
-  body.append(note);
+  /*
+   * La bitácora de lo que está pasando.
+   *
+   * Se escribe según ocurre y se queda cuando termina. Lo que cuenta no es que
+   * algo avanza —para eso basta una animación, y una animación miente cuando el
+   * proceso se cuelga— sino qué está haciendo: qué dirección consulta ahora,
+   * cuál no contestó, si el modelo local está. Cuando algo sale mal, esta lista
+   * es la única explicación que va a haber.
+   */
+  const log = document.createElement('ol');
+  log.className = 'process-log';
+  body.append(log);
 
-  // Lo que no se pudo hacer va primero. Un resultado parcial callado se lee como
-  // uno completo. @guarantee ProcessingSaysWhatItDidAndWhatItCouldNot.
-  if (reading.notDone.length > 0) {
-    const missing = document.createElement('ul');
-    missing.className = 'reading-missing';
-    for (const line of reading.notDone) {
-      const item = document.createElement('li');
-      item.textContent = line;
-      missing.append(item);
+  const step = (text: string, kind: 'doing' | 'ok' | 'bad' = 'doing'): HTMLElement => {
+    const line = document.createElement('li');
+    line.className = `process-step ${kind}`;
+    line.textContent = text;
+    log.append(line);
+    line.scrollIntoView({ block: 'nearest' });
+    return line;
+  };
+
+  let reading: PageReading | null = null;
+
+  try {
+    const answer = await fetch(`/pages/${encodeURIComponent(page.id)}/process`, { method: 'POST' });
+    if (!answer.ok || answer.body === null) {
+      step('no se pudo procesar la página', 'bad');
+      return;
     }
-    body.append(missing);
+
+    // NDJSON: una línea por hecho. Se lee según llega, que es lo que permite
+    // contarlo mientras pasa en vez de al final.
+    const decoder = new TextDecoder();
+    const stream = answer.body.getReader();
+    let rest = '';
+
+    for (;;) {
+      const { value, done } = await stream.read();
+      if (done) break;
+      rest += decoder.decode(value, { stream: true });
+      const lines = rest.split('\n');
+      rest = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line.trim() === '') continue;
+        const event = JSON.parse(line) as Record<string, unknown>;
+        switch (event['step']) {
+          case 'reading':
+            step(`leídos ${String(event['blocks'])} bloques · ${String(event['chars'])} caracteres`, 'ok');
+            break;
+          case 'model':
+            if (event['state'] === 'asking') step('preguntando al modelo local qué es y de qué trata…');
+            else if (event['state'] === 'failed') step(String(event['why']), 'bad');
+            else step('el modelo contestó', 'ok');
+            break;
+          case 'link': {
+            const url = String(event['url']);
+            const where = `${String(event['done'])}/${String(event['total'])}`;
+            if (event['unreachable'] !== null) step(`${where} · no contestó · ${url}`, 'bad');
+            else step(`${where} · ${String(event['title'] ?? event['kind'] ?? 'sin título')} · ${url}`, 'ok');
+            break;
+          }
+          case 'done':
+            reading = event as unknown as PageReading;
+            step('terminado', 'ok');
+            break;
+          default:
+            break;
+        }
+      }
+    }
+  } catch {
+    step('se perdió la conexión con el servidor a mitad', 'bad');
+    return;
   }
 
-  // Qué es y de qué trata: dos preguntas, dos respuestas, y ninguna aplicada.
-  // @guarantee TypeAndTopicAreNeverTheSameQuestion.
-  const proposed: [string, string[]][] = [
-    ['Qué es', reading.types],
-    ['De qué trata', reading.concepts],
-  ];
-  for (const [label, values] of proposed) {
-    if (values.length === 0) continue;
-    const heading = document.createElement('h3');
-    heading.className = 'settings-group';
-    heading.textContent = label;
-    body.append(heading);
-
-    const row = document.createElement('div');
-    row.className = 'reading-terms';
-    for (const value of values) {
-      const term = document.createElement('span');
-      term.className = 'reading-term';
-      term.textContent = value;
-      row.append(term);
-    }
-    body.append(row);
+  if (reading === null) {
+    step('el servidor no llegó a decir qué encontró', 'bad');
+    return;
   }
 
-  if (reading.links.length === 0 && reading.types.length === 0 && reading.concepts.length === 0) {
+  for (const line of reading.notDone) step(line, 'bad');
+
+  /*
+   * De la lectura a las proposiciones.
+   *
+   * No se propone lo que la página ya dice: repetir una propiedad que ya está
+   * no es un cambio, y ofrecerlo obligaría a descartarlo una vez por proceso.
+   */
+  const already = new Set((page.properties ?? []).map((p) => `${p.key}=${p.value}`));
+  const suggestions: Suggestion[] = [];
+
+  for (const value of reading.types) {
+    if (already.has(`${TYPE_KEY}=${value}`)) continue;
+    suggestions.push({
+      what: `qué es: ${value}`,
+      detail: `${TYPE_KEY}:: ${value}`,
+      change: { kind: 'set_property', page: page.id, propertyKey: TYPE_KEY, propertyValue: value },
+      approved: true,
+    });
+  }
+
+  for (const value of reading.concepts) {
+    if (already.has(`${CONCEPT_KEY}=${value}`)) continue;
+    suggestions.push({
+      what: `de qué trata: ${value}`,
+      detail: `${CONCEPT_KEY}:: ${value}`,
+      change: { kind: 'set_property', page: page.id, propertyKey: CONCEPT_KEY, propertyValue: value },
+      approved: true,
+    });
+  }
+
+  // Una dirección desnuda pasa a llevar su título. La dirección no se toca:
+  // @guarantee ALinkResolvedKeepsItsAddress — se envuelve, no se sustituye.
+  for (const link of reading.links) {
+    if (link.title === null || link.block === null || link.content === null) continue;
+    // Ya tiene título: envolver otra vez lo rompería.
+    if (link.content.includes(`](${link.url})`)) continue;
+    const next = link.content.split(link.url).join(`[${link.title}](${link.url})`);
+    if (next === link.content) continue;
+    suggestions.push({
+      what: `titular el enlace: ${link.title}`,
+      detail: link.url,
+      change: { kind: 'edit_block', block: link.block, content: next },
+      approved: true,
+    });
+  }
+
+  if (suggestions.length === 0) {
     const none = document.createElement('p');
     none.className = 'settings-note';
-    none.textContent = 'No se pudo leer nada de esta página.';
+    none.textContent = 'Nada que proponer: lo que se leyó ya está en la página.';
     body.append(none);
     return;
   }
 
-  if (reading.links.length === 0) return;
+  const heading = document.createElement('h3');
+  heading.className = 'settings-group';
+  heading.textContent = `Sugerencias (${suggestions.length})`;
+  body.append(heading);
 
-  const linksHeading = document.createElement('h3');
-  linksHeading.className = 'settings-group';
-  linksHeading.textContent = `Enlaces (${reading.links.length})`;
-  body.append(linksHeading);
+  const list = document.createElement('div');
+  list.className = 'suggestions';
+  body.append(list);
 
-  for (const link of reading.links) {
+  for (const suggestion of suggestions) {
     const row = document.createElement('div');
-    row.className = 'reading-link';
+    row.className = 'suggestion';
 
+    const text = document.createElement('div');
+    text.className = 'suggestion-text';
     const what = document.createElement('span');
-    what.className = 'reading-title';
-    what.textContent = link.title ?? link.url;
-    row.append(what);
+    what.className = 'suggestion-what';
+    what.textContent = suggestion.what;
+    const detail = document.createElement('span');
+    detail.className = 'suggestion-detail';
+    detail.textContent = suggestion.detail;
+    text.append(what, detail);
 
-    const meta = document.createElement('span');
-    meta.className = 'reading-meta';
-    meta.textContent =
-      link.unreachable !== null ? link.unreachable : `${link.kind ?? 'desconocido'} · ${link.url}`;
-    row.append(meta);
+    const decide = document.createElement('button');
+    decide.type = 'button';
+    decide.className = 'suggestion-decide';
 
-    // El título se copia; no se escribe solo. La dirección del bloque no se
-    // toca: @guarantee ALinkResolvedKeepsItsAddress.
-    if (link.title !== null) {
-      const copy = document.createElement('button');
-      copy.type = 'button';
-      copy.className = 'page-action';
-      copy.textContent = 'copiar como enlace con título';
-      copy.addEventListener('click', () => {
-        void copyText(`[${link.title ?? ''}](${link.url})`, notify);
-      });
-      row.append(copy);
-    }
+    const draw = (): void => {
+      row.classList.toggle('ignored', !suggestion.approved);
+      decide.textContent = suggestion.approved ? 'ignorar' : 'aprobar';
+      decide.setAttribute('aria-pressed', String(!suggestion.approved));
+      decide.title = suggestion.approved
+        ? 'Dejar esta fuera de lo que se aplique'
+        : 'Volver a incluirla';
+    };
+    decide.addEventListener('click', () => {
+      suggestion.approved = !suggestion.approved;
+      draw();
+      count();
+    });
+    draw();
 
-    body.append(row);
+    row.append(text, decide);
+    list.append(row);
   }
+
+  /*
+   * Aplicar y cancelar, a la izquierda y como texto.
+   *
+   * No son botones porque no compiten: aplicar es la consecuencia de lo que
+   * acaba de decidirse renglón a renglón, y dibujarlo como un botón grande lo
+   * convertiría en la acción principal de un panel cuya acción principal es
+   * leer. A la izquierda porque es donde termina la lectura de cada renglón.
+   */
+  const foot = document.createElement('div');
+  foot.className = 'suggestions-foot';
+
+  const apply = document.createElement('button');
+  apply.type = 'button';
+  apply.className = 'suggestion-apply';
+
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'suggestion-cancel';
+  cancel.textContent = 'cancelar';
+  cancel.addEventListener('click', shut);
+
+  const count = (): void => {
+    const n = suggestions.filter((s) => s.approved).length;
+    apply.textContent = n === 0 ? 'aplicar' : `aplicar ${n}`;
+    apply.disabled = n === 0;
+  };
+  count();
+
+  apply.addEventListener('click', () => {
+    void (async () => {
+      apply.disabled = true;
+      cancel.disabled = true;
+      const chosen = suggestions.filter((s) => s.approved);
+      step(`aplicando ${chosen.length} cambios…`);
+
+      /*
+       * Las propiedades se juntan por clave antes de escribirse.
+       *
+       * `set_property` guarda un valor por clave, así que mandar tres conceptos
+       * como tres cambios escribía tres veces la misma clave y sólo sobrevivía
+       * el último: aprobar tres y quedarse con uno, sin que nada lo dijera. Un
+       * aplicar que descarta en silencio lo que alguien acaba de decidir es peor
+       * que no aplicar.
+       *
+       * Y los valores son componibles —una página puede ser varias cosas y
+       * tratar de varias— así que lo correcto no era elegir uno sino escribirlos
+       * juntos, separados por comas, que es como el corpus ya lo escribe.
+       *
+       * Se conserva lo que la página ya decía. Procesar propone; no reemplaza lo
+       * que había, que lo escribió alguien y no está en discusión.
+       */
+      const held = new Map<string, string[]>();
+      for (const property of page.properties ?? []) {
+        held.set(
+          property.key,
+          property.value.split(',').map((value) => value.trim()).filter((value) => value !== ''),
+        );
+      }
+
+      const byKey = new Map<string, string[]>();
+      const others: Suggestion[] = [];
+      for (const suggestion of chosen) {
+        if (suggestion.change.kind !== 'set_property') {
+          others.push(suggestion);
+          continue;
+        }
+        const key = suggestion.change.propertyKey;
+        const values = byKey.get(key) ?? [...(held.get(key) ?? [])];
+        if (!values.includes(suggestion.change.propertyValue)) {
+          values.push(suggestion.change.propertyValue);
+        }
+        byKey.set(key, values);
+      }
+
+      let written = 0;
+      let asked = 0;
+
+      for (const [key, values] of byKey) {
+        asked += 1;
+        const result = await api.submit({
+          kind: 'set_property',
+          page: page.id,
+          propertyKey: key,
+          propertyValue: values.join(', '),
+        });
+        if (result.status === 'rejected') {
+          step(`rechazado: ${result.reason} · ${key}`, 'bad');
+          continue;
+        }
+        written += 1;
+        step(`${key}:: ${values.join(', ')}`, 'ok');
+      }
+
+      for (const suggestion of others) {
+        asked += 1;
+        const result = await api.submit(suggestion.change);
+        if (result.status === 'rejected') {
+          step(`rechazado: ${result.reason} · ${suggestion.what}`, 'bad');
+          continue;
+        }
+        written += 1;
+        step(suggestion.what, 'ok');
+      }
+
+      // Aplicado deja de ser sugerencia: la lista se retira entera. Lo que se
+      // aplicó está ahora en la página, que es donde se lee.
+      list.remove();
+      heading.remove();
+      foot.remove();
+      // Se cuentan escrituras, no sugerencias: varias propuestas de la misma
+      // clave se escriben en un solo cambio, y decir «3 de 5» sería mentir sobre
+      // lo que se hizo.
+      step(`aplicados ${written} de ${asked} cambios`, written === asked ? 'ok' : 'bad');
+      notify(`aplicados ${written} cambios en «${page.title}»`);
+      callbacks?.onReload(null);
+    })();
+  });
+
+  foot.append(apply, cancel);
+  body.append(foot);
 }
 
 async function copyPageMarkdown(page: string): Promise<void> {
@@ -1129,7 +1357,7 @@ export function renderOutliner(
         // preguntarle al servidor que lo tiene, y eso le dice que aquí alguien
         // está leyendo sobre esto.
         label: 'Procesar la página',
-        run: () => void processPage(page, toast),
+        run: () => void processPage(page, toast, callbacks),
       },
       {
         label: 'Copiar el Markdown de la página',
