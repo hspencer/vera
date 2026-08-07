@@ -430,7 +430,20 @@ input {
  * gobernaba nada. Es el mismo descuido que tenía el reinicio de márgenes.
  */
 .body > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, dl),
-.body-text > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, dl) {
+.body-text > :is(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, dl),
+/*
+ * El campo de edición también, y por la misma razón elevada al cuadrado.
+ *
+ * Sin esto el campo ocupaba todo el ancho mientras el párrafo estaba limitado, y
+ * al entrar a editar las líneas se recomponían enteras: el mismo texto partido
+ * por otros sitios. La tipografía ya no saltaba, pero la línea sobre la que se
+ * iba a escribir sí — y es peor, porque lo que se mueve es justo la palabra que
+ * se estaba mirando.
+ *
+ * Editar y leer son el mismo texto en la misma columna: si el renglón cabe en
+ * 45em leyendo, tiene que caber en 45em escribiendo.
+ */
+.editor {
   max-width: var(--content-width, 45em);
 }
 
@@ -1329,16 +1342,26 @@ input {
 }
 
 /*
- * Dónde se está escribiendo, dicho sin mover nada.
+ * Dónde se está escribiendo, dicho sólo con color.
  *
- * Una barra en el margen izquierdo, con sombra interior: no ocupa sitio, no
- * empuja el texto y no encierra el bloque. Dice dónde está el cursor a quien
- * mire la página entera, que es lo que un borde intentaba decir moviéndolo todo.
+ * Nada de bordes ni barras, ni siquiera de las que no ocupan sitio. Una línea al
+ * costado sigue siendo un contorno: encierra el bloque y lo separa de los de
+ * arriba y abajo, cuando lo que se quiere decir es lo contrario — que es el
+ * mismo texto y sólo ha cambiado lo que se puede hacer con él.
+ *
+ * El fondo no añade un píxel a nada. La caja mide igual editando que leyendo, y
+ * ninguna medida del renglón depende de que esta regla exista.
  */
 .body.editing {
-  box-shadow: inset 2px 0 0 var(--accent);
-  background: color-mix(in srgb, var(--accent) 5%, transparent);
-  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-radius: 3px;
+}
+
+/* Sin anillo de foco: el fondo ya dice dónde está el cursor, y el anillo que
+   pinta el navegador es justo el contorno que se acaba de quitar. */
+.editor:focus,
+.editor:focus-visible {
+  outline: none;
 }
 
 /*
@@ -2353,7 +2376,16 @@ code {
   border-left: 2px solid var(--accent);
   border-radius: 4px;
   padding: 0.55rem 0.7rem;
-  margin: 0.1rem 0;
+  /*
+   * Sin margen propio.
+   *
+   * Llevaba `0.1rem` arriba y abajo, y esa separación no se ve mientras el
+   * bloque está en reposo: se ve al editarlo, cuando el fondo de edición pinta
+   * el `.body` entero y el margen queda como una muesca sin pintar justo debajo
+   * del audio. Una separación que sólo aparece al entrar a escribir no es
+   * separación, es un salto. Y dos décimas de rem no separaban nada que la caja
+   * del audio no separase ya con su propio borde.
+   */
 }
 
 /* Mientras se graba, el bloque es una sola línea: hay poco que decidir. */

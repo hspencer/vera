@@ -107,12 +107,17 @@ fi
 # Se compara la edad del proceso con la fecha de los archivos, no el commit: da
 # igual cómo llegó el cambio —commiteado, traído de otra rama, editado a mano—,
 # lo que decide es si el proceso en marcha es anterior a lo que dice servir.
+#
+# Las fechas se comparan como números y no con `find -newermt`: el `find` de esta
+# máquina es `bfs`, que no entiende marcas relativas —«hace 60 segundos»— y
+# fallaba en silencio, con lo que este paso no llegaba a ejecutarse nunca.
 CORRIENDO="$(pgrep -f 'node .*packages/server/src/main.ts' 2>/dev/null | head -1 || true)"
 if [ -n "$CORRIENDO" ]; then
   EDAD="$(ps -o etimes= -p "$CORRIENDO" 2>/dev/null | tr -d ' ')"
-  VIEJO="$(find packages/core/src packages/store/src packages/server/src -type f \
-    -newermt "-${EDAD:-0} seconds" 2>/dev/null | head -1)"
-  if [ -n "$VIEJO" ]; then
+  ARRANQUE=$(( $(date +%s) - ${EDAD:-0} ))
+  TOCADO="$(find packages/core/src packages/store/src packages/server/src -type f \
+    -exec stat -c '%Y' {} + 2>/dev/null | sort -rn | head -1)"
+  if [ -n "$TOCADO" ] && [ "$TOCADO" -gt "$ARRANQUE" ]; then
     paso 'El dominio cambió: reiniciando el servidor'
     ./scripts/serve.sh restart >/dev/null 2>&1 || alto 'no se pudo reiniciar; míralo con `make restart`'
     bien 'reiniciado con las reglas nuevas'
