@@ -95,7 +95,31 @@ else
   else aviso "la rama no tiene remoto y no se pudo crear; sigue siendo local"; fi
 fi
 
-# --- 7. Lo que de verdad importa: ¿lo está sirviendo? -----------------------
+# --- 7. Reiniciar si lo que cambió es el dominio ----------------------------
+#
+# El cliente se recompila y el servidor lo relee en cada petición. El dominio no:
+# @vera/core y @vera/store se cargan una vez al arrancar, así que un cambio en
+# las reglas se queda fuera de la instancia hasta que el proceso vuelve a nacer.
+# Y no avisa —la aplicación sigue contestando, con las reglas viejas—, que es la
+# peor forma de fallar: verificar más abajo que se sirve la huella nueva del
+# cliente sería verdad y engañoso a la vez.
+#
+# Se compara la edad del proceso con la fecha de los archivos, no el commit: da
+# igual cómo llegó el cambio —commiteado, traído de otra rama, editado a mano—,
+# lo que decide es si el proceso en marcha es anterior a lo que dice servir.
+CORRIENDO="$(pgrep -f 'node .*packages/server/src/main.ts' 2>/dev/null | head -1 || true)"
+if [ -n "$CORRIENDO" ]; then
+  EDAD="$(ps -o etimes= -p "$CORRIENDO" 2>/dev/null | tr -d ' ')"
+  VIEJO="$(find packages/core/src packages/store/src packages/server/src -type f \
+    -newermt "-${EDAD:-0} seconds" 2>/dev/null | head -1)"
+  if [ -n "$VIEJO" ]; then
+    paso 'El dominio cambió: reiniciando el servidor'
+    ./scripts/serve.sh restart >/dev/null 2>&1 || alto 'no se pudo reiniciar; míralo con `make restart`'
+    bien 'reiniciado con las reglas nuevas'
+  fi
+fi
+
+# --- 8. Lo que de verdad importa: ¿lo está sirviendo? -----------------------
 #
 # Se le pregunta al servidor por su index sin pasar por ningún caché —`?fresh`
 # esquiva al service worker, `Cache-Control: no-store` al del navegador— y se

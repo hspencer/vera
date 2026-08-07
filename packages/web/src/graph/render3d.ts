@@ -3,6 +3,7 @@ import ForceGraph3D from "3d-force-graph";
 import * as THREE from "three";
 import type { GraphData, GraphNode } from "./types.ts";
 import type { RenderSettings } from "./render";
+import { frame } from "./frame.ts";
 
 const RING_COLOR = "#ef7a1c";
 
@@ -395,71 +396,68 @@ export function renderGraph3D(
   container.addEventListener("wheel", noteInteraction, { passive: true });
 
   /**
-   * Cuánto sitio se deja alrededor del grafo al encuadrarlo.
+   * La caja que ocupa el grafo, midiendo lo que se dibuja y no dónde se dibuja.
    *
-   * Más que 1 porque el radio se mide entre centros de nodo, y en este mapa el
-   * nodo *es* su nombre: la palabra sobresale bastante más allá del punto que se
-   * midió. Sin margen, los nombres del borde quedan cortados por el canto.
+   * Aquí está el fallo que este archivo lleva arrastrando y que vuelve cada vez
+   * que alguien reescribe el encuadre: la caja se calculaba con las *posiciones*
+   * de los nodos, y en este mapa el nodo no es un punto sino su nombre. Un
+   * nombre de diez letras es un cartel de unas treinta unidades de ancho; un
+   * grafo de un solo nodo tiene radio cero medido entre centros. Encuadrar ese
+   * cero deja la cámara a cuatro unidades de un cartel de treinta, o sea dentro
+   * del cartel: el mapa se veía en blanco, y alejando la rueda aparecía una
+   * letra ocupando la pantalla entera.
+   *
+   * `Box3.expandByObject` recorre el objeto de cada nodo y lo mide con su escala
+   * puesta, así que el cartel entra en la cuenta. Es lo mismo que hace
+   * `getGraphBbox` de la librería, y es por lo que `zoomToFit` —que sí mide los
+   * objetos— nunca tuvo este problema donde se ha usado tal cual.
+   *
+   * No se usa `zoomToFit` porque apunta siempre al origen del mundo, no al
+   * centro de lo que hay: si el grafo se ha desplazado, encuadra un centro que
+   * no es el suyo. La caja se mide igual y el centro se toma de la caja.
+   *
+   * @guarantee TheMapArrivesFramed
    */
-  const MARGEN = 1.35;
+  const graphBox = (): THREE.Box3 | null => {
+    const nodes = (
+      graph.graphData() as {
+        nodes: { x?: number; y?: number; z?: number; __threeObj?: THREE.Object3D }[];
+      }
+    ).nodes;
 
-  /*
-   * Encuadrar el grafo entero, calculando la cámara en vez de pedírsela a la
-   * librería.
-   *
-   * Aquí estaba `zoomToFit`, y hace lo que dice sólo cuando la cámara ya mira
-   * desde donde debe. Medido en esta escena —23 nodos, unas 50 unidades de
-   * lado— dejaba la cámara a z=1.9 mirando a z=-998: dentro del cúmulo y con el
-   * objetivo de la órbita mil unidades detrás del grafo, así que los nombres se
-   * apilaban unos sobre otros y no había forma de salir de ahí. Sin llamarlo, la
-   * cámara se quedaba en el z=1000 con que nace la librería, veinte veces más
-   * lejos de lo que este grafo necesita: una mancha ilegible en una esquina.
-   * Fallaba en las dos direcciones, y de ahí vienen los tres intentos que este
-   * archivo lleva encima.
-   *
-   * La caja del grafo la sabemos nosotros: son las posiciones de los nodos. Con
-   * su centro, su radio y el campo de visión de la cámara, la distancia es una
-   * cuenta de trigonometría que no depende del estado interno de nadie. Se toma
-   * el menor de los dos semiángulos —vertical y horizontal— porque el panel del
-   * mapa suele ser más alto que ancho, y encuadrar sólo en vertical dejaría el
-   * grafo desbordando por los lados.
-   */
-  const fit = (): void => {
+    const box = new THREE.Box3();
+    for (const node of nodes) {
+      // Antes de la primera vuelta de simulación los nodos no tienen posición, y
+      // encuadrar la nada pondría la cámara en cualquier parte.
+      if (!Number.isFinite(node.x) || !Number.isFinite(node.y) || !Number.isFinite(node.z)) continue;
+      const object = node.__threeObj;
+      if (object === undefined) {
+        // Un nodo cuyo cartel aún no se ha construido cuenta al menos como el
+        // punto donde está: más vale un encuadre corto que uno que lo ignora.
+        box.expandByPoint(new THREE.Vector3(node.x, node.y, node.z));
+        continue;
+      }
+      // La matriz del mundo la actualiza el motor de render en su turno; aquí se
+      // mira entre turnos, así que hay que ponerla al día o se mide dónde estaba
+      // el nodo hace un cuadro.
+      object.updateWorldMatrix(true, true);
+      box.expandByObject(object);
+    }
+
+    return box.isEmpty() ? null : box;
+  };
+
+  /** Poner la cámara donde el grafo entero se vea. */
+  const fit = (ms = 0): void => {
     // Encuadrar por encima de la mano del usuario sería quitarle el grafo.
     if (moved || heldCamera !== null) return;
 
-    const nodes = (graph.graphData() as { nodes: { x?: number; y?: number; z?: number }[] }).nodes
-      .filter((n) => Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z));
-    // Antes de la primera vuelta de simulación los nodos no tienen posición, y
-    // encuadrar la nada pondría la cámara en cualquier parte.
-    if (nodes.length === 0) return;
-
-    const centre = { x: 0, y: 0, z: 0 };
-    for (const node of nodes) {
-      centre.x += node.x ?? 0;
-      centre.y += node.y ?? 0;
-      centre.z += node.z ?? 0;
-    }
-    centre.x /= nodes.length;
-    centre.y /= nodes.length;
-    centre.z /= nodes.length;
-
-    let radius = 0;
-    for (const node of nodes) {
-      const d = Math.hypot((node.x ?? 0) - centre.x, (node.y ?? 0) - centre.y, (node.z ?? 0) - centre.z);
-      if (d > radius) radius = d;
-    }
-    // Un solo nodo tiene radio cero, y dividir por su seno daría infinito.
-    if (radius === 0) radius = 1;
+    const box = graphBox();
+    if (box === null) return;
 
     const camera = graph.camera() as { fov?: number };
-    const halfV = (((camera.fov ?? 50) * Math.PI) / 180) / 2;
-    const halfH = Math.atan(Math.tan(halfV) * (graph.width() / graph.height()));
-    const half = Math.min(halfV, halfH);
-    // El `+ radius` es para no meterse dentro de la esfera que se quiere ver.
-    const distance = (radius / Math.sin(half)) * MARGEN + radius;
-
-    graph.cameraPosition({ x: centre.x, y: centre.y, z: centre.z + distance }, centre, 0);
+    const { position, lookAt } = frame(box, camera.fov ?? 50, graph.width() / graph.height());
+    graph.cameraPosition(position, lookAt, ms);
   };
 
   /*
