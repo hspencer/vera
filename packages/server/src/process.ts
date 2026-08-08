@@ -124,7 +124,7 @@ async function read(url: string, timeoutMs: number): Promise<LinkReading> {
       headers: {
         // Se dice qué es quien pregunta. Fingir un navegador para sortear un
         // bloqueo sería entrar donde a uno no lo quieren.
-        'user-agent': 'Vera/0.1 (memoria personal; resolviendo un enlace citado)',
+        'user-agent': 'Vera/0.2 (memoria personal; resolviendo un enlace citado)',
         accept: 'text/html,application/xhtml+xml,*/*;q=0.5',
       },
     });
