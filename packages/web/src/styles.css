@@ -3195,10 +3195,11 @@ code {
  * escrito y esto es una consecuencia.
  * -------------------------------------------------------------------------- */
 
+/* Sin filete a la izquierda: la respuesta ya se distingue por ir debajo de la
+   pregunta y en otro tamaño, y una línea vertical más en una página que ya tiene
+   sangrías y viñetas es ruido que no dice nada. */
 .query-answer {
   margin: 0.25rem 0 0.5rem;
-  padding-left: 0.9rem;
-  border-left: 1px solid var(--rule);
   font-size: 0.86rem;
 }
 

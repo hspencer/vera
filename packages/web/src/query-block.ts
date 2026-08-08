@@ -231,7 +231,18 @@ function drawTable(
     }
     button.title = mine && !sort.desc ? `ordenar por ${column.name}, al revés` : `ordenar por ${column.name}`;
     // Pulsar la misma cabecera da la vuelta; pulsar otra empieza por arriba.
-    button.addEventListener('click', () => again({ by: column.key, desc: mine ? !sort.desc : false }));
+    /*
+     * El clic se queda aquí.
+     *
+     * Sin esto sube hasta el bloque, que lo entiende como «ponme a editar»,
+     * rehace su cuerpo y se lleva la tabla por delante: pulsar una cabecera
+     * cerraba la respuesta en vez de ordenarla. Le pasa a todo lo que se pulse
+     * dentro de una respuesta, y por eso lo hacen también los títulos.
+     */
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      again({ by: column.key, desc: mine ? !sort.desc : false });
+    });
     cell.append(button);
     headRow.append(cell);
   }
