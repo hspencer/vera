@@ -24,19 +24,17 @@
 // sobrevive a corregir una tilde en la frase que la ocasionó, que es
 // exactamente lo que no ocurriría si colgara del enlace derivado.
 
-/** Las claves con que un bloque dice que explica una relación. */
-export const EXPLAINS = 'explica';
-export const TERM = 'término';
-export const SENSE = 'sentido';
+/*
+ * Las claves con que un bloque dice que explica una relación no están escritas
+ * aquí: las dice el corpus.
+ *
+ * Ver property-names.ts. Lo que este archivo sabe es qué papel cumple cada una
+ * —a dónde apunta, con qué término, en qué sentido—, y cuál es la palabra lo
+ * declara la página de ontología. Escribirlas aquí las convertía en una decisión
+ * de Vera sobre la lengua de quien escribe.
+ */
 
-/** Y las que se admiten escritas de otra forma, porque el corpus las escribe así. */
-const ALSO: Record<string, string> = {
-  explains: EXPLAINS,
-  termino: TERM,
-  term: TERM,
-  sentido: SENSE,
-  sense: SENSE,
-};
+import type { PropertyNames } from './property-names.ts';
 
 /** Cómo vale una relación leída desde donde se escribió. */
 export type CrossingSense = 'directed' | 'mutual';
@@ -119,11 +117,16 @@ export interface Crossing {
   term: string | null;
 }
 
-/** La clave canónica de una propiedad, admitiendo cómo la escriba el corpus. */
-export function relationKey(key: string): string | null {
+/** Qué papel cumple una clave, si cumple alguno de los tres. */
+export function relationKeyOf(
+  key: string,
+  names: Pick<PropertyNames, 'explains' | 'term' | 'sense'>,
+): 'explains' | 'term' | 'sense' | null {
   const clean = key.trim().toLowerCase();
-  if (clean === EXPLAINS || clean === TERM || clean === SENSE) return clean;
-  return ALSO[clean] ?? null;
+  if (clean === names.explains.toLowerCase()) return 'explains';
+  if (clean === names.term.toLowerCase()) return 'term';
+  if (clean === names.sense.toLowerCase()) return 'sense';
+  return null;
 }
 
 /** El título que nombra un valor, con o sin corchetes. */

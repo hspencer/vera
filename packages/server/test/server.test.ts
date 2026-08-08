@@ -264,7 +264,9 @@ describe('POST /query', () => {
 
   it('contesta con las páginas que la cumplen', async () => {
     const page = await write({ kind: 'create_page', title: 'Consultada', visibility: 'private' });
-    await write({ kind: 'set_property', page, propertyKey: 'type', propertyValue: 'proyecto' });
+    // La pregunta usa la clave tal como está escrita en la página: no hay
+    // traducción, y por eso un corpus en otra lengua se pregunta en la suya.
+    await write({ kind: 'set_property', page, propertyKey: 'tipo', propertyValue: 'proyecto' });
 
     const answer = await ask('? tipo=proyecto');
     const pages = answer['pages'] as { id: string; title: string }[];
@@ -283,7 +285,9 @@ describe('POST /query', () => {
 
   it('cada página trae su tipo y cuándo se tocó por última vez', async () => {
     const page = await write({ kind: 'create_page', title: 'Fechada', visibility: 'private' });
-    await write({ kind: 'set_property', page, propertyKey: 'type', propertyValue: 'nota' });
+    // «tipo» y no «type»: la clave la nombra el corpus, y sin ontología que diga
+    // otra cosa rige la que Vera trae.
+    await write({ kind: 'set_property', page, propertyKey: 'tipo', propertyValue: 'nota' });
     await write({ kind: 'set_property', page, propertyKey: 'sello', propertyValue: 'sí' });
 
     const answer = await ask('? sello=sí');

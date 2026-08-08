@@ -12,7 +12,9 @@ import { extname, join, normalize, resolve } from 'node:path';
 import {
   VeraGraph,
   checkInvariants,
+  SPECIAL_KIND,
   inverseOf,
+  readPropertyNames,
   readQuery,
   titleKey,
   writeQuery,
@@ -328,19 +330,60 @@ export function createVeraServer(options: ServerOptions): VeraServer {
    * DefaultsLiveInTheCode—, que es un mínimo para que explicar una relación no
    * exija antes construir un vocabulario.
    */
-  const relationVocabulary = (): { name: string; inverse: string }[] => {
-    const ontology = graph
+  /*
+   * La página que gobierna el vocabulario.
+   *
+   * Se encuentra por `special-kind`, que es la única palabra que Vera no puede
+   * dejar que declare el corpus: es con la que se encuentra la página donde el
+   * corpus declara las demás.
+   */
+  const ontologyPage = () =>
+    graph
       .pages()
       .find((candidate) =>
         graph
           .propertiesOf(candidate.id)
-          .some((property) => property.key === 'special-kind' && property.value === 'ontology'),
+          .some((property) => property.key === SPECIAL_KIND && property.value === 'ontology'),
       );
+
+  /*
+   * Los hijos del bloque de la ontología que empieza por esa palabra.
+   *
+   * Se le quitan las almohadillas antes de mirar: un apartado de una página se
+   * escribe como encabezado, y exigir el texto desnudo hacía que declarar algo
+   * bien escrito no sirviera de nada — sin decirlo, además.
+   */
+  const opens = (content: string, opening: RegExp): boolean =>
+    opening.test(content.trim().replace(/^#{1,6}\s+/, ''));
+
+  const declared = (opening: RegExp): string[] => {
+    const ontology = ontologyPage();
+    if (ontology === undefined) return [];
+    const heading = graph.blocksOf(ontology.id).find((block) => opens(block.content, opening));
+    if (heading === undefined) return [];
+    return graph
+      .blocksOf(ontology.id)
+      .filter((block) => block.parent === heading.stableId)
+      .map((block) => block.content.trim())
+      .filter((line) => line !== '');
+  };
+
+  /*
+   * Cómo llama este corpus a las propiedades que el dominio necesita conocer.
+   *
+   * Se lee al arrancar y cada vez que hace falta, porque la página que las
+   * declara se edita como cualquier otra y cambiarla no debería pedir reiniciar.
+   */
+  const propertyNames = () => readPropertyNames(declared(/^Nombres de propiedades/i));
+  graph.namesProperties(propertyNames());
+
+  const relationVocabulary = (): { name: string; inverse: string }[] => {
+    const ontology = ontologyPage();
     if (ontology === undefined) return STARTER_RELATIONS;
 
     const heading = graph
       .blocksOf(ontology.id)
-      .find((block) => /^Relaciones/i.test(block.content.trim()));
+      .find((block) => opens(block.content, /^Relaciones/i));
     if (heading === undefined) return STARTER_RELATIONS;
 
     const written = graph
@@ -975,7 +1018,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               // mañana rige otra cosa.
               const heading = graph
                 .blocksOf(ontology.id)
-                .find((block) => /^Tipos iniciales/i.test(block.content));
+                .find((block) => opens(block.content, /^Tipos iniciales/i));
               if (heading === undefined) return STARTER_TYPES;
               const listed = graph
                 .blocksOf(ontology.id)
@@ -1185,6 +1228,14 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         say({
           step: 'done',
           page: page.id,
+          /*
+           * Cómo llama este corpus a lo que se va a proponer.
+           *
+           * Viaja con el resultado en vez de que el cliente se sepa las palabras:
+           * quien escribe en otra lengua no tiene por qué recibir sugerencias que
+           * escriban `type` en sus páginas.
+           */
+          names: propertyNames(),
           // La estructura viaja también en el final, para que quien reciba el
           // resultado entero no tenga que haber ido guardando los pasos.
           structure: {
@@ -1251,7 +1302,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           page,
           kind: graph
             .propertiesOf(page.id)
-            .find((property) => property.key === 'special-kind')?.value,
+            .find((property) => property.key === SPECIAL_KIND)?.value,
         }))
         .filter((entry) => entry.kind !== undefined)
         .map((entry) => ({
@@ -1405,6 +1456,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           says.set(block.page, { block: id, excerpt: excerpt(block.content) });
         }
 
+        const names = propertyNames();
         const found = outcome.matchingPages
           .map((id) => graph.page(id))
           .filter((page): page is NonNullable<typeof page> => page !== undefined)
@@ -1412,7 +1464,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             id: page.id,
             title: page.title,
             type:
-              graph.propertiesOf(page.id).find((property) => property.key === 'type')?.value ?? null,
+              graph.propertiesOf(page.id).find((property) => property.key === names.kind)?.value ??
+              null,
             updated: graph.updatedAt(page.id),
             says: says.get(page.id) ?? null,
           }))
@@ -1451,6 +1504,14 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       if (path === '/health') {
         send(response, 200, {
           graph: graph.name,
+          /*
+           * Cómo llama este corpus a las propiedades que Vera necesita conocer.
+           *
+           * Viaja aquí porque el cliente las necesita antes de escribir nada
+           * —un día nace con su clase puesta— y ésta es la primera petición que
+           * hace al arrancar.
+           */
+          names: propertyNames(),
           pages: graph.pages().length,
           blocks: graph.allBlocks().length,
           lastSequence: graph.log().lastSequence,

@@ -79,7 +79,13 @@ function closeSettings(): void {
 }
 
 /** Lo que el grafo tiene. Se pide una vez al arrancar y se enseña en Memoria. */
-let corpus: { graph: string; pages: number; blocks: number; lastSequence: number } | null = null;
+let corpus: {
+  graph: string;
+  pages: number;
+  blocks: number;
+  lastSequence: number;
+  names?: { kind: string; day: string };
+} | null = null;
 
 /**
  * Memoria: el estado del corpus y su índice.
@@ -294,11 +300,13 @@ async function startDay(date: string, content = ''): Promise<string | null> {
     // preguntar por los días como clase —«qué escribí en julio»— sin que haya
     // que reconocer una fecha en un título, y lo que hace que un día importado
     // de otra parte y uno nacido aquí se parezcan.
+    // Con qué palabras, lo dice el corpus: el papel es «la clase de una página»
+    // y «un día», y cómo se llamen aquí no lo decide Vera.
     await api.submit({
       kind: 'set_property',
       page: pageId,
-      propertyKey: 'type',
-      propertyValue: 'bitácora',
+      propertyKey: corpus?.names?.kind ?? 'tipo',
+      propertyValue: corpus?.names?.day ?? 'bitácora',
     });
     // El índice en memoria tiene que enterarse, o el día parecería no existir
     // hasta la próxima recarga.

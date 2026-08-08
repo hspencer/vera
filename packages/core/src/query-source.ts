@@ -23,7 +23,6 @@
 // es el grafo, y por eso este archivo no sabe qué páginas existen.
 
 import type { QueryExpression } from './query.ts';
-import { canonicalPropertyKey, propertyLabel } from './property-keys.ts';
 
 export type QueryView = 'list' | 'table';
 
@@ -272,7 +271,7 @@ function readAtom(cursor: Cursor): QueryExpression {
   const value = readValue(cursor);
   return {
     kind: 'PropertyTerm',
-    key: canonicalPropertyKey(key),
+    key,
     value: value === '' ? null : value,
   };
 }
@@ -298,15 +297,25 @@ function readTitle(cursor: Cursor): string {
   return title;
 }
 
-/** La clave de una propiedad: hasta el `=`, sin signos ni espacios dentro. */
+/**
+ * La clave de una propiedad: hasta el `=`.
+ *
+ * Con espacios dentro, porque el corpus los tiene —`revisión de código`— y una
+ * clave es del corpus. Cortar en el primer espacio dejaba sin poder preguntar
+ * por media docena de las propiedades ya escritas.
+ *
+ * Lo que sí la corta es un signo: dentro de una clave no cabe `+`, `*`, `!`,
+ * `(`, `)` ni `;`, que es lo que permite seguir partiendo la pregunta contando
+ * en vez de adivinando.
+ */
 function readKey(cursor: Cursor): string {
   const from = cursor.at;
   while (cursor.at < cursor.text.length) {
     const here = cursor.text[cursor.at] ?? '';
-    if (here === '=' || /\s/.test(here) || SIGNS.has(here)) break;
+    if (here === '=' || SIGNS.has(here)) break;
     cursor.at += 1;
   }
-  return cursor.text.slice(from, cursor.at);
+  return cursor.text.slice(from, cursor.at).trim();
 }
 
 /*
@@ -354,7 +363,7 @@ export function writeQuery(expression: QueryExpression, view: QueryView = 'list'
 function write(expression: QueryExpression, within: string | null): string {
   switch (expression.kind) {
     case 'PropertyTerm':
-      return `${propertyLabel(expression.key)}=${expression.value === null ? '' : quote(expression.value)}`;
+      return `${expression.key}=${expression.value === null ? '' : quote(expression.value)}`;
     case 'ContentTerm':
       return `~${quote(expression.text)}`;
     case 'LinksToTerm':

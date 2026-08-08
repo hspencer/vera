@@ -7,8 +7,10 @@
 
 import { answersIn } from './vocabulary.ts';
 import { looksLikeQuery } from './query-source.ts';
-import { EXPLAINS, SENSE, TERM, relationKey, senseIn, titleIn } from './relations.ts';
+import { relationKeyOf, senseIn, titleIn } from './relations.ts';
 import type { Crossing } from './relations.ts';
+import { DEFAULT_PROPERTY_NAMES } from './property-names.ts';
+import type { PropertyNames } from './property-names.ts';
 import {
   excerpt,
   isDateTitle,
@@ -69,6 +71,24 @@ export class VeraGraph {
   // de él porque responde otra pregunta: el bloque dice qué palabras hay, esto
   // dice de quién son.
   #authorship = new Map<BlockId, Authorship>();
+
+  /*
+   * Cómo llama este corpus a las propiedades que el dominio necesita conocer.
+   *
+   * Lo trae quien carga el grafo, leído de la página de ontología. Aquí sólo
+   * está el mínimo que rige mientras esa página no diga otra cosa: escribir la
+   * palabra dentro del código convertía en decisión de Vera algo que es del
+   * corpus y de la lengua de quien lo escribe.
+   */
+  #names: PropertyNames = DEFAULT_PROPERTY_NAMES;
+
+  namesProperties(names: PropertyNames): void {
+    this.#names = names;
+  }
+
+  get propertyNames(): PropertyNames {
+    return this.#names;
+  }
 
   #pages = new Map<PageId, Page>();
   /** Cuándo se tocó por última vez cada página. Ver #apply. */
@@ -302,10 +322,10 @@ export class VeraGraph {
       let term: string | null = null;
       let sense: string | null = null;
       for (const property of properties) {
-        const key = relationKey(property.key);
-        if (key === EXPLAINS) target = property.value;
-        else if (key === TERM) term = property.value;
-        else if (key === SENSE) sense = property.value;
+        const role = relationKeyOf(property.key, this.#names);
+        if (role === 'explains') target = property.value;
+        else if (role === 'term') term = property.value;
+        else if (role === 'sense') sense = property.value;
       }
       if (target === null) continue;
 
@@ -641,7 +661,7 @@ export class VeraGraph {
         //
         // Es política y no estructura: gobierna lo que se somete hoy, no lo que
         // se sometió antes de que existiera. Ver #replaying.
-        if (!this.#replaying && change.propertyKey === 'type' && change.page !== undefined) {
+        if (!this.#replaying && change.propertyKey === this.#names.kind && change.page !== undefined) {
           const page = this.#pages.get(change.page);
           if (page !== undefined && isDateTitle(page.title)) {
             return 'un día es una bitácora; su tipo no se quita';

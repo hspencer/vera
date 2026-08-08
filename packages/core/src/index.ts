@@ -22,20 +22,22 @@ export {
 export type { QueryExpression } from './query.ts';
 
 export { looksLikeQuery, readQuery, writeQuery } from './query-source.ts';
-export { canonicalPropertyKey, propertyLabel } from './property-keys.ts';
 export { answersIn } from './vocabulary.ts';
 
 export {
-  EXPLAINS,
-  SENSE,
   STARTER_RELATIONS,
-  TERM,
   inverseOf,
   isSymmetric,
-  relationKey,
+  relationKeyOf,
   senseIn,
   titleIn,
 } from './relations.ts';
+export {
+  DEFAULT_PROPERTY_NAMES,
+  SPECIAL_KIND,
+  readPropertyNames,
+} from './property-names.ts';
+export type { PropertyNames, PropertyRole } from './property-names.ts';
 export type { Crossing, CrossingSense, RelationTerm } from './relations.ts';
 export type { QuerySource, QueryUnreadable, QueryView } from './query-source.ts';
 

@@ -3,7 +3,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { STARTER_RELATIONS, inverseOf, isSymmetric, titleIn, senseIn } from '@vera/core';
+import {
+  DEFAULT_PROPERTY_NAMES,
+  STARTER_RELATIONS,
+  inverseOf,
+  isSymmetric,
+  readPropertyNames,
+  titleIn,
+  senseIn,
+} from '@vera/core';
 import { OWNER, inhabitedGraph, makeBlock, makePage, submit } from './helpers.ts';
 
 /** Un bloque que explica: cuelga de aquel desde el que se afirma. */
@@ -179,5 +187,86 @@ describe('el vocabulario de relaciones', () => {
     assert.equal(senseIn('mutua'), 'mutual');
     assert.equal(senseIn('MUTUAL'), 'mutual');
     assert.equal(senseIn('cualquier cosa'), 'directed');
+  });
+});
+
+/*
+ * Las palabras las dice el corpus, no el código.
+ *
+ * Ver property-names.ts. Escribir `explica` o `tipo` dentro del programa
+ * convertía en decisión de Vera algo que es de quien escribe: quien lleve su
+ * corpus en maorí tiene que poder preguntar en maorí.
+ */
+describe('los nombres de las propiedades', () => {
+  it('sin declarar nada, rige lo que Vera trae', () => {
+    assert.deepEqual(readPropertyNames([]), DEFAULT_PROPERTY_NAMES);
+  });
+
+  it('la página de ontología pisa la palabra de un papel', () => {
+    const names = readPropertyNames(['kind · momo', 'topic · kaupapa']);
+    assert.equal(names.kind, 'momo');
+    assert.equal(names.topic, 'kaupapa');
+    // Y lo que no se declaró se queda como estaba.
+    assert.equal(names.explains, DEFAULT_PROPERTY_NAMES.explains);
+  });
+
+  it('admite los tres separadores que ya usa la ontología', () => {
+    assert.equal(readPropertyNames(['kind / genre']).kind, 'genre');
+    assert.equal(readPropertyNames(['kind | soort']).kind, 'soort');
+  });
+
+  it('un papel que Vera no conoce se ignora sin protestar', () => {
+    // La página es de quien la escribe y puede llevar dentro cosas que Vera
+    // todavía no sepa leer.
+    assert.deepEqual(readPropertyNames(['ferocidad · mucha']), DEFAULT_PROPERTY_NAMES);
+  });
+
+  it('un renglón a medias no borra la palabra que había', () => {
+    assert.equal(readPropertyNames(['kind ·']).kind, DEFAULT_PROPERTY_NAMES.kind);
+    assert.equal(readPropertyNames(['kind']).kind, DEFAULT_PROPERTY_NAMES.kind);
+  });
+
+  it('un corpus en otra lengua explica sus relaciones con sus palabras', () => {
+    const graph = inhabitedGraph();
+    graph.namesProperties({ ...DEFAULT_PROPERTY_NAMES, explains: 'whakamārama', term: 'kupu' });
+
+    const from = makePage(graph, 'PICTOS');
+    makePage(graph, 'Guemil');
+    const said = makeBlock(graph, from, 'algo');
+    const connective = makeBlock(graph, from, 'la profundiza', { parent: said });
+    submit(graph, {
+      kind: 'set_property',
+      block: connective,
+      propertyKey: 'whakamārama',
+      propertyValue: '[[Guemil]]',
+    });
+    submit(graph, {
+      kind: 'set_property',
+      block: connective,
+      propertyKey: 'kupu',
+      propertyValue: 'profundiza',
+    });
+
+    const [crossing] = graph.crossingsOut(from);
+    assert.equal(crossing?.targetTitle, 'Guemil');
+    assert.equal(crossing?.term, 'profundiza');
+  });
+
+  it('y con las palabras de Vera ya no le dicen nada', () => {
+    const graph = inhabitedGraph();
+    graph.namesProperties({ ...DEFAULT_PROPERTY_NAMES, explains: 'whakamārama' });
+
+    const from = makePage(graph, 'PICTOS');
+    makePage(graph, 'Guemil');
+    const said = makeBlock(graph, from, 'algo');
+    const connective = makeBlock(graph, from, 'la profundiza', { parent: said });
+    submit(graph, {
+      kind: 'set_property',
+      block: connective,
+      propertyKey: 'explica',
+      propertyValue: '[[Guemil]]',
+    });
+
+    assert.deepEqual(graph.crossingsOut(from), []);
   });
 });

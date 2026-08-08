@@ -168,15 +168,18 @@ describe('persistencia', () => {
     const { store, graph, write } = freshStore();
     const day = write({ kind: 'create_page', title: '2026-08-06', visibility: 'private' });
     const page = write({ kind: 'create_page', title: 'Amereida', visibility: 'private' });
+    // La clave la nombra el corpus; aquí rige la que Vera trae. Ver
+    // property-names.ts: lo que el dominio conoce es el papel, no la palabra.
+    const kind = graph.propertyNames.kind;
     for (const subject of [day, page]) {
-      write({ kind: 'set_property', page: subject, propertyKey: 'type', propertyValue: 'x' });
+      write({ kind: 'set_property', page: subject, propertyKey: kind, propertyValue: 'x' });
     }
 
     assert.equal(
       graph.submitOperation({
         originId: 'quitar-al-dia',
         participant: OWNER,
-        change: { kind: 'remove_property', page: day, propertyKey: 'type' },
+        change: { kind: 'remove_property', page: day, propertyKey: kind },
       }).status,
       'rejected',
     );
@@ -184,7 +187,7 @@ describe('persistencia', () => {
       graph.submitOperation({
         originId: 'quitar-a-la-pagina',
         participant: OWNER,
-        change: { kind: 'remove_property', page, propertyKey: 'type' },
+        change: { kind: 'remove_property', page, propertyKey: kind },
       }).status,
       'applied',
     );

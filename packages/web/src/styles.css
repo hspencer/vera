@@ -3253,20 +3253,48 @@ code {
 .query-table th:nth-child(2) { width: 20%; }
 .query-table th:nth-child(3) { width: 25%; }
 
+/*
+ * El aire de las celdas.
+ *
+ * Con dos píxeles y medio arriba y abajo las filas se tocaban: la línea de una
+ * fila quedaba pegada al texto de la siguiente y la tabla se leía como un bloque
+ * rayado en vez de como filas. Aquí la separación no es adorno — es lo que hace
+ * que una fila se lea como una unidad.
+ *
+ * Y sin relleno a la izquierda en la primera columna, que es la del título: su
+ * primera letra cae en la misma vertical que el nombre de su columna y que el
+ * recuento de arriba —«392 páginas»—, y las tres cosas forman un solo borde
+ * izquierdo. Con relleno, el título quedaba medio carácter dentro de una columna
+ * cuyo nombre empezaba antes, y eso se ve sin poder decir qué se está viendo.
+ *
+ * La respuesta entera va sangrada respecto del bloque que la pidió —lo hace
+ * `.query-answer`, y es a propósito: dice que esto es contestación y no texto—,
+ * así que la vertical que se comparte es la de la respuesta, no la del párrafo.
+ */
+.query-table th,
+.query-table td {
+  padding: 0.4rem 0.75rem;
+}
+
+.query-table th:first-child,
+.query-table td:first-child {
+  padding-left: 0;
+}
+
 .query-table th {
   text-align: left;
   font-weight: 400;
   color: var(--text-dim);
   font-size: 0.72rem;
   font-family: var(--font-mono);
+  /* La línea del encabezado, del token de bordes. Ver `--rule` en Ajustes. */
   border-bottom: 1px solid var(--rule);
-  padding: 0.15rem 0.6rem 0.15rem 0;
   white-space: nowrap;
 }
 
 .query-table td {
-  padding: 0.15rem 0.6rem 0.15rem 0;
   vertical-align: baseline;
+  /* Y las de las filas, el mismo token a media tinta: separan sin rayar. */
   border-bottom: 1px solid color-mix(in srgb, var(--rule) 50%, transparent);
   overflow-wrap: anywhere;
 }

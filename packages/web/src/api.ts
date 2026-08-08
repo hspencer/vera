@@ -211,7 +211,14 @@ async function json<T>(path: string): Promise<T> {
 
 export const api = {
   health: () =>
-    json<{ graph: string; pages: number; blocks: number; lastSequence: number }>('/health'),
+    json<{
+      graph: string;
+      pages: number;
+      blocks: number;
+      lastSequence: number;
+      /** Cómo llama este corpus a las propiedades que Vera necesita conocer. */
+      names: { kind: string; topic: string; explains: string; term: string; sense: string; day: string };
+    }>('/health'),
 
   pages: () => json<PageSummary[]>('/pages'),
 

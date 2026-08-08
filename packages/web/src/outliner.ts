@@ -11,7 +11,7 @@
 // Cada edición emite una operación. No hay guardado implícito ni estado local
 // que pueda divergir del grafo.
 
-import { answersIn, looksLikeQuery, propertyLabel } from '@vera/core';
+import { answersIn, looksLikeQuery } from '@vera/core';
 import { api, type BlockView, type Change, type CrossingRow, type PageView } from './api.ts';
 import { renderMarkdown, type RenderOptions } from './markdown.ts';
 import { answerQueryBlock } from './query-block.ts';
@@ -638,6 +638,8 @@ interface PageReading {
     content: string | null;
   }[];
   types: string[];
+  /** Cómo llama este corpus a lo que se propone. */
+  names?: { kind: string; topic: string };
   /** Cada concepto, y si el corpus ya lo tiene como página. */
   concepts: { value: string; page: string | null; backlinks: number }[];
   /** Páginas que esta página nombra y no enlaza. */
@@ -679,9 +681,15 @@ interface Suggestion {
   approved: boolean;
 }
 
-/** Las claves con que se guarda lo que el bibliotecario propone. */
-const TYPE_KEY = 'type';
-const CONCEPT_KEY = 'concepto';
+/*
+ * Las claves con que se guarda lo que el bibliotecario propone no están aquí:
+ * las dice el corpus y viajan con el resultado del procesamiento.
+ *
+ * Escribirlas en el cliente convertía en decisión de Vera algo que es de quien
+ * escribe: quien lleve su corpus en otra lengua no tiene por qué recibir
+ * sugerencias que le escriban `type` en sus páginas.
+ */
+const DEFAULT_NAMES = { kind: 'tipo', topic: 'concepto' };
 /**
  * Procesa la página, cuenta lo que va haciendo, y propone cambios.
  *
@@ -919,15 +927,18 @@ async function processPage(
    * No se propone lo que la página ya dice: repetir una propiedad que ya está
    * no es un cambio, y ofrecerlo obligaría a descartarlo una vez por proceso.
    */
+  const names = reading.names ?? DEFAULT_NAMES;
   const already = new Set((page.properties ?? []).map((p) => `${p.key}=${p.value}`));
   const suggestions: Suggestion[] = [];
 
   for (const value of reading.types) {
-    if (already.has(`${TYPE_KEY}=${value}`)) continue;
+    if (already.has(`${names.kind}=${value}`)) continue;
     suggestions.push({
       what: `qué es: ${value}`,
-      detail: `${TYPE_KEY}:: ${value}`,
-      changes: [{ kind: 'set_property', page: page.id, propertyKey: TYPE_KEY, propertyValue: value }],
+      detail: `${names.kind}:: ${value}`,
+      changes: [
+        { kind: 'set_property', page: page.id, propertyKey: names.kind, propertyValue: value },
+      ],
       approved: true,
     });
   }
@@ -943,20 +954,20 @@ async function processPage(
    * tres reúna lo que el otro tiene.
    */
   for (const concept of reading.concepts) {
-    if (already.has(`${CONCEPT_KEY}=${concept.value}`)) continue;
+    if (already.has(`${names.topic}=${concept.value}`)) continue;
     suggestions.push({
       what: `de qué trata: ${concept.value}`,
       detail:
         concept.page === null
-          ? `${CONCEPT_KEY}:: ${concept.value} · nuevo en el corpus`
-          : `${CONCEPT_KEY}:: ${concept.value} · ya es página${
+          ? `${names.topic}:: ${concept.value} · nuevo en el corpus`
+          : `${names.topic}:: ${concept.value} · ya es página${
               concept.backlinks > 0 ? `, con ${concept.backlinks} enlaces` : ''
             }`,
       changes: [
         {
           kind: 'set_property',
           page: page.id,
-          propertyKey: CONCEPT_KEY,
+          propertyKey: names.topic,
           propertyValue: concept.value,
         },
       ],
@@ -1593,7 +1604,10 @@ export function renderOutliner(
   for (const property of written) {
     const key = document.createElement('dt');
     key.className = 'property-key';
-    key.textContent = propertyLabel(property.key);
+    // La clave, tal como está escrita en la página. Sin máscara: enseñar «tipo»
+    // sobre una clave que se llama `type` obliga a saberse las dos para poder
+    // preguntar por ella, y la que vale es la que el corpus dice.
+    key.textContent = property.key;
     key.tabIndex = 0;
     key.title = 'renombrar la propiedad';
     key.addEventListener('click', () => {

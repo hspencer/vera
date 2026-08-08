@@ -24,7 +24,7 @@ describe('readQuery · los términos', () => {
   it('lee una propiedad con su valor', () => {
     assert.deepEqual(read('? tipo=proyecto').expression, {
       kind: 'PropertyTerm',
-      key: 'type',
+      key: 'tipo',
       value: 'proyecto',
     });
   });
@@ -32,7 +32,7 @@ describe('readQuery · los términos', () => {
   it('un valor puede llevar espacios, que el corpus los lleva', () => {
     assert.deepEqual(read('? tipo=entrada diaria').expression, {
       kind: 'PropertyTerm',
-      key: 'type',
+      key: 'tipo',
       value: 'entrada diaria',
     });
   });
@@ -48,7 +48,7 @@ describe('readQuery · los términos', () => {
   it('entre comillas caben los signos', () => {
     assert.deepEqual(read('? tipo="ida + vuelta"').expression, {
       kind: 'PropertyTerm',
-      key: 'type',
+      key: 'tipo',
       value: 'ida + vuelta',
     });
   });
@@ -74,7 +74,7 @@ describe('readQuery · los términos', () => {
   it('niega con «!»', () => {
     assert.deepEqual(read('? !tipo=proyecto').expression, {
       kind: 'NotTerm',
-      operand: { kind: 'PropertyTerm', key: 'type', value: 'proyecto' },
+      operand: { kind: 'PropertyTerm', key: 'tipo', value: 'proyecto' },
     });
   });
 });
@@ -120,10 +120,6 @@ describe('readQuery · la presentación', () => {
     assert.equal(read('? tipo=proyecto ; tabla').view, 'table');
   });
 
-  it('la clave humana y la heredada nombran la misma propiedad', () => {
-    assert.deepEqual(read('? tipo=proyecto'), read('? type=proyecto'));
-    assert.equal(writeQuery(read('? type=proyecto').expression), '? tipo=proyecto');
-  });
 
   it('la presentación no cambia la selección', () => {
     assert.deepEqual(read('? tipo=proyecto').expression, read('? tipo=proyecto ; tabla').expression);
@@ -207,8 +203,14 @@ describe('writeQuery', () => {
   });
 
   it('pone comillas sólo cuando hacen falta', () => {
-    assert.equal(writeQuery({ kind: 'PropertyTerm', key: 'type', value: 'entrada diaria' }), '? tipo=entrada diaria');
-    assert.equal(writeQuery({ kind: 'PropertyTerm', key: 'type', value: 'ida + vuelta' }), '? tipo="ida + vuelta"');
+    assert.equal(
+      writeQuery({ kind: 'PropertyTerm', key: 'tipo', value: 'entrada diaria' }),
+      '? tipo=entrada diaria',
+    );
+    assert.equal(
+      writeQuery({ kind: 'PropertyTerm', key: 'tipo', value: 'ida + vuelta' }),
+      '? tipo="ida + vuelta"',
+    );
   });
 
   it('no finge saber escribir un término que no tiene signo', () => {
@@ -290,5 +292,63 @@ describe('la ida y la vuelta', () => {
       }),
       { numRuns: 300 },
     );
+  });
+});
+
+/*
+ * La clave es la que se escribió.
+ *
+ * Hubo una versión de esto que traducía `tipo` a `type` al leer y al revés al
+ * escribir. Resolvía este corpus y rompía el siguiente: quien lleve el suyo en
+ * maorí escribiría `momo` y la traducción no sabría nada de él —o peor, quien
+ * tuviera una clave que se llama de verdad `estado` se la vería convertida en
+ * `status` sin que nada lo dijera. Una propiedad es del corpus, y preguntar por
+ * ella es preguntar por lo que dice.
+ */
+describe('la clave no se traduce', () => {
+  it('lo que se escribe es lo que se pregunta, en cualquier lengua', () => {
+    for (const key of ['tipo', 'type', 'momo', 'Soort']) {
+      const outcome = readQuery(`? ${key}=x`);
+      assert.ok(!('error' in outcome));
+      assert.equal((outcome.expression as { key: string }).key, key);
+    }
+  });
+
+  it('y volver a escribirla la deja igual', () => {
+    assert.equal(writeQuery(read('? momo=rangahau').expression), '? momo=rangahau');
+  });
+});
+
+/*
+ * Una clave puede llevar espacios, porque el corpus los lleva.
+ *
+ * `revisión de código` es una propiedad de verdad de este corpus. Cortar la
+ * clave en el primer espacio dejaba sin poder preguntar por media docena de las
+ * que ya estaban escritas.
+ */
+describe('claves con espacios', () => {
+  it('la clave llega hasta el «=», espacios incluidos', () => {
+    assert.deepEqual(read('? revisión de código=2026-08-07').expression, {
+      kind: 'PropertyTerm',
+      key: 'revisión de código',
+      value: '2026-08-07',
+    });
+  });
+
+  it('y se puede preguntar si la lleva', () => {
+    assert.deepEqual(read('? revisión de código=').expression, {
+      kind: 'PropertyTerm',
+      key: 'revisión de código',
+      value: null,
+    });
+  });
+
+  it('un signo sí la corta: dentro de una clave no cabe «+»', () => {
+    const { expression } = read('? item-type=x + revisión de código=y');
+    assert.equal((expression as { operands: readonly QueryExpression[] }).operands.length, 2);
+  });
+
+  it('y escribirla la deja igual', () => {
+    assert.equal(writeQuery(read('? revisión de código=hoy').expression), '? revisión de código=hoy');
   });
 });
