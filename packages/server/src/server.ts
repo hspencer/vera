@@ -13,8 +13,12 @@ import {
   VeraGraph,
   answersIn,
   checkInvariants,
+  FIELD_KINDS,
   SPECIAL_KIND,
   inverseOf,
+  namesFromRoles,
+  readObjectDeclarations,
+  readPropertyDeclarations,
   readPropertyNames,
   readQuery,
   titleKey,
@@ -23,7 +27,13 @@ import {
   CHANGE_KINDS as CORE_CHANGE_KINDS,
   CONTRIBUTION_CHANNELS,
 } from '@vera/core';
-import type { Change, ContributionChannel, OriginEvidence, ParticipantId } from '@vera/core';
+import type {
+  Change,
+  ContributionChannel,
+  DeclaredBlock,
+  OriginEvidence,
+  ParticipantId,
+} from '@vera/core';
 import {
   createRecording,
   foldedOnPage,
@@ -357,14 +367,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
    * dejar que declare el corpus: es con la que se encuentra la página donde el
    * corpus declara las demás.
    */
-  const ontologyPage = () =>
-    graph
-      .pages()
-      .find((candidate) =>
-        graph
-          .propertiesOf(candidate.id)
-          .some((property) => property.key === SPECIAL_KIND && property.value === 'ontology'),
-      );
+  const ontologyPage = () => governing('ontology');
 
   /*
    * Los hijos del bloque de la ontología que empieza por esa palabra.
@@ -394,7 +397,64 @@ export function createVeraServer(options: ServerOptions): VeraServer {
    * Se lee al arrancar y cada vez que hace falta, porque la página que las
    * declara se edita como cualquier otra y cambiarla no debería pedir reiniciar.
    */
-  const propertyNames = () => readPropertyNames(declared(/^Nombres de propiedades/i));
+  /*
+   * Las páginas que dicen de qué está hecho este corpus.
+   *
+   * Se buscan por lo que declaran gobernar y no por su título: una página se
+   * puede llamar como quiera y seguir siendo la de las propiedades. Ver
+   * specs/special-pages.allium.
+   */
+  const governing = (kind: string) =>
+    graph
+      .pages()
+      .find((candidate) =>
+        graph
+          .propertiesOf(candidate.id)
+          .some((property) => property.key === SPECIAL_KIND && property.value === kind),
+      );
+
+  /*
+   * Los bloques de una página especial que declaran algo.
+   *
+   * Un bloque declara cuando lleva propiedades colgando; la prosa que lo rodea
+   * —lo que alguien escribió para explicar de qué va la página, por qué se
+   * decidió tal cosa— no lleva ninguna y por eso no se lee como una declaración.
+   * Así la página no necesita apartados con nombres mágicos, y quien la escribe
+   * puede ordenarla como quiera.
+   */
+  const declaredIn = (kind: string): DeclaredBlock[] => {
+    const page = governing(kind);
+    if (page === undefined) return [];
+    return graph
+      .blocksOf(page.id)
+      .map((block) => ({
+        content: block.content,
+        properties: graph
+          .propertiesOf(block.stableId)
+          .map((one) => ({ key: one.key, value: one.value })),
+      }))
+      .filter((block) => block.content.trim() !== '' && block.properties.length > 0);
+  };
+
+  /** Cada propiedad de este corpus, con qué clase de campo es. */
+  const declaredProperties = () => readPropertyDeclarations(declaredIn('properties'));
+
+  /** Cada clase de cosa, con qué propiedades la constituyen. */
+  const declaredObjects = () => readObjectDeclarations(declaredIn('objects'));
+
+  /*
+   * Cómo llama este corpus a las propiedades que el dominio necesita conocer.
+   *
+   * Primero la página de propiedades, donde cada una dice su papel pegado a sí
+   * misma; y si no hay ninguna, la lista de la ontología, que es como se
+   * declaraba antes. Un corpus que ya lo escribió así no tiene por qué enterarse
+   * de que Vera cambió de sitio.
+   */
+  const propertyNames = () => {
+    const roles = declaredProperties().filter((one) => one.role !== null);
+    if (roles.length > 0) return namesFromRoles(roles);
+    return readPropertyNames(declared(/^Nombres de propiedades/i));
+  };
 
   /*
    * Qué páginas vinieron de fuera, y de qué ítem cada una.
@@ -1463,6 +1523,65 @@ export function createVeraServer(options: ServerOptions): VeraServer {
        * cuántas páginas vinieron de ahí se cuenta mirando el corpus. Escribirlo
        * en la página sería tener dos sitios diciendo lo mismo.
        */
+      /*
+       * De qué está hecho este corpus: sus propiedades y sus objetos.
+       *
+       * Sale de las dos páginas que lo declaran, leídas cada vez y no cacheadas:
+       * se editan como cualquier otra página y cambiarlas no debería pedir
+       * reiniciar. Ver specs/controlled-ontology.allium.
+       */
+      if (path === '/ontology') {
+        send(response, 200, {
+          properties: declaredProperties(),
+          objects: declaredObjects(),
+          names: propertyNames(),
+          fields: FIELD_KINDS,
+          /*
+           * Y las que el corpus usa sin haberlas declarado.
+           *
+           * No es un reproche: casi todo lo que hay en un corpus vivo llegó sin
+           * pedir permiso, y declarar es una decisión que se toma después. Está
+           * aquí para que esa decisión se pueda tomar mirando, en vez de tener
+           * que acordarse de qué se escribió alguna vez.
+           */
+          undeclared: (() => {
+            const known = new Set(declaredProperties().map((one) => one.name.toLowerCase()));
+            const counted = new Map<string, number>();
+            /*
+             * Sin mirar las páginas que gobiernan.
+             *
+             * `campo::`, `papel::`, `propiedades::` son la gramática con que se
+             * declara, no propiedades del corpus, y contarlas aquí sería
+             * pedirle a la ontología que se declare a sí misma para siempre.
+             */
+            const governed = new Set(
+              ['ontology', 'properties', 'objects', 'presentation', 'instructions']
+                .map((one) => governing(one)?.id)
+                .filter((one): one is string => one !== undefined),
+            );
+            const subjects = [
+              ...graph.pages().map((one) => one.id),
+              ...graph
+                .allBlocks()
+                .filter((one) => !governed.has(one.page))
+                .map((one) => one.stableId),
+            ].filter((one) => !governed.has(one));
+            for (const subject of subjects) {
+              for (const property of graph.propertiesOf(subject)) {
+                const key = property.key.trim();
+                if (key === '' || known.has(key.toLowerCase())) continue;
+                counted.set(key, (counted.get(key) ?? 0) + 1);
+              }
+            }
+            return [...counted]
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 60)
+              .map(([key, uses]) => ({ key, uses }));
+          })(),
+        });
+        return;
+      }
+
       if (path === '/services') {
         const brought = broughtFrom('zotero');
         send(

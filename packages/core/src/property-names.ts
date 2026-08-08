@@ -104,6 +104,30 @@ const ROLES: PropertyRole[] = [
 ];
 
 /**
+ * Los papeles, leídos de la página de propiedades.
+ *
+ * Ahí cada propiedad dice qué papel cumple pegado a sí misma —`papel:: kind`
+ * bajo el bloque `tipo`— y no en una lista aparte que hay que mantener en dos
+ * sitios. Es donde alguien va a buscarlo: quien se pregunta qué es `tipo` mira
+ * `tipo`.
+ *
+ * Lo de antes —una lista de renglones `papel · palabra`— se sigue leyendo, por
+ * `readPropertyNames`: un corpus que ya lo escribió así no tiene por qué
+ * enterarse de que Vera cambió de sitio.
+ */
+export function namesFromRoles(
+  declared: readonly { name: string; role: string | null }[],
+): PropertyNames {
+  const names: Record<PropertyRole, string> = { ...DEFAULT_PROPERTY_NAMES };
+  for (const one of declared) {
+    if (one.role === null || one.name.trim() === '') continue;
+    const held = ROLES.find((role) => role === one.role?.trim().toLowerCase());
+    if (held !== undefined) names[held] = one.name.trim();
+  }
+  return names;
+}
+
+/**
  * Lee lo que una página declara, y deja lo demás como estaba.
  *
  * Entra una lista de renglones `papel · palabra` —tal como se escriben en la

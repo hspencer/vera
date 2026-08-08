@@ -145,6 +145,32 @@ export interface Hit {
   rank: number;
 }
 
+/** Una propiedad declarada, con qué clase de campo es. */
+export interface PropertyDeclared {
+  name: string;
+  field: string | null;
+  many: boolean;
+  role: string | null;
+  values: string[];
+  says: string | null;
+}
+
+/** Una clase de cosa, con qué propiedades la constituyen. */
+export interface ObjectDeclared {
+  name: string;
+  properties: string[];
+  says: string | null;
+}
+
+export interface OntologyView {
+  properties: PropertyDeclared[];
+  objects: ObjectDeclared[];
+  names: Record<string, string>;
+  fields: string[];
+  /** Las que el corpus usa sin haberlas declarado, con cuántas veces. */
+  undeclared: { key: string; uses: number }[];
+}
+
 /** Lo que se sabe de una clave guardada sin enseñarla. */
 export interface ServiceSecret {
   name: string;
@@ -322,6 +348,15 @@ export const api = {
    * la clave. Ver specs/service-connections.allium.
    */
   services: () => json<ServiceView[]>('/services'),
+
+  /**
+   * De qué está hecho este corpus: sus propiedades y sus objetos.
+   *
+   * Sale de las dos páginas que lo declaran y se pide cuando hace falta, no al
+   * arrancar: se editan como cualquier otra página, y una copia guardada al
+   * principio de la sesión diría lo de antes.
+   */
+  ontology: () => json<OntologyView>('/ontology'),
 
   /**
    * Guarda la clave de un servicio.

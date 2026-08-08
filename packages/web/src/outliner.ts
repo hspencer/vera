@@ -1945,16 +1945,26 @@ export function renderOutliner(
   add.type = 'button';
   add.className = 'property-add';
   add.textContent = '+ propiedad';
-  add.addEventListener('click', () => {
+  /*
+   * Poner una propiedad: primero las que esta clase de cosa espera.
+   *
+   * La ontología declara qué propiedades constituyen a un «Proyecto» o a una
+   * «Persona» —ver [[Objetos]]— y aquí eso sirve para algo: lo que le falta a
+   * esta página se ofrece primero y por su nombre. No se exige nada. Casi nada
+   * de lo que uno escribe nace completo, y una memoria que pidiera la ficha
+   * llena antes de dejar escribir obligaría a saber el final antes de empezar.
+   * @guarantee TheShapeIsSaidAndNeverEnforced.
+   */
+  const writeProperty = (name: string): void => {
     const key = document.createElement('dt');
     key.className = 'property-key';
     const value = document.createElement('dd');
     value.className = 'property-value';
     value.textContent = '';
     properties.append(key, value);
-    editInPlace(key, '', 'nombre de la propiedad nueva', async (next) => {
-      const name = next.trim();
-      if (name === '') {
+    const put = async (next: string): Promise<boolean> => {
+      const said = next.trim();
+      if (said === '') {
         key.remove();
         value.remove();
         return true;
@@ -1962,11 +1972,38 @@ export function renderOutliner(
       // Nace con valor vacío; el valor se escribe en el siguiente clic. El
       // dominio acepta una propiedad sin valor, así que no hace falta inventarlo.
       return submitAndReload(
-        { kind: 'set_property', page: page.id, propertyKey: name, propertyValue: '' },
+        { kind: 'set_property', page: page.id, propertyKey: said, propertyValue: '' },
         callbacks,
       );
-    });
+    };
+    if (name === '') editInPlace(key, '', 'nombre de la propiedad nueva', put);
+    else void put(name);
+  };
+
+  add.addEventListener('click', () => {
+    void api.ontology().then((said) => {
+      const names = corpusNames();
+      const kind = page.properties.find((one) => one.key === names.kind)?.value.trim() ?? '';
+      const object = said.objects.find(
+        (one) => one.name.toLowerCase() === kind.toLowerCase(),
+      );
+      const here = new Set(page.properties.map((one) => one.key.trim().toLowerCase()));
+      const missing = (object?.properties ?? []).filter((one) => !here.has(one.toLowerCase()));
+      const others = said.properties
+        .map((one) => one.name)
+        .filter((one) => !here.has(one.toLowerCase()) && !missing.includes(one));
+      const label = (one: string): string => {
+        const held = said.properties.find((p) => p.name === one);
+        return held?.field === null || held === undefined ? one : `${one} · ${held.field}`;
+      };
+      openBlockMenu(add, [
+        ...missing.map((one) => ({ label: label(one), run: () => writeProperty(one) })),
+        ...others.map((one) => ({ label: label(one), run: () => writeProperty(one) })),
+        { label: 'escribir otra…', run: () => writeProperty('') },
+      ]);
+    }).catch(() => writeProperty(''));
   });
+
 
   /*
    * Un día no lleva front matter: lleva su fecha. Pero sí lleva propiedades.

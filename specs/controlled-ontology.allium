@@ -933,12 +933,77 @@ surface OntologyCuration {
 }
 
 ------------------------------------------------------------
+-- Dónde se declara todo esto
+------------------------------------------------------------
+
+-- La ontología se escribe en dos páginas, y son dos porque son dos preguntas.
+--
+-- Había una sola —«Ontología»— con todo dentro: los tipos, unas propiedades
+-- sueltas, el vocabulario de relaciones y las reglas de gobierno. Se parte porque
+-- las dos preguntas que contiene se hacen en momentos distintos y se responden
+-- mirando cosas distintas:
+--
+--   - Qué propiedades hay y de qué clase es cada una. Un `fecha` no se rellena
+--     como un `doi`, y un `concepto` que nombra otra página no se lee como texto
+--     suelto. Sin decirlo en alguna parte, toda propiedad es una caja de texto y
+--     quien escribe tiene que acordarse de todo.
+--
+--   - Qué clases de cosa hay y qué propiedades constituyen a cada una. Es lo que
+--     permite que una página diga qué le falta en vez de esperar a que alguien se
+--     acuerde.
+--
+-- Las dos se escriben con las herramientas de siempre: un bloque por cosa, con
+-- sus propiedades colgando. Que la ontología de las propiedades esté escrita con
+-- propiedades no es un juego: es lo que hace que se edite, se busque, se enlace y
+-- se versione como todo lo demás, en vez de ser un formato aparte que sólo
+-- entiende el programa.
+contract TheOntologyIsWrittenWhereItCanBeRead {
+    declare: (page: core/Page) -> Ontology
+
+    @invariant OneQuestionPerPage
+        -- Una página declara las propiedades y otra los objetos. Juntarlas
+        -- obligaba a leer la mitad que no importaba para encontrar la que sí, y
+        -- era el motivo por el que casi nada llegaba a declararse.
+
+    @invariant ADeclarationIsABlockThatCarriesProperties
+        -- Se lee como declaración un bloque con propiedades colgando; la prosa
+        -- que lo rodea no lleva ninguna y por eso no declara nada. Así la página
+        -- no necesita apartados con nombres mágicos y quien la escribe puede
+        -- ordenarla como quiera, incluida la parte donde explica por qué decidió
+        -- lo que decidió.
+
+    @invariant EachPropertySaysItsOwnRole
+        -- Qué papel de los que el código conoce cumple una propiedad se declara
+        -- pegado a ella —`papel:: kind` bajo el bloque `tipo`— y no en una lista
+        -- aparte. Es donde alguien lo va a buscar: quien se pregunta qué es
+        -- `tipo` mira `tipo`.
+
+    @invariant TheShapeIsSaidAndNeverEnforced
+        -- Declarar describe y no obliga. Vera no rechaza una página por llevar
+        -- una propiedad sin declarar, ni por rellenarla de otra manera, ni por
+        -- que le falte lo que su clase espera. Una memoria que exigiera la ficha
+        -- llena obligaría a saber el final antes de empezar, y casi nada de lo
+        -- que uno escribe nace completo.
+
+    @invariant WhatIsUndeclaredIsCountedAndNotBlamed
+        -- Lo que el corpus usa sin declarar se enseña, con cuántas veces. No es
+        -- un reproche: casi todo lo que hay en un corpus vivo llegó sin pedir
+        -- permiso, y declarar es una decisión que se toma después. Está para que
+        -- esa decisión se pueda tomar mirando en vez de acordándose.
+}
+
+------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
 
 open question "Which ontology changes may an agent curator apply without prior human confirmation?"
 open question "When processing resolves a link, does the title it found belong in the block as text, in a property of the page, or in a record beside the link that the block never sees?"
 open question "What does processing do with an address it cannot reach — say nothing, propose the link as dead, or leave a standing question to retry later, given that unreachable today and gone for ever look identical from here?"
+-- Las clases de campo son seis —texto, número, fecha, enlace, sí/no, una de— y
+-- se eligieron cortas: una lista larga es una lista de validaciones que alguien
+-- tendría que escribir y mantener.
+open question "¿Hace falta alguna clase de campo más —duración, cantidad con unidad, rango de fechas— o lo que parece faltar se resuelve declarando los valores conocidos de «una de»?"
+
 open question "What happens when two composed semantic types define incompatible properties or lifecycles?"
 open question "Are semantic types assigned to pages and blocks equally, or do some types permit only one target kind?"
 -- Contestada: vive como página del corpus, la que lleva su nombre, y lo que
