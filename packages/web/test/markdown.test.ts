@@ -20,8 +20,24 @@ describe('inlineMarkdown', () => {
     );
   });
 
-  it('marca las etiquetas', () => {
-    assert.equal(inlineMarkdown('sobre #diseño'), 'sobre <span class="tag">#diseño</span>');
+  it('enlaza las etiquetas a su página, con la almohadilla dentro', () => {
+    // Una etiqueta es el nombre de una página: `#diseño` y `[[diseño]]` nombran
+    // lo mismo, así que van al mismo sitio y por el mismo camino. La almohadilla
+    // se queda dentro del enlace porque es lo que distingue a la vista una
+    // clasificación de una mención.
+    assert.equal(
+      inlineMarkdown('sobre #diseño'),
+      'sobre <a class="wiki tag" data-page="diseño" href="#">#diseño</a>',
+    );
+  });
+
+  it('enlaza también la etiqueta con espacios', () => {
+    // `#[[…]]` se resuelve antes que `[[…]]` a secas: si no, el corchete se
+    // llevaría el título y la almohadilla quedaría suelta delante del enlace.
+    assert.equal(
+      inlineMarkdown('sobre #[[diseño gráfico]]'),
+      'sobre <a class="wiki tag" data-page="diseño gráfico" href="#">#diseño gráfico</a>',
+    );
   });
 
   it('no confunde una almohadilla pegada a una palabra', () => {
@@ -237,7 +253,10 @@ describe('renderMarkdown', () => {
     });
 
     it('no toma por encabezado una almohadilla sin espacio', () => {
-      assert.equal(renderMarkdown('#etiqueta'), '<p><span class="tag">#etiqueta</span></p>');
+      assert.equal(
+        renderMarkdown('#etiqueta'),
+        '<p><a class="wiki tag" data-page="etiqueta" href="#">#etiqueta</a></p>',
+      );
     });
 
     it('renderiza las marcas de línea dentro del encabezado', () => {

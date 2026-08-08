@@ -13,8 +13,10 @@ import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
 import { voice } from './voice.ts';
 import { brandMark, icon, type IconName } from './icons.ts';
+import { is } from './bindings.ts';
+import { createPage } from './pages.ts';
 import { forgetPositions, renderGraph, selectNode } from './graph/render.ts';
-import { renderGraph3D, cleanupGraph3D, forgetCamera } from './graph/render3d.ts';
+import { renderGraph3D, cleanupGraph3D, forgetCamera, selectNode3D } from './graph/render3d.ts';
 import {
   applyTokens,
   loadTokens,
@@ -95,54 +97,20 @@ function drawMemory(host: HTMLElement): void {
       : `${corpus.pages} páginas · ${corpus.blocks} bloques · secuencia ${corpus.lastSequence}`;
   host.append(status);
 
-  // Lo hablado que se quedó sin bloque donde vivir.
-  //
-  // Desde que toda grabación nace pegada a un bloque, ninguna nueva puede quedar
-  // suelta; esto es para las que se grabaron antes de que eso fuera cierto, y
-  // para la que pierda su bloque porque alguien lo borró. Darle lugar es traerla
-  // al día de hoy, que es de donde habría salido si se grabara ahora.
-  void voice.list().then((all) => {
-    if (!Array.isArray(all)) return;
-    // Sin lugar en la escritura no hay dónde oírla ni dónde escribir lo que
-    // dice: eso es lo que hay que poder reparar desde aquí.
-    const pending = all.filter((r) => r.placedInBlock === null);
-    if (pending.length === 0) return;
-
-    const title = document.createElement('h3');
-    title.className = 'settings-group';
-    title.textContent = 'Voz sin lugar';
-    status.after(title);
-
-    const list = document.createElement('div');
-    list.id = 'pending-voice';
-    for (const item of pending) {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'index-item';
-      const name = document.createElement('span');
-      name.textContent = (item.transcript ?? '').trim().slice(0, 60) ||
-        new Date(item.capturedAt).toLocaleString('es');
-      const what = document.createElement('span');
-      what.className = 'count';
-      what.textContent = item.transcript === null ? 'sin transcribir' : 'transcrita';
-      row.append(name, what);
-      row.addEventListener('click', () => {
-        void (async () => {
-          closeSettings();
-          const block = await startDay(today());
-          if (block === null) return;
-          const placed = await voice.place(item.id, block);
-          if ('error' in placed) {
-            notice(placed.error);
-            return;
-          }
-          if (workspace.activePage !== null) await openPage(workspace.activePage);
-        })();
-      });
-      list.append(row);
-    }
-    title.after(list);
-  });
+  /*
+   * Aquí vivía «Voz sin lugar», y ya no.
+   *
+   * Listaba las grabaciones sin bloque para poder traerlas al día de hoy. El
+   * problema no era la lista: era que ese estado pudiera existir. La clave ajena
+   * declaraba `ON DELETE SET NULL`, así que borrar un bloque dejaba viva a su
+   * grabación y sin sitio; y como nada en todo el repositorio borraba una
+   * grabación, esa fila era permanente. Se borraba el bloque, reaparecía la voz,
+   * se volvía a borrar, volvía a aparecer.
+   *
+   * Ahora la grabación se va con su bloque —ver removeRecording en el store— y
+   * una voz sin lugar no puede nacer. Una pantalla que repara un estado
+   * imposible es una pantalla que enseña a desconfiar del resto.
+   */
 
   // Las páginas que gobiernan a Vera.
   //
@@ -316,7 +284,7 @@ async function startDay(date: string, content = ''): Promise<string | null> {
   let pageId = existing?.id ?? null;
 
   if (pageId === null) {
-    const born = await api.submit({ kind: 'create_page', title: date, visibility: 'private' });
+    const born = await createPage(date);
     if (born.status === 'rejected') {
       notice(`no se pudo abrir el día: ${born.reason}`);
       return null;
@@ -427,6 +395,12 @@ async function openPage(
   renderOutliner(text, page, callbacksFor(page), focus, workspace.focusRoot);
 
   // Un día no se lee solo: se sigue leyendo hacia atrás. Ver `continueBackwards`.
+  //
+  // Se corta siempre antes de decidir, y no sólo cuando hay una continuación
+  // nueva que empezar: lo que hay que garantizar es que ninguna página herede el
+  // hilo de la anterior, y eso incluye a las que no son días y a un día abierto
+  // por un bloque, que tampoco continúa.
+  stopJournalPull();
   if (isDay(page.title) && workspace.focusRoot === null) {
     continueBackwards(page.title, staying ? keptScroll : 0);
   } else if (staying && focus === null) {
@@ -472,13 +446,31 @@ let journalDepth = 0;
 /** El oyente del desplazamiento en curso, para no apilar uno por redibujado. */
 let journalPull: (() => void) | null = null;
 
+/*
+ * Dejar de tirar del hilo del diario.
+ *
+ * Tiene que poder llamarse desde fuera de `continueBackwards`, y ése era el
+ * fallo: el oyente sólo se quitaba al empezar una continuación nueva, o sea sólo
+ * al abrir otro día. Al salir de una bitácora hacia una página cualquiera nadie
+ * lo desconectaba. `#text` se vacía y se vuelve a llenar, pero el elemento es el
+ * mismo y su oyente sigue ahí, así que al desplazarse por una página de algo se
+ * seguían montando debajo los días de la lectura anterior —desde donde se hubiera
+ * quedado, que es por lo que ni siquiera era el de hoy.
+ *
+ * No toca `journalDepth`: hasta dónde se había bajado leyendo es lo que permite
+ * reponer los tramos al redibujar el mismo día, y borrarlo aquí dejaría esa
+ * reposición en nada.
+ */
+function stopJournalPull(): void {
+  if (journalPull === null) return;
+  $('#text').removeEventListener('scroll', journalPull);
+  journalPull = null;
+}
+
 function continueBackwards(from: string, keptScroll: number): void {
   const text = $('#text');
 
-  if (journalPull !== null) {
-    text.removeEventListener('scroll', journalPull);
-    journalPull = null;
-  }
+  stopJournalPull();
 
   // Los días que hay, del más reciente al más antiguo. `YYYY-MM-DD` ordena igual
   // como texto que como fecha, así que no hace falta interpretarlo.
@@ -719,7 +711,7 @@ async function openTitle(title: string, gesture: NavigationGesture): Promise<voi
    */
   let created;
   try {
-    created = await api.submit({ kind: 'create_page', title, visibility: 'private' });
+    created = await createPage(title);
   } catch {
     notice(`no se pudo crear «${title}»: sin conexión con el servidor`);
     return;
@@ -786,6 +778,7 @@ async function drawGraph(): Promise<void> {
   // La página que se está leyendo es el nodo señalado: las dos vistas hablan de
   // lo mismo y deben decirlo a la vez.
   selectNode(workspace.activePage);
+  selectNode3D(workspace.activePage);
 
   const onClick = (id: string): void => {
     // @invariant GraphNodeOpensTextPage: en un teléfono, tocar un nodo abre su
@@ -813,14 +806,26 @@ async function drawGraph(): Promise<void> {
       'system-ui, sans-serif',
   };
 
-  if (workspace.graphView === 'graph_3d') {
-    renderGraph3D(container, data, onClick, settings);
-  } else {
-    cleanupGraph3D();
-    renderGraph(container, data, onClick, settings);
+  /*
+   * Los controles del mapa vuelven pase lo que pase con el dibujo.
+   *
+   * Estaban fuera del `try` y se sacan del panel antes de dibujar: si dibujar
+   * fallaba, no se volvían a poner, y el mapa quedaba en blanco *y sin el ojo*,
+   * o sea sin manera de volver a 2D ni de cambiar el alcance. Un fallo al pintar
+   * dejaba la aplicación sin la salida de ese fallo, que es la peor forma de
+   * romperse: la que se lleva por delante el remedio.
+   */
+  try {
+    if (workspace.graphView === 'graph_3d') {
+      renderGraph3D(container, data, onClick, settings);
+    } else {
+      cleanupGraph3D();
+      renderGraph(container, data, onClick, settings);
+    }
+  } finally {
+    container.append(controls, trail);
+    drawTrail();
   }
-  container.append(controls, trail);
-  drawTrail();
 }
 
 /**
@@ -1016,25 +1021,51 @@ function wireTheme(): void {
     setPanel(false);
   });
 
-  // El alcance: cuántos saltos desde la página en foco. Saltos y no cantidad de
-  // nodos, porque la pregunta que uno se hace es «qué tan lejos de aquí».
-  const reach = $<HTMLInputElement>('#map-panel input[type="range"]');
+  /*
+   * El alcance: cuántos saltos desde la página en foco.
+   *
+   * @guarantee TheMapIsBoundedByReach. Saltos y no cantidad de nodos, porque la
+   * pregunta que uno se hace es «qué tan lejos de aquí». Y por eso mismo se pide
+   * de uno en uno: aquí había un deslizador, que sirve para apuntar dentro de un
+   * continuo, y esto no es un continuo —son tres valores— ni una magnitud.
+   * Cada flecha es un salto, que es la unidad de la que habla la garantía.
+   *
+   * Tres y no cuatro: al cuarto salto el mapa ya no dice «qué hay cerca de aquí»
+   * sino «qué hay», y eso no cabe en la mirada.
+   */
+  const REACH_MIN = 1;
+  const REACH_MAX = 3;
+  const reachLess = $<HTMLButtonElement>('#map-reach-less');
+  const reachMore = $<HTMLButtonElement>('#map-reach-more');
   const reachValue = $('#map-reach-value');
-  reach.value = String(workspace.depth);
-  reachValue.textContent = String(workspace.depth);
-  reach.addEventListener('input', () => {
-    reachValue.textContent = reach.value;
-  });
-  // Al soltar, no en cada pixel: cada cambio pide el grafo al servidor.
-  reach.addEventListener('change', () => {
-    workspace.depth = Number(reach.value);
-    session.setReach(workspace.depth);
+  reachLess.innerHTML = icon('chevron-left');
+  reachMore.innerHTML = icon('chevron-right');
+
+  /** El número y qué flechas quedan por dar. */
+  const showReach = (): void => {
+    reachValue.textContent = String(workspace.depth);
+    // Una flecha que no lleva a ninguna parte se apaga en vez de no hacer nada:
+    // que el control diga dónde se acaba es parte de decir dónde se está.
+    reachLess.disabled = workspace.depth <= REACH_MIN;
+    reachMore.disabled = workspace.depth >= REACH_MAX;
+  };
+
+  const stepReach = (by: number): void => {
+    const next = Math.min(REACH_MAX, Math.max(REACH_MIN, workspace.depth + by));
+    if (next === workspace.depth) return;
+    workspace.depth = next;
+    session.setReach(next);
+    showReach();
     // El alcance cambia qué nodos hay, así que lo colocado deja de valer, y
     // tampoco tiene sentido volver a la cámara de un grafo que ya no es ese.
     forgetPositions();
     forgetCamera();
     void refreshGraph();
-  });
+  };
+
+  reachLess.addEventListener('click', () => stepReach(-1));
+  reachMore.addEventListener('click', () => stepReach(+1));
+  showReach();
 
   // El switch de la vista, en el orden del espacio que gobierna.
   const SWITCH: Record<string, IconName> = {
@@ -1174,9 +1205,12 @@ function wireTheme(): void {
   });
 
   // Escape cierra la configuración, como cierra cualquier cosa abierta encima.
+  // Se pregunta a `bindings` y no a la tecla: es la misma lista que la página de
+  // configuración enseña, así que lo que dice allí no puede dejar de ser verdad.
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !panel.hidden) closeSettings();
-    if (event.key === 'Escape' && mapPanelOpen) setPanel(false);
+    if (!is('close', event)) return;
+    if (!panel.hidden) closeSettings();
+    if (mapPanelOpen) setPanel(false);
   });
 
 }

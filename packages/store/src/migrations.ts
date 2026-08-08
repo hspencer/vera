@@ -123,7 +123,18 @@ const addWalkedChannel: Migration = {
   },
 };
 
-export const MIGRATIONS: readonly Migration[] = [addWalkedChannel];
+const addPageOriginCreatedAt: Migration = {
+  version: 2,
+  name: 'procedencia temporal de páginas',
+  apply(db) {
+    const pages = db
+      .prepare("SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'pages'")
+      .get() as { n: number } | undefined;
+    if ((pages?.n ?? 0) > 0) db.exec('ALTER TABLE pages ADD COLUMN origin_created_at INTEGER');
+  },
+};
+
+export const MIGRATIONS: readonly Migration[] = [addWalkedChannel, addPageOriginCreatedAt];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */
 export const SCHEMA_VERSION = MIGRATIONS.reduce((top, m) => Math.max(top, m.version), 0);

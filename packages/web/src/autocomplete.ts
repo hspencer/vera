@@ -48,6 +48,39 @@ export function detectTrigger(buffer: string, cursor: number): Open | null {
     }
   }
 
+  /*
+   * Estar dentro de una referencia ya escrita cuenta como estar buscando.
+   *
+   * Los casos de arriba sólo reconocen el instante en que se acaba de teclear el
+   * disparador. Eso deja fuera lo más frecuente cuando se corrige: volver sobre
+   * un `[[Casiopea]]` que quedó mal escrito, poner el cursor dentro y esperar
+   * que ofrezca. Se mira hacia atrás desde el cursor y, si hay una apertura sin
+   * su cierre por medio, la región es suya.
+   *
+   * El límite es la línea: un corchete abierto tres párrafos más arriba no está
+   * buscando nada, y sin este tope cualquier `[[` huérfano del corpus convertiría
+   * el resto del bloque en una consulta abierta.
+   */
+  const line = before.slice(before.lastIndexOf('\n') + 1);
+  const dentroDe = (abre: string, cierra: string): number => {
+    const at = line.lastIndexOf(abre);
+    if (at < 0) return -1;
+    return line.slice(at + abre.length).includes(cierra) ? -1 : at + abre.length;
+  };
+
+  const enEtiqueta = dentroDe('#[[', ']]');
+  if (enEtiqueta >= 0) {
+    return { trigger: 'etiqueta', queryStart: cursor - (line.length - enEtiqueta) };
+  }
+  const enPagina = dentroDe('[[', ']]');
+  if (enPagina >= 0) {
+    return { trigger: 'pagina', queryStart: cursor - (line.length - enPagina) };
+  }
+  const enBloque = dentroDe('((', '))');
+  if (enBloque >= 0) {
+    return { trigger: 'bloque', queryStart: cursor - (line.length - enBloque) };
+  }
+
   return null;
 }
 
@@ -87,8 +120,18 @@ export function completionFor(
   if (open.trigger === 'pagina' || open.trigger === 'bloque') {
     // El autopar ya dejó el cierre delante del cursor, así que sólo hay que
     // saltarlo en vez de escribir otro.
+    //
+    // Y si el cursor estaba en medio de una referencia ya escrita, lo que queda
+    // entre él y ese cierre es el resto del título viejo: se reemplaza también,
+    // o corregir `[[Casi|opea]]` dejaría `[[Casiopea]]opea]]`. Sólo hasta el
+    // primer cierre, y sólo si por medio no empieza otra referencia, que sería
+    // de alguien más.
     const closing = open.trigger === 'pagina' ? ']]' : '))';
-    const skip = tail.startsWith(closing) ? closing.length : 0;
+    const opening = open.trigger === 'pagina' ? '[[' : '((';
+    const upTo = tail.indexOf(closing);
+    const between = upTo < 0 ? '' : tail.slice(0, upTo);
+    const ours = upTo >= 0 && !between.includes(opening) && !between.includes('\n');
+    const skip = ours ? upTo + closing.length : 0;
     return {
       buffer: head + choice + closing + tail.slice(skip),
       cursor: head.length + choice.length + closing.length,
@@ -167,7 +210,7 @@ export interface Command {
    * ese punto de la escritura, y quien atiende el comando es el outliner, porque
    * el hecho ocurre en el grafo y no en el texto.
    */
-  acts?: 'hablar' | 'elegir-fecha';
+  acts?: 'hablar' | 'elegir-fecha' | 'importar';
 }
 
 /**
@@ -191,6 +234,16 @@ export const COMMANDS: Command[] = [
   { name: 'nota', hint: 'referencia a nota al pie', inserts: '[^1]', caret: 3 },
   { name: 'pagina', hint: 'enlace a otra página', inserts: '[[]]', caret: 2 },
   { name: 'audio', hint: 'hablar aquí mismo', inserts: '', caret: 0, acts: 'hablar' },
+  // Importar no escribe aquí: crea una página aparte y lleva a ella. Está en
+  // esta lista porque es donde uno va a buscar «qué puedo hacer desde el
+  // teclado», y no porque deje texto en el bloque.
+  {
+    name: 'import',
+    hint: 'traer un .md o un .docx como página nueva',
+    inserts: '',
+    caret: 0,
+    acts: 'importar',
+  },
   // Fechas. Un día es una página, así que fechar algo es enlazarlo: escribir
   // «hoy» como texto deja una palabra que dentro de un mes será falsa, y
   // escribir el enlace deja algo que sigue llevando al día en que se dijo.

@@ -16,6 +16,7 @@ import {
   recordOperation,
   recordingByBlock,
   recordingById,
+  removeRecording,
   recordingsInPage,
   saveParticipant,
   searchStore,
@@ -130,6 +131,74 @@ describe('persistencia', () => {
     assert.equal(loaded.block(block)?.content, 'dos');
     assert.equal(loaded.block(block)?.stableId, block, 'la identidad sobrevive al viaje por disco');
     assert.deepEqual(checkInvariants(loaded), []);
+    store.close();
+  });
+
+  it('reproduce una operación que hoy estaría prohibida', () => {
+    // rule ADayKeepsItsKind llegó después de que alguien ya hubiera quitado el
+    // tipo a un día. Si la prohibición se aplicara también al reproducir, esa
+    // operación pasada volvería el registro irreproducible y el grafo no
+    // levantaría: cada regla nueva invalidaría la historia anterior a ella.
+    const { store, write, graph } = freshStore();
+    const day = write({ kind: 'create_page', title: '2026-08-06', visibility: 'private' });
+    write({ kind: 'set_property', page: day, propertyKey: 'type', propertyValue: 'bitácora' });
+
+    // Se cuela por la puerta de la reproducción, que es exactamente por donde
+    // entró en su día: antes de que la regla existiera.
+    graph.beginReplay();
+    const removed = graph.submitOperation({
+      originId: 'antes-de-la-regla',
+      participant: OWNER,
+      change: { kind: 'remove_property', page: day, propertyKey: 'type' },
+    });
+    graph.endReplay();
+    assert.equal(removed.status, 'applied', 'reproducir no aplica prohibiciones de política');
+
+    // Y sometida ahora, la misma operación se niega.
+    const refused = graph.submitOperation({
+      originId: 'despues-de-la-regla',
+      participant: OWNER,
+      change: { kind: 'remove_property', page: day, propertyKey: 'type' },
+    });
+    assert.equal(refused.status, 'rejected');
+    store.close();
+  });
+
+  it('un día no se queda sin su tipo, y una página cualquiera sí', () => {
+    const { store, graph, write } = freshStore();
+    const day = write({ kind: 'create_page', title: '2026-08-06', visibility: 'private' });
+    const page = write({ kind: 'create_page', title: 'Amereida', visibility: 'private' });
+    for (const subject of [day, page]) {
+      write({ kind: 'set_property', page: subject, propertyKey: 'type', propertyValue: 'x' });
+    }
+
+    assert.equal(
+      graph.submitOperation({
+        originId: 'quitar-al-dia',
+        participant: OWNER,
+        change: { kind: 'remove_property', page: day, propertyKey: 'type' },
+      }).status,
+      'rejected',
+    );
+    assert.equal(
+      graph.submitOperation({
+        originId: 'quitar-a-la-pagina',
+        participant: OWNER,
+        change: { kind: 'remove_property', page, propertyKey: 'type' },
+      }).status,
+      'applied',
+    );
+    // @invariant OtherPropertiesOfADayAreOrdinary: lo protegido es la clase, no
+    // el front matter entero.
+    write({ kind: 'set_property', page: day, propertyKey: 'concepto', propertyValue: 'ceremonia' });
+    assert.equal(
+      graph.submitOperation({
+        originId: 'quitar-otra-del-dia',
+        participant: OWNER,
+        change: { kind: 'remove_property', page: day, propertyKey: 'concepto' },
+      }).status,
+      'applied',
+    );
     store.close();
   });
 
@@ -355,6 +424,44 @@ describe('una grabación con lugar en la escritura', () => {
     if ('error' in recording) return;
     assert.equal(recording.placedInBlock, block);
     assert.equal(recordingByBlock(store, block)?.id, recording.id);
+    store.close();
+  });
+
+  it('una grabación se va con el bloque que la sostenía', () => {
+    // El fallo que esto cierra: la clave ajena declaraba ON DELETE SET NULL, así
+    // que borrar el bloque dejaba viva a la grabación y sin sitio. Y como nada en
+    // todo el repositorio borraba una grabación, esa fila era permanente:
+    // reaparecía en «voz sin lugar» en cada recarga sin forma alguna de quitarla.
+    const { store, write, page } = withPage();
+    const block = write({ kind: 'create_block', page, parent: null, position: 0, content: '' });
+    const made = createRecording(store, { ...spoken, placedInBlock: block });
+    assert.ok(!('error' in made));
+    if ('error' in made) return;
+
+    write({ kind: 'remove_block', block });
+
+    assert.equal(recordingById(store, made.id), null, 'la grabación se fue con su bloque');
+    assert.equal(
+      (store.db.prepare('SELECT count(*) n FROM recordings WHERE placed_in_block IS NULL').get() as {
+        n: number;
+      }).n,
+      0,
+      'y no quedó ninguna sin lugar',
+    );
+    store.close();
+  });
+
+  it('quitar una grabación la quita de verdad', () => {
+    const { store, write, page } = withPage();
+    const block = write({ kind: 'create_block', page, parent: null, position: 0, content: '' });
+    const made = createRecording(store, { ...spoken, placedInBlock: block });
+    if ('error' in made) return;
+
+    assert.ok('removed' in removeRecording(store, made.id));
+    assert.equal(recordingById(store, made.id), null);
+    // `recordings` no vive en el registro de operaciones, así que quitarla es
+    // quitarla: no vuelve al reproducir el log.
+    assert.ok('error' in removeRecording(store, made.id));
     store.close();
   });
 

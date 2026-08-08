@@ -142,6 +142,22 @@ rule ApplySetPageVisibility {
     ensures: change.page.visibility = change.visibility
 }
 
+rule RecoverPageOriginCreatedAt {
+    when: operation: Operation.created
+
+    let change = operation.submission.change
+
+    requires: change.kind = recover_page_origin
+    requires: change.page != null
+    requires: change.origin_created_at != null
+
+    ensures: change.page.origin_created_at = change.origin_created_at
+
+    @guidance
+        -- Recuperar procedencia deja una operación auditable, pero no cuenta como
+        -- edición de la página y por eso no mueve last_edited_at.
+}
+
 rule ApplyRemovePage {
     when: operation: Operation.created
 

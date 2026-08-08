@@ -151,12 +151,29 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
     );
   });
 
-  html = html.replace(/\[\[([^\]]+)\]\]/g, (_whole, title: string) =>
-    hold(
-      `<a class="wiki${options.pageExists?.(title) === false ? ' pending' : ''}" ` +
-        `data-page="${quoteAttribute(title)}" href="#">${decorate(title)}</a>`,
-    ),
-  );
+  /*
+   * Una etiqueta es el nombre de una página, y por eso se enlaza.
+   *
+   * `#casiopea` y `[[Casiopea]]` nombran lo mismo; que uno llevara a su página y
+   * el otro fuera texto de adorno hacía que media clasificación del corpus no
+   * se pudiera seguir. Se dibujan distinto —la almohadilla sigue a la vista—
+   * pero son el mismo enlace y van por el mismo camino.
+   *
+   * `#[[con espacios]]` va antes que `[[…]]` a secas: si no, el corchete se
+   * llevaría el título y dejaría la almohadilla suelta delante del enlace.
+   */
+  const wikiLink = (title: string, extra = '', label = title): string =>
+    `<a class="wiki${extra}${options.pageExists?.(title) === false ? ' pending' : ''}" ` +
+    `data-page="${quoteAttribute(title)}" href="#">${decorate(label)}</a>`;
+
+  // La almohadilla se queda dentro del enlace: es lo que distingue a simple
+  // vista una clasificación de una mención, y perderla al volverla enlace sería
+  // ganar el destino y perder el sentido.
+  const tagLink = (title: string): string => wikiLink(title, ' tag', `#${title}`);
+
+  html = html.replace(/#\[\[([^\]]+)\]\]/g, (_whole, title: string) => hold(tagLink(title)));
+
+  html = html.replace(/\[\[([^\]]+)\]\]/g, (_whole, title: string) => hold(wikiLink(title)));
 
   html = html.replace(
     /\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
@@ -179,7 +196,10 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
     },
   );
 
-  html = decorate(html).replace(/(^|\s)#([\p{L}\p{N}_-]+)/gu, '$1<span class="tag">#$2</span>');
+  html = decorate(html).replace(
+    /(^|\s)#([\p{L}\p{N}_-]+)/gu,
+    (_whole, before: string, tag: string) => `${before}${tagLink(tag)}`,
+  );
 
   // Un elemento guardado puede contener la marca de otro —una imagen dentro de
   // un enlace—, así que se restituye hasta que no quede ninguna.

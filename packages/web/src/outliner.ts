@@ -16,6 +16,7 @@ import { renderMarkdown, type RenderOptions } from './markdown.ts';
 import { renderMermaid } from './mermaid.ts';
 import { is } from './bindings.ts';
 import { icon } from './icons.ts';
+import { createPage } from './pages.ts';
 import { createSession, type SaveIntent } from './session.ts';
 import {
   actionOf,
@@ -526,19 +527,19 @@ async function submitAndReload(change: Change, callbacks: OutlinerCallbacks): Pr
 }
 
 /**
- * Crea una página y la abre.
+ * Pregunta un título, crea la página y la abre.
  *
- * Nace privada y sin bloques: `create_page` es la operación, y el primer bloque
- * lo escribe quien la abra. Ponerle contenido de plantilla sería inventar texto
- * que nadie escribió, y en un corpus con procedencia eso no es inocuo.
+ * Nace privada y sin bloques: `createPage` es el acto, y el primer bloque lo
+ * escribe quien la abra. Ponerle contenido de plantilla sería inventar texto que
+ * nadie escribió, y en un corpus con procedencia eso no es inocuo.
  */
-async function createPage(callbacks: OutlinerCallbacks): Promise<void> {
+async function askForNewPage(callbacks: OutlinerCallbacks): Promise<void> {
   const title = window.prompt('Título de la página nueva');
   if (title === null || title.trim() === '') return;
 
   let result;
   try {
-    result = await api.submit({ kind: 'create_page', title: title.trim(), visibility: 'private' });
+    result = await createPage(title.trim());
   } catch {
     toast('no se pudo crear: sin conexión con el servidor');
     return;
@@ -552,6 +553,62 @@ async function createPage(callbacks: OutlinerCallbacks): Promise<void> {
   // Una página recién creada desde el buscador de la barra: se llegó a por
   // ella, no siguiendo nada de lo que se estaba leyendo.
   callbacks.onOpen(result.subjectId, 'searched');
+}
+
+
+/**
+ * Vaciar una pagina y despues quitarla.
+ *
+ * El dominio solo borra una pagina vacia, y solo borra un bloque que no tenga
+ * hijos —`rule ApplyRemovePage` y la validacion de `remove_block`—. Asi que esto
+ * no es una operacion sino una secuencia: las hojas primero, subiendo, y al
+ * final la pagina. Cada paso queda en el registro con su propio numero de
+ * secuencia.
+ *
+ * Que sea una secuencia y no un acto unico es deliberado en la spec: «emptying
+ * it is a sequence of remove_block operations, each separately ordered and
+ * separately auditable». Borrar una pagina no puede tragarse lo que hubiera
+ * dentro sin dejar constancia de que habia.
+ *
+ * Si un paso falla se para ahi. Queda una pagina a medio vaciar, que es
+ * visiblemente reparable; nunca una pagina borrada con bloques huerfanos.
+ */
+async function deletePage(
+  page: PageView,
+  callbacks: OutlinerCallbacks,
+): Promise<void> {
+  const cuantos = page.blocks.filter((b) => b.content.trim() !== '').length;
+  const dentro =
+    cuantos === 0 ? '' : cuantos === 1 ? ' y el bloque que tiene escrito' : ` y sus ${cuantos} bloques escritos`;
+  const aviso = `Se va a eliminar «${page.title}»${dentro}. No se puede deshacer.`;
+  if (!window.confirm(aviso)) return;
+
+  // Las hojas primero: un bloque con hijos no se puede quitar, asi que se ordena
+  // por profundidad y se va de abajo hacia arriba.
+  const parents = new Map(page.blocks.map((b) => [b.stableId, b.parent]));
+  const depthOf = (id: string): number => {
+    let depth = 0;
+    let at = parents.get(id) ?? null;
+    // El tope es por si un dia el arbol llegara con un ciclo: mejor un orden
+    // aproximado que un bucle infinito en el navegador de alguien.
+    while (at !== null && depth < 1000) {
+      depth += 1;
+      at = parents.get(at) ?? null;
+    }
+    return depth;
+  };
+  const deepestFirst = [...page.blocks].sort((a, b) => depthOf(b.stableId) - depthOf(a.stableId));
+
+  for (const block of deepestFirst) {
+    if (!(await submitQuietly({ kind: 'remove_block', block: block.stableId }))) return;
+  }
+  if (!(await submitQuietly({ kind: 'remove_page', page: page.id }))) return;
+
+  toast(`eliminada: ${page.title}`);
+  // La pagina que se estaba leyendo ya no existe, asi que hay que ir a alguna
+  // parte. El dia de hoy es el sitio al que Vera vuelve siempre que no hay un
+  // sitio mejor: existe siempre y es donde se estaba escribiendo.
+  callbacks.onNavigate(today());
 }
 
 /** El Markdown de la página, pedido al servidor para que sea el mismo que git recibiría. */
@@ -579,7 +636,18 @@ interface PageReading {
     content: string | null;
   }[];
   types: string[];
-  concepts: string[];
+  /** Cada concepto, y si el corpus ya lo tiene como página. */
+  concepts: { value: string; page: string | null; backlinks: number }[];
+  /** Páginas que esta página nombra y no enlaza. */
+  mentions: {
+    title: string;
+    page: string;
+    block: string;
+    content: string;
+    next: string;
+    written: string;
+    backlinks: number;
+  }[];
   notDone: string[];
 }
 
@@ -597,13 +665,31 @@ interface Suggestion {
   what: string;
   /** El detalle, en gris: de dónde sale o en qué se convierte. */
   detail: string;
-  change: Change;
+  /*
+   * Lo que hay que escribir para que el renglón ocurra.
+   *
+   * Casi siempre es una operación, pero no siempre: «borrar los doce bloques
+   * vacíos» son doce, y partirlo en doce renglones convertiría en trabajo lo
+   * que es una sola decisión. Lo que se decide es el renglón; cuántas
+   * operaciones hagan falta es del código.
+   */
+  changes: Change[];
   approved: boolean;
 }
 
 /** Las claves con que se guarda lo que el bibliotecario propone. */
 const TYPE_KEY = 'type';
 const CONCEPT_KEY = 'concepto';
+const PROPERTY_LABELS: Record<string, string> = {
+  type: 'tipo',
+  status: 'estado',
+  lang: 'idioma',
+  public: 'público',
+  date: 'fecha',
+  start: 'inicio',
+  due: 'vencimiento',
+  aliases: 'alias',
+};
 
 /**
  * Procesa la página, cuenta lo que va haciendo, y propone cambios.
@@ -612,6 +698,30 @@ const CONCEPT_KEY = 'concepto';
  * aparece son proposiciones, y hasta que alguien pulsa «aplicar» la página está
  * exactamente como estaba. Cerrar el panel la deja igual.
  */
+/*
+ * Los defectos de forma, dichos en palabras.
+ *
+ * El dominio los nombra en inglés y con guiones bajos porque son un enum; aquí
+ * se dicen como se leen. Y se dicen como observaciones —«párrafos largos sin
+ * partir»— y no como órdenes —«partir los párrafos»—, que es la diferencia entre
+ * describir una página y decidir por quien la escribió.
+ */
+const DEFECTS: Record<string, string> = {
+  empty_block: 'bloques vacíos',
+  monolithic_paragraph: 'párrafos largos sin partir',
+  implicit_heading: 'bloques que se comportan como título sin serlo',
+  flat_list: 'listas sin ninguna profundidad',
+  inconsistent_hierarchy: 'encabezados colgando de otro más hondo',
+  mixed_units: 'bloques con más de una unidad dentro',
+};
+
+/** Cuántos de cada clase, en el orden en que aparecieron. */
+function countBy(seen: { defect: string }[]): [string, number][] {
+  const counts = new Map<string, number>();
+  for (const one of seen) counts.set(one.defect, (counts.get(one.defect) ?? 0) + 1);
+  return [...counts];
+}
+
 async function processPage(
   page: { id: string; title: string; properties?: { key: string; value: string }[] },
   notify: (message: string) => void,
@@ -657,7 +767,7 @@ async function processPage(
   log.className = 'process-log';
   body.append(log);
 
-  const step = (text: string, kind: 'doing' | 'ok' | 'bad' = 'doing'): HTMLElement => {
+  const step = (text: string, kind: 'doing' | 'ok' | 'bad' | 'note' = 'doing'): HTMLElement => {
     const line = document.createElement('li');
     line.className = `process-step ${kind}`;
     line.textContent = text;
@@ -694,11 +804,96 @@ async function processPage(
           case 'reading':
             step(`leídos ${String(event['blocks'])} bloques · ${String(event['chars'])} caracteres`, 'ok');
             break;
-          case 'model':
-            if (event['state'] === 'asking') step('preguntando al modelo local qué es y de qué trata…');
-            else if (event['state'] === 'failed') step(String(event['why']), 'bad');
+          /*
+           * La forma de la página, leída contando y sin modelo.
+           *
+           * @guarantee WhatWasFoundIsNotYetAProposal: esto se enseña como lo que
+           * es —una descripción— y no como algo que aplicar. No lleva botón, no
+           * viene preseleccionado y no promete un arreglo, porque qué hacer con
+           * un párrafo monolítico es una decisión que Herbert dejó abierta a
+           * propósito y enseñarla como sugerencia la tomaría por él.
+           */
+          case 'structure': {
+            step(`forma: ${String(event['summary'])}`, 'ok');
+            const seen = (event['observations'] ?? []) as { defect: string; evidence: string }[];
+            for (const [defect, count] of countBy(seen)) {
+              step(`${count} × ${DEFECTS[defect] ?? defect}`, 'note');
+            }
+            break;
+          }
+          /*
+           * La puesta en forma, que ocurre sin preguntar.
+           *
+           * Es lo único que procesar cambia por su cuenta: partir párrafos
+           * largos, marcar títulos implícitos, enderezar jerarquías torcidas,
+           * separar unidades pegadas y borrar los huecos. Ninguna añade ni quita
+           * sentido —el texto no se reescribe: se corta, se prefija un `#` y se
+           * cambia de sitio—, y por eso no hay nada que decidir.
+           *
+           * Se aplica aquí, operación por operación y contra POST /operations,
+           * porque ésa es la única entrada de escritura de Vera: cada paso queda
+           * en el log con su autoría y su secuencia, como cualquier edición
+           * hecha a mano. Sin botón de deshacer y sin capa de inversas: lo que
+           * quedó mal se corrige escribiendo, como todo lo demás.
+           *
+           * En orden y parándose al primer rechazo: las posiciones de cada paso
+           * cuentan con que el anterior entró.
+           */
+          case 'plan': {
+            const changes = (event['changes'] ?? []) as Change[];
+            const did = (event['did'] ?? []) as string[];
+            if (changes.length === 0) {
+              step('la forma ya estaba bien; no se tocó nada', 'note');
+              break;
+            }
+            let escritas = 0;
+            for (const change of changes) {
+              const result = await api.submit(change);
+              if (result.status === 'rejected') {
+                step(`la puesta en forma se detuvo: ${result.reason}`, 'bad');
+                break;
+              }
+              escritas += 1;
+            }
+            if (escritas === changes.length) {
+              for (const line of did) step(line, 'ok');
+            } else {
+              step(`puesta en forma a medias: ${escritas} de ${changes.length} operaciones`, 'bad');
+            }
+            if (escritas > 0) callbacks?.onReload(null);
+            break;
+          }
+          /*
+           * La lectura de sentido, que va por partes.
+           *
+           * @invariant ReadingInPartsIsSaidInParts: una página larga se lee en
+           * varias veces porque el modelo no la aguanta entera, y eso tarda. Que
+           * se vea por cuál parte va y de qué sección es la diferencia entre
+           * tardar y parecer colgado.
+           */
+          case 'model': {
+            const of = Number(event['of'] ?? 1);
+            const which = Number(event['pass'] ?? 1);
+            const section = String(event['section'] ?? '');
+            const part =
+              of > 1 ? ` · parte ${which} de ${of}${section === '' ? '' : ` · «${section}»`}` : '';
+            if (event['state'] === 'asking') {
+              step(`preguntando al modelo local qué es y de qué trata…${part}`);
+            } else if (event['state'] === 'failed') step(String(event['why']), 'bad');
             else step('el modelo contestó', 'ok');
             break;
+          }
+          case 'mentions': {
+            const found = Number(event['found'] ?? 0);
+            const titles = (event['titles'] ?? []) as string[];
+            step(
+              found === 0
+                ? 'no nombra ninguna página del corpus sin enlazar'
+                : `nombra sin enlazar: ${titles.join(' · ')}`,
+              found === 0 ? 'note' : 'ok',
+            );
+            break;
+          }
           case 'link': {
             const url = String(event['url']);
             const where = `${String(event['done'])}/${String(event['total'])}`;
@@ -741,17 +936,73 @@ async function processPage(
     suggestions.push({
       what: `qué es: ${value}`,
       detail: `${TYPE_KEY}:: ${value}`,
-      change: { kind: 'set_property', page: page.id, propertyKey: TYPE_KEY, propertyValue: value },
+      changes: [{ kind: 'set_property', page: page.id, propertyKey: TYPE_KEY, propertyValue: value }],
       approved: true,
     });
   }
 
-  for (const value of reading.concepts) {
-    if (already.has(`${CONCEPT_KEY}=${value}`)) continue;
+  /*
+   * De qué trata, dicho de forma que una a la página con el corpus.
+   *
+   * Un concepto que ya es una página del grafo no es lo mismo que uno nuevo: el
+   * primero mete esta página en un vecindario que ya existe —y por eso el
+   * renglón dice cuántas páginas lo enlazan ya—, el segundo abre un nombre que
+   * hasta ahora no estaba. Aceptar los dos es legítimo; confundirlos es lo que
+   * hace que un corpus tenga «diseño», «Diseño» y «diseños» y ninguno de los
+   * tres reúna lo que el otro tiene.
+   */
+  for (const concept of reading.concepts) {
+    if (already.has(`${CONCEPT_KEY}=${concept.value}`)) continue;
     suggestions.push({
-      what: `de qué trata: ${value}`,
-      detail: `${CONCEPT_KEY}:: ${value}`,
-      change: { kind: 'set_property', page: page.id, propertyKey: CONCEPT_KEY, propertyValue: value },
+      what: `de qué trata: ${concept.value}`,
+      detail:
+        concept.page === null
+          ? `${CONCEPT_KEY}:: ${concept.value} · nuevo en el corpus`
+          : `${CONCEPT_KEY}:: ${concept.value} · ya es página${
+              concept.backlinks > 0 ? `, con ${concept.backlinks} enlaces` : ''
+            }`,
+      changes: [
+        {
+          kind: 'set_property',
+          page: page.id,
+          propertyKey: CONCEPT_KEY,
+          propertyValue: concept.value,
+        },
+      ],
+      approved: true,
+    });
+  }
+
+  /*
+   * Lo que la página nombra y el corpus ya tiene, propuesto como enlace.
+   *
+   * Es lo que la vuelve encontrable desde el otro lado: una página que dice
+   * «Ciudad Abierta» sin enlazarla no aparece entre los enlaces entrantes de
+   * Ciudad Abierta, y quien recorra el corpus desde allí no llegará nunca. La
+   * dirección del texto no se toca: se envuelve la palabra tal como está escrita
+   * —el grafo resuelve el enlace sin distinguir mayúsculas ni tildes—, que es la
+   * misma promesa que con los enlaces externos.
+   */
+  // Un bloque con un cambio propuesto ya no admite otro: los dos se proponen
+  // como el texto entero que el bloque tendría, y aceptar los dos deja el
+  // segundo. La mención que se cae vuelve a proponerse la próxima vez.
+  const tocados = new Set(
+    suggestions
+      .flatMap((one) => one.changes)
+      .map((one) => (one.kind === 'edit_block' ? one.block : null))
+      .filter((one): one is string => one !== null),
+  );
+
+  for (const mention of reading.mentions ?? []) {
+    if (tocados.has(mention.block)) continue;
+    tocados.add(mention.block);
+    suggestions.push({
+      what: `enlazar con «${mention.title}»`,
+      detail:
+        mention.backlinks > 0
+          ? `dice «${mention.written}» · ${mention.backlinks} páginas ya la enlazan`
+          : `dice «${mention.written}»`,
+      changes: [{ kind: 'edit_block', block: mention.block, content: mention.next }],
       approved: true,
     });
   }
@@ -767,7 +1018,7 @@ async function processPage(
     suggestions.push({
       what: `titular el enlace: ${link.title}`,
       detail: link.url,
-      change: { kind: 'edit_block', block: link.block, content: next },
+      changes: [{ kind: 'edit_block', block: link.block, content: next }],
       approved: true,
     });
   }
@@ -810,20 +1061,20 @@ async function processPage(
   }
 
   /** Escribe un grupo de sugerencias. Devuelve si todo lo pedido se escribió. */
-  const write = async (chosen: Suggestion[]): Promise<boolean> => {
+  const escribir = async (chosen: Suggestion[]): Promise<boolean> => {
     const byKey = new Map<string, string[]>();
-    const others: Suggestion[] = [];
+    const others: { suggestion: Suggestion; change: Change }[] = [];
     for (const suggestion of chosen) {
-      if (suggestion.change.kind !== 'set_property') {
-        others.push(suggestion);
-        continue;
+      for (const change of suggestion.changes) {
+        if (change.kind !== 'set_property') {
+          others.push({ suggestion, change });
+          continue;
+        }
+        const key = change.propertyKey;
+        const values = byKey.get(key) ?? [...(held.get(key) ?? [])];
+        if (!values.includes(change.propertyValue)) values.push(change.propertyValue);
+        byKey.set(key, values);
       }
-      const key = suggestion.change.propertyKey;
-      const values = byKey.get(key) ?? [...(held.get(key) ?? [])];
-      if (!values.includes(suggestion.change.propertyValue)) {
-        values.push(suggestion.change.propertyValue);
-      }
-      byKey.set(key, values);
     }
 
     let entero = true;
@@ -844,17 +1095,45 @@ async function processPage(
       step(`${key}:: ${values.join(', ')}`, 'ok');
     }
 
-    for (const suggestion of others) {
-      const result = await api.submit(suggestion.change);
+    const dicho = new Set<Suggestion>();
+    for (const { suggestion, change } of others) {
+      const result = await api.submit(change);
       if (result.status === 'rejected') {
         step(`rechazado: ${result.reason} · ${suggestion.what}`, 'bad');
         entero = false;
         continue;
       }
-      step(suggestion.what, 'ok');
+      // Un renglón se cuenta una vez aunque hayan hecho falta doce operaciones.
+      if (!dicho.has(suggestion)) {
+        dicho.add(suggestion);
+        step(suggestion.what, 'ok');
+      }
     }
 
     return entero;
+  };
+
+  /*
+   * Las escrituras van en fila de a una.
+   *
+   * Una propiedad guarda un valor por clave, así que aceptar un tipo es leer lo
+   * que la página ya tiene, añadir el nuevo y escribir la lista entera. Dos de
+   * esas a la vez leen las dos lo mismo, y la que llega segunda escribe una
+   * lista donde la primera no está: se acepta una sugerencia, se ve aplicada, y
+   * al recargar no está. Aceptar tres seguidas —que es lo natural cuando las
+   * sugerencias son tres— dejaba sólo la última.
+   *
+   * No hace falta un modo distinto ni juntarlo todo para el final: hace falta
+   * que la segunda escritura empiece cuando la primera ya terminó, que es lo que
+   * hace esta fila. Cada acepta se aplica en el acto, y ninguna pisa a otra.
+   */
+  let cola: Promise<unknown> = Promise.resolve();
+  const write = (chosen: Suggestion[]): Promise<boolean> => {
+    const turno = cola.then(() => escribir(chosen));
+    // La fila no puede romperse por un fallo: si una escritura revienta, la
+    // siguiente tiene que poder correr igual.
+    cola = turno.catch(() => undefined);
+    return turno;
   };
 
   for (const suggestion of suggestions) {
@@ -909,14 +1188,22 @@ async function processPage(
       void (async () => {
         take.disabled = true;
         drop.disabled = true;
+        // Sale de las abiertas al pulsar y no al escribirse: mientras espera su
+        // turno en la fila ya está decidida, y «aplicar los que quedan» no puede
+        // volver a incluirla.
+        abiertas.delete(suggestion);
+        escribiendo += 1;
+        count();
         const ok = await write([suggestion]);
+        escribiendo -= 1;
         if (!ok) {
           take.disabled = false;
           drop.disabled = false;
+          abiertas.add(suggestion);
+          count();
           return;
         }
         row.remove();
-        abiertas.delete(suggestion);
         count();
         callbacks?.onReload(null);
       })();
@@ -951,12 +1238,17 @@ async function processPage(
 
   foot.append(apply, cancel);
 
+  /** Cuántas escrituras hay en curso o esperando su turno en la fila. */
+  let escribiendo = 0;
+
   const count = (): void => {
     const n = abiertas.size;
     apply.textContent = n === 1 ? 'aplicar' : `aplicar los ${n}`;
     apply.disabled = n === 0;
-    if (n === 0) {
-      // Sin nada que decidir, el panel deja de ser un panel de sugerencias.
+    // Sin nada que decidir, el panel deja de ser un panel de sugerencias. Pero
+    // sólo cuando además no queda ninguna escribiéndose: si la última falla hay
+    // que poder verla volver, y no se ve volver a una lista que ya se retiró.
+    if (n === 0 && escribiendo === 0) {
       heading.remove();
       list.remove();
       foot.remove();
@@ -1019,6 +1311,40 @@ async function downloadPage(page: { id: string; title: string }): Promise<void> 
 export interface Node {
   block: BlockView;
   children: Node[];
+}
+
+/**
+ * Los bloques escogidos ahora mismo, y desde donde se empezo a escoger.
+ *
+ * @invariant NothingIsSelectedWhileWriting. Un cursor y una seleccion son dos
+ * respuestas distintas a «sobre que actua la siguiente tecla», y solo una puede
+ * ser cierta: empezar a escribir vacia la seleccion, y escoger deja la escritura.
+ *
+ * Vive fuera del dibujo porque el dibujo se rehace entero en cada cambio, y una
+ * seleccion que se perdiera en cada repintado no serviria para nada. Se limpia
+ * al cambiar de pagina, que es cuando deja de querer decir algo.
+ */
+const picked = new Set<string>();
+let pickedOn: string | null = null;
+/**
+ * El extremo que se mueve, que no es el mismo que el ancla.
+ *
+ * Sin recordarlo, estirar y recoger no son operaciones inversas: si el borde se
+ * dedujera del tramo —el mayor indice al bajar, el menor al subir— entonces
+ * Shift+arriba sobre un tramo que crecio hacia abajo se iria al otro lado del
+ * ancla en vez de recogerlo. Un extremo es una posicion, no una consecuencia.
+ */
+let pickedTo: string | null = null;
+let pickedPage: string | null = null;
+/** Retira el oyente de teclado del dibujo anterior. */
+let dropPickedKeys: (() => void) | null = null;
+
+/** Deshace la seleccion. Lo llama todo lo que empieza a escribir. */
+export function clearPicked(): void {
+  picked.clear();
+  pickedOn = null;
+  pickedTo = null;
+  for (const row of document.querySelectorAll('.block.picked')) row.classList.remove('picked');
 }
 
 /** Busca un nodo por su identidad en cualquier profundidad del árbol. */
@@ -1092,6 +1418,14 @@ export function renderOutliner(
   focusRoot: string | null = null,
 ): void {
   container.innerHTML = '';
+  dropPickedKeys?.();
+  dropPickedKeys = null;
+  // Una seleccion nombra bloques de una pagina; en otra no quiere decir nada.
+  if (pickedPage !== page.id) {
+    picked.clear();
+    pickedOn = null;
+    pickedPage = page.id;
+  }
   /** Dónde quedó dibujado cada bloque, para poder devolverle el cursor. */
   const editors = new Map<string, { node: Node; body: HTMLElement }>();
   const folded = new Set(page.folded);
@@ -1183,7 +1517,7 @@ export function renderOutliner(
 
   const visibilityKey = document.createElement('dt');
   visibilityKey.className = 'property-key';
-  visibilityKey.textContent = 'public';
+  visibilityKey.textContent = 'público';
 
   const visibilityValue = document.createElement('dd');
   visibilityValue.className = 'property-value governed';
@@ -1213,6 +1547,53 @@ export function renderOutliner(
   // continua sería la fila más ruidosa de todas.
   if (!day) properties.append(visibilityKey, visibilityValue);
 
+  /*
+   * Fechas de solo lectura.
+   *
+   * No son propiedades que alguien mantenga a mano. La creación proviene del
+   * corpus original cuando hay evidencia y, si no, muestra el techo cierto de
+   * entrada a Vera. La actualización sale de la última revisión real: escribir,
+   * mover o cambiar propiedades la mueve sola; recuperar procedencia no.
+   */
+  const journalDay = (at: number): string => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Santiago',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(at));
+    const value = (part: string): string => parts.find((p) => p.type === part)?.value ?? '';
+    return `${value('year')}-${value('month')}-${value('day')}`;
+  };
+  const temporal = (label: string, at: number | null, title: string): void => {
+    if (at === null) return;
+    const key = document.createElement('dt');
+    key.className = 'property-key';
+    key.textContent = label;
+    const value = document.createElement('dd');
+    value.className = 'property-value governed';
+    const dayLink = document.createElement('button');
+    dayLink.type = 'button';
+    dayLink.className = 'property-word';
+    dayLink.textContent = journalDay(at);
+    dayLink.title = `${title} Ir a la bitácora de ese día.`;
+    dayLink.addEventListener('click', () => callbacks.onNavigate(dayLink.textContent ?? ''));
+    value.append(dayLink);
+    properties.append(key, value);
+  };
+  temporal(
+    'fecha de creación',
+    page.originCreatedAt ?? page.createdAt,
+    page.originCreatedAt === null
+      ? 'No se recuperó una fecha anterior: ésta es la fecha cierta de entrada a Vera.'
+      : 'Recuperada del corpus de origen.',
+  );
+  temporal(
+    'fecha de actualización',
+    page.lastEditedAt,
+    'Derivada automáticamente de la última revisión de la página.',
+  );
+
   // La `public::` heredada de Logseq no se dibuja: la fila de arriba dice lo
   // mismo y además manda. Sigue en el corpus hasta que se adopte, y adoptarla
   // es un acto aparte y deliberado — ver rule AdoptImportedVisibilityProperty.
@@ -1221,7 +1602,7 @@ export function renderOutliner(
   for (const property of written) {
     const key = document.createElement('dt');
     key.className = 'property-key';
-    key.textContent = property.key;
+    key.textContent = PROPERTY_LABELS[property.key] ?? property.key;
     key.tabIndex = 0;
     key.title = 'renombrar la propiedad';
     key.addEventListener('click', () => {
@@ -1295,6 +1676,20 @@ export function renderOutliner(
         });
         words.append(follow);
       }
+      // Con vocabulario y sin valor queda el chevrón, pero el hueco donde irá la
+      // palabra tiene que decir que está vacío: si no, la fila parece rota.
+      if (words.children.length === 0) {
+        const empty = document.createElement('button');
+        empty.type = 'button';
+        empty.className = 'property-word property-empty';
+        empty.textContent = 'sin valor';
+        empty.title = `escribir el valor de ${property.key}`;
+        empty.addEventListener('click', (event) => {
+          event.stopPropagation();
+          editInPlace(value, '', `valor de ${property.key}`, answer);
+        });
+        words.append(empty);
+      }
       const follow = words;
 
       const choose = document.createElement('button');
@@ -1321,28 +1716,52 @@ export function renderOutliner(
 
       value.append(follow, choose);
     } else {
-      value.textContent = property.value;
+      /*
+       * Un valor vacío se dibuja con una palabra, o no se puede pulsar.
+       *
+       * Una propiedad nace sin valor —el nombre se escribe primero y el valor
+       * después— y hasta aquí eso dejaba un `dd` sin texto: sin texto no hay caja,
+       * sin caja no hay dónde hacer clic, y la propiedad recién creada se quedaba
+       * sin ninguna forma de recibir su valor. Y como su clave es nueva tampoco
+       * tiene vocabulario observado, así que el chevrón que salva el otro caso
+       * tampoco aparecía. Callejón sin salida, en el gesto más común.
+       *
+       * El texto suplente es del hueco y no del valor: se enseña, se puede pulsar,
+       * y lo que se abre para escribir sigue empezando vacío.
+       */
+      const empty = property.value.trim() === '';
+      value.textContent = empty ? 'sin valor' : property.value;
+      if (empty) value.classList.add('property-empty');
       value.tabIndex = 0;
-      value.title = 'editar el valor';
+      value.title = empty ? 'escribir el valor' : 'editar el valor';
       value.addEventListener('click', () => {
         editInPlace(value, property.value, `valor de ${property.key}`, answer);
       });
     }
 
-    const drop = document.createElement('button');
-    drop.type = 'button';
-    drop.className = 'property-drop';
-    drop.innerHTML = icon('x');
-    drop.setAttribute('aria-label', `quitar ${property.key}`);
-    drop.title = `quitar ${property.key}`;
-    drop.addEventListener('click', (event) => {
-      event.stopPropagation();
-      void submitAndReload(
-        { kind: 'remove_property', page: page.id, propertyKey: property.key },
-        callbacks,
-      );
-    });
-    value.append(drop);
+    /*
+     * El tipo de un día no se ofrece para quitar.
+     *
+     * rule ADayKeepsItsKind lo rechaza en el dominio, así que dibujar la cruz
+     * sería ofrecer algo que el servidor va a negar. El valor sigue siendo
+     * editable: lo que no se puede es dejar al día sin decir que es un día.
+     */
+    if (!(day && property.key === 'type')) {
+      const drop = document.createElement('button');
+      drop.type = 'button';
+      drop.className = 'property-drop';
+      drop.innerHTML = icon('x');
+      drop.setAttribute('aria-label', `quitar ${property.key}`);
+      drop.title = `quitar ${property.key}`;
+      drop.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void submitAndReload(
+          { kind: 'remove_property', page: page.id, propertyKey: property.key },
+          callbacks,
+        );
+      });
+      value.append(drop);
+    }
 
     properties.append(key, value);
   }
@@ -1375,23 +1794,19 @@ export function renderOutliner(
   });
 
   /*
-   * Un día no lleva front matter: lleva su fecha.
+   * Un día no lleva front matter: lleva su fecha. Pero sí lleva propiedades.
    *
-   * En una página el front matter dice de qué trata y cómo se publica, y eso hay
-   * que poder contestarlo. Un día no trata de nada: es cuándo. Su fecha ya lo
-   * dice entero, y `public` y `+ propiedad` repetidos encima de cada jornada son
-   * ruido que separa lo escrito el martes de lo escrito el miércoles —
-   * justamente lo que la lectura continua junta.
+   * Antes se le retiraba `+ propiedad` para no repetir aparato encima de cada
+   * jornada. El coste apareció en cuanto alguien quitó el tipo de un día: la
+   * página quedaba sin ninguna forma de devolvérselo, porque el único sitio
+   * desde el que se pone una propiedad era el botón que no se dibujaba. Una
+   * puerta que sólo abre hacia fuera.
    *
-   * Lo que el día traiga escrito sí se dibuja: esconderlo sería esconder algo
-   * que alguien puso, y una propiedad de un día es contenido como cualquier
-   * otro. Lo que se retira es el aparato para poner más, no lo puesto.
+   * Ver @guarantee TheKindIsRestorableWhereItIsRemovable: ninguna superficie
+   * puede ofrecer quitar sin ofrecer poner. Lo que sigue fuera del día es la
+   * marca de visibilidad, que no es una acción sino un estado.
    */
-  if (!day) {
-    header.append(properties, add);
-  } else if (written.length > 0) {
-    header.append(properties);
-  }
+  header.append(properties, add);
 
   /*
    * Lo que se puede hacer con la página entera, en un menú.
@@ -1426,6 +1841,10 @@ export function renderOutliner(
       {
         label: 'Descargar como .md',
         run: () => void downloadPage(page),
+      },
+      {
+        label: 'Eliminar la página',
+        run: () => void deletePage(page, callbacks),
       },
     ]);
   });
@@ -1598,12 +2017,36 @@ export function renderOutliner(
       // Pulsar el reproductor o sus botones no abre el editor; pulsar el texto
       // sí, que es lo que se espera de un texto.
       if (target.closest('.audio-block') !== null) return;
+
+      /*
+       * Con Shift se escoge el tramo en vez de abrir el bloque.
+       *
+       * @invariant ASelectionIsWhatIsOnScreenBetweenTwoBlocks: el tramo corre
+       * sobre lo dibujado. Y no se abre el editor, porque escoger y escribir son
+       * respuestas distintas a la misma pregunta.
+       */
+      if (event.shiftKey) {
+        event.preventDefault();
+        const from = pickedOn ?? node.block.stableId;
+        pickedOn = from;
+        pickRange(from, node.block.stableId);
+        window.getSelection()?.removeAllRanges();
+        return;
+      }
+      // Empezar a escribir deshace lo escogido. @invariant NothingIsSelectedWhileWriting.
+      if (picked.size > 0) clearPicked();
+      pickedOn = node.block.stableId;
+      pickedTo = node.block.stableId;
       openEditor(node, body);
     });
 
     row.append(bullet, body);
     list.append(row);
     editors.set(node.block.stableId, { node, body });
+    // El orden de lectura, que es este y no el del arbol guardado.
+    visible.push(node.block.stableId);
+    rows.set(node.block.stableId, row);
+    if (picked.has(node.block.stableId)) row.classList.add('picked');
     // Un subárbol plegado no se dibuja. Como la vecindad se calcula sobre el
     // árbol visible, las teclas que recorren bloques lo saltan sin saber nada
     // del plegado: no hay dos ideas de qué está a la vista.
@@ -1635,6 +2078,114 @@ export function renderOutliner(
     bar.append(label, out);
     container.append(bar);
   }
+
+  // ---------------------------------------------------------------------
+  // Escoger varios bloques.
+  // ---------------------------------------------------------------------
+
+  /*
+   * El orden en que se lee, que no es el orden en que se guarda.
+   *
+   * @invariant ASelectionIsWhatIsOnScreenBetweenTwoBlocks. `drawBlock` va
+   * anadiendo aqui, asi que esta lista es literalmente lo dibujado y en su
+   * orden. Un subarbol plegado no se dibuja y por tanto no esta: nadie lo
+   * escogio, porque nadie lo estaba viendo.
+   */
+  const visible: string[] = [];
+  const rows = new Map<string, HTMLElement>();
+
+  const paintPicked = (): void => {
+    for (const [id, row] of rows) row.classList.toggle('picked', picked.has(id));
+  };
+
+  /** Todo lo que cuelga de un bloque, este dibujado o plegado. */
+  const withDescendants = (id: string): string[] => {
+    const node = findNode(tree, id);
+    if (node === null) return [id];
+    const out: string[] = [];
+    const walk = (at: Node): void => {
+      out.push(at.block.stableId);
+      for (const child of at.children) walk(child);
+    };
+    walk(node);
+    return out;
+  };
+
+  const pickRange = (from: string, to: string): void => {
+    const a = visible.indexOf(from);
+    const b = visible.indexOf(to);
+    if (a < 0 || b < 0) return;
+    picked.clear();
+    for (const id of visible.slice(Math.min(a, b), Math.max(a, b) + 1)) picked.add(id);
+    pickedTo = to;
+    paintPicked();
+  };
+
+  /**
+   * Mueve un bloque el extremo suelto del tramo, en el orden en que se lee.
+   *
+   * Mueve el extremo, no el borde de lo escogido: asi recoger deshace estirar,
+   * y el tramo puede cruzar el ancla y crecer al otro lado, que es lo que hace
+   * cualquier seleccion con Shift desde que existen las listas.
+   */
+  const stretch = (by: 1 | -1): void => {
+    if (pickedOn === null) return;
+    const at = visible.indexOf(pickedTo ?? pickedOn);
+    if (at < 0) return;
+    const next = visible[at + by];
+    if (next === undefined) return;
+    pickRange(pickedOn, next);
+  };
+
+  /*
+   * Quitar lo escogido.
+   *
+   * @invariant ASelectionIsRemovedLeavesFirst. El grafo no quita un bloque que
+   * todavia tenga hijos, asi que se va de abajo hacia arriba y con una operacion
+   * por bloque: la secuencia queda auditable paso a paso, igual que vaciar una
+   * pagina.
+   *
+   * @invariant SelectingAParentSelectsWhatHangsFromIt: un bloque escogido con su
+   * subarbol plegado se lleva el subarbol, y el aviso lo dice antes.
+   *
+   * @invariant DiscardingASelectionIsDeliberate.
+   */
+  const dropPicked = async (): Promise<void> => {
+    if (picked.size === 0) return;
+    const all = new Set<string>();
+    for (const id of picked) for (const each of withDescendants(id)) all.add(each);
+
+    const written = [...all].filter((id) => {
+      const node = findNode(tree, id);
+      return node !== null && node.block.content.trim() !== '';
+    }).length;
+
+    if (written > 0) {
+      const cuenta =
+        all.size === picked.size
+          ? `${all.size} bloques`
+          : `${picked.size} bloques y lo que cuelga de ellos, ${all.size} en total`;
+      if (!window.confirm(`Se van a eliminar ${cuenta}. No se puede deshacer.`)) return;
+    }
+
+    // Las hojas primero: profundidad descendente sobre el arbol de la pagina.
+    const depthOf = (id: string): number => {
+      let depth = 0;
+      let at = page.blocks.find((b) => b.stableId === id)?.parent ?? null;
+      while (at !== null && depth < 1000) {
+        depth += 1;
+        at = page.blocks.find((b) => b.stableId === at)?.parent ?? null;
+      }
+      return depth;
+    };
+    const order = [...all].sort((x, y) => depthOf(y) - depthOf(x));
+
+    clearPicked();
+    for (const id of order) {
+      if (!(await submitQuietly({ kind: 'remove_block', block: id }))) break;
+    }
+    callbacks.onReload(null);
+  };
 
   function openEditor(node: Node, body: HTMLElement, caret?: number): void {
     const near = neighbourhoods.get(node.block.stableId);
@@ -1730,6 +2281,45 @@ export function renderOutliner(
       openEditor(seat.node, seat.body, focus.at);
     }
   }
+
+  /*
+   * Las teclas que actuan sobre lo escogido.
+   *
+   * Cuelgan del documento y no de un elemento porque una seleccion no tiene
+   * foco: no hay nada donde escribir mientras esta puesta, y ese es justo su
+   * significado. Se retira el oyente al volver a dibujar, o se acumularia uno
+   * por repintado.
+   */
+  const onPickedKeys = (event: KeyboardEvent): void => {
+    // Escribiendo manda el cursor: la seleccion ya se deshizo al abrir el editor.
+    const at = document.activeElement;
+    if (at instanceof HTMLTextAreaElement || at instanceof HTMLInputElement) return;
+    if (at instanceof HTMLElement && at.isContentEditable) return;
+
+    if (event.key === 'Escape' && picked.size > 0) {
+      event.preventDefault();
+      clearPicked();
+      return;
+    }
+    if (event.shiftKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      if (pickedOn === null) return;
+      event.preventDefault();
+      // La primera vez escoge el bloque de partida; a partir de ahi, estira.
+      if (picked.size === 0) {
+        picked.add(pickedOn);
+        pickedTo = pickedOn;
+        paintPicked();
+      }
+      stretch(event.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
+    if ((event.key === 'Backspace' || event.key === 'Delete') && picked.size > 0) {
+      event.preventDefault();
+      void dropPicked();
+    }
+  };
+  document.addEventListener('keydown', onPickedKeys);
+  dropPickedKeys = (): void => document.removeEventListener('keydown', onPickedKeys);
 
   // Los diagramas se dibujan después del texto: la biblioteca se carga sola y
   // la página no espera por ella para poder leerse.
@@ -2256,6 +2846,44 @@ function startEditing(
       return;
     }
 
+    /*
+     * Importar tampoco escribe aquí: trae una página y lleva a ella.
+     *
+     * El selector de archivos tiene que abrirse dentro del gesto que lo pidió, o
+     * el navegador lo bloquea por venir de nadie. Por eso se abre ya y se espera
+     * después, y no al revés.
+     *
+     * @guarantee TheImportedPageOpensAtOnce: al terminar se va a la página nueva.
+     * Importar y luego tener que ir a buscar dónde quedó lo importado son dos
+     * actos donde debería haber uno.
+     */
+    if (acts === 'importar') {
+      const chooser = document.createElement('input');
+      chooser.type = 'file';
+      chooser.accept = '.md,.markdown,.txt,.docx,text/markdown,text/plain';
+      chooser.style.display = 'none';
+      document.body.append(chooser);
+      chooser.addEventListener('change', () => {
+        const file = chooser.files?.[0];
+        chooser.remove();
+        if (file === undefined) return;
+        toast(`trayendo ${file.name}…`);
+        void api.importDocument(file).then((brought) => {
+          if ('error' in brought) {
+            toast(brought.error);
+            return;
+          }
+          // @guarantee WhatWasLostIsSaidOnArrival: si algo no se supo traer se
+          // dice al llegar y en palabras, no semanas después al echarlo de menos.
+          const missing = brought.losses.length === 0 ? '' : ` · ${brought.losses.join('; ')}`;
+          toast(`${brought.title}: ${brought.blocks} bloques${missing}`);
+          callbacks.onNavigate(brought.title);
+        });
+      });
+      chooser.click();
+      return;
+    }
+
     // Fechar algo es enlazarlo al día. El comando ya se borró a sí mismo, así
     // que lo elegido cae donde estaba escribiéndose. El sitio se guarda ahora y
     // no se vuelve a leer después: entre abrir el calendario y elegir un día
@@ -2399,6 +3027,12 @@ function startEditing(
       session.type(editor.value);
       autosize();
       scheduleSave();
+      // El autopar se come su propia tecla, así que aquí no llega ningún evento
+      // `input` y nadie mira el disparador. Y el único instante en que `[[`
+      // queda a la izquierda del cursor es exactamente éste: si pasa sin que se
+      // consulte, ya no vuelve, porque a la siguiente letra el texto de delante
+      // deja de terminar en el disparador. Por eso `[[` no completaba nada.
+      refreshList();
     }
   });
 }

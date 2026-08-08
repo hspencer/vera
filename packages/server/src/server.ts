@@ -9,7 +9,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 
-import { VeraGraph, checkInvariants, CONTRIBUTION_CHANNELS } from '@vera/core';
+import { VeraGraph, checkInvariants, CHANGE_KINDS as CORE_CHANGE_KINDS, CONTRIBUTION_CHANNELS } from '@vera/core';
 import type { Change, ContributionChannel, OriginEvidence, ParticipantId } from '@vera/core';
 import {
   createRecording,
@@ -25,6 +25,7 @@ import {
   recordingById,
   recordings,
   recordingsInPage,
+  removeRecording,
   saveParticipant,
   saveWorkspace,
   setFold,
@@ -35,6 +36,7 @@ import {
   type Store,
 } from '@vera/store';
 import { HASH, objectPath, putObject } from '@vera/store/objects';
+import { parseDocument } from '@vera/importer/document';
 import {
   SCOPES,
   bearerOf,
@@ -46,23 +48,16 @@ import {
   type Credential,
   type Scope,
 } from './credentials.ts';
-import { readPage, modelPresence, STARTER_TYPES } from './model.ts';
+import type { Reading } from './model.ts';
+import { readPage, mergeReadings, modelPresence, MOST_PASSES, READABLE_CHARS, STARTER_TYPES } from './model.ts';
+import { mentionsOf } from './mentions.ts';
 import { readLinks } from './process.ts';
+import { describeStructure, readingPasses, readStructure } from './structure.ts';
+import { describePlan, planTabularity } from './tabularity.ts';
 import { transcribeAudio } from './transcribe.ts';
 import { renderPage } from '@vera/store/projection';
 
-const CHANGE_KINDS = new Set([
-  'create_page',
-  'rename_page',
-  'set_page_visibility',
-  'remove_page',
-  'create_block',
-  'edit_block',
-  'move_block',
-  'remove_block',
-  'set_property',
-  'remove_property',
-]);
+const CHANGE_KINDS = new Set<string>(CORE_CHANGE_KINDS);
 
 // Del dominio y no repetida aquí: una lista copiada es una lista que se queda
 // atrás el día que el vocabulario crece, y el borde HTTP rechazaría por
@@ -634,6 +629,123 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     }
 
     /*
+     * Importar un documento: entra un archivo y sale una página.
+     *
+     * Ver specs/document-import.allium. El cuerpo son los bytes del archivo y el
+     * nombre viaja en una cabecera, igual que en `/recordings`: no cabe nada más
+     * al lado de un binario.
+     *
+     * Se lee entero antes de escribir nada. Si el archivo no se puede leer, el
+     * grafo queda exactamente como estaba —@invariant NoPageSurvivesARefusal—, en
+     * vez de dejar una página vacía con el nombre del archivo que alguien tenga
+     * que ir a borrar después.
+     */
+    if (request.method === 'POST' && path === '/import') {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        const bytes = Buffer.concat(chunks);
+        if (bytes.byteLength === 0) {
+          send(response, 400, { error: 'no llegó ningún archivo' });
+          return;
+        }
+
+        const filename = decodeURIComponent(String(request.headers['x-filename'] ?? '')).trim();
+        if (filename === '') {
+          send(response, 400, { error: 'el archivo tiene que venir con su nombre' });
+          return;
+        }
+        const mediaType = String(request.headers['content-type'] ?? '').split(';')[0] ?? '';
+
+        const parsed = parseDocument(bytes, filename, mediaType);
+        if ('error' in parsed) {
+          send(response, 422, parsed);
+          return;
+        }
+
+        /*
+         * El título sale del documento, y si no, de su nombre.
+         *
+         * @invariant ImportNeverMergesIntoAnExistingPage: cuando el título ya
+         * está tomado, la importación nace aparte y con un título que la
+         * distingue. Escribir dentro de una página que alguien ya tenía es una
+         * pérdida que no se deshace mirando el registro.
+         */
+        const wanted = parsed.title ?? filename.replace(/\.[^.]+$/, '');
+        let title = wanted;
+        for (let attempt = 2; graph.pageTitled(title) !== undefined; attempt += 1) {
+          title = `${wanted} (${attempt})`;
+        }
+
+        const write = (change: Change): string | { error: string } => {
+          const outcome = graph.submitOperation({
+            originId: `import:${Date.now()}:${made}`,
+            participant: owner.id,
+            // No lo escribió quien pulsó el botón y no lo escribió la máquina: lo
+            // trajo. @invariant EverythingArrivesAsImport.
+            channel: 'import',
+            change,
+          });
+          if (outcome.status === 'rejected') return { error: outcome.reason };
+          // Un duplicado no se vuelve a persistir: la operación ya está en el
+          // registro y su sujeto es el mismo.
+          if (outcome.status === 'applied') recordOperation(store, graph, outcome.operation);
+          made += 1;
+          return outcome.operation.subjectId;
+        };
+
+        let made = 0;
+        const page = write({ kind: 'create_page', title, visibility: 'private' });
+        if (typeof page !== 'string') {
+          send(response, 422, page);
+          return;
+        }
+
+        /*
+         * De profundidades a padres.
+         *
+         * El padre de un trozo es el último trozo de profundidad menor que vino
+         * antes que él. `open` guarda, para cada profundidad, cuál es ese bloque;
+         * un trozo más somero borra lo que colgaba de él, porque lo que venga
+         * después ya no es hijo de aquello.
+         */
+        const open = new Map<number, string>();
+        let written = 0;
+        for (const piece of parsed.pieces) {
+          const depth = Math.max(0, piece.depth);
+          let parent: string | null = null;
+          for (let above = depth - 1; above >= 0; above -= 1) {
+            const found = open.get(above);
+            if (found !== undefined) {
+              parent = found;
+              break;
+            }
+          }
+          const block = write({
+            kind: 'create_block',
+            page,
+            parent,
+            position: Number.MAX_SAFE_INTEGER,
+            content: piece.content,
+          });
+          if (typeof block !== 'string') continue;
+          open.set(depth, block);
+          for (const level of [...open.keys()]) if (level > depth) open.delete(level);
+          written += 1;
+        }
+
+        send(response, 201, {
+          page,
+          title,
+          blocks: written,
+          format: parsed.format,
+          losses: parsed.losses,
+        });
+      });
+      return;
+    }
+
+    /*
      * Transcribir escribe el texto del bloque.
      *
      * No deja una propuesta en un cajón que alguien tenga que aceptar: deja el
@@ -702,6 +814,22 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       const id = decodeURIComponent(path.split('/')[2] ?? '');
       const outcome = discardAudio(store, id);
       send(response, 'error' in outcome ? 422 : 200, outcome);
+      return;
+    }
+
+    /*
+     * Quitar la grabación entera, y no sólo su audio.
+     *
+     * Faltaba. `DELETE …/audio` suelta los bytes y deja la fila, y no había
+     * ninguna ruta que borrara una grabación: una que perdiera su bloque quedaba
+     * en la lista de voz sin lugar para siempre, porque nada podía sacarla de
+     * ahí. Desde ahora el bloque se lleva la suya al morir, y esto queda para lo
+     * que haya que barrer de antes.
+     */
+    if (request.method === 'DELETE' && /^\/recordings\/[^/]+$/.test(path)) {
+      const id = decodeURIComponent(path.split('/')[2] ?? '');
+      const outcome = removeRecording(store, id);
+      send(response, 'error' in outcome ? 404 : 200, outcome);
       return;
     }
 
@@ -805,37 +933,223 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       // Dónde vive cada dirección, para poder proponer el arreglo sobre el
       // bloque que la lleva y no sobre la página entera.
       const holder = (url: string): { block: string; content: string } | null => {
-        const found = blocks.find((block) => block.content.includes(url));
+        // Sobre un bloque que la puesta en forma acaba de rehacer no se propone
+        // nada: el texto que esta sugerencia arreglaría ya no es el suyo.
+        const found = blocks.find(
+          (block) => !remade.has(block.stableId) && block.content.includes(url),
+        );
         return found === undefined ? null : { block: found.stableId, content: found.content };
       };
 
-      say({ step: 'model', state: 'asking' });
-      const asked = readPage(page.title, text, vocabulary).then((understood) => {
-        say(
-          'error' in understood
-            ? { step: 'model', state: 'failed', why: understood.error }
-            : { step: 'model', state: 'done', types: understood.types, concepts: understood.concepts },
-        );
-        return understood;
+      /*
+       * La forma de la página se lee primero, y se dice antes que nada.
+       *
+       * Ver specs/page-processing.allium. Son dos preguntas distintas —qué forma
+       * tiene esto, y de qué trata— y hasta ahora iban juntas: el modelo recibía
+       * todos los bloques concatenados con saltos de línea, sin identidades, sin
+       * padres y sin posiciones. Para quien lo recibía no había documento, había
+       * una sábana de texto, y de ahí salía que ninguna propuesta sobre la
+       * estructura pudiera apuntar a nada.
+       *
+       * Esta mitad se contesta contando: no tiene modelo, no tiene red, no tiene
+       * azar y no se trunca. Por eso ocurre aquí, síncrona, antes de esperar a
+       * nadie —@invariant StructureIsReportedBeforeTheModelAnswers— y por eso
+       * sigue estando aunque no haya modelo local instalado
+       * —@invariant ItWorksWithoutAModel—, que hasta hoy se perdía con él sin
+       * ninguna razón.
+       *
+       * @invariant ReadingDecidesNothing: esto describe la página y no la cambia.
+       * Lo que se hace con lo encontrado sigue siendo una pregunta abierta, y las
+       * observaciones viajan como observaciones y no como sugerencias aplicables.
+       */
+      const structure = readStructure(blocks);
+      say({
+        step: 'structure',
+        summary: describeStructure(structure),
+        blocks: structure.units.length,
+        sections: structure.sections.filter((section) => section.heading !== null).length,
+        chars: structure.chars,
+        observations: structure.observations,
       });
+
+      /*
+       * La puesta en forma, que ocurre sin preguntar.
+       *
+       * Es la Fase B de «Vera — Procesamiento automático de páginas»: partir
+       * párrafos largos, marcar títulos implícitos, enderezar jerarquías
+       * torcidas, separar unidades pegadas y borrar los huecos. Ninguna añade ni
+       * quita sentido, y por eso pueden aplicarse solas.
+       *
+       * El plan se calcula aquí y lo aplica el cliente, operación por operación,
+       * contra POST /operations. No porque sea más cómodo: es que la única
+       * entrada de escritura de Vera es ésa, y un endpoint de lectura que además
+       * escribiera en la base abriría una segunda puerta que después nadie
+       * audita. Así cada paso lleva su autoría, su canal y su secuencia, como
+       * cualquier edición hecha a mano.
+       */
+      const plan = planTabularity(page.id, blocks, structure);
+      say({
+        step: 'plan',
+        did: describePlan(plan.steps),
+        changes: plan.steps.map((step) => step.change),
+      });
+
+      /*
+       * El sentido de la página se lee de la página, no de su principio.
+       *
+       * Hasta ahora se le daban al modelo los primeros tres mil caracteres y el
+       * resultado se presentaba como la lectura de la página: para una nota es
+       * la nota, para una transcripción de dos horas es el saludo del principio.
+       * Ahora la página se reparte en pases del tamaño que el modelo aguanta
+       * —cortados por las secciones que la lectura estructural ya encontró—, se
+       * lee cada uno, y lo que dijeron se junta contando.
+       *
+       * @invariant TheBeginningIsNotThePage y @invariant WhatDidNotFitIsCounted,
+       * de specs/page-processing.allium: si el tope de pases deja algo fuera, se
+       * cuenta y aparece en `notDone`.
+       */
+      const contentOf = new Map(blocks.map((block) => [block.stableId, block.content]));
+      const reparto = readingPasses(structure, contentOf, {
+        chars: READABLE_CHARS,
+        passes: MOST_PASSES,
+      });
+
+      const asked: Promise<{ reading: Reading; notDone: string[] }> = (async () => {
+        const notDone: string[] = [];
+        if (reparto.left > 0) {
+          notDone.push(
+            `el modelo leyó ${reparto.passes.length} partes de la página y ${reparto.left} caracteres quedaron sin leer`,
+          );
+        }
+
+        // Sin modelo no se pregunta ocho veces para fallar ocho veces: se dice
+        // una. @invariant TheModelIsLocalOrThereIsNone.
+        const presence = await modelPresence();
+        if (!presence.ready) {
+          say({ step: 'model', state: 'failed', why: 'no hay un modelo local instalado' });
+          return { reading: { types: [], concepts: [] }, notDone: [...notDone, 'no hay un modelo local instalado'] };
+        }
+
+        const readings: Reading[] = [];
+        for (const pass of reparto.passes) {
+          say({
+            step: 'model',
+            state: 'asking',
+            pass: pass.ordinal,
+            of: reparto.passes.length,
+            section: pass.title,
+          });
+          const understood = await readPage(page.title, pass.text, vocabulary);
+          if ('error' in understood) {
+            // Un pase que falla no cancela los demás: la parte de la página que
+            // sí se pudo leer sigue valiendo, y la que no se dice.
+            say({ step: 'model', state: 'failed', why: understood.error, pass: pass.ordinal });
+            notDone.push(`la parte ${pass.ordinal} de la página no se pudo leer: ${understood.error}`);
+            continue;
+          }
+          readings.push(understood);
+        }
+
+        const reading = mergeReadings(readings);
+        say({ step: 'model', state: 'done', types: reading.types, concepts: reading.concepts });
+        return { reading, notDone };
+      })();
 
       const followed = readLinks(text, {}, (link, done, total) => {
         say({ step: 'link', done, total, url: link.url, title: link.title, kind: link.kind, unreachable: link.unreachable });
       });
 
-      void Promise.all([followed, asked]).then(([reading, understood]) => {
+      /*
+       * Lo que esta página nombra y el corpus ya tiene.
+       *
+       * Una captura habla de una persona, de un taller o de un proyecto que en
+       * Vera ya son páginas, y no las enlaza: queda escrita y no queda
+       * encontrable. Desde el otro lado no se llega en absoluto, porque los
+       * enlaces entrantes de esa página no la mencionan.
+       *
+       * Se busca contando y no con el modelo, así que ocurre aquí mismo, sin
+       * esperar a nadie y esté o no instalado el binario. Lo que sale son
+       * proposiciones: un nombre escrito en una frase no siempre es una
+       * referencia a la página que se llama igual, y eso lo decide quien lee.
+       */
+      const known = graph.pages().map((one) => ({
+        id: one.id,
+        title: one.title,
+        backlinks: graph.backlinks(one.id).length,
+      }));
+      /*
+       * Lo que la forma tocó no se propone en la misma vuelta.
+       *
+       * Una sugerencia de enlace nombra un bloque y el texto que ese bloque
+       * decía; si el plan acaba de partirlo o de marcarlo, ese texto ya no es el
+       * suyo, y aplicar la sugerencia encima lo devolvería a como estaba. Se
+       * calla y vuelve a proponerse la próxima vez, cuando la página se lea tal
+       * como quedó.
+       */
+      const remade = new Set(plan.touched);
+      const settled = blocks.filter((block) => !remade.has(block.stableId));
+      const mentions = mentionsOf(settled, known, { self: page.id });
+
+      say({
+        step: 'mentions',
+        found: mentions.length,
+        titles: mentions.map((mention) => mention.title),
+      });
+
+      void Promise.all([followed, asked]).then(([linked, understood]) => {
         // @invariant TheModelIsLocalOrThereIsNone y @guarantee
         // ProcessingSaysWhatItDidAndWhatItCouldNot: lo que no se pudo hacer se
         // dice, porque un resultado parcial callado se lee como uno completo.
-        const notDone = [...reading.notDone];
-        if ('error' in understood) notDone.push(understood.error);
+        const notDone = [...linked.notDone, ...understood.notDone];
 
         say({
           step: 'done',
           page: page.id,
-          links: reading.links.map((link) => ({ ...link, ...(holder(link.url) ?? { block: null, content: null }) })),
-          types: 'error' in understood ? [] : understood.types,
-          concepts: 'error' in understood ? [] : understood.concepts,
+          // La estructura viaja también en el final, para que quien reciba el
+          // resultado entero no tenga que haber ido guardando los pasos.
+          structure: {
+            blocks: structure.units.length,
+            sections: structure.sections.length,
+            chars: structure.chars,
+            observations: structure.observations,
+          },
+          links: linked.links.map((link) => ({ ...link, ...(holder(link.url) ?? { block: null, content: null }) })),
+          types: understood.reading.types,
+          /*
+           * Cada concepto dice si el corpus ya lo tiene.
+           *
+           * Un concepto que ya es una página del grafo une esta página a lo que
+           * hay; uno que no, abre un nombre nuevo. Son dos cosas distintas y
+           * quien revisa tiene que poder distinguirlas de un vistazo: aceptar
+           * «diseño» cuando existe «Diseño» y no unirlos parte en dos un
+           * vecindario que era uno.
+           *
+           * Se dice y no se decide: el valor que se propone es el título tal
+           * como la página existente se llama, para que aceptar una y aceptar la
+           * otra lleven al mismo sitio.
+           */
+          concepts: understood.reading.concepts
+            .map((value) => {
+              const held = graph.pageTitled(value);
+              return {
+                value: held?.title ?? value,
+                page: held?.id ?? null,
+                backlinks: held === undefined ? 0 : graph.backlinks(held.id).length,
+              };
+            })
+            // Una página no trata de sí misma. El modelo lo propone a menudo
+            // —lee «Amy Pavel» en el título y en cada línea— y aceptarlo sólo
+            // añade un valor que no separa esta página de ninguna otra.
+            .filter((concept) => concept.page !== page.id),
+          mentions: mentions.map((mention) => ({
+            title: mention.title,
+            page: mention.page,
+            block: mention.block,
+            content: mention.content,
+            next: mention.next,
+            written: mention.written,
+            backlinks: mention.backlinks,
+          })),
           notDone,
         });
         response.end();
@@ -1037,6 +1351,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           id: page.id,
           title: page.title,
           visibility: page.visibility,
+          createdAt: page.createdAt,
+          originCreatedAt: page.originCreatedAt,
+          lastEditedAt: graph.lastEditedAt(page.id),
           properties: graph.propertiesOf(page.id).map((p) => ({ key: p.key, value: p.value })),
           // Lo que el corpus ya contesta a cada una de estas claves. Es el
           // vocabulario observado, no uno declarado: mientras no haya ontología

@@ -59,6 +59,16 @@ function action(label: string, kind: 'plain' | 'primary' | 'quiet' = 'plain'): H
   return button;
 }
 
+/*
+ * Por debajo de esto no hubo voz.
+ *
+ * Una pista muda da exactamente 0. Una habitación callada con un micrófono vivo
+ * ronda 0,002–0,01 de ruido de fondo, y hablar bajito ya pasa de 0,02. El umbral
+ * va en medio, más cerca del silencio que del susurro: avisar de más enseña a no
+ * leer los avisos, que es peor que no avisar.
+ */
+const SILENCIO = 0.012;
+
 /**
  * Graba en el sitio, y al detener deja el audio pegado a este bloque.
  *
@@ -83,9 +93,22 @@ export function renderRecorder(
   elapsed.className = 'audio-time';
   elapsed.textContent = '0:00';
 
+  /*
+   * El medidor no es adorno: es la única prueba de que hay alguien al otro lado.
+   *
+   * Grabar una pista muda produce una grabación perfecta y vacía, y sin esto no
+   * se nota hasta leer la transcripción. Aquí se ve moverse mientras se habla, y
+   * si no se mueve, se sabe antes de decir nada importante.
+   */
+  const meter = document.createElement('span');
+  meter.className = 'audio-meter';
+  const bar = document.createElement('span');
+  bar.className = 'audio-meter-fill';
+  meter.append(bar);
+
   const stop = action('detener', 'primary');
   const cancel = action('descartar', 'quiet');
-  box.append(dot, elapsed, stop, cancel);
+  box.append(dot, elapsed, meter, stop, cancel);
 
   const began = Date.now();
   const tick = window.setInterval(() => {
@@ -101,11 +124,23 @@ export function renderRecorder(
       return;
     }
 
-    // Hay micrófono y está entrando sonido: ahora sí.
+    // Hay micrófono. Si además está entrando sonido lo dice el medidor, que es
+    // otra cosa: tener permiso y estar oyendo no son lo mismo.
     setLive(true);
+
+    // Raíz cuadrada y no el valor crudo: la voz de alguien hablando normal se
+    // mueve entre 0,02 y 0,2, y dibujada lineal esa franja es una barra que casi
+    // no se despega del borde. Comprimida se ve el habla y se distingue del
+    // silencio, que es para lo que está.
+    const meterTick = window.setInterval(() => {
+      const now = Math.min(1, Math.sqrt(started.level()));
+      bar.style.width = `${Math.round(now * 100)}%`;
+    }, 100);
+    const stopMeter = (): void => window.clearInterval(meterTick);
 
     cancel.addEventListener('click', () => {
       window.clearInterval(tick);
+      stopMeter();
       setLive(false);
       started.cancel();
       // Nada que guardar: no llegó a haber grabación.
@@ -115,6 +150,7 @@ export function renderRecorder(
 
     stop.addEventListener('click', () => {
       window.clearInterval(tick);
+      stopMeter();
       // Se apaga al detener y no al terminar de guardar: lo que el verde dice es
       // «te estoy oyendo», y ya no.
       setLive(false);
@@ -132,12 +168,27 @@ export function renderRecorder(
        */
       void started
         .stop()
-        .then(async ({ audio, durationMs }) => {
+        .then(async ({ audio, durationMs, peak }) => {
           const captured = await voice.capture(audio, durationMs, block);
           if ('error' in captured) {
             handlers.notify(captured.error);
             host.innerHTML = '';
             return;
+          }
+          /*
+           * Si no entró sonido se dice ahora, no al leer la transcripción.
+           *
+           * El audio se guarda igual —descartarlo sería decidir por quien habló—
+           * pero callar aquí es dejar que la pérdida se descubra media hora
+           * después, cuando ya no se puede repetir lo que se dijo. Y se nombra la
+           * causa probable, porque «no se oyó nada» sin más no dice qué tocar:
+           * el navegador ofrece las salidas del sistema como si fueran
+           * micrófonos, y cada uno guarda esa elección por su cuenta.
+           */
+          if (peak < SILENCIO) {
+            handlers.notify(
+              'No entró sonido: la grabación quedó muda. Revisa qué micrófono tiene elegido este navegador.',
+            );
           }
           handlers.onSettled();
         })

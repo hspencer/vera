@@ -95,6 +95,18 @@ export function titleKey(title: string): string {
     .replace(/\s+/g, ' ');
 }
 
+/**
+ * Si un título es una fecha, y por tanto la página es un día de la bitácora.
+ *
+ * Un día no es otra clase de página: es una página cuyo título es una fecha —ver
+ * `entity DailyLog` en daily-log.allium—, así que reconocerlo es leer el título y
+ * no consultar una tabla aparte. Una sola grafía, la del calendario, que es la
+ * que ordena los días al ordenar sus títulos.
+ */
+export function isDateTitle(title: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(title.trim());
+}
+
 /** Coincidencia de texto libre, con el mismo plegado que titleKey. */
 export function matches(haystack: string, needle: string): boolean {
   if (needle === '') return false;

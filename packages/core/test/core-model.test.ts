@@ -24,6 +24,7 @@ describe('enumerations', () => {
       'create_page',
       'edit_block',
       'move_block',
+      'recover_page_origin',
       'remove_block',
       'remove_page',
       'remove_property',

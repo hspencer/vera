@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "description": "Servidor local de Vera sobre el HTTP de Node",
-  "exports": { ".": "./src/server.ts" },
-  "dependencies": { "@vera/core": "*", "@vera/store": "*" }
+  "exports": {
+    ".": "./src/server.ts"
+  },
+  "dependencies": {
+    "@vera/core": "*",
+    "@vera/store": "*",
+    "@vera/importer": "*"
+  }
 }

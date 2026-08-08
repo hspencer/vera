@@ -230,10 +230,15 @@ export const session = {
     void push({ layout });
   },
 
-  /** Cuántos saltos alcanza el mapa desde la página en foco. */
+  /**
+   * Cuántos saltos alcanza el mapa desde la página en foco: uno, dos o tres.
+   * Un cuatro guardado de antes se recorta a tres en vez de descartarse, que es
+   * lo que quería decir quien lo dejó ahí: lo más lejos que se pueda.
+   */
   reach: (): number => {
     const held = Number(localStorage.getItem(REACH_KEY) ?? '2');
-    return Number.isFinite(held) && held >= 1 && held <= 4 ? held : 2;
+    if (!Number.isFinite(held)) return 2;
+    return Math.min(3, Math.max(1, Math.round(held)));
   },
   setReach: (hops: number) => {
     localStorage.setItem(REACH_KEY, String(hops));

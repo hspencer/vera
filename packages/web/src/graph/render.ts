@@ -1,5 +1,6 @@
 import * as d3 from "d3";
 import type { GraphData, GraphLink, GraphNode } from "./types.ts";
+import { is } from "../bindings.ts";
 
 export type NodeStyle = "circular" | "title";
 
@@ -274,8 +275,10 @@ export function renderGraph(
     open(d);
   });
   node.on("keydown", (_event, d: any) => {
+    // Se pregunta a `bindings`, que es de donde la pagina de configuracion saca
+    // lo que enseña: asi el atajo anunciado y el atendido son el mismo.
     const e = _event as KeyboardEvent;
-    if (e.key === "Enter" || e.key === " ") {
+    if (is("open-node", e)) {
       e.preventDefault();
       open(d);
     }

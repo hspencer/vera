@@ -45,7 +45,7 @@ enum Visibility { private | public }
 -- change kind: they are derived from block content and therefore a consequence of
 -- edit_block, never an operation a participant submits on its own.
 enum ChangeKind {
-    create_page | rename_page | set_page_visibility | remove_page |
+    create_page | rename_page | set_page_visibility | recover_page_origin | remove_page |
     create_block | edit_block | move_block | remove_block |
     set_property | remove_property
 }
@@ -94,19 +94,17 @@ entity Page {
     -- Cuándo se escribió, según el corpus del que vino, cuando se pudo
     -- recuperar. Nulo cuando no se pudo.
     --
-    -- Una sola fuente la puebla, y es la única que no afirma nada: el nombre del
-    -- archivo de un diario. `journals/2024_03_15.md` se escribió el 15 de marzo
-    -- de 2024 porque eso es lo que un diario es, y no hay inferencia de por
-    -- medio. Cubre 399 de las 923 páginas del corpus importado.
+    -- Dos fuentes verificables la pueblan: el nombre del archivo de un diario y
+    -- la primera incorporación del archivo al historial Git. La fecha del diario
+    -- gana para sus páginas; Git cubre las páginas ordinarias que tienen historia.
     --
     -- Lo demás que se midió y se descartó, para que no se vuelva a medir: la
     -- fecha de modificación del archivo es el rastro de una sincronización —804
     -- archivos comparten mes— y no de haber escrito nada; y la propiedad `date::`
     -- del corpus dice cuándo pasó lo que la página cuenta, no cuándo se escribió
-    -- la página, con valores como `2012` y `2003`. El historial de git sabe la
-    -- fecha real de 269 páginas más y está sin usar: es recuperable el día que se
-    -- quiera, y no hacerlo no pierde nada, porque lo que quede sin fecha de
-    -- origen se presenta como techo y sigue siendo cierto.
+    -- la página, con valores como `2012` y `2003`. El historial Git conserva una
+    -- fecha portable y verificable; el nacimiento local del archivo no se usa
+    -- porque depende de esta copia del disco.
     --
     -- Se guarda aparte de created_at y no lo sobreescribe porque son dos hechos
     -- distintos con dos procedencias distintas, y colapsarlos pierde lo único

@@ -42,6 +42,7 @@ export const CHANGE_KINDS = [
   'create_page',
   'rename_page',
   'set_page_visibility',
+  'recover_page_origin',
   'remove_page',
   'create_block',
   'edit_block',
@@ -59,6 +60,11 @@ export interface OriginEvidence {
 
 export type Change =
   | { readonly kind: 'create_page'; readonly title: string; readonly visibility: Visibility }
+  | {
+      readonly kind: 'recover_page_origin';
+      readonly page: PageId;
+      readonly originCreatedAt: number;
+    }
   | { readonly kind: 'rename_page'; readonly page: PageId; readonly title: string }
   | {
       readonly kind: 'set_page_visibility';
@@ -115,6 +121,7 @@ export interface Page {
   title: string;
   visibility: Visibility;
   readonly createdAt: number;
+  originCreatedAt: number | null;
 }
 
 export interface Block {
@@ -154,6 +161,7 @@ export interface Revision {
   readonly channel: ContributionChannel;
   readonly evidence?: OriginEvidence | undefined;
   readonly recordedAt: number;
+  readonly changeKind: ChangeKind;
   /** La voz autenticada prueba autoría, no verdad factual. */
   readonly originIsCanonical: boolean;
 }

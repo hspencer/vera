@@ -43,6 +43,9 @@ export interface PageView {
   id: string;
   title: string;
   visibility: 'private' | 'public';
+  createdAt: number;
+  originCreatedAt: number | null;
+  lastEditedAt: number | null;
   properties: { key: string; value: string }[];
   /**
    * Lo que el corpus ya contesta a cada clave de esta página, por uso.
@@ -104,6 +107,11 @@ export type Change =
   | { kind: 'create_page'; title: string; visibility: 'private' | 'public' }
   | { kind: 'rename_page'; page: string; title: string }
   | { kind: 'set_page_visibility'; page: string; visibility: 'private' | 'public' }
+  // Sólo se borra una página vacía. Vaciarla es una secuencia de `remove_block`,
+  // cada uno ordenado y auditable por separado, y ese es el punto: borrar una
+  // página no es un acto único que se traga cuanto hubiera dentro sin dejar
+  // rastro de qué había.
+  | { kind: 'remove_page'; page: string }
   | { kind: 'create_block'; page: string; parent: string | null; position: number; content: string }
   | { kind: 'edit_block'; block: string; content: string }
   // Indentar, desindentar y mudar a los hijos de un bloque que se fusiona son
@@ -147,6 +155,36 @@ export const api = {
   specialPages: () => json<{ id: string; title: string; kind: string }[]>('/special-pages'),
 
   search: (text: string) => json<Hit[]>(`/search?q=${encodeURIComponent(text)}`),
+
+  /**
+   * Trae un documento de fuera y devuelve la página que salió de él.
+   *
+   * Los bytes van en el cuerpo y el nombre en una cabecera, como en las
+   * grabaciones: al lado de un binario no cabe nada más. El nombre se codifica
+   * porque una cabecera HTTP no admite acentos, y los archivos de alguien que
+   * escribe en español los llevan.
+   */
+  importDocument: async (
+    file: File,
+  ): Promise<
+    { page: string; title: string; blocks: number; format: string; losses: string[] } | { error: string }
+  > => {
+    try {
+      const response = await fetch('/import', {
+        method: 'POST',
+        headers: {
+          'content-type': file.type || 'application/octet-stream',
+          'x-filename': encodeURIComponent(file.name),
+        },
+        body: await file.arrayBuffer(),
+      });
+      const body = (await response.json()) as { error?: string } & Record<string, unknown>;
+      if (!response.ok) return { error: body.error ?? `error ${response.status}` };
+      return body as unknown as { page: string; title: string; blocks: number; format: string; losses: string[] };
+    } catch {
+      return { error: 'sin conexión con el servidor' };
+    }
+  },
 
   /**
    * Plegar no es un cambio del grafo, así que no pasa por submit: no genera

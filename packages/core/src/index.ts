@@ -23,6 +23,7 @@ export type { QueryExpression } from './query.ts';
 
 export {
   excerpt,
+  isDateTitle,
   matches,
   queryMacroText,
   referencedTags,

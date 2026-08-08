@@ -159,13 +159,21 @@
               </span>
             </label>
 
-            <label class="map-field">
-              <span class="map-field-name">proximidad</span>
-              <span class="map-choice">
-                <input type="range" min="1" max="4" step="1" />
-                <span id="map-reach-value">2</span>
+            <!--
+              El alcance se cuenta en saltos, y los saltos se dan de uno en uno.
+              Aquí había un deslizador, que es el control de una magnitud
+              continua: pedía apuntar a un valor entre cuatro y decía «cuánto»
+              donde la pregunta es «cuántos saltos». Dos flechas y el número
+              dicen lo que hay: uno más, uno menos, y en cuál se está.
+            -->
+            <div class="map-field">
+              <span class="map-field-name" id="map-reach-name">proximidad</span>
+              <span class="map-choice map-step" role="group" aria-labelledby="map-reach-name">
+                <button id="map-reach-less" type="button" aria-label="Un salto menos"></button>
+                <output id="map-reach-value" for="map-reach-less map-reach-more">2</output>
+                <button id="map-reach-more" type="button" aria-label="Un salto más"></button>
               </span>
-            </label>
+            </div>
           </div>
         </div>
 

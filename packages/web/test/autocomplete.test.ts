@@ -48,6 +48,25 @@ describe('detectTrigger', () => {
   it('el texto corriente no abre nada', () => {
     assert.equal(detectTrigger('una frase normal', 16), null);
   });
+
+  it('estar dentro de una referencia ya escrita también busca', () => {
+    // El caso de corregir: se vuelve sobre un enlace mal escrito, se pone el
+    // cursor dentro y tiene que ofrecer. Antes sólo se reconocía el instante
+    // justo después de teclear el disparador, que es el que menos dura.
+    assert.deepEqual(detectTrigger('ver [[Casi]]', 10), { trigger: 'pagina', queryStart: 6 });
+    assert.deepEqual(detectTrigger('ver ((abc))', 9), { trigger: 'bloque', queryStart: 6 });
+    assert.deepEqual(detectTrigger('#[[dos palabras]]', 6), { trigger: 'etiqueta', queryStart: 3 });
+  });
+
+  it('una referencia ya cerrada deja de buscar', () => {
+    assert.equal(detectTrigger('ver [[Casiopea]] y más', 22), null);
+  });
+
+  it('un corchete de otra línea no abre nada', () => {
+    // Sin el tope de la línea, cualquier `[[` huérfano del corpus convertiría el
+    // resto del bloque en una consulta abierta.
+    assert.equal(detectTrigger('ver [[\notra línea', 17), null);
+  });
 });
 
 describe('queryOf', () => {
@@ -86,6 +105,22 @@ describe('queryOf', () => {
 });
 
 describe('completionFor', () => {
+  it('reemplaza el resto del título viejo al corregir desde dentro', () => {
+    // Con el cursor en medio de `[[Casi|opea]]`, escribir el título entero tenía
+    // que dejar una sola referencia y no `[[Casiopea]]opea]]`.
+    assert.deepEqual(
+      completionFor({ trigger: 'pagina', queryStart: 2 }, 'Casiopea', '[[Casiopea]]', 6),
+      { buffer: '[[Casiopea]]', cursor: 12 },
+    );
+  });
+
+  it('no se lleva por delante una referencia ajena', () => {
+    assert.deepEqual(
+      completionFor({ trigger: 'pagina', queryStart: 2 }, 'Uno', '[[U y [[Dos]]', 3),
+      { buffer: '[[Uno]] y [[Dos]]', cursor: 7 },
+    );
+  });
+
   it('una página se escribe entre corchetes y salta el cierre que ya estaba', () => {
     // El autopar dejó `]]` delante del cursor; escribir otro daría `]]]]`.
     const open: Open = { trigger: 'pagina', queryStart: 2 };

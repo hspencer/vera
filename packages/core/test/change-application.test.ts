@@ -237,8 +237,8 @@ describe('replay', () => {
           live.allBlocks().map((b) => [b.stableId, b.content, b.page, b.createdAt]).sort(),
         );
         assert.deepEqual(
-          replayed.pages().map((p) => [p.id, p.title, p.visibility, p.createdAt]).sort(),
-          live.pages().map((p) => [p.id, p.title, p.visibility, p.createdAt]).sort(),
+          replayed.pages().map((p) => [p.id, p.title, p.visibility, p.createdAt, p.originCreatedAt]).sort(),
+          live.pages().map((p) => [p.id, p.title, p.visibility, p.createdAt, p.originCreatedAt]).sort(),
         );
       }),
     );
@@ -258,6 +258,19 @@ describe('replay', () => {
 
     assert.equal(live.pages()[0]?.createdAt, escrito);
     assert.equal(live.replayFromLog().pages()[0]?.createdAt, escrito);
+  });
+
+  it('recovers an origin date without pretending the page was edited then', () => {
+    const graph = inhabitedGraph();
+    const page = makePage(graph, 'Página importada');
+    const before = graph.lastEditedAt(page);
+    const origin = Date.parse('2024-03-15T00:00:00Z');
+
+    applied(submit(graph, { kind: 'recover_page_origin', page, originCreatedAt: origin }));
+
+    assert.equal(graph.page(page)?.originCreatedAt, origin);
+    assert.equal(graph.lastEditedAt(page), before);
+    assert.equal(graph.replayFromLog().page(page)?.originCreatedAt, origin);
   });
 });
 

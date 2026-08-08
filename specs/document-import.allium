@@ -1,0 +1,320 @@
+-- allium: 3
+-- document-import.allium
+
+-- Scope: Traer un documento terminado de fuera y convertirlo en una página de
+--   bloques, conservando la jerarquía que el propio documento ya declara
+-- Includes: Qué formatos entran, de dónde sale la jerarquía, de dónde sale el
+--   título, qué se hace con lo que no se sabe representar, y qué queda escrito
+--   sobre la procedencia del archivo
+-- Excludes:
+--   - La importación del grafo de Logseq, que trae un corpus entero y no un
+--     documento (ver logseq-block-identity-reference.allium)
+--   - La edición posterior de lo importado, que es la de cualquier bloque
+--     (ver block-editing.allium)
+--   - Los medios incrustados y su custodia (ver content-media.allium)
+--   - Convertir formatos entre sí, y cualquier ida de vuelta hacia fuera
+-- Dependencies: Graph, Page, Block y Participant los gobierna core.allium; la
+--   aplicación de cada cambio change-application.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- La estructura se lee, no se adivina.
+--
+-- Un documento terminado ya dice cómo está organizado: los encabezados declaran
+-- su nivel, las listas su sangría, los párrafos su separación. Importar es leer
+-- esas marcas y nada más. La tentación es la contraria —mirar la longitud de las
+-- frases, el tamaño de la letra, dónde parece haber un tema nuevo— y produce una
+-- jerarquía plausible que nadie escribió.
+--
+-- El coste de adivinar no es equivocarse: es que el error se vuelve
+-- indistinguible del acierto. Un árbol inventado se lee igual de bien que uno
+-- leído, y quien lo recibe no tiene forma de saber cuál tiene delante. Un
+-- documento sin marcas de estructura entra plano, que es lo que era.
+contract StructureIsRead {
+    parse: (bytes: Bytes, media_type: String) -> ParsedDocument
+
+    @invariant DepthComesFromDeclaredMarks
+        -- La profundidad de cada bloque sale de una marca explícita del documento
+        -- —nivel de encabezado, nivel de lista— y de ninguna otra cosa. Ni del
+        -- largo del párrafo, ni de la tipografía, ni de la posición.
+
+    @invariant OrderIsPreserved
+        -- Lo que iba antes va antes. Importar no reordena, no agrupa por tema y
+        -- no mueve nada al final: el orden de lectura del documento es el orden
+        -- de la página.
+
+    @invariant NothingIsDroppedSilently
+        -- Todo párrafo con texto llega a ser un bloque. Lo que no se sabe
+        -- representar se conserva como texto en vez de desaparecer, y lo que se
+        -- pierda de verdad se cuenta al terminar. Una importación que descarta en
+        -- silencio es peor que una que se niega.
+
+    @invariant AnEmptyDocumentIsNotAPage
+        -- Un archivo del que no sale ningún bloque con texto no crea nada. Una
+        -- página vacía con nombre de archivo es basura que hay que ir a borrar.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+-- Los formatos que entran. Markdown porque es lo que Vera escribe, y docx
+-- porque es lo que llega de fuera: una tesis, un informe, un artículo de otro.
+enum DocumentFormat { markdown | docx }
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- Lo que se leyó del archivo, antes de que exista ninguna página.
+--
+-- Existe como cosa aparte para que leer y escribir sean dos actos: si el archivo
+-- no se puede leer, no se ha creado nada que después haya que deshacer.
+entity ParsedDocument {
+    format: DocumentFormat
+    -- El título que el documento declara, si declara alguno. Nulo cuando el
+    -- archivo no empieza por un encabezado de primer nivel.
+    declared_title: String?
+    pieces: ParsedPiece with document = this
+    -- Lo que se leyó y no se supo representar, dicho en palabras. Vacío cuando
+    -- no se perdió nada.
+    losses: String
+}
+
+-- Un trozo de documento que va a ser un bloque.
+entity ParsedPiece {
+    document: ParsedDocument
+    -- Cero es raíz de la página. Un hijo declara uno más que su padre.
+    depth: Integer
+    content: String
+}
+
+-- Una importación que no llegó a ocurrir, y por qué.
+--
+-- Se declara como cosa y no como un simple «no» porque hay que poder
+-- enseñarla: quien elige un archivo y no ve aparecer nada necesita saber si el
+-- archivo estaba vacío, si el formato no entra o si se rompió al leerlo, y esas
+-- tres cosas se arreglan de forma distinta.
+entity ImportRefusal {
+    graph: core/Graph
+    filename: String
+    reason: String
+    refused_by: core/Participant
+    refused_at: Timestamp
+}
+
+-- La huella de que esta página vino de un archivo.
+--
+-- Se guarda aparte de la página por lo mismo que SpokenOrigin en
+-- voice-capture.allium: el texto se va a reescribir, se va a partir y se va a
+-- mover, y de dónde vino no cambia por eso. Y hace falta: dentro de un mes, la
+-- diferencia entre lo que uno escribió y lo que uno trajo es una pregunta real.
+entity ImportOrigin {
+    page: core/Page
+    -- El nombre del archivo tal como venía, sin normalizar. Es lo único que
+    -- conecta esta página con el archivo que sigue estando en el disco de
+    -- alguien.
+    filename: String
+    format: DocumentFormat
+    byte_size: Integer
+    imported_by: core/Participant
+    imported_at: Timestamp
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- Importar: un archivo entra y sale una página con sus bloques.
+--
+-- La página nace privada, como cualquier página nueva. Que un documento traído
+-- de fuera se publicara por venir de fuera sería exactamente al revés de lo que
+-- uno espera.
+rule ParticipantImportsADocument {
+    when: ImportDocument(participant, graph, filename, bytes, media_type)
+
+    let membership = core/Membership{graph: graph, participant: participant}
+    let parsed = StructureIsRead.parse(bytes, media_type)
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: parsed.pieces.count > 0
+
+    ensures:
+        let page = core/Page.created(
+            graph: graph,
+            title: import_title(parsed.declared_title, filename, graph),
+            visibility: private
+        )
+        for piece in parsed.pieces:
+            core/Block.created(
+                page: page,
+                parent: parent_at_depth(page, piece.depth),
+                content: piece.content
+            )
+        ImportOrigin.created(
+            page: page,
+            filename: filename,
+            format: parsed.format,
+            byte_size: bytes.size,
+            imported_by: participant,
+            imported_at: now
+        )
+
+    @invariant EverythingArrivesAsImport
+        -- Cada bloque nace por el canal `import` y firmado por quien importó. No
+        -- lo escribió esa persona y no lo escribió la máquina: lo trajo. Es la
+        -- misma distinción que separa una transcripción de un texto tecleado, y
+        -- se pierde si todo entra como si lo hubiera escrito quien pulsó el botón.
+
+    @guidance
+        -- `parent_at_depth` es caja negra porque la aritmética de reconstruir un
+        -- árbol desde profundidades es del código. Lo que esta regla fija es que
+        -- el padre de un trozo es el último trozo de profundidad menor que vino
+        -- antes que él, y que un salto de profundidad no crea bloques de relleno:
+        -- un documento que va de `#` a `###` deja un hijo, no dos.
+}
+
+-- Un archivo que no se puede leer no importa nada.
+--
+-- Ni media página, ni los párrafos que sí se entendieron. Una importación a
+-- medias es lo peor de las dos opciones: no está el documento y sí está el
+-- desorden, y nadie sabe qué falta porque lo que falta no dejó hueco.
+rule AnUnreadableDocumentIsRefusedWhole {
+    when: ImportDocument(participant, graph, filename, bytes, media_type)
+
+    requires: not can_parse(bytes, media_type)
+
+    ensures: ImportRefusal.created(
+        graph: graph,
+        filename: filename,
+        reason: "no se pudo leer este archivo",
+        refused_by: participant,
+        refused_at: now
+    )
+
+    @invariant NoPageSurvivesARefusal
+        -- Tras una negativa el grafo está exactamente como antes. No queda una
+        -- página vacía con el nombre del archivo esperando a que alguien la borre.
+}
+
+-- Un documento vacío tampoco.
+rule AnEmptyDocumentCreatesNothing {
+    when: ImportDocument(participant, graph, filename, bytes, media_type)
+
+    let parsed = StructureIsRead.parse(bytes, media_type)
+
+    requires: parsed.pieces.count = 0
+
+    ensures: ImportRefusal.created(
+        graph: graph,
+        filename: filename,
+        reason: "este archivo no tiene texto que traer",
+        refused_by: participant,
+        refused_at: now
+    )
+}
+
+-- El título sale del documento; el nombre del archivo es el suplente.
+--
+-- Un documento que empieza por su título lo dice mejor de lo que lo dice su
+-- nombre de archivo, que suele llevar fecha, versión y guiones bajos. Cuando no
+-- lo declara, el nombre del archivo es lo único que hay y sirve.
+rule TheTitleComesFromTheDocumentOrItsName {
+    when: NamingAnImport(parsed, filename, graph)
+
+    ensures:
+        if parsed.declared_title != null:
+            NamingAnImport.resolved(title: parsed.declared_title)
+        else:
+            NamingAnImport.resolved(title: name_without_extension(filename))
+
+    @invariant ImportNeverMergesIntoAnExistingPage
+        -- Si ya hay una página con ese título, la importación no escribe dentro
+        -- de ella: nace aparte y con un título que la distingue. Traer un archivo
+        -- no es una razón para tocar lo que alguien ya escribió, y descubrir que
+        -- una importación te sobreescribió una página es una pérdida que no se
+        -- deshace mirando el registro.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant PieceDepthIsNotNegative {
+    for piece in ParsedPieces:
+        piece.depth >= 0
+}
+
+invariant PieceHasContent {
+    for piece in ParsedPieces:
+        piece.content != ""
+}
+
+invariant OneOriginPerImportedPage {
+    for a in ImportOrigins:
+        for b in ImportOrigins:
+            a != b implies a.page != b.page
+}
+
+invariant ImportOriginNamesItsFile {
+    for origin in ImportOrigins:
+        origin.filename != ""
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor ImportingParticipant {
+    within: core/Graph
+    identified_by: core/Participant where core/Membership{graph: within, participant: this}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface DocumentImport {
+    facing participant: ImportingParticipant
+    context graph: core/Graph
+
+    exposes:
+        -- Qué formatos acepta, dicho antes de elegir el archivo y no después de
+        -- que el archivo sea rechazado.
+        DocumentFormats
+
+    provides:
+        ImportDocument(participant, graph, filename, bytes, media_type)
+
+    contracts:
+        fulfils StructureIsRead
+
+    @guarantee TheImportedPageOpensAtOnce
+        -- Al terminar se va a la página nueva. Importar y después tener que ir a
+        -- buscar dónde quedó lo importado son dos actos donde debería haber uno.
+
+    @guarantee WhatWasLostIsSaidOnArrival
+        -- Si algo del documento no se supo traer, se dice al llegar y en
+        -- palabras: qué clase de cosa y cuántas. Enterarse leyendo, semanas
+        -- después, de que las tablas no estaban, es enterarse tarde.
+
+    @guarantee ImportedTextIsOrdinaryText
+        -- Lo que entra son bloques como los demás: se editan, se enlazan, se
+        -- mueven y se borran igual. Nada queda marcado como intocable por venir
+        -- de fuera, y la única diferencia que persiste es de dónde vino.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "¿Las imágenes incrustadas en un docx entran al almacén de objetos como los demás medios, o un documento importado se queda sin ellas?"
+open question "¿Una tabla de Word se convierte en tabla de Markdown, o se conserva como texto con las celdas separadas para no inventar una equivalencia que no existe?"
+open question "¿Volver a importar el mismo archivo actualiza la página que salió de él, o crea otra? Y si actualiza, ¿qué pasa con lo que alguien editó encima?"
+open question "¿Los enlaces de un documento se resuelven contra las páginas del grafo cuando el texto del enlace coincide con un título, o eso es adivinar una intención que el autor no tuvo?"
+open question "¿Se pueden importar varios archivos a la vez, y en ese caso son varias páginas sueltas o una con hijos?"

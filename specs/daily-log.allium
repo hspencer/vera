@@ -121,11 +121,59 @@ rule TheDayOpensWhenSomethingArrives {
                 visibility: private
             )
             DailyLog.created(graph: graph, page: page, date: date)
+            -- El día dice que es un día desde que nace, y lo dice como lo dice
+            -- todo el corpus: con una propiedad. Es lo que permite preguntar por
+            -- los días como clase —«qué escribí en julio»— sin reconocer una
+            -- fecha en un título, y lo que hace que un día importado de otra
+            -- parte y uno nacido aquí se parezcan.
+            core/PropertyAssignment.created(
+                graph: graph,
+                page: page,
+                key: "type",
+                value: "bitácora"
+            )
         core/Block.created(
             page: DailyLog{graph: graph, date: date}.page,
             parent: null,
             content: content
         )
+}
+
+-- Un día no puede dejar de ser un día.
+--
+-- La fecha del título y la propiedad dicen lo mismo, así que quitar la propiedad
+-- no hace que la página deje de ser el 6 de agosto: hace que deje de contestar
+-- cuando se pregunta por los días, y nada avisa. Lo que se pierde no es una
+-- etiqueta sino la pertenencia a una clase, y se pierde en silencio.
+--
+-- El caso que lo trajo fue peor que eso. La superficie retiraba de un día el
+-- aparato de poner propiedades —un día no lleva front matter, lleva su fecha—,
+-- de modo que quitar el tipo dejaba la página sin ninguna forma de devolvérselo:
+-- una puerta que sólo se abre hacia fuera. Por eso son dos obligaciones y no una:
+-- el tipo no se quita, y poner propiedades sigue estando disponible.
+rule ADayKeepsItsKind {
+    when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    requires: change.kind = remove_property
+    requires: change.property_key = "type"
+    requires: exists DailyLog{graph: graph, page: change.page}
+
+    ensures: change.rejected(
+        reason: "un día es una bitácora; su tipo no se quita"
+    )
+
+    @invariant OtherPropertiesOfADayAreOrdinary
+        -- Lo que se protege es la pertenencia a la clase, no el front matter
+        -- entero. Cualquier otra propiedad de un día se pone, se edita y se quita
+        -- como en cualquier página, y los demás valores de `type` que un día
+        -- lleve escritos encima del suyo se editan igual: lo único que no se
+        -- puede es dejar al día sin decir que es un día.
+
+    @guarantee TheKindIsRestorableWhereItIsRemovable
+        -- Ninguna superficie puede ofrecer quitar algo sin ofrecer ponerlo. Si un
+        -- día enseña sus propiedades, enseña también cómo añadir una; si no
+        -- enseñara ninguna de las dos cosas sería coherente. Lo que no puede
+        -- existir es la mitad que resta.
 }
 
 -- Inscribing: taking what a day holds and writing it where it belongs.

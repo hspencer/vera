@@ -78,6 +78,8 @@ contract NativeMarkdownEditing {
 contract BlockManipulation {
     copy_reference: (block: core/Block) -> BlockReference
     discard_empty: (participant: core/Participant, block: core/Block) -> core/Page
+    select_range: (from: core/Block, to: core/Block) -> BlockSelection
+    discard_selection: (participant: core/Participant, selection: BlockSelection) -> core/Page
 
     @invariant ReferenceNamesStableIdentity
         -- A copied reference names the block's stable_id, so it keeps pointing at
@@ -96,6 +98,41 @@ contract BlockManipulation {
         -- Removing a block from the workspace submits the same remove_block
         -- operation as any other participant would, with the same provenance and
         -- the same ordering. The interface has no shorter path to the graph.
+
+    @invariant ASelectionIsWhatIsOnScreenBetweenTwoBlocks
+        -- A range runs over the blocks as they are read, in the order they are
+        -- drawn, and not over the tree as it is stored. What is folded away is
+        -- not in the range: it is not on screen, so nobody chose it. Selecting
+        -- over the stored order would take in blocks the participant cannot see
+        -- and would make a deletion mean something other than what it looked
+        -- like.
+
+    @invariant SelectingAParentSelectsWhatHangsFromIt
+        -- A block chosen with its subtree folded shut carries that subtree. The
+        -- fold is a way of reading, not a way of storing: a participant who
+        -- folds a section and then discards it means the section, not its first
+        -- line. What is carried is stated before anything is removed.
+
+    @invariant DiscardingASelectionIsDeliberate
+        -- Removing several blocks at once is refused unless the participant said
+        -- so about that particular set, with the count of what goes in front of
+        -- them, whenever any of it holds text. This is the same rule as
+        -- OnlyEmptyBlocksAreDiscarded seen from the other side: that one keeps a
+        -- keystroke from destroying a character's worth of writing by accident,
+        -- and this one keeps a keystroke from destroying a chapter's worth. The
+        -- record makes every removal auditable afterwards; nothing in Vera makes
+        -- one recoverable.
+
+    @invariant ASelectionIsRemovedLeavesFirst
+        -- Discarding a selection submits one remove_block per block, deepest
+        -- first, because the graph refuses to remove a block that still has
+        -- children. The sequence is ordinary and auditable operation by
+        -- operation, exactly as ApplyRemovePage requires of emptying a page.
+
+    @invariant NothingIsSelectedWhileWriting
+        -- A selection and a caret are two different answers to "what does the
+        -- next keystroke act on", and only one of them can be right. Beginning
+        -- to write clears the selection; making a selection leaves the writing.
 }
 
 -- La cabecera de una página: lo que se pregunta de ella antes de leerla.
@@ -146,6 +183,11 @@ contract PageFrontMatter {
         -- recovered and all that is known is that the page was not written
         -- after it arrived — the header says so rather than presenting the day
         -- of the import as the day of the writing.
+        --
+        -- La cabecera proyecta ambas lecturas con granularidad de día y con el
+        -- mismo título canónico que una bitácora: `AAAA-MM-DD`. La hora precisa
+        -- permanece en el registro como evidencia, pero no se impone a la lectura.
+        -- Pulsar el día abre la página de bitácora que lleva ese título.
 
     @invariant BothHalvesOfAPropertyAreFollowable
         -- The key leads to the page that defines it and the value to the page
@@ -808,6 +850,18 @@ surface VeraWorkspace {
         -- nodes and not a strength — those would answer "how much fits" and the
         -- question a reader is asking is "how far from here", which is a fact
         -- about the graph rather than about the screen.
+        --
+        -- And because the unit is hops, the control changes it one hop at a
+        -- time and shows which hop one is on. A slider is the instrument of a
+        -- continuous magnitude; reach is three whole numbers, and asking a
+        -- reader to aim at one of them says "how much" where the answer is a
+        -- count.
+        --
+        -- Three and not more. A neighbourhood grows with the branching factor
+        -- raised to the reach, so the hop that turns a picture into a texture
+        -- arrives early. Past the third the map has stopped answering "what is
+        -- near this" and started answering "what is there", which is the map of
+        -- everything this guarantee exists to refuse.
 
     @guarantee OneCompletionOverEverythingNamed
         -- What the search field completes against is titles, blocks and tags
@@ -858,6 +912,25 @@ surface VeraWorkspace {
         -- carries no name spends the same space saying less. In two dimensions
         -- names must not overlap each other: two names on top of one another is
         -- neither of them.
+
+    @guarantee TheMapArrivesFramed
+        -- A map that is drawn is a map that can be seen whole. When the map is
+        -- first shown, and whenever it is asked to centre itself, every node in
+        -- it falls within view, at a size at which its name can be read.
+        --
+        -- What is framed is what is drawn, and not where it is drawn. This is
+        -- the distinction the guarantee exists to hold, because it is the one
+        -- that has been lost repeatedly: since GraphNodesAreTheirNames makes a
+        -- node its name, a node occupies the space of a word and not of a point.
+        -- A framing computed from node coordinates measures a graph of one node
+        -- as having no size at all, and puts the camera inside the word — which
+        -- shows as an empty map, or as a single letter filling the panel. In
+        -- three dimensions there is no recovering from that by hand: the reader
+        -- is inside the thing they were meant to be looking at.
+        --
+        -- Framing is subordinate to intent. Once a reader has moved the view,
+        -- the map does not reframe itself; it returns to where they left it,
+        -- as TheMapHoldsItsPositions requires of the layout.
 }
 
 ------------------------------------------------------------

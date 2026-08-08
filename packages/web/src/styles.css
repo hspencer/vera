@@ -608,18 +608,58 @@ input {
   border-color: var(--accent);
 }
 
-#map-panel input[type='range'] {
-  flex: 1 1 auto;
-  min-width: 0;
-  accent-color: var(--accent);
+/* Lo que el mapa dice cuando no puede dibujarse. Centrado en su sitio, porque
+   ocupa el lugar del mapa y no es una nota al margen. */
+.map-aviso {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 2rem;
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+#map-panel button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+#map-panel button:disabled:hover {
+  color: var(--text-dim);
+}
+
+/*
+ * Las dos flechas del alcance, con el número entre ellas.
+ *
+ * El número va en medio y no al lado porque es lo que las flechas mueven: menos
+ * a la izquierda, más a la derecha, y en medio dónde se está. Ancho fijo para
+ * que pasar de 1 a 4 no desplace las flechas bajo el dedo.
+ */
+.map-step button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.3rem;
+}
+
+.map-step svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  display: block;
 }
 
 #map-reach-value {
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--text-dim);
-  min-width: 0.7rem;
-  text-align: right;
+  color: var(--text);
+  min-width: 1.4rem;
+  text-align: center;
 }
 
 /*
@@ -1045,6 +1085,18 @@ input {
   color: var(--warm);
 }
 
+/*
+ * El hueco de un valor que todavía no se ha escrito.
+ *
+ * Atenuado y en cursiva para que no se lea como si fuera el valor, pero con caja
+ * propia: es lo que hace que una propiedad recién creada se pueda pulsar para
+ * darle su valor. Sin esto, un `dd` vacío no ocupa nada y no hay dónde hacer clic.
+ */
+.property-empty {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 .property-add {
   font-family: var(--font-ui);
   font-size: 0.78rem;
@@ -1127,6 +1179,30 @@ input {
   background: color-mix(in srgb, var(--warm) 16%, transparent);
   border-radius: 4px;
   transition: background 0.6s ease-out;
+}
+
+/* Los bloques escogidos para actuar sobre ellos a la vez.
+
+   Va con el acento y no con `--warm`: `--warm` es «por aqui se ha pasado», que
+   es un hecho del recorrido, y esto es «esto es sobre lo que va a actuar la
+   siguiente tecla», que es una intencion. Dos cosas distintas no pueden leerse
+   igual, y menos cuando una de ellas puede borrar.
+
+   El bloque entero se tine, con su sangria, para que un tramo escogido se lea
+   como un tramo y no como una lista de renglones sueltos. */
+.block.picked {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 4px;
+}
+
+/* Dentro de un bloque escogido no se pulsa nada: lo que esta puesto es una
+   seleccion, y seguir un enlace de dentro llevaria a otra pagina cuando lo que
+   se estaba haciendo era escoger. Solo se apagan los enlaces y los botones; el
+   cuerpo sigue escuchando, porque Shift y otro clic tienen que poder recortar el
+   tramo desde un bloque que ya estaba dentro. */
+.block.picked a,
+.block.picked button {
+  pointer-events: none;
 }
 
 /* El desplegable del autocompletado. Comparte la forma del menú del bullet:
@@ -1418,10 +1494,30 @@ input {
 }
 
 
-.tag {
+/*
+ * La etiqueta es un enlace, y sigue pareciendo una etiqueta.
+ *
+ * Desde que `#diseño` lleva a su página hereda de `.wiki` el trazo inferior en
+ * color de acento, que sobre un texto cálido se lee como dos cosas a la vez. Se
+ * le da el suyo, del mismo color que la palabra: sigue diciendo que se puede
+ * pulsar, sin dejar de distinguirse de una mención.
+ *
+ * `.tag.pending` hace falta por especificidad: `.wiki.pending` son dos clases y
+ * ganaría, tiñendo de acento justo las etiquetas que todavía no tienen página —
+ * que son casi todas.
+ */
+.tag,
+.tag.pending {
   color: var(--warm);
   font-family: var(--font-ui);
   font-size: 0.85em;
+  border-bottom-color: color-mix(in srgb, var(--warm) 30%, transparent);
+}
+
+.tag:hover,
+.tag.pending:hover {
+  color: var(--warm);
+  border-bottom-color: var(--warm);
 }
 
 code {
@@ -2442,6 +2538,33 @@ code {
   min-width: 3.2rem;
 }
 
+/*
+ * El medidor de entrada mientras se graba.
+ *
+ * Ocupa el hueco entre el cronómetro y los botones y se estira con lo que sobre:
+ * en un teléfono queda estrecho y sigue diciendo lo único que tiene que decir,
+ * que es si se mueve o no. Sin transición en el ancho —una barra de nivel que
+ * llega tarde miente sobre cuándo se dijo cada cosa— y sin altura propia, para
+ * no empujar la fila.
+ */
+.audio-meter {
+  flex: 1 1 3rem;
+  min-width: 2rem;
+  max-width: 12rem;
+  height: 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-dim) 22%, transparent);
+  overflow: hidden;
+}
+
+.audio-meter-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
 .audio-player {
   width: 100%;
   max-width: 26rem;
@@ -2845,6 +2968,17 @@ code {
 .process-step.ok::before { content: '✓ '; color: var(--accent); }
 .process-step.bad { color: var(--voice); }
 .process-step.bad::before { content: '✗ '; }
+
+/*
+ * Una observación sobre la forma de la página. Ni logro ni fallo: algo que se vio.
+ *
+ * Se marca distinto de las otras tres a propósito —@guarantee
+ * ThreeThingsAreNeverConfused—: un ✓ diría que se arregló y un ✗ que salió mal, y
+ * no es ninguna de las dos cosas. Es una descripción que no pide nada, y por eso
+ * va atenuada y sin botón.
+ */
+.process-step.note { color: var(--text-dim); }
+.process-step.note::before { content: '– '; }
 
 .suggestions {
   display: flex;

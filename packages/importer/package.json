@@ -6,7 +6,8 @@
   "description": "Importa un grafo de archivos Logseq a Vera y reporta la pérdida",
   "exports": {
     ".": "./src/import.ts",
-    "./logseq": "./src/logseq.ts"
+    "./logseq": "./src/logseq.ts",
+    "./document": "./src/document.ts"
   },
   "dependencies": {
     "@vera/core": "*"

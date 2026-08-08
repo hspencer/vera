@@ -7,6 +7,7 @@
 
 import {
   excerpt,
+  isDateTitle,
   matches,
   queryMacroText,
   referencedTags,
@@ -81,6 +82,30 @@ export class VeraGraph {
   #unresolvedByTitleKey = new Map<string, Set<PageLink>>();
   #unportedByBlock = new Map<BlockId, UnportedQuery>();
   #publications: Publication[] = [];
+
+  /*
+   * Reproducir no es someter.
+   *
+   * Hay dos clases de negativa y confundirlas rompe el registro. Una es
+   * estructural —no existe esa página, no existe ese bloque—: si aparece al
+   * reproducir, el registro está corrupto y hay que parar. La otra es de
+   * política —un día no se queda sin su tipo, un miembro suspendido no escribe—:
+   * dice qué se permite hoy, y lo que se permitía ayer ya ocurrió. Aplicarla al
+   * reproducir haría que cada regla nueva invalidara la historia anterior a ella,
+   * y el grafo dejaría de levantar por haber tenido razón.
+   *
+   * El precedente ya estaba en loadGraph, que vuelve a suspender a los
+   * participantes después de reproducir y no antes, por esta misma razón.
+   */
+  #replaying = false;
+
+  beginReplay(): void {
+    this.#replaying = true;
+  }
+
+  endReplay(): void {
+    this.#replaying = false;
+  }
 
   #operations: Operation[] = [];
   #revisions: Revision[] = [];
@@ -263,6 +288,14 @@ export class VeraGraph {
     return [...this.#revisions];
   }
 
+  /** Última revisión real de una página; recuperar procedencia no la edita. */
+  lastEditedAt(page: PageId): number | null {
+    const times = this.#revisions
+      .filter((revision) => revision.page === page && revision.changeKind !== 'recover_page_origin')
+      .map((r) => r.recordedAt);
+    return times.length === 0 ? null : Math.max(...times);
+  }
+
   publications(): Publication[] {
     return [...this.#publications];
   }
@@ -410,6 +443,7 @@ export class VeraGraph {
       channel: submission.channel,
       evidence: submission.evidence,
       recordedAt: at,
+      changeKind: change.kind,
       // La voz autenticada prueba autoría, no verdad factual.
       originIsCanonical:
         submission.channel === 'authenticated_voice' && submission.evidence !== undefined,
@@ -429,6 +463,12 @@ export class VeraGraph {
         }
         return null;
       }
+      case 'recover_page_origin':
+        if (!this.#pages.has(change.page)) return 'no such page';
+        if (!Number.isFinite(change.originCreatedAt) || change.originCreatedAt <= 0) {
+          return 'originCreatedAt must be a positive timestamp';
+        }
+        return null;
       case 'rename_page': {
         if (!this.#pages.has(change.page)) return 'no such page';
         if (change.title.trim() === '') return 'a page needs a title';
@@ -494,6 +534,19 @@ export class VeraGraph {
         if (refusal !== null) return refusal;
         if (this.#findProperty(change.page, change.block, change.propertyKey) === undefined) {
           return 'no such property assignment';
+        }
+        // rule ADayKeepsItsKind: quitar el tipo de un día no hace que la página
+        // deje de ser el 6 de agosto; hace que deje de contestar cuando se
+        // pregunta por los días, y nada avisa. Se rechaza aquí y no en la
+        // interfaz porque una regla que sólo vive en un botón no es una regla.
+        //
+        // Es política y no estructura: gobierna lo que se somete hoy, no lo que
+        // se sometió antes de que existiera. Ver #replaying.
+        if (!this.#replaying && change.propertyKey === 'type' && change.page !== undefined) {
+          const page = this.#pages.get(change.page);
+          if (page !== undefined && isDateTitle(page.title)) {
+            return 'un día es una bitácora; su tipo no se quita';
+          }
         }
         return null;
       }
@@ -563,10 +616,16 @@ export class VeraGraph {
           title: change.title,
           visibility: change.visibility,
           createdAt: at,
+          originCreatedAt: null,
         });
         this.#pageByTitleKey.set(titleKey(change.title), id);
         this.#resolveWaitingLinks(id);
         return id;
+      }
+      case 'recover_page_origin': {
+        const page = this.#pages.get(change.page);
+        if (page !== undefined) page.originCreatedAt = change.originCreatedAt;
+        return change.page;
       }
       case 'rename_page': {
         const page = this.#pages.get(change.page);

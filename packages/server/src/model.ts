@@ -132,22 +132,43 @@ export interface Reading {
 }
 
 /**
+ * Cuánto texto se le da al modelo de una vez.
+ *
+ * Es el límite del modelo y no el de la página: con `-c 4096` de contexto, tres
+ * mil caracteres y el prompt caben, y el doble no. Lo que no cabe de una vez se
+ * lee en varias —ver `readingPasses` en structure.ts—, que es lo que separa un
+ * límite de contexto de un recorte.
+ */
+export const READABLE_CHARS = 3000;
+
+/**
+ * Cuántas veces como mucho se le pregunta al modelo por una misma página.
+ *
+ * Cada pase es un proceso de llama.cpp que tarda segundos en esta máquina, así
+ * que una transcripción de dos horas leída entera dejaría a alguien mirando la
+ * pantalla un cuarto de hora. Se leen ocho —unos veinticuatro mil caracteres, ya
+ * ocho veces más que antes— y lo que quede fuera se dice.
+ */
+export const MOST_PASSES = 8;
+
+/**
  * Lee una página y propone qué es y de qué trata.
  *
  * Dos preguntas y no una, porque son dos: qué clase de cosa es algo y sobre qué
  * habla se responden por separado o no se responden bien. @guarantee
  * TypeAndTopicAreNeverTheSameQuestion.
  *
- * Se le da poco texto a propósito: las primeras líneas de una página dicen de
- * qué va, y darle diez mil palabras a un modelo de 3B lo empeora además de
- * volverlo lento.
+ * Lee de una vez lo que le quepa de una vez: quien llama le entrega un pase, no
+ * la página entera. Leerla entera es repartirla antes y juntar después —ver
+ * `readingPasses` y `mergeReadings`—, porque darle diez mil palabras a un modelo
+ * de 3B no es leer más, es leer peor.
  */
 export async function readPage(
   title: string,
   text: string,
   vocabulary: string[] = STARTER_TYPES,
 ): Promise<Reading | { error: string }> {
-  const extract = text.replace(/\s+/g, ' ').slice(0, 3000);
+  const extract = text.replace(/\s+/g, ' ').slice(0, READABLE_CHARS);
 
   const answer = await ask(
     `Eres un bibliotecario que clasifica páginas de una memoria personal.
@@ -181,6 +202,50 @@ Texto: ${extract}`,
       vocabulary.some((v) => v.toLowerCase() === t.toLowerCase()),
     ),
     concepts: strings(parsed.concepts).slice(0, 5),
+  };
+}
+
+/**
+ * Junta lo que dijo cada pase en una sola lectura de la página.
+ *
+ * Se cuenta: lo que varias partes de una página dicen que es, es más
+ * probablemente lo que la página es, y lo que dijo una sola parte suele ser de
+ * esa parte y no del documento. A igualdad de menciones manda el orden de
+ * aparición, porque una página empieza diciendo de qué va.
+ *
+ * No se inventa nada que ningún pase dijera, y los topes son los mismos que los
+ * de una lectura sola —dos tipos, cinco conceptos—: leer la página entera da una
+ * lectura mejor, no una lista más larga.
+ */
+export function mergeReadings(readings: Reading[]): Reading {
+  const vote = (lists: string[][], most: number): string[] => {
+    const seen = new Map<string, { label: string; count: number; first: number }>();
+    let at = 0;
+    for (const list of lists) {
+      for (const word of list) {
+        at += 1;
+        const key = word.trim().toLowerCase();
+        if (key === '') continue;
+        const already = seen.get(key);
+        if (already === undefined) seen.set(key, { label: word.trim(), count: 1, first: at });
+        else already.count += 1;
+      }
+    }
+    return [...seen.values()]
+      .sort((a, b) => b.count - a.count || a.first - b.first)
+      .slice(0, most)
+      .map((one) => one.label);
+  };
+
+  return {
+    types: vote(
+      readings.map((reading) => reading.types),
+      2,
+    ),
+    concepts: vote(
+      readings.map((reading) => reading.concepts),
+      5,
+    ),
   };
 }
 

@@ -31,8 +31,10 @@ export interface Recording {
  * donde está ffmpeg.
  */
 export async function startRecording(): Promise<{
-  stop(): Promise<{ audio: Blob; durationMs: number }>;
+  stop(): Promise<{ audio: Blob; durationMs: number; peak: number }>;
   cancel(): void;
+  /** Cuánto sonido está entrando ahora mismo, de 0 a 1. */
+  level(): number;
 } | { error: string }> {
   if (navigator.mediaDevices?.getUserMedia === undefined) {
     return { error: 'este navegador no da acceso al micrófono' };
@@ -69,6 +71,49 @@ export async function startRecording(): Promise<{
   const began = Date.now();
 
   /*
+   * Medir lo que entra, porque grabar silencio se parece demasiado a grabar.
+   *
+   * Un `MediaRecorder` sobre una pista muda produce una grabación impecable: la
+   * duración es la correcta, el archivo existe, la cascada entera funciona, y lo
+   * único que falla es que dentro no hay nadie. La transcripción devuelve
+   * `[MÚSICA]` —que es lo que dice el modelo cuando no oye voz— y la pérdida sólo
+   * se descubre al leerla, cuando ya no se puede repetir lo que se dijo.
+   *
+   * Pasa más de lo que parece porque el navegador ofrece como micrófonos las
+   * salidas de audio del sistema —los `monitor`—, y elegir una de ésas da
+   * silencio perfecto. Cada navegador guarda esa preferencia por su cuenta, así
+   * que uno puede grabar bien y otro no, en la misma máquina y el mismo día.
+   *
+   * `peak` es el máximo de toda la grabación y sirve para avisar al terminar;
+   * `level` es el instante y sirve para que se vea moverse algo mientras se
+   * habla. Que falle no impide grabar: sin medidor se graba igual, sólo que a
+   * ciegas.
+   */
+  let peak = 0;
+  let level = 0;
+  let listening: AudioContext | null = null;
+  let metering: number | null = null;
+  try {
+    listening = new AudioContext();
+    const analyser = listening.createAnalyser();
+    analyser.fftSize = 2048;
+    listening.createMediaStreamSource(stream).connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    metering = window.setInterval(() => {
+      analyser.getFloatTimeDomainData(samples);
+      let loudest = 0;
+      for (const sample of samples) {
+        const size = Math.abs(sample);
+        if (size > loudest) loudest = size;
+      }
+      level = loudest;
+      if (loudest > peak) peak = loudest;
+    }, 100);
+  } catch {
+    listening = null;
+  }
+
+  /*
    * Que la pantalla no se apague mientras se habla.
    *
    * Es la causa y no el síntoma. Dictando, nadie toca la pantalla —para eso se
@@ -98,12 +143,17 @@ export async function startRecording(): Promise<{
     document.removeEventListener('visibilitychange', reacquire);
     void awake?.release().catch(() => undefined);
     awake = null;
+    if (metering !== null) window.clearInterval(metering);
+    metering = null;
+    void listening?.close().catch(() => undefined);
+    listening = null;
     for (const track of stream.getTracks()) track.stop();
   };
 
-  const captured = (): { audio: Blob; durationMs: number } => ({
+  const captured = (): { audio: Blob; durationMs: number; peak: number } => ({
     audio: new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }),
     durationMs: Date.now() - began,
+    peak,
   });
 
   /*
@@ -120,8 +170,8 @@ export async function startRecording(): Promise<{
    * puede acabar: que se pida, que el grabador falle, o que el sistema retire el
    * micrófono. La primera que llegue cierra; las demás no hacen nada.
    */
-  let settle: ((result: { audio: Blob; durationMs: number }) => void) | null = null;
-  let finished: { audio: Blob; durationMs: number } | null = null;
+  let settle: ((result: { audio: Blob; durationMs: number; peak: number }) => void) | null = null;
+  let finished: { audio: Blob; durationMs: number; peak: number } | null = null;
 
   const finish = (): void => {
     if (finished !== null) return;
@@ -165,6 +215,7 @@ export async function startRecording(): Promise<{
       }
       close();
     },
+    level: () => level,
   };
 }
 

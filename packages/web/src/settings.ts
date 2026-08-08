@@ -9,7 +9,8 @@
 // con un selector de color y una tipografía de una lista, en vez de escribir el
 // valor a ciegas en un campo de texto.
 
-import { BINDINGS, TRIGGERS } from './bindings.ts';
+import { BINDINGS, GESTURES, TRIGGERS } from './bindings.ts';
+import { COMMANDS } from './autocomplete.ts';
 import { icon } from './icons.ts';
 import {
   DEFAULT_TOKENS,
@@ -44,10 +45,11 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'apariencia', label: 'Apariencia' },
 ];
 
-const GROUPS: { id: string; label: string }[] = [
-  { id: 'estructura', label: 'Estructura del esquema' },
-  { id: 'edición', label: 'Edición' },
-  { id: 'autocompletado', label: 'Autocompletado' },
+const GROUPS: { id: string; label: string; note?: string }[] = [
+  { id: 'navegación', label: 'Navegación', note: 'Valen en cualquier momento.' },
+  { id: 'estructura', label: 'Estructura del esquema', note: 'Editando un bloque.' },
+  { id: 'edición', label: 'Edición', note: 'Editando un bloque.' },
+  { id: 'autocompletado', label: 'Autocompletado', note: 'Con la lista de sugerencias abierta.' },
 ];
 
 /** Un nombre legible para un token, sin obligar a leer la variable CSS. */
@@ -135,58 +137,101 @@ function drawMemory(host: HTMLElement, handlers: SettingsHandlers): void {
   handlers.drawMemory(host);
 }
 
+/** Un encabezado de sección, con su aclaración de cuándo vale lo que sigue. */
+function heading(host: HTMLElement, label: string, note?: string): void {
+  const title = document.createElement('h3');
+  title.textContent = label;
+  host.append(title);
+  if (note === undefined) return;
+  const said = document.createElement('p');
+  said.className = 'settings-note';
+  said.textContent = note;
+  host.append(said);
+}
+
+/** Una tabla de «esto se hace así», que es la única forma que toma esta página. */
+function table(host: HTMLElement, rows: { keys: string; what: string; when?: string }[]): void {
+  const list = document.createElement('dl');
+  list.className = 'keys';
+  for (const row of rows) {
+    const key = document.createElement('dt');
+    const chip = document.createElement('kbd');
+    chip.textContent = row.keys;
+    key.append(chip);
+
+    const what = document.createElement('dd');
+    what.textContent = row.what;
+    if (row.when !== undefined) {
+      const when = document.createElement('span');
+      when.className = 'keys-when';
+      when.textContent = row.when;
+      what.append(when);
+    }
+    list.append(key, what);
+  }
+  host.append(list);
+}
+
+/**
+ * Qué se puede hacer, y cómo.
+ *
+ * Se llama «Teclado» por costumbre, pero lo que contesta es «qué puedo hacer»,
+ * y la respuesta no depende de si lo que se usa es una tecla, un dedo o una
+ * barra escrita. Por eso están juntos los atajos, los gestos del mapa y los
+ * comandos: quien viene aquí no sabe todavía en cuál de las tres categorías cae
+ * lo que busca.
+ *
+ * Todo se lee del sitio del que la aplicación lo toma —`BINDINGS`, `GESTURES`,
+ * `COMMANDS`—, nunca de una copia. Una lista de ayuda escrita aparte se
+ * desincroniza sola, y entonces enseña teclas que ya no hacen eso.
+ */
 function drawKeyboard(host: HTMLElement): void {
   const intro = document.createElement('p');
   intro.className = 'settings-note';
   intro.textContent =
-    'Los atajos valen mientras se edita un bloque. Se leen del mismo sitio del que ' +
-    'el editor los toma, así que lo que dice aquí es lo que hace la tecla.';
+    'Todo lo que sigue se lee del mismo sitio del que la aplicación lo toma, así que ' +
+    'lo que dice aquí es lo que hace.';
   host.append(intro);
 
   for (const group of GROUPS) {
     const rows = BINDINGS.filter((binding) => binding.group === group.id);
     if (rows.length === 0) continue;
-
-    const heading = document.createElement('h3');
-    heading.textContent = group.label;
-    host.append(heading);
-
-    const table = document.createElement('dl');
-    table.className = 'keys';
-    for (const binding of rows) {
-      const key = document.createElement('dt');
-      const chip = document.createElement('kbd');
-      chip.textContent = binding.keys;
-      key.append(chip);
-
-      const what = document.createElement('dd');
-      what.textContent = binding.what;
-      const when = document.createElement('span');
-      when.className = 'keys-when';
-      when.textContent = binding.when;
-      what.append(when);
-
-      table.append(key, what);
-    }
-    host.append(table);
+    heading(host, group.label, group.note);
+    table(
+      host,
+      rows.map((binding) => ({ keys: binding.keys, what: binding.what, when: binding.when })),
+    );
   }
 
-  const heading = document.createElement('h3');
-  heading.textContent = 'Lo que se escribe para abrir el autocompletado';
-  host.append(heading);
+  /*
+   * El mapa, que no se conduce con teclas.
+   *
+   * Estaba sin documentar en ninguna parte: había que descubrir a tientas que
+   * dos dedos lo corren, o que con Shift se desplaza en vez de girar. Un gesto
+   * que nadie enseña es un gesto que no existe.
+   */
+  heading(host, 'Mapa', 'El plano y el de tres dimensiones no se conducen igual.');
+  table(
+    host,
+    GESTURES.map((gesture) => ({
+      keys: gesture.does,
+      what: gesture.what,
+      when: gesture.where === 'las dos' ? 'en las dos vistas' : `sólo en ${gesture.where}`,
+    })),
+  );
 
-  const table = document.createElement('dl');
-  table.className = 'keys';
-  for (const trigger of TRIGGERS) {
-    const key = document.createElement('dt');
-    const chip = document.createElement('kbd');
-    chip.textContent = trigger.keys;
-    key.append(chip);
-    const what = document.createElement('dd');
-    what.textContent = trigger.what;
-    table.append(key, what);
-  }
-  host.append(table);
+  heading(
+    host,
+    'Comandos',
+    'Se escriben con una barra al principio de un bloque. Basta teclear parte del nombre.',
+  );
+  table(
+    host,
+    COMMANDS.map((command) => ({ keys: `/${command.name}`, what: command.hint })),
+  );
+
+  heading(host, 'Lo que se escribe para abrir el autocompletado');
+  table(host, TRIGGERS);
 }
 
 function drawAppearance(

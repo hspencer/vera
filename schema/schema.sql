@@ -83,7 +83,8 @@ CREATE TABLE IF NOT EXISTS pages (
     title       TEXT NOT NULL,
     title_key   TEXT NOT NULL,
     visibility  TEXT NOT NULL CHECK (visibility IN ('private', 'public')),
-    created_at  INTEGER NOT NULL
+    created_at  INTEGER NOT NULL,
+    origin_created_at INTEGER
 ) STRICT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS pages_title_key ON pages (graph_id, title_key);

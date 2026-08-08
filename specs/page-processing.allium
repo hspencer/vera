@@ -1,0 +1,659 @@
+-- allium: 3
+-- page-processing.allium
+
+-- Scope: Procesar una página — leer su estructura antes de opinar sobre ella, y
+--   decir qué se entendió, qué se pudo hacer y qué no
+-- Includes: La lectura estructural de una página, la correspondencia entre lo
+--   leído y los bloques reales, qué defectos de forma se saben reconocer, cómo
+--   se reparte una página larga para que se lea entera y no sólo su principio,
+--   qué se arregla de su forma sin preguntar, qué páginas del corpus nombra sin
+--   enlazarlas, y la obligación de no confundir lo leído con lo comprendido
+-- Excludes:
+--   - El vocabulario de tipos y la propuesta de asignaciones, que son del
+--     vocabulario y no de la forma (ver controlled-ontology.allium)
+--   - La resolución de enlaces externos, que ya vive en ParticipantProcessesAPage
+--   - Ordenar los bloques por la lógica del material y la explosión de una
+--     página en varias: se declaran aquí como pendientes y sus decisiones siguen
+--     abiertas al final de este archivo
+--   - La edición ordinaria de un bloque (ver block-editing.allium)
+-- Dependencies: Graph, Page y Block los gobierna core.allium; la aplicación de
+--   cualquier cambio change-application.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- Leer la forma de una página es distinto de entender lo que dice.
+--
+-- Hoy procesar concatena todos los bloques con saltos de línea y le entrega esa
+-- sábana al modelo. Para quien la recibe, los límites de bloque, la relación
+-- padre–hijo y las posiciones no existen: se leyó el texto y se perdió el
+-- documento. De ahí sale la consecuencia que importa —ninguna propuesta sobre la
+-- estructura puede ser trazable, porque no hay nada a lo que apuntar— y de ahí
+-- sale también la única forma de arreglarlo, que es leer la estructura aparte y
+-- antes, sin modelo y sin recortes.
+--
+-- Aparte, porque son dos preguntas: qué forma tiene esto, y de qué trata. La
+-- primera se contesta contando, y la respuesta es la misma cada vez. La segunda
+-- necesita un modelo, tiene un límite de contexto y puede fallar. Mezclarlas hace
+-- que la parte determinista herede la fragilidad de la otra: hoy, si no hay
+-- modelo local, tampoco hay nada dicho sobre la forma de la página, y no hay
+-- ninguna razón para eso.
+contract StructuralReading {
+    read: (page: core/Page) -> PageStructure
+
+    @invariant EveryUnitNamesItsBlock
+        -- Todo lo que la lectura estructural devuelve apunta a un bloque por su
+        -- identidad estable. Nada se localiza volviendo a buscar por coincidencia
+        -- de texto: dos bloques pueden decir lo mismo, el texto se edita mientras
+        -- se mira, y una propuesta que se aplica al bloque equivocado es peor que
+        -- una propuesta que no existe.
+
+    @invariant TheWholePageIsRead
+        -- La lectura estructural no se trunca. El límite de contexto de un modelo
+        -- es una restricción del modelo, no de contar bloques: una página de
+        -- cuarenta mil caracteres tiene su forma leída entera aunque su sentido se
+        -- lea por partes.
+
+    @invariant ItIsTheSameEveryTime
+        -- La misma página leída dos veces da la misma estructura. No participa
+        -- ningún modelo, ninguna temperatura y ningún azar, y por eso lo que esta
+        -- lectura afirma se puede probar.
+
+    @invariant ReadingDecidesNothing
+        -- Leer la forma no cambia la página. Ni un bloque, ni un orden, ni una
+        -- propiedad. Lo que sale es una descripción. Que después ShapingPlan
+        -- convierta cinco de esos hallazgos en cambios no vuelve a esta lectura
+        -- una decisión: describir y arreglar son dos pasos, y el segundo se puede
+        -- quitar sin tocar el primero.
+
+    @invariant ItWorksWithoutAModel
+        -- Sin modelo local la lectura estructural ocurre igual y entera. Es la
+        -- mitad del procesamiento que no depende de que haya un binario instalado,
+        -- y hoy se pierde junto con la otra sin motivo.
+}
+
+-- Una página larga se lee entera, aunque el modelo no pueda leerla de una vez.
+--
+-- Hoy el sentido de una página se lee de sus primeros tres mil caracteres y de
+-- nada más. Para una nota corta eso es la nota; para una transcripción de dos
+-- horas es el saludo del principio, y los tipos y conceptos que salen de ahí
+-- hablan de una página que no es la que hay. Peor que equivocarse es no saberlo:
+-- el recorte no se declara, así que el resultado se lee como si fuera la lectura
+-- de la página entera.
+--
+-- El límite es real y no se puede negociar —un modelo tiene el contexto que
+-- tiene—, pero es un límite sobre cuánto cabe de una vez, no sobre cuánto se
+-- puede leer. Lo que hace falta es repartir, y la forma ya leída dice por dónde:
+-- una página se corta por donde ya está cortada, que es por sus secciones, y no
+-- por donde cae la cuenta de caracteres.
+contract SectionedReading {
+    passes: (structure: PageStructure) -> ReadingPass
+
+    @invariant ThePartsAreCutWhereThePageAlreadyBreaks
+        -- Un pase lleva secciones enteras siempre que quepan. Cortar a media
+        -- frase para llenar el hueco entrega al modelo un principio sin final y
+        -- un final sin principio; sólo una sección que por sí sola no cabe se
+        -- parte, y se parte por donde no rompe una palabra.
+
+    @invariant NoPassIsLargerThanTheModelCanHold
+        -- Ningún pase excede lo que el modelo puede leer de una vez. El reparto
+        -- existe para respetar ese límite, no para descubrirlo cuando falla.
+
+    @invariant EveryPassNamesItsSections
+        -- Cada pase dice de qué secciones está hecho. Sin eso, saber qué se leyó
+        -- vuelve a ser una cuenta de caracteres y lo que el modelo diga no se
+        -- puede atribuir a ninguna parte de la página.
+
+    @invariant WhatDidNotFitIsCounted
+        -- Si hay un tope de pases y la página lo pasa, lo que queda fuera se
+        -- cuenta y se dice. Un recorte callado convierte una lectura parcial en
+        -- una afirmación sobre el todo.
+}
+
+-- Lo que la página nombra y el corpus ya tiene.
+--
+-- Una página recién capturada habla de una persona, de un taller o de un
+-- proyecto que en Vera ya son páginas, y no las enlaza. Queda escrita y no queda
+-- encontrable, que no es lo mismo: se llega a ella buscando su texto, no
+-- recorriendo el corpus, y desde el otro lado no se llega en absoluto, porque
+-- los enlaces entrantes de la página nombrada no la incluyen. Una memoria en la
+-- que sólo se encuentra lo que se recuerda haber escrito no está haciendo su
+-- trabajo.
+--
+-- Esto se busca contando y no preguntándole a un modelo: el corpus dice cómo se
+-- llaman sus páginas, y encontrar esos nombres en un texto es una comparación.
+-- Por eso ocurre haya modelo o no, y por eso lo que afirma se puede probar.
+contract CorpusMentions {
+    find: (page: core/Page) -> Mention
+
+    @invariant AMentionIsNotYetALink
+        -- Encontrar un nombre no escribe un enlace. Que una frase diga «Ciudad
+        -- Abierta» no significa siempre que se refiera a esa página, y decidirlo
+        -- por quien escribió es cambiarle lo que dijo. Sale una propuesta.
+
+    @invariant TheWordStaysAsItWasWritten
+        -- El enlace envuelve la palabra tal como está en el texto. El grafo
+        -- resuelve un título sin distinguir mayúsculas ni tildes, así que no
+        -- hace falta corregirle a nadie cómo escribió una palabra para que el
+        -- enlace funcione.
+
+    @invariant WhatIsAlreadyLinkedIsLeftAlone
+        -- Lo que ya es enlace, dirección o código no se toca. Envolver ahí no
+        -- añade un enlace: rompe el que había.
+
+    @invariant OneProposalPerBlock
+        -- De un mismo bloque sale una propuesta como mucho. Cada una se propone
+        -- como el texto entero que ese bloque tendría, así que dos son dos
+        -- versiones del mismo párrafo: aceptar las dos deja la segunda y hace
+        -- desaparecer un enlace que nadie descartó.
+}
+
+-- Lo que se arregla sin preguntarle a nadie.
+--
+-- La lectura estructural describe y no toca; esto es lo único que además hace.
+-- Herbert lo eligió el 7 de agosto de 2026 sobre la lista de defectos que ya se
+-- sabían ver, y el criterio con que lo eligió es el que sostiene todo lo demás:
+-- ninguno de los cinco añade ni quita sentido. Partir un párrafo por donde ya
+-- había un punto y aparte no decide nada; resumirlo sí. Marcar como título lo
+-- que ya se comportaba como título no decide nada; escribirle un título que no
+-- tenía sí. Por eso éstos pueden ocurrir solos y el resto no.
+--
+-- Ordenar por la lógica del material —el quinto verbo de la página de Herbert—
+-- se queda fuera: decidir qué va antes exige entender qué dice, y eso ya no es
+-- contar.
+contract ShapingPlan {
+    plan: (structure: PageStructure) -> Fix
+
+    @invariant TheTextIsNeverRewritten
+        -- Se corta, se prefija un `#` y se cambia de sitio. Ninguna palabra se
+        -- sustituye por otra, y lo que quede en los bloques resultantes es
+        -- exactamente lo que había en el de origen.
+
+    @invariant EveryFixNamesItsBlock
+        -- Cada arreglo apunta a un bloque por su identidad estable, como la
+        -- lectura de la que sale.
+
+    @invariant WhatIsDelicateIsDescribedAndLeftAlone
+        -- Un bloque con una valla de código, una tabla, una fórmula o una
+        -- propiedad dentro tiene líneas que significan algo juntas: partirlo por
+        -- sus saltos deja media tabla en un sitio y media en otro. El defecto se
+        -- ve y se dice; el arreglo no se hace, porque ahí ya no es conservador.
+
+    @invariant TheOrderIsPartOfThePlan
+        -- Los pasos valen en el orden en que salen: las posiciones de cada uno
+        -- cuentan con que el anterior entró. Aplicarlos salteados o al revés no
+        -- da la misma página, así que un rechazo detiene el resto.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+-- Los cinco arreglos, dichos por lo que hacen.
+enum FixKind {
+    -- Quitar un bloque sin nada escrito. Sólo hojas, y nunca el último que le
+    -- queda a la página: sin él no quedaría dónde escribir.
+    drop_empty
+    -- Separar un encabezado de su desarrollo, o dos encabezados pegados, en los
+    -- bloques que el documento tenía.
+    | separate_units
+    -- Marcar como encabezado lo que ya se comportaba como encabezado. El nivel
+    -- sale de lo hondo que esté, no de adivinar su importancia.
+    | mark_heading
+    -- Partir un párrafo largo por donde el texto ya venía partido: por sus
+    -- saltos de línea si los trae, y si no juntando frases hasta un tamaño de
+    -- lectura. Ni el párrafo entero ni una frase por bloque.
+    | split_paragraph
+    -- Llevar un encabezado al nivel que su propia marca declara, cuando cuelga
+    -- de otro más hondo. Mueve el bloque; no toca una letra.
+    | hoist_heading
+}
+
+-- Los defectos de forma que se saben reconocer contando.
+--
+-- Se nombran como observaciones y no como órdenes: `monolithic_paragraph` dice
+-- que hay un párrafo muy largo sin partir, no que haya que partirlo. Lo segundo
+-- exige saber si partirlo conserva el sentido, y eso no se decide contando.
+enum StructuralDefect {
+    -- Un bloque sin nada escrito. Ocupa un lugar en el orden y no dice nada.
+    empty_block
+    -- Un párrafo largo, con varias frases, del que no cuelga nada: lo que en una
+    -- captura suele ser varias unidades de sentido pegadas.
+    | monolithic_paragraph
+    -- Un bloque corto, sin puntuación de cierre, con material debajo: se comporta
+    -- como un encabezado sin estar marcado como tal.
+    | implicit_heading
+    -- Muchos hermanos seguidos y ninguna profundidad: una lista que perdió, o
+    -- nunca tuvo, la estructura que su contenido sí tiene.
+    | flat_list
+    -- Un encabezado de nivel más importante colgando de uno menos importante.
+    -- La marca dice una jerarquía y el árbol dice otra.
+    | inconsistent_hierarchy
+    -- Un solo bloque que lleva dentro más de un encabezado, o un encabezado y su
+    -- desarrollo: dos cosas donde el documento tenía dos lugares.
+    | mixed_units
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- La forma de una página, leída entera y sin opinar.
+entity PageStructure {
+    page: core/Page
+    units: StructuralUnit with structure = this
+    sections: Section with structure = this
+    observations: StructuralObservation with structure = this
+    -- Cuánto texto hay, dicho aquí para que quien reciba esto sepa si el modelo
+    -- va a poder leerlo entero antes de preguntárselo.
+    chars: Integer
+}
+
+-- Un bloque, con todo lo que hace falta para razonar sobre su sitio.
+--
+-- Es el bloque y no una copia suya: `block` es la identidad estable, que es lo
+-- único que sobrevive a que alguien edite el texto mientras esto se mira.
+entity StructuralUnit {
+    structure: PageStructure
+    block: core/Block
+    parent: core/Block?
+    position: Integer
+    -- Cuántos antepasados tiene dentro de la página. Cero es raíz.
+    depth: Integer
+    chars: Integer
+    -- Cuántos bloques cuelgan de éste, a cualquier profundidad. Es lo que
+    -- distingue una hoja larga de un encabezado con desarrollo debajo.
+    descendants: Integer
+}
+
+-- Un tramo de página bajo un encabezado.
+--
+-- Existe porque es la unidad en la que una página larga se puede leer por partes
+-- sin que las partes dejen de corresponder a bloques reales: es lo que permite
+-- que el modelo lea una sección entera en vez de los primeros tres mil
+-- caracteres del documento.
+entity Section {
+    structure: PageStructure
+    -- El bloque que la encabeza. Nulo para el tramo anterior al primer
+    -- encabezado, que existe en casi toda página y no tiene título.
+    heading: core/Block?
+    title: String
+    depth: Integer
+    chars: Integer
+    members: core/Block
+}
+
+-- Un trozo de página del tamaño que el modelo puede leer de una vez.
+--
+-- No es una división del documento: el documento sigue teniendo las secciones
+-- que tiene. Es una división del trabajo de leerlo, y por eso lleva su número de
+-- orden: la página se lee en tantas veces, y quien mira puede ver por cuál va.
+entity ReadingPass {
+    structure: PageStructure
+    -- Su sitio en la lectura. Uno es el primero.
+    ordinal: Integer
+    -- Las secciones que este pase lleva. Una sección demasiado grande para caber
+    -- entera aparece en varios pases seguidos, y sigue siendo esa sección.
+    sections: Section
+    chars: Integer
+}
+
+-- Una página del corpus nombrada aquí y no enlazada.
+entity Mention {
+    -- Dónde se la nombra. El bloque y no la página: el enlace se escribe en la
+    -- frase que lo dice.
+    block: core/Block
+    -- La página nombrada, que ya existe. Una mención nunca inventa una página:
+    -- crear identidad nueva es una decisión de persona.
+    names: core/Page
+    -- El texto tal como está escrito, que puede no coincidir en mayúsculas ni en
+    -- tildes con el título de la página que nombra.
+    written: String
+    -- Cuántas páginas enlazan ya a la nombrada. Un título muy enlazado es un
+    -- centro del corpus, y unirse a un centro es lo que vuelve encontrable a una
+    -- página; se dice para que quien revisa sepa a qué se está uniendo.
+    backlinks: Integer
+}
+
+-- Algo que la forma de la página tiene y conviene saber.
+entity StructuralObservation {
+    structure: PageStructure
+    defect: StructuralDefect
+    block: core/Block
+    -- Por qué se dice esto, en palabras y con la cuenta que lo sostiene. Una
+    -- observación sin su evidencia es una acusación.
+    evidence: String
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- Leer la forma, antes de preguntarle nada a ningún modelo.
+rule ProcessingReadsTheStructureFirst {
+    when: ProcessPage(participant, graph, page)
+
+    let membership = core/Membership{graph: graph, participant: participant}
+    let read = StructuralReading.read(page)
+
+    requires: exists membership
+    requires: membership.status = active
+
+    ensures: PageStructure.created(
+        page: page,
+        chars: read.chars
+    )
+
+    @invariant StructureIsReportedBeforeTheModelAnswers
+        -- Lo estructural se dice en cuanto se sabe y no al final. Es lo primero
+        -- que está listo —no espera a ninguna red ni a ningún binario— y quien
+        -- mira la pantalla merece ver que algo ocurrió antes de que el modelo
+        -- conteste, que es lo que separa «trabajando» de «colgado».
+
+    @guidance
+        -- Las unidades, secciones y observaciones de esa estructura son lo que
+        -- `StructuralReading.read` devuelve: contarlas es del código y esta regla
+        -- no repite la aritmética. Lo que fija es que existan y que se lean antes
+        -- que nada.
+        --
+        -- Esta regla no reemplaza a ParticipantProcessesAPage en
+        -- controlled-ontology.allium: aquella dice qué se propone sobre el
+        -- vocabulario, ésta dice qué se lee sobre la forma. Ocurren en el mismo
+        -- gesto y son dos cosas distintas, y precisamente por eso una no puede
+        -- llevarse a la otra por delante cuando falla.
+}
+
+-- Leer el sentido siguiendo las partes que la forma encontró.
+rule SemanticReadingFollowsTheSections {
+    when: ProcessPage(participant, graph, page)
+
+    let read = StructuralReading.read(page)
+    let pass = SectionedReading.passes(read)
+
+    ensures: ReadingPass.created(
+        structure: read,
+        ordinal: pass.ordinal,
+        chars: pass.chars
+    )
+
+    @invariant TheBeginningIsNotThePage
+        -- Lo que el modelo diga sobre la página sale de la página y no de su
+        -- principio. Mientras queden pases dentro del tope, queda página por
+        -- leer, y una lectura que se detuvo en el primer pase no puede
+        -- presentarse como la lectura de la página.
+
+    @invariant ReadingInPartsIsSaidInParts
+        -- Que la lectura va por partes se ve mientras ocurre: cuántas son, por
+        -- cuál va y de qué sección. Una página larga tarda, y la diferencia
+        -- entre tardar y estar colgado es que alguien lo esté contando.
+
+    @guidance
+        -- Cómo se juntan después las lecturas de cada pase —qué tipo gana cuando
+        -- dos partes dicen cosas distintas, cuántos conceptos sobreviven— es del
+        -- vocabulario y vive en controlled-ontology.allium. Aquí sólo se fija que
+        -- la página se lea entera y que el reparto se vea.
+}
+
+-- Buscar en la página lo que el corpus ya nombra.
+rule ProcessingFindsWhatTheCorpusAlreadyNames {
+    when: ProcessPage(participant, graph, page)
+
+    let found = CorpusMentions.find(page)
+
+    ensures: Mention.created(
+        block: found.block,
+        names: found.names,
+        written: found.written,
+        backlinks: found.backlinks
+    )
+
+    @invariant ItHappensWithoutAModel
+        -- Comparar el texto con los títulos que el corpus tiene es contar. No
+        -- depende de que haya un binario instalado, y es la mitad del vínculo
+        -- con el corpus que se puede prometer siempre.
+
+    @invariant NoPageMentionsItself
+        -- La página que se procesa no se propone enlazarse a sí misma. Un
+        -- enlace a donde ya se está no lleva a ninguna parte.
+}
+
+-- Los huecos que dejó la captura.
+--
+-- De todos los defectos de forma que se saben ver, éste es el único cuyo arreglo
+-- no interpreta nada: no hay sentido que conservar en un bloque sin texto, y
+-- quitarlo no elimina material porque no hay material. Lo dijo Herbert el 7 de
+-- agosto de 2026 —«borrar bloques vacíos es elemental y necesario»— y es, por
+-- ahora, la única respuesta que tiene la primera pregunta abierta de este
+-- archivo: partir un párrafo o reordenar una sección sí decide por quien
+-- escribió, y esto no.
+--
+-- Aun así se propone y no se hace. Procesar no escribe —@invariant
+-- ProcessingProposesAndNothingMore, de controlled-ontology.allium—, y aplicarlo
+-- por la vía normal de las operaciones es lo que le da autoría, registro y
+-- vuelta atrás. Que no haya que pensarlo no significa que tenga que ocurrir a
+-- espaldas de nadie.
+rule ProcessingPutsThePageInForm {
+    when: ProcessPage(participant, graph, page)
+
+    let read = StructuralReading.read(page)
+    let fix = ShapingPlan.plan(read)
+
+    ensures: applied(fix.change)
+
+    @invariant NothingIsAddedAndNothingIsLost
+        -- Ninguno de los cinco arreglos escribe una palabra que no estuviera ni
+        -- borra una que estuviera. Se corta por donde el texto ya venía cortado,
+        -- se prefija un `#` a lo que ya se comportaba como título y se cambia un
+        -- bloque de sitio. Lo que exigiría interpretar —resumir, fusionar,
+        -- reordenar por sentido— no está aquí, y esa es la única razón por la
+        -- que esto puede ocurrir sin preguntar.
+
+    @invariant ItIsTheSamePlanEveryTime
+        -- El plan sale de contar, no de un modelo. La misma página da el mismo
+        -- plan siempre, y por eso aplicarlo solo no es aplicar algo que nadie
+        -- podía prever.
+
+    @invariant OneFixPerBlockPerRound
+        -- De un bloque se arregla una cosa por vuelta. Un bloque puede tener dos
+        -- defectos a la vez, y encadenar dos transformaciones sobre el mismo
+        -- texto haría que la segunda operase sobre lo que la primera dejó, que
+        -- ya no es lo que se leyó. El resto se ve la próxima vez, cuando la
+        -- página vuelva a leerse tal como quedó.
+
+    @invariant WhatWasRemadeIsNotAlsoProposed
+        -- Sobre un bloque que el plan acaba de rehacer no se propone nada más en
+        -- la misma vuelta. Una sugerencia nombra el texto que ese bloque decía;
+        -- aplicarla encima lo devolvería a como estaba.
+
+    @invariant ItIsWrittenLikeAnythingElse
+        -- Cada paso entra por la única puerta de escritura que Vera tiene, con
+        -- su autoría, su canal y su secuencia. Que ocurra sin preguntar no le da
+        -- una vía propia: un cambio que no se pudiera auditar como cualquier
+        -- edición hecha a mano no podría hacerse solo.
+
+    @invariant ItSaysWhatItDid
+        -- Lo aplicado se cuenta en cuanto ocurre y por clases —«3 párrafos
+        -- largos partidos»—, y se lee aparte de lo propuesto y de lo no
+        -- realizado. La página cambió sola; verlo no puede depender de haberla
+        -- estado mirando.
+
+    @guidance
+        -- No hay operación compuesta ni capa de inversas: lo decidió Herbert el
+        -- 7 de agosto de 2026 —«no me interesa un historial tan fino, se aplica
+        -- y ya»—. El rastro es el log canónico, que ya guarda cada paso; lo que
+        -- no se construye encima es un deshacer del gesto entero. Lo que quedó
+        -- mal se corrige escribiendo, como todo lo demás en Vera.
+        --
+        -- Ordenar los bloques por su lógica se queda fuera a propósito: es el
+        -- único de los cinco verbos de la página de Herbert que no puede hacerse
+        -- contando, porque decidir qué va antes exige entender qué dice.
+}
+
+-- Lo que no se hizo se dice, y no se dice terminado.
+rule ProcessingDeclaresWhatItCouldNotDo {
+    when: ProcessPage(participant, graph, page)
+
+    let read = StructuralReading.read(page)
+
+    ensures: ProcessingReport.created(
+        page: page,
+        structure: read,
+        not_done: omissions_of(page)
+    )
+
+    @invariant FinishedIsNotUnderstood
+        -- «Terminado» dice que el procesamiento acabó, nunca que la página se
+        -- comprendió entera. Un recorte de contexto, un modelo ausente o un
+        -- enlace que no contestó aparecen enumerados, y ninguna pantalla puede
+        -- presentar un resultado parcial como una lectura completa.
+}
+
+------------------------------------------------------------
+-- Entities (report)
+------------------------------------------------------------
+
+-- Un arreglo de forma, con el bloque al que le pasa.
+entity Fix {
+    kind: FixKind
+    block: core/Block
+}
+
+entity ProcessingReport {
+    page: core/Page
+    structure: PageStructure
+    -- Lo omitido, recortado o fallido, en palabras. Vacío sólo cuando de verdad
+    -- no faltó nada.
+    not_done: String
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant UnitDepthIsNotNegative {
+    for unit in StructuralUnits:
+        unit.depth >= 0
+}
+
+invariant RootUnitsHaveNoParent {
+    for unit in StructuralUnits:
+        unit.depth = 0 implies unit.parent = null
+}
+
+invariant NestedUnitsHaveAParent {
+    for unit in StructuralUnits:
+        unit.depth > 0 implies unit.parent != null
+}
+
+invariant UnitsBelongToTheReadPage {
+    for unit in StructuralUnits:
+        unit.block.page = unit.structure.page
+}
+
+invariant ObservationsPointAtReadBlocks {
+    for observation in StructuralObservations:
+        observation.block.page = observation.structure.page
+}
+
+invariant ObservationCarriesItsEvidence {
+    for observation in StructuralObservations:
+        observation.evidence != ""
+}
+
+invariant PassesAreNumberedFromOne {
+    for pass in ReadingPasses:
+        pass.ordinal >= 1
+}
+
+invariant NoPassIsEmpty {
+    for pass in ReadingPasses:
+        pass.chars > 0
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor ProcessingParticipant {
+    within: core/Graph
+    identified_by: core/Participant where core/Membership{graph: within, participant: this}.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface PageProcessing {
+    facing participant: ProcessingParticipant
+    context page: core/Page
+
+    exposes:
+        PageStructure
+        ReadingPass
+        Fix
+        Mention
+        ProcessingReport
+
+    provides:
+        ProcessPage(participant, page.graph, page)
+
+    contracts:
+        fulfils StructuralReading
+        fulfils SectionedReading
+        fulfils ShapingPlan
+        fulfils CorpusMentions
+
+    @guarantee AMentionSaysWhatItJoins
+        -- Una mención propuesta dice a qué página uniría ésta y cuántas la
+        -- enlazan ya. Aceptar un enlace es entrar en un vecindario del corpus, y
+        -- quien lo acepta tiene que poder ver en cuál entra.
+
+    @guarantee ALongPageIsReadWholeOrSaysWhereItStopped
+        -- De una página larga se lee la página, no su primera pantalla. Se lee
+        -- por partes, se ve por cuál va, y si un tope dejó algo fuera se dice
+        -- cuánto quedó sin leer.
+
+    @guarantee TheShapeIsSaidWithoutAModel
+        -- Cuántos bloques hay, cómo cuelgan, en cuántas secciones se divide la
+        -- página y qué defectos de forma tiene se dice siempre, haya modelo local
+        -- o no. Es la mitad del procesamiento que no depende de nada instalado.
+
+    @guarantee WhatWasFoundIsSaidAndWhatWasFixedIsSaidApart
+        -- Los defectos de forma se enseñan como lo que son: una descripción de
+        -- la página. Los cinco que además se arreglan se cuentan aparte y en
+        -- pasado —«3 párrafos largos partidos»—, porque ya ocurrieron. Lo que se
+        -- vio y lo que se hizo no pueden leerse como la misma cosa.
+
+    @guarantee ThreeThingsAreNeverConfused
+        -- Lo aplicado, lo propuesto y lo no realizado se leen por separado y se
+        -- distinguen a simple vista. La página cambia sola al procesarla, y
+        -- verlo no puede depender de haber estado mirando la pantalla: queda
+        -- escrito en el registro que el panel conserva.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- Estas siete las dejó escritas Herbert en «Vera — Procesamiento automático de
+-- páginas» bajo el título «Decisiones abiertas que el programador no debe
+-- asumir». Se copian aquí porque una decisión abierta que sólo vive en una
+-- página de la bitácora se resuelve sola, por omisión, el día que alguien
+-- escriba el código sin haberla leído.
+-- Las dos primeras las contestó Herbert el 7 de agosto de 2026 y por eso ya no
+-- están aquí: las cinco transformaciones de ShapingPlan se aplican sin preguntar
+-- —ver ProcessingPutsThePageInForm— y no hay operación compuesta ni inversa,
+-- porque el log canónico ya guarda cada paso y un deshacer del gesto entero era
+-- un roce que no quiso.
+open question "¿Dónde y cuánto persisten las sugerencias descartadas o pendientes? ¿Descartar significa olvidar o registrar la decisión?"
+open question "¿Qué métrica de extensión activa la evaluación de explosión sin convertirse en un umbral rígido de decisión?"
+open question "¿Cómo se genera la síntesis que queda en la página madre y quién confirma que no altera el sentido?"
+open question "¿Cómo se resuelven conflictos cuando el destino existente cambió entre la previsualización y la aplicación?"
+open question "¿Las propiedades type y concepto siguen siendo la proyección canónica o deben convertirse en asignaciones ontológicas sugeridas persistentes como declara controlled-ontology.allium?"
+
+-- Y dos que aparecieron al escribir esta spec.
+open question "¿Una sección es siempre un encabezado con lo que cuelga de él, o una página sin ningún encabezado tiene secciones por otro criterio?"
+open question "¿La lectura estructural se guarda con la página, para poder comparar la forma de hoy con la de la semana pasada, o se recalcula entera cada vez y no deja rastro?"

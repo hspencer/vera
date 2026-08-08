@@ -15,7 +15,7 @@ export interface Binding {
   what: string;
   /** Cuándo aplica, porque la misma tecla hace cosas distintas según el momento. */
   when: string;
-  group: 'estructura' | 'edición' | 'autocompletado';
+  group: 'navegación' | 'estructura' | 'edición' | 'autocompletado';
   match(event: KeyboardEvent): boolean;
 }
 
@@ -23,6 +23,22 @@ const plain = (event: KeyboardEvent): boolean =>
   !event.metaKey && !event.ctrlKey && !event.altKey;
 
 export const BINDINGS: Binding[] = [
+  {
+    id: 'close',
+    keys: 'Escape',
+    what: 'Cierra lo que esté abierto encima: los ajustes o el panel del mapa',
+    when: 'en cualquier momento',
+    group: 'navegación',
+    match: (event) => event.key === 'Escape',
+  },
+  {
+    id: 'open-node',
+    keys: 'Enter o Espacio',
+    what: 'Abre la página de ese nodo',
+    when: 'con un nodo del mapa enfocado por teclado',
+    group: 'navegación',
+    match: (event) => event.key === 'Enter' || event.key === ' ',
+  },
   {
     id: 'split',
     keys: 'Enter',
@@ -127,6 +143,44 @@ const byId = new Map(BINDINGS.map((binding) => [binding.id, binding]));
 export function is(id: string, event: KeyboardEvent): boolean {
   return byId.get(id)?.match(event) ?? false;
 }
+
+/**
+ * Lo que hace la mano sobre el mapa.
+ *
+ * Un mapa no se conduce con teclas sino con el puntero, y hasta ahora eso no
+ * estaba escrito en ninguna parte: había que descubrir a tientas que dos dedos
+ * corren el mapa o que Shift lo desplaza. La página de configuración es donde
+ * uno va a preguntar «qué puedo hacer», y la respuesta no puede depender de si
+ * lo que se usa es una tecla o un dedo.
+ *
+ * Va aquí, junto a los atajos, por el mismo motivo que ellos: una lista escrita
+ * aparte se desincroniza sola.
+ */
+export interface Gesture {
+  /** Cómo se hace. */
+  does: string;
+  what: string;
+  /** En qué vista. El mapa plano y el de tres dimensiones no se conducen igual. */
+  where: '2D' | '3D' | 'las dos';
+}
+
+export const GESTURES: Gesture[] = [
+  { does: 'Pulsar un nombre', what: 'Lo señala, sin salir de donde se está', where: 'las dos' },
+  {
+    does: 'Pulsar dos veces',
+    what: 'Abre esa página y deja el mapa girando en torno a ella',
+    where: 'las dos',
+  },
+  { does: 'Tocar un nombre', what: 'En un teléfono abre la página de una vez', where: 'las dos' },
+  { does: 'Arrastrar', what: 'Gira el mapa alrededor de la página que se lee', where: '3D' },
+  { does: 'Arrastrar el fondo', what: 'Desplaza el mapa', where: '2D' },
+  { does: 'Un dedo, arrastrando', what: 'Gira el mapa', where: '3D' },
+  { does: 'Dos dedos, deslizando', what: 'Corre el mapa sin girarlo', where: '3D' },
+  { does: 'Dos dedos, pellizcando', what: 'Acerca y aleja', where: '3D' },
+  { does: 'Shift + arrastrar', what: 'Corre el mapa sin girarlo', where: '3D' },
+  { does: 'Botón de en medio', what: 'Lo mismo, para quien lo tenga', where: '3D' },
+  { does: 'Rueda del ratón', what: 'Acerca y aleja', where: 'las dos' },
+];
 
 /** Los disparadores del autocompletado, para poder mostrarlos junto a las teclas. */
 export const TRIGGERS: { keys: string; what: string }[] = [

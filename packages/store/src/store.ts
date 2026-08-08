@@ -271,8 +271,8 @@ export function materialiseAll(store: Store, graph: VeraGraph): void {
   }
 
   const insertPage = db.prepare(
-    `INSERT INTO pages (id, graph_id, title, title_key, visibility, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO pages (id, graph_id, title, title_key, visibility, created_at, origin_created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const page of graph.pages()) {
     insertPage.run(
@@ -282,6 +282,7 @@ export function materialiseAll(store: Store, graph: VeraGraph): void {
       titleKey(page.title),
       page.visibility,
       page.createdAt,
+      page.originCreatedAt,
     );
   }
 
@@ -415,15 +416,17 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
   switch (change.kind) {
     case 'create_page':
     case 'rename_page':
-    case 'set_page_visibility': {
+    case 'set_page_visibility':
+    case 'recover_page_origin': {
       const page = graph.page(subjectId);
       if (page === undefined) return;
       db.prepare(
-        `INSERT INTO pages (id, graph_id, title, title_key, visibility, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO pages (id, graph_id, title, title_key, visibility, created_at, origin_created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            title = excluded.title, title_key = excluded.title_key,
-           visibility = excluded.visibility`,
+           visibility = excluded.visibility,
+           origin_created_at = excluded.origin_created_at`,
       ).run(
         page.id,
         store.graphId,
@@ -431,6 +434,7 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
         titleKey(page.title),
         page.visibility,
         page.createdAt,
+        page.originCreatedAt,
       );
       // Renombrar reconecta enlaces en toda la base, no sólo en esta página.
       if (change.kind === 'rename_page') resyncAllLinks(store, graph);
@@ -515,6 +519,26 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
       db.prepare('DELETE FROM page_links WHERE source_block = ?').run(subjectId);
       db.prepare('DELETE FROM block_tags WHERE block_id = ?').run(subjectId);
       db.prepare('DELETE FROM unported_queries WHERE block_id = ?').run(subjectId);
+
+      /*
+       * La grabación se va con su bloque.
+       *
+       * Antes no: la clave ajena declara `ON DELETE SET NULL`, así que borrar el
+       * bloque dejaba la grabación viva y sin sitio. Y como nada podía borrar una
+       * grabación, esa fila era permanente —reaparecía en «voz sin lugar» en cada
+       * recarga, sin ninguna forma de quitarla.
+       *
+       * Que un audio pueda existir sin bloque no es un caso raro que haya que
+       * saber reparar: es un estado que no debería poder darse. Un bloque de voz
+       * es el audio y su texto juntos, y borrarlo es borrar la nota de voz. Lo que
+       * queda es el objeto en el almacén, que se recoge aparte.
+       */
+      for (const orphan of db
+        .prepare('SELECT id FROM recordings WHERE placed_in_block = ?')
+        .all(subjectId) as { id: string }[]) {
+        removeRecording(store, orphan.id);
+      }
+
       db.prepare('DELETE FROM blocks WHERE id = ?').run(subjectId);
       if (home !== undefined) writeSiblingOrder(store, graph, home.page, home.parent);
       return;
@@ -672,39 +696,52 @@ export function loadGraph(store: Store, graphName = 'mind'): VeraGraph {
     )
     .all(store.graphId) as unknown as OperationRow[];
 
-  for (const row of rows) {
-    const outcome = graph.submitOperation({
-      originId: row.origin_id,
-      participant: row.participant_id,
-      channel: row.channel as 'typed_text' | 'authenticated_voice' | 'agent_generation' | 'import',
-      change: JSON.parse(row.change_payload) as Change,
-      submittedAt: row.submitted_at,
-      // El sujeto sale del registro y no se vuelve a derivar. Ver `subjectId` en
-      // OperationInput: derivarlo ataba la legibilidad del registro a que
-      // ninguna regla cambiara jamás cuántos identificadores consume.
-      ...(row.subject_id === null ? {} : { subjectId: row.subject_id }),
-      ...(row.evidence_reference === null
-        ? {}
-        : {
-            evidence: {
-              reference: row.evidence_reference,
-              capturedAt: row.evidence_captured_at ?? 0,
-            },
-          }),
-    });
+  // Reproducir no es someter: las negativas de política —las que dicen qué se
+  // permite hoy— no pueden vetar lo que ya ocurrió, o cada regla nueva dejaría al
+  // grafo sin poder levantar. Las estructurales siguen parando más abajo.
+  graph.beginReplay();
+  try {
+    for (const row of rows) {
+      const outcome = graph.submitOperation({
+        originId: row.origin_id,
+        participant: row.participant_id,
+        channel: row.channel as
+          | 'typed_text'
+          | 'authenticated_voice'
+          | 'agent_generation'
+          | 'import',
+        change: JSON.parse(row.change_payload) as Change,
+        submittedAt: row.submitted_at,
+        // El sujeto sale del registro y no se vuelve a derivar. Ver `subjectId`
+        // en OperationInput: derivarlo ataba la legibilidad del registro a que
+        // ninguna regla cambiara jamás cuántos identificadores consume.
+        ...(row.subject_id === null ? {} : { subjectId: row.subject_id }),
+        ...(row.evidence_reference === null
+          ? {}
+          : {
+              evidence: {
+                reference: row.evidence_reference,
+                capturedAt: row.evidence_captured_at ?? 0,
+              },
+            }),
+      });
 
-    // @invariant ReplayReconstructsState: reproducir tiene que devolver el
-    // mismo grafo. Una operación que el dominio ya aceptó una vez y ahora
-    // rechaza significa que el registro y las reglas dejaron de concordar, y
-    // seguir adelante levantaría un grafo al que le faltan cosas sin que nadie
-    // se entere. Antes esto se descartaba en silencio: el contenido se perdía
-    // al reiniciar y el único síntoma era una página más corta.
-    if (outcome.status === 'rejected') {
-      throw new Error(
-        `el registro no se puede reproducir: la operación ${row.sequence} ` +
-          `(${row.origin_id}) fue rechazada por «${outcome.reason}»`,
-      );
+      // @invariant ReplayReconstructsState: reproducir tiene que devolver el
+      // mismo grafo. Una operación estructuralmente imposible —no existe esa
+      // página, no existe ese bloque— significa que el registro y las reglas
+      // dejaron de concordar, y seguir adelante levantaría un grafo al que le
+      // faltan cosas sin que nadie se entere. Antes esto se descartaba en
+      // silencio: el contenido se perdía al reiniciar y el único síntoma era
+      // una página más corta.
+      if (outcome.status === 'rejected') {
+        throw new Error(
+          `el registro no se puede reproducir: la operación ${row.sequence} ` +
+            `(${row.origin_id}) fue rechazada por «${outcome.reason}»`,
+        );
+      }
     }
+  } finally {
+    graph.endReplay();
   }
 
   // Los participantes suspendidos vuelven a serlo después de reproducir: durante
@@ -1050,6 +1087,40 @@ export function createRecording(
  * sigue escrito, sigue nombrando de dónde vino, y la evidencia sigue ahí. La fila
  * declara que el audio ya no está en vez de fingir que nunca existió.
  */
+/*
+ * Quitar una grabación entera, y no sólo su audio.
+ *
+ * Faltaba, y su ausencia era el fallo. `discardAudio` suelta los bytes y deja la
+ * fila; nada en todo el repositorio borraba una grabación. Si además desaparecía
+ * el bloque que la sostenía, la clave ajena ponía `placed_in_block` en nulo y la
+ * grabación quedaba huérfana: visible en la lista de voz sin lugar, imposible de
+ * quitar, y de vuelta en cada recarga. No era un fantasma, era una fila que nadie
+ * podía borrar.
+ *
+ * `recordings` no vive en el registro de operaciones —nace por createRecording y
+ * no por submitOperation—, así que quitarla aquí es quitarla de verdad y no
+ * reaparece al reproducir el log.
+ *
+ * El objeto de audio no se toca: vive en un almacén direccionado por contenido
+ * que puede estar compartido con otra grabación, y recogerlo es cosa de un
+ * barrido aparte. Lo que se suelta es la referencia.
+ */
+export function removeRecording(store: Store, id: string): { removed: string } | { error: string } {
+  const held = recordingById(store, id);
+  if (held === null) return { error: 'no such recording' };
+
+  if (held.audioHash !== null) {
+    store.db
+      .prepare('DELETE FROM media_references WHERE graph_id = ? AND path = ?')
+      .run(store.graphId, `recording/${held.audioHash}`);
+  }
+  // La procedencia hablada de un bloque apunta aquí; sin quitarla primero, la
+  // clave ajena impediría el borrado y el fantasma seguiría en pie.
+  store.db.prepare('DELETE FROM spoken_origins WHERE recording_id = ?').run(id);
+  store.db.prepare('DELETE FROM recordings WHERE id = ?').run(id);
+  return { removed: id };
+}
+
 export function discardAudio(store: Store, id: string): Recording | { error: string } {
   const held = recordingById(store, id);
   if (held === null) return { error: 'no such recording' };
