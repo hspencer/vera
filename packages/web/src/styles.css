@@ -3505,8 +3505,62 @@ code {
 
 /* El renglón donde se pregunta a qué apunta una relación nueva. Vive bajo el
    bloque desde el que se explica, que es donde se está mirando. */
+/*
+ * La caja donde se dice por qué dos páginas se tocan.
+ *
+ * Ancha —un tercio de la columna, y nunca menos de veinte caracteres— y alta lo
+ * que haga falta: lo que se pide aquí es una frase, y una frase no se escribe
+ * mirando un agujero por el que pasan seis palabras. Crece con lo que se
+ * escriba.
+ *
+ * Y con la letra del extracto que tiene al lado, porque va a leerse junto a él:
+ * dos tamaños distintos en la misma fila hacen que uno parezca el pie de página
+ * del otro.
+ */
 .relation-ask {
+  margin: 0.3rem 0 0.2rem;
+  flex-basis: 100%;
+}
+
+.relation-field {
+  width: 34%;
+  min-width: 20rem;
+  max-width: 100%;
+  display: block;
+  font-family: var(--font-body);
+  /* La misma que el extracto que tiene al lado: se van a leer juntos. */
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 0.3ex;
+  padding: 0.35rem 0.5rem;
+  resize: vertical;
+  overflow: hidden;
+}
+
+.relation-field:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.relation-field::placeholder { color: var(--text-dim); }
+
+/* Lo que la caja hace, dicho una vez y en pequeño. Se lee al abrirla y deja de
+   mirarse a la segunda; por eso está y por eso no pesa. */
+.relation-hint {
   margin: 0.2rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+}
+
+/* La pluma de una referencia que ya lleva explicación se queda encendida: dice
+   que ahí hay algo escrito sin tener que abrirlo. */
+.reference-explain.explained {
+  opacity: 1;
+  color: var(--accent);
 }
 
 /* Una página nombrada y todavía sin escribir. Es una deuda a la vista, no un

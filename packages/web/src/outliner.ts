@@ -2652,7 +2652,22 @@ export function renderOutliner(
       whole.section.classList.add('references');
       const section = whole.body;
 
-      const list = (rows: Row[], gesture: 'followed_reference' | 'followed_backlink'): HTMLElement => {
+      /*
+     * La explicación que esta referencia ya tiene, si la tiene.
+     *
+     * Se busca entre lo que la página afirma: una relación explicada apunta a
+     * una página, y una referencia nombra a una página. Sin esto, la pluma abría
+     * siempre una caja en blanco y lo escrito ayer no aparecía por ninguna parte
+     * —parecía que no se hubiera guardado, y lo que pasaba es que no se enseñaba.
+     */
+    const explained = (row: Row): CrossingRow | undefined =>
+      (page.crossingsOut ?? []).find((crossing) =>
+        row.page !== null
+          ? crossing.toPage === row.page
+          : crossing.targetTitle.toLowerCase() === row.title.toLowerCase(),
+      );
+
+    const list = (rows: Row[], gesture: 'followed_reference' | 'followed_backlink'): HTMLElement => {
         const ul = document.createElement('ul');
         for (const row of rows) {
           const item = document.createElement('li');
@@ -2670,9 +2685,14 @@ export function renderOutliner(
           quill.innerHTML = icon('feather');
           quill.title = `explicar por qué ${row.title} tiene que ver con esta página`;
           quill.setAttribute('aria-label', `explicar la relación con ${row.title}`);
+          const held = explained(row);
+          if (held !== undefined) {
+            quill.classList.add('explained');
+            quill.title = `cambiar por qué ${row.title} tiene que ver con esta página`;
+          }
           quill.addEventListener('click', (event) => {
             event.stopPropagation();
-            explainTowards(item, row.title, row.from, page, toast, callbacks);
+            explainTowards(item, row.title, row.from, held, page, toast, callbacks);
           });
 
           const link = document.createElement('button');
@@ -2700,6 +2720,22 @@ export function renderOutliner(
           link.addEventListener('click', () => callbacks.onOpen(row.page ?? row.title, gesture));
 
           item.append(quill, link);
+
+          // Y debajo, lo que se dijo de ella. Es la prueba de que lo escrito se
+          // escribió: sin enseñarlo, guardar y no guardar se ven igual.
+          if (held !== undefined) {
+            const said = document.createElement('p');
+            said.className = 'relation-said';
+            if (held.term !== null) {
+              const term = document.createElement('span');
+              term.className = 'relation-term';
+              term.textContent = held.term;
+              said.append(term);
+            }
+            said.append(document.createTextNode(held.said));
+            item.append(said);
+          }
+
           ul.append(item);
         }
         return ul;
@@ -2787,22 +2823,113 @@ async function explainTowards(
   host: HTMLElement,
   title: string,
   from: string | null,
+  held: CrossingRow | undefined,
   page: PageView,
   notify: (message: string) => void,
   callbacks: OutlinerCallbacks,
 ): Promise<void> {
+  if (host.querySelector('.relation-ask') !== null) return;
+
+  /*
+   * Una caja de escribir, no un renglón.
+   *
+   * Lo que se pide aquí es una frase —por qué estas dos páginas se tocan—, y una
+   * frase no cabe en un campo de una línea: se escribe mirando un agujero por el
+   * que sólo pasan seis palabras. Nace con el alto del renglón que explica y
+   * crece con lo que se escriba.
+   *
+   * Y con la letra del extracto que tiene al lado, porque va a leerse junto a
+   * él: dos tamaños distintos en la misma fila hacen que uno parezca un pie de
+   * página del otro.
+   */
   const asking = document.createElement('div');
   asking.className = 'relation-ask';
+
+  const field = document.createElement('textarea');
+  field.className = 'relation-field';
+  field.rows = 2;
+  field.placeholder = `por qué ${title} tiene que ver con esta página`;
+  field.setAttribute('aria-label', field.placeholder);
+  // Lo que ya había, para poder corregirlo en vez de escribirlo otra vez. El
+  // término delante de los dos puntos, como se escribe.
+  field.value = held === undefined ? '' : held.term === null ? held.said : `${held.term}: ${held.said}`;
+
+  const hint = document.createElement('p');
+  hint.className = 'relation-hint';
+  hint.textContent = 'Enter guarda · Escape deja las cosas como estaban · un término delante de «:» si quieres';
+
+  asking.append(field, hint);
   host.append(asking);
 
-  editInPlace(asking, '', `por qué ${title} tiene que ver con esta página`, async (said) => {
-    const clean = said.trim();
+  const autosize = (): void => {
+    field.style.height = 'auto';
+    field.style.height = `${field.scrollHeight}px`;
+  };
+  field.addEventListener('input', autosize);
+  field.focus();
+  field.select();
+  autosize();
+
+  let settled = false;
+
+  const save = async (): Promise<void> => {
+    if (settled) return;
+    settled = true;
+    const clean = field.value.trim();
+
+    // Vaciar la caja de una relación que existía es retirarla: se borra el
+    // bloque, que es donde vivía. Ver crossings en el dominio — la relación era
+    // el bloque.
     if (clean === '') {
+      if (held !== undefined) {
+        const gone = await api.submit({ kind: 'remove_block', block: held.connective });
+        if (gone.status === 'rejected') notify(`no se pudo retirar: ${gone.reason}`);
+        else callbacks.onReload(null);
+      }
       asking.remove();
-      return true;
+      return;
     }
 
     const split = termAndProse(clean);
+
+    /*
+     * Si ya había una, se corrige; si no, nace.
+     *
+     * Corregir y no crear otra es lo que hace que volver a la pluma sea volver a
+     * lo escrito. Antes cada visita creaba una relación nueva y la anterior
+     * seguía ahí, invisible, porque sólo se enseñaba la primera.
+     */
+    if (held !== undefined) {
+      const written = await api.submit({
+        kind: 'edit_block',
+        block: held.connective,
+        content: split.prose,
+      });
+      if (written.status === 'rejected') {
+        notify(`no se pudo guardar: ${written.reason}`);
+        asking.remove();
+        return;
+      }
+      if (split.term === null) {
+        if (held.term !== null) {
+          await api.submit({
+            kind: 'remove_property',
+            block: held.connective,
+            propertyKey: names.term,
+          });
+        }
+      } else {
+        await api.submit({
+          kind: 'set_property',
+          block: held.connective,
+          propertyKey: names.term,
+          propertyValue: split.term,
+        });
+      }
+      notify(`cambiada la relación con ${title}`);
+      callbacks.onReload(null);
+      return;
+    }
 
     /*
      * Dónde cuelga lo que se escribe.
@@ -2821,34 +2948,50 @@ async function explainTowards(
     if (born.status === 'rejected') {
       notify(`no se pudo explicar: ${born.reason}`);
       asking.remove();
-      return true;
+      return;
     }
 
     const puesta = await api.submit({
       kind: 'set_property',
       block: born.subjectId,
-      propertyKey: 'explica',
+      propertyKey: names.explains,
       propertyValue: `[[${title}]]`,
     });
     if (puesta.status === 'rejected') {
       notify(`no se pudo explicar: ${puesta.reason}`);
       asking.remove();
-      return true;
+      return;
     }
 
     if (split.term !== null) {
       await api.submit({
         kind: 'set_property',
         block: born.subjectId,
-        propertyKey: 'término',
+        propertyKey: names.term,
         propertyValue: split.term,
       });
     }
 
     notify(`explicada la relación con ${title}`);
     callbacks.onReload(null);
-    return true;
+  };
+
+  field.addEventListener('keydown', (event) => {
+    // Enter guarda; con Shift, salta de línea. Es lo mismo que hace un bloque, y
+    // aquí se está escribiendo la misma clase de cosa.
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      void save();
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      settled = true;
+      asking.remove();
+    }
   });
+  // Salir de la caja guarda, como salir de un bloque: nada de lo que se escribe
+  // en Vera se pierde por mirar a otro lado.
+  field.addEventListener('blur', () => void save());
 }
 
 /**
