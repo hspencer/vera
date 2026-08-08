@@ -3672,3 +3672,32 @@ code {
   opacity: 1;
   color: var(--accent);
 }
+
+/* --------------------------------------------------------------------------
+ * Lo incrustado: contenido de fuera que corre dentro de una página.
+ *
+ * Con marco, porque tiene que distinguirse de lo que Vera dibuja: que algo corra
+ * dentro de una página propia no puede parecerse a que la página lo diga. Y con
+ * su procedencia debajo — un rectángulo que corre programa ajeno sin decir de
+ * quién es se parece demasiado a una parte de Vera, y no lo es.
+ * -------------------------------------------------------------------------- */
+
+.embed {
+  margin: 0.6rem 0;
+  max-width: 100%;
+}
+
+.embed iframe {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--rule);
+  border-radius: 0.3ex;
+  background: var(--bg-raised);
+}
+
+.embed figcaption {
+  margin-top: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}

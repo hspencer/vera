@@ -16,6 +16,103 @@
 // después, sobre el contenido de cada pieza. Al revés no funciona: escapar
 // primero convierte el `>` de una cita en `&gt;` y la cita deja de existir.
 
+/*
+ * Un bloque que es, entero, una incrustación.
+ *
+ * La regla de la casa es que el marcado escrito dentro de un bloque se presenta
+ * como texto —@invariant EmbeddedMarkupIsInert—, y con razón: si bastara con que
+ * apareciera en cualquier parte, pegar una nota copiada de una página web
+ * convertiría media bitácora en marcado ajeno sin que nadie lo hubiera decidido.
+ * Ciento ocho bloques de este corpus dependen de eso.
+ *
+ * La excepción es una y es estrecha: el bloque entero es una sola incrustación.
+ * Así la regla se dice en una línea —un bloque es una incrustación o no lo es— y
+ * quien escribe sabe siempre en cuál de los dos casos está. Ver
+ * specs/executable-content-sandbox.allium.
+ */
+const EMBED = /^\s*<iframe\b([^>]*)>\s*<\/iframe>\s*$/i;
+const ATTRIBUTE = /(\w[\w-]*)\s*=\s*"([^"]*)"/g;
+
+/** Cuánto ocupa una incrustación que no dice cuánto ocupa. */
+const EMBED_HEIGHT = 460;
+
+export function embedIn(source: string): string | null {
+  const found = EMBED.exec(source);
+  if (found === null) return null;
+
+  const said = new Map<string, string>();
+  for (const attribute of (found[1] ?? '').matchAll(ATTRIBUTE)) {
+    said.set((attribute[1] ?? '').toLowerCase(), attribute[2] ?? '');
+  }
+
+  /*
+   * Sólo lo que viaja cifrado —@invariant OnlyOverACarriedConnection—. Una
+   * incrustación sin cifrar deja a quien mire la red saber qué se está leyendo,
+   * y además el navegador la rechazaría en una Vera servida por HTTPS: valdría
+   * un hueco donde debería haber algo.
+   */
+  const src = said.get('src') ?? '';
+  if (!/^https:\/\//i.test(src)) return null;
+
+  let host = '';
+  let origin = '';
+  try {
+    const address = new URL(src);
+    host = address.host;
+    origin = address.origin;
+  } catch {
+    return null;
+  }
+
+  /*
+   * Nunca lo que viene del mismo sitio que Vera.
+   *
+   * Es la única combinación que rompe el encierro: contenido servido desde el
+   * origen de Vera y con permiso de conservar ese origen puede alcanzar la
+   * página que lo contiene y quitarse el sandbox a sí mismo. De fuera no puede
+   * —el navegador no le deja cruzar a otro origen— y por eso lo de fuera sí
+   * corre con el suyo. @invariant NothingReachesBack.
+   */
+  if (typeof window !== 'undefined' && origin === window.location.origin) return null;
+
+  const height = /^\d{2,4}$/.test(said.get('height') ?? '')
+    ? Number(said.get('height'))
+    : EMBED_HEIGHT;
+
+  /*
+   * Lo que se le permite y lo que no.
+   *
+   * `sandbox` con su propio origen y nada más. Lo incrustado corre siendo quien
+   * es —puede guardar lo suyo, pedir a su servidor y usar sus propias APIs, que
+   * es lo que hace falta para que una herramienta funcione— y no alcanza nada de
+   * Vera: el navegador no le deja cruzar a otro origen, y de ahí que la única
+   * combinación prohibida sea incrustar algo servido desde el origen de Vera,
+   * que se comprueba más arriba. @invariant NothingReachesBack.
+   *
+   * `allow-scripts` porque lo que se incrusta suele ser una herramienta y sin
+   * ejecutar no es nada; `allow-forms` porque escribir en ella es usarla. Lo que
+   * no lleva: navegar la ventana de arriba, ni pantalla completa sin pedirla, ni
+   * descargas.
+   *
+   * `referrerpolicy` para que la petición no diga desde qué nota se hizo: quien
+   * aloja esto tiene que poder servirlo y no tiene por qué saber cómo se llama la
+   * página desde la que alguien lo mira.
+   *
+   * `loading="lazy"` porque una bitácora con seis incrustaciones no puede saludar
+   * a seis servidores por el hecho de abrirse.
+   */
+  return (
+    `<figure class="embed">` +
+    `<iframe src="${quoteAttribute(escapeHtml(src))}" height="${height}" loading="lazy" ` +
+    `referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-popups allow-same-origin" ` +
+    `title="incrustado desde ${quoteAttribute(escapeHtml(host))}"></iframe>` +
+    // Debajo, de dónde viene: un rectángulo que corre programa ajeno sin decir de
+    // quién es se parece demasiado a una parte de Vera, y no lo es.
+    `<figcaption>incrustado desde ${escapeHtml(host)}</figcaption>` +
+    `</figure>`
+  );
+}
+
 /** Esquemas que pueden viajar en un href o un src. `javascript:` no está. */
 const SAFE_URL = /^(https?:\/\/|mailto:|\/|\.\.?\/|#)/i;
 
@@ -282,6 +379,11 @@ function cells(row: string): string[] {
  * escaparlos.
  */
 export function renderMarkdown(source: string, options: RenderOptions = {}): string {
+  // Un bloque que es una incrustación entera se presenta como tal y no como su
+  // marcado. Ver `embedIn` y specs/executable-content-sandbox.allium.
+  const embed = embedIn(source);
+  if (embed !== null) return embed;
+
   const lines = source.split('\n');
   let html = '';
   let at = 0;

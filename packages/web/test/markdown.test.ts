@@ -396,8 +396,100 @@ describe('renderMarkdown', () => {
       assert.match(html, /&lt;div/);
     });
 
-    it('un iframe queda como texto', () => {
-      assert.ok(!renderMarkdown('<iframe src="https://x.cl"></iframe>').includes('<iframe'));
+    it('un iframe dentro de una frase queda como texto', () => {
+      // Lo que cambió es la excepción y no la regla: un bloque que es, entero,
+      // una incrustación se presenta como tal —ver «incrustaciones» más abajo—.
+      // Dentro de una frase sigue siendo texto, que es lo que protege a los 108
+      // bloques de HTML crudo que el corpus trae.
+      const html = renderMarkdown('esto: <iframe src="https://x.cl"></iframe> y más');
+      assert.ok(!html.includes('<iframe'));
+      assert.match(html, /&lt;iframe/);
     });
+  });
+});
+
+/*
+ * Un bloque que es, entero, una incrustación.
+ *
+ * Ver specs/executable-content-sandbox.allium. La regla de la casa sigue siendo
+ * que el marcado escrito dentro de un bloque se presenta como texto; la
+ * excepción es una y es estrecha, y estas pruebas son su frontera.
+ */
+describe('incrustaciones', () => {
+  const embed = '<iframe src="https://eadpucv.github.io/pix/#!/x" width="100%" height="574"></iframe>';
+
+  it('un bloque que es una incrustación entera se presenta como tal', () => {
+    const html = renderMarkdown(embed);
+    assert.match(html, /<figure class="embed">/);
+    assert.match(html, /src="https:\/\/eadpucv\.github\.io\/pix\/#!\/x"/);
+  });
+
+  it('corre encerrada: es quien es y no alcanza nada de Vera', () => {
+    /*
+     * @invariant NothingReachesBack. Corre con su propio origen —lo necesita
+     * para guardar lo suyo y hablar con su servidor, o una herramienta no
+     * arranca— y el navegador no le deja cruzar al de Vera. Lo que no lleva:
+     * navegar la ventana de arriba, pantalla completa ni descargas.
+     */
+    const html = renderMarkdown(embed);
+    assert.match(html, /sandbox="allow-scripts allow-forms allow-popups allow-same-origin"/);
+    assert.ok(!html.includes('allow-top-navigation'));
+    assert.ok(!html.includes('allow-downloads'));
+  });
+
+  it('y no dice desde qué página se la mira', () => {
+    assert.match(renderMarkdown(embed), /referrerpolicy="no-referrer"/);
+  });
+
+  it('no se pide hasta que se llega a ella', () => {
+    assert.match(renderMarkdown(embed), /loading="lazy"/);
+  });
+
+  it('dice de dónde viene', () => {
+    // @invariant AnEmbedIsNotAnonymous.
+    assert.match(renderMarkdown(embed), /incrustado desde eadpucv\.github\.io/);
+  });
+
+  it('respeta el alto que se le puso, y si no tiene le da uno', () => {
+    assert.match(renderMarkdown(embed), /height="574"/);
+    assert.match(
+      renderMarkdown('<iframe src="https://ejemplo.cl/x"></iframe>'),
+      /height="460"/,
+    );
+  });
+
+  it('sin cifrar no se incrusta: se lee como el texto que es', () => {
+    const html = renderMarkdown('<iframe src="http://ejemplo.cl/x"></iframe>');
+    assert.ok(!html.includes('<iframe'));
+    assert.match(html, /&lt;iframe/);
+  });
+
+  it('dentro de una frase sigue siendo texto', () => {
+    // @invariant AWholeBlockOrNothing: si bastara con que apareciera en
+    // cualquier parte, pegar una nota copiada de la web convertiría media
+    // bitácora en marcado ajeno.
+    const html = renderMarkdown(`mira esto: ${embed} y sigue la frase`);
+    assert.ok(!html.includes('<figure class="embed">'));
+    assert.match(html, /&lt;iframe/);
+  });
+
+  it('dos incrustaciones en un bloque tampoco: es una o ninguna', () => {
+    const html = renderMarkdown(`${embed}\n${embed}`);
+    assert.ok(!html.includes('<figure class="embed">'));
+  });
+
+  it('lo que no es una incrustación sigue leyéndose como texto', () => {
+    const html = renderMarkdown('<script>alert(1)</script>');
+    assert.ok(!html.includes('<script>'));
+    assert.match(html, /&lt;script&gt;/);
+  });
+
+  it('una dirección no se escapa de su atributo', () => {
+    // La dirección viaja entre comillas: si una comilla suya pasara sin escapar,
+    // lo que sigue dejaría de ser una dirección y pasaría a ser marcado.
+    const html = renderMarkdown('<iframe src="https://ejemplo.cl/?a=b" onload="alert(1)"></iframe>');
+    assert.ok(!html.includes('onload'), `atributo ajeno: ${html}`);
+    const src = /src="([^"]*)"/.exec(html)?.[1] ?? '';
+    assert.equal(src, 'https://ejemplo.cl/?a=b');
   });
 });

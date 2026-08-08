@@ -1,0 +1,164 @@
+-- allium: 3
+-- executable-content-sandbox.allium
+
+-- Scope: Contenido de fuera que se presenta dentro de una página y corre —lo
+--   embebido— y bajo qué aislamiento se le deja correr
+-- Includes: Qué bloque cuenta como incrustación, qué se le permite a lo
+--   incrustado, qué no puede alcanzar nunca, y qué se ve de dónde viene
+-- Excludes:
+--   - El renderizado de Markdown, que no produce marcado activo
+--     (ver workspace-interface.allium)
+--   - Los medios que Vera guarda y presenta ella misma —audio, imagen, PDF—
+--     (ver content-media.allium)
+--   - La resolución de enlaces al procesar una página, que es otro acto hacia
+--     fuera y tiene su propia deliberación (ver controlled-ontology.allium)
+-- Dependencies: Block lo gobierna core.allium; la presentación de un bloque,
+--   workspace-interface.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- Lo incrustado corre, y corre encerrado.
+--
+-- Vera presenta el HTML escrito en un bloque como texto —@invariant
+-- EmbeddedMarkupIsInert—, y con razón: un corpus donde cualquier frase pueda
+-- convertirse en marcado activo es un corpus donde pegar algo copiado de
+-- cualquier sitio ejecuta lo que ese sitio quiera. Ciento ocho bloques de este
+-- corpus dependen de eso.
+--
+-- Y aun así hace falta la excepción. Una memoria personal en la que no se pueda
+-- meter la herramienta que uno mismo escribió —un prototipo, un diagrama vivo,
+-- una simulación— obliga a tenerla en otra ventana, y entonces la nota que habla
+-- de ella no la contiene: la menciona. La diferencia entre contener y mencionar
+-- es la misma que hay entre una memoria y un índice.
+--
+-- La excepción es una y es estrecha: un bloque cuyo texto entero es una sola
+-- incrustación. No un fragmento dentro de una frase, no marcado suelto entre
+-- prosa. Así la regla se puede decir en una línea —un bloque es una incrustación
+-- o no lo es— y quien escribe sabe siempre en cuál de los dos casos está.
+contract EmbeddedContentIsSandboxed {
+    present: (block: core/Block) -> Embed
+
+    @invariant AWholeBlockOrNothing
+        -- Sólo se presenta como incrustación un bloque cuyo contenido entero lo
+        -- sea. Marcado dentro de una frase sigue siendo texto: si bastara con
+        -- que apareciera en cualquier parte, pegar una nota copiada de una
+        -- página web convertiría media bitácora en marcado ajeno sin que nadie
+        -- lo hubiera decidido.
+
+    @invariant NothingReachesBack
+        -- Lo incrustado no alcanza nada de Vera: ni el grafo, ni el
+        -- almacenamiento local, ni la sesión, ni la página que lo contiene. Corre
+        -- encerrado en su propio origen y lo que sabe es lo que su dirección le
+        -- diga. Es la misma frontera que @invariant ExecutableContentIsolation
+        -- pone alrededor de un dibujo, dicha para algo que además trae su propio
+        -- programa.
+
+    @invariant ItDoesNotSayWhereItCameFrom
+        -- La petición sale sin decir desde qué página se hizo. Quien aloja lo
+        -- incrustado tiene que poder servirlo; no tiene por qué enterarse de cómo
+        -- se llama la nota desde la que alguien lo está mirando, que es una cosa
+        -- del corpus y el corpus no sale de casa.
+
+    @invariant OnlyOverACarriedConnection
+        -- Sólo se incrusta lo que viaja cifrado. Una incrustación sin cifrar
+        -- deja a quien mire la red saber qué se está leyendo, y además el
+        -- navegador la rechazaría en una Vera servida por HTTPS: valdría un
+        -- hueco donde debería haber algo.
+
+    @invariant ItAsksWhenItIsLooked
+        -- Lo incrustado no se pide hasta que se llega a él. Una bitácora con seis
+        -- incrustaciones no puede saludar a seis servidores por el hecho de
+        -- abrirse; se piden según se leen, que es cuando alguien las está
+        -- mirando de verdad.
+
+    @invariant TheSourceSurvivesTheView
+        -- El bloque sigue guardando el texto que se escribió, y editarlo lo
+        -- enseña entero. Presentar no reescribe: es la misma promesa que
+        -- @invariant EditingRevealsTheSource hace para todo lo demás.
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- Lo que una incrustación es, mirada desde la página.
+value Embed {
+    block: core/Block
+    -- De dónde viene, entero. Se enseña porque quien lee tiene derecho a saber a
+    -- quién le está pidiendo algo su propia página.
+    source: String
+    -- Y quién lo aloja, dicho corto, que es la parte que se lee de un vistazo.
+    host: String
+    -- Cuánto ocupa. Lo dice quien lo escribió; sin decirlo, todo el ancho y un
+    -- alto que no tape lo que viene después.
+    height: Integer
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule PresentingAnEmbedNamesItsHost {
+    when: RenderBlock(participant, block)
+
+    let embed = EmbeddedContentIsSandboxed.present(block)
+
+    requires: exists embed
+
+    ensures: shown(embed.host)
+
+    @invariant AnEmbedIsNotAnonymous
+        -- Debajo de lo incrustado se lee de dónde viene. Un rectángulo que corre
+        -- programa ajeno sin decir de quién es se parece demasiado a una parte de
+        -- Vera, y no lo es.
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface EmbeddedContent {
+    facing reader: core/Participant
+    context block: core/Block
+
+    exposes:
+        block.content
+        Embed
+
+    contracts:
+        fulfils EmbeddedContentIsSandboxed
+
+    @guarantee WhatRunsIsSeenToRun
+        -- Una incrustación se distingue de lo que Vera dibuja: tiene su marco,
+        -- su procedencia y su altura declarada. Que algo corra dentro de una
+        -- página propia no puede parecerse a que la página lo diga.
+
+    @guarantee EditingGivesTheMarkupBack
+        -- Pulsar el bloque devuelve el texto tal como se escribió, con sus
+        -- corchetes angulares y su dirección entera, y se corrige como cualquier
+        -- otro texto. No hay un editor de incrustaciones.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- Hoy se incrusta lo que sea, con tal de que venga cifrado. La alternativa es que
+-- el corpus declare a quién deja entrar —una lista en la página de ontología,
+-- como el vocabulario— y que lo de fuera de esa lista se presente como un enlace
+-- y no como un marco.
+open question "¿Debe el corpus declarar de qué servidores acepta incrustaciones, o basta con que cada una diga de dónde viene y quien lea decida si la mira?"
+
+-- Una incrustación es una petición a otro servidor cada vez que se lee la página
+-- que la lleva. Un día de bitácora con una incrustación se vuelve, para quien la
+-- aloja, un registro de cuándo se relee ese día.
+open question "¿Debe lo incrustado esperar a que alguien lo pida —un marco vacío con su dirección y un gesto para traerlo— en vez de pedirse al llegar a él?"
+
+-- El corpus se proyecta a Markdown y puede publicarse. Una incrustación es
+-- marcado activo, y lo que aquí corre encerrado allí correría bajo las reglas de
+-- otro sitio.
+open question "¿Qué pasa con una incrustación cuando la página que la lleva se publica: viaja, se convierte en enlace, o no sale?"
