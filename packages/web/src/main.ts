@@ -259,6 +259,10 @@ async function openToday(): Promise<void> {
  */
 function drawUnstartedDay(date: string): void {
   workspace.activePage = null;
+  // Todavía no hay página, pero sí hay sitio: el día que se está mirando. Dejar
+  // sólo «Vera» aquí haría que la ventana perdiera el nombre justo al abrirla,
+  // que es cuando más se está mirando la barra.
+  nameWindow(date);
   const url = `/p/${encodeURIComponent(date)}`;
   if (window.location.pathname !== url) window.history.pushState({}, '', url);
 
@@ -351,6 +355,25 @@ async function startDay(date: string, content = ''): Promise<string | null> {
  * cambió el foco— no es navegar y no deja paso en el rastro. Sin gesto, no hay
  * paso; con gesto, lo pone quien lo recibió y nadie lo deduce después.
  */
+/**
+ * Cómo se llama la ventana.
+ *
+ * Instalada como aplicación, Vera no tiene barra de direcciones: la única cosa
+ * que dice dónde se está es el título de la ventana, y decía «Vera» siempre. Con
+ * tres ventanas abiertas —el diario, una lectura y algo que se está escribiendo—
+ * las tres se llamaban igual, en la barra de tareas y en el conmutador del
+ * sistema, y no había forma de elegir sin abrirlas.
+ *
+ * El nombre de la aplicación va delante y el de la página detrás porque en un
+ * conmutador los títulos se cortan por la derecha; al revés, todas empezarían
+ * por «Vera» y volverían a ser indistinguibles justo donde importa.
+ *
+ * Sin página abierta, sólo el nombre: no hay nada más que decir todavía.
+ */
+function nameWindow(title: string | null): void {
+  document.title = title === null || title.trim() === '' ? 'Vera' : `Vera — ${title}`;
+}
+
 async function openPage(
   id: string,
   focus: { block: string; at: number } | null = null,
@@ -388,6 +411,7 @@ async function openPage(
   // La identidad manda a partir de aquí: la URL pudo nombrarla por su título.
   workspace.activePage = page.id;
   id = page.id;
+  nameWindow(page.title);
 
   // La dirección sigue a la página, salvo cuando es la dirección la que trajo
   // aquí: entonces escribirla otra vez apilaría una entrada por navegación y el
