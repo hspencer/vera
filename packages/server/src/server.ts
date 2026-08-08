@@ -9,7 +9,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 
-import { VeraGraph, checkInvariants, CHANGE_KINDS as CORE_CHANGE_KINDS, CONTRIBUTION_CHANNELS } from '@vera/core';
+import {
+  VeraGraph,
+  checkInvariants,
+  readQuery,
+  CHANGE_KINDS as CORE_CHANGE_KINDS,
+  CONTRIBUTION_CHANNELS,
+} from '@vera/core';
 import type { Change, ContributionChannel, OriginEvidence, ParticipantId } from '@vera/core';
 import {
   createRecording,
@@ -58,6 +64,15 @@ import { transcribeAudio } from './transcribe.ts';
 import { renderPage } from '@vera/store/projection';
 
 const CHANGE_KINDS = new Set<string>(CORE_CHANGE_KINDS);
+
+/*
+ * Cuántas páginas viajan en una respuesta.
+ *
+ * Una pregunta puede seleccionar dos mil, y ninguna pantalla las lee. Se manda un
+ * tramo y se dice cuántas quedaron fuera: recortar en silencio convertiría «hay
+ * doscientas» en «hay doscientas y son éstas».
+ */
+const MOST_ANSWERS = 200;
 
 // Del dominio y no repetida aquí: una lista copiada es una lista que se queda
 // atrás el día que el vocabulario crece, y el borde HTTP rechazaría por
@@ -1269,6 +1284,84 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         const who = typeof body.participant === 'string' ? body.participant : owner.id;
         setFold(store, who, block, body.folded === true);
         send(response, 200, { block, folded: body.folded === true });
+      });
+      return;
+    }
+
+    /*
+     * Preguntarle al grafo.
+     *
+     * POST y no GET aunque sea una lectura: la pregunta va en el cuerpo porque en
+     * una dirección se guarda —en el historial, en un registro del servidor, en lo
+     * que se comparte al copiar el enlace— y una consulta puede nombrar a una
+     * persona, una dirección o un asunto que no tiene por qué quedar escrito
+     * fuera del corpus.
+     *
+     * Una pregunta que no se entiende contesta 200 y dice qué no entendió: la
+     * petición estaba bien hecha, y devolver cero resultados sería una respuesta
+     * —@invariant WhatCannotBeReadSaysSo—.
+     */
+    if (request.method === 'POST' && path === '/query') {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { source?: unknown; participant?: unknown };
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+
+        const source = typeof body.source === 'string' ? body.source : '';
+        const read = readQuery(source);
+        if ('error' in read) {
+          send(response, 200, { error: read.error, at: read.at, near: read.near });
+          return;
+        }
+
+        const who = typeof body.participant === 'string' && body.participant !== ''
+          ? body.participant
+          : owner.id;
+        let outcome;
+        try {
+          outcome = graph.query({ expression: read.expression, participant: who });
+        } catch (problem) {
+          send(response, 403, { error: problem instanceof Error ? problem.message : 'refused' });
+          return;
+        }
+
+        // Dónde lo dice, para las preguntas por texto: una sola muestra por
+        // página, que es la que hace falta para saber si el acierto es el bueno.
+        const says = new Map<string, { block: string; excerpt: string }>();
+        for (const id of outcome.matchingBlocks) {
+          const block = graph.block(id);
+          if (block === undefined || says.has(block.page)) continue;
+          says.set(block.page, { block: id, excerpt: excerpt(block.content) });
+        }
+
+        const found = outcome.matchingPages
+          .map((id) => graph.page(id))
+          .filter((page): page is NonNullable<typeof page> => page !== undefined)
+          .map((page) => ({
+            id: page.id,
+            title: page.title,
+            type:
+              graph.propertiesOf(page.id).find((property) => property.key === 'type')?.value ?? null,
+            updated: graph.updatedAt(page.id),
+            says: says.get(page.id) ?? null,
+          }))
+          .sort((a, b) => a.title.localeCompare(b.title, 'es'));
+
+        // Se contesta entero cuánto es y se manda un tramo: una pregunta puede
+        // seleccionar dos mil páginas, y ninguna pantalla las lee. Lo recortado
+        // se declara, como todo lo demás.
+        send(response, 200, {
+          view: read.view,
+          count: found.length,
+          pages: found.slice(0, MOST_ANSWERS),
+          more: Math.max(0, found.length - MOST_ANSWERS),
+        });
       });
       return;
     }

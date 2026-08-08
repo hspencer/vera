@@ -243,3 +243,106 @@ describe('persistencia entre arranques', () => {
     await second.close();
   });
 });
+
+/*
+ * Preguntarle al grafo por HTTP.
+ *
+ * El evaluador llevaba meses construido y sin puerta; esto es la puerta. Ver
+ * query-language.allium: la pregunta viaja en el cuerpo y no en la dirección,
+ * porque una dirección se guarda y una consulta puede nombrar a una persona.
+ */
+describe('POST /query', () => {
+  async function ask(source: string): Promise<Record<string, unknown>> {
+    const response = await fetch(`${base}/query`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source }),
+    });
+    assert.equal(response.status, 200, `esperaba 200 para «${source}»`);
+    return (await response.json()) as Record<string, unknown>;
+  }
+
+  it('contesta con las páginas que la cumplen', async () => {
+    const page = await write({ kind: 'create_page', title: 'Consultada', visibility: 'private' });
+    await write({ kind: 'set_property', page, propertyKey: 'tipo', propertyValue: 'proyecto' });
+
+    const answer = await ask('? tipo=proyecto');
+    const pages = answer['pages'] as { id: string; title: string }[];
+    assert.equal(answer['count'], 1);
+    assert.equal(pages[0]?.id, page);
+    assert.equal(pages[0]?.title, 'Consultada');
+  });
+
+  it('dice cómo se lee la respuesta sin cambiar lo que selecciona', async () => {
+    const lista = await ask('? tipo=proyecto');
+    const tabla = await ask('? tipo=proyecto ; tabla');
+    assert.equal(lista['view'], 'list');
+    assert.equal(tabla['view'], 'table');
+    assert.equal(lista['count'], tabla['count']);
+  });
+
+  it('cada página trae su tipo y cuándo se tocó por última vez', async () => {
+    const page = await write({ kind: 'create_page', title: 'Fechada', visibility: 'private' });
+    await write({ kind: 'set_property', page, propertyKey: 'type', propertyValue: 'nota' });
+    await write({ kind: 'set_property', page, propertyKey: 'sello', propertyValue: 'sí' });
+
+    const answer = await ask('? sello=sí');
+    const [first] = answer['pages'] as { type: string; updated: number }[];
+    assert.equal(first?.type, 'nota');
+    assert.equal(typeof first?.updated, 'number');
+    assert.ok((first?.updated ?? 0) > 0);
+  });
+
+  it('una pregunta por texto dice dónde lo dice', async () => {
+    const page = await write({ kind: 'create_page', title: 'Con pasaje', visibility: 'private' });
+    await write({
+      kind: 'create_block',
+      page,
+      parent: null,
+      position: 0,
+      content: 'hablamos de pictogramas y de otras cosas',
+    });
+
+    const answer = await ask('? ~pictogramas');
+    const [first] = answer['pages'] as { says: { excerpt: string } | null }[];
+    assert.match(first?.says?.excerpt ?? '', /pictogramas/);
+  });
+
+  it('una negación no enseña el bloque que niega', async () => {
+    const page = await write({ kind: 'create_page', title: 'Sin nada', visibility: 'private' });
+    await write({ kind: 'set_property', page, propertyKey: 'mudo', propertyValue: 'sí' });
+
+    const answer = await ask('? mudo=sí + !~pictogramas');
+    const [first] = answer['pages'] as { says: unknown }[];
+    assert.equal(first?.says, null);
+  });
+
+  it('una pregunta que no se entiende dice qué y dónde, y no contesta cero', async () => {
+    const answer = await ask('? tipo=a + tipo=b * tipo=c');
+    assert.match(String(answer['error']), /paréntesis/);
+    assert.equal(answer['count'], undefined);
+    assert.equal(typeof answer['at'], 'number');
+  });
+
+  it('un texto que no se presenta como pregunta tampoco se contesta', async () => {
+    const answer = await ask('tipo=proyecto');
+    assert.match(String(answer['error']), /empieza por/);
+  });
+
+  it('preguntar no escribe nada', async () => {
+    const before = (await get('/health')) as { lastSequence: number };
+    await ask('? tipo=proyecto');
+    await ask('? no se entiende esto');
+    const after = (await get('/health')) as { lastSequence: number };
+    assert.equal(after.lastSequence, before.lastSequence);
+  });
+
+  it('quien no es de este grafo no pregunta', async () => {
+    const response = await fetch(`${base}/query`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source: '? tipo=proyecto', participant: 'participant:ajena' }),
+    });
+    assert.equal(response.status, 403);
+  });
+});

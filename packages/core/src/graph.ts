@@ -67,6 +67,8 @@ export class VeraGraph {
   #authorship = new Map<BlockId, Authorship>();
 
   #pages = new Map<PageId, Page>();
+  /** Cuándo se tocó por última vez cada página. Ver #apply. */
+  #updatedAt = new Map<PageId, number>();
   #blocks = new Map<BlockId, Block>();
   #tags = new Map<BlockId, string[]>();
 
@@ -605,7 +607,37 @@ export class VeraGraph {
    * @invariant ReplayReconstructsState pide, y esto lo estaba incumpliendo en
    * silencio porque el único síntoma era una fecha.
    */
+  /*
+   * Aplicar, y anotar cuándo se tocó la página.
+   *
+   * `Page` tiene fecha de creación y no de actualización, y hacía falta una: una
+   * lista de páginas ordenada por cuándo se escribió por última vez es media
+   * razón para tener consultas. Se lleva aquí y no en una columna porque el grafo
+   * se reconstruye reproduciendo el registro —cada operación trae su fecha— y
+   * entonces la cuenta sale sola y no puede discrepar de lo que pasó.
+   *
+   * La página que una operación toca es la suya si la nombra, la del bloque si
+   * nombra un bloque —mirada antes de aplicar, porque borrarlo se lo lleva— y el
+   * sujeto mismo cuando el sujeto es una página.
+   */
   #apply(change: Change, recordedSubject: string | null, at: number): string {
+    const beforehand =
+      'block' in change && typeof change.block === 'string'
+        ? (this.#blocks.get(change.block)?.page ?? null)
+        : null;
+    const subjectId = this.#applyChange(change, recordedSubject, at);
+
+    const touched =
+      ('page' in change && typeof change.page === 'string' ? change.page : null) ??
+      beforehand ??
+      (this.#pages.has(subjectId) ? subjectId : (this.#blocks.get(subjectId)?.page ?? null));
+    if (touched !== null && this.#pages.has(touched)) {
+      this.#updatedAt.set(touched, Math.max(at, this.#updatedAt.get(touched) ?? 0));
+    }
+    return subjectId;
+  }
+
+  #applyChange(change: Change, recordedSubject: string | null, at: number): string {
     if (recordedSubject !== null) this.#observeId(recordedSubject);
     switch (change.kind) {
       case 'create_page': {
@@ -1029,20 +1061,79 @@ export class VeraGraph {
   // Consulta (query-language.allium)
   // -------------------------------------------------------------------------
 
+  /** Cuándo se tocó por última vez una página. Sin haberla tocado, cuándo nació. */
+  updatedAt(page: PageId): number | null {
+    const held = this.#pages.get(page);
+    if (held === undefined) return null;
+    return this.#updatedAt.get(page) ?? held.createdAt;
+  }
+
   query(input: {
     expression: QueryExpression;
     participant: ParticipantId;
-  }): { graph: GraphId; matchingPages: PageId[] } {
+  }): { graph: GraphId; matchingPages: PageId[]; matchingBlocks: BlockId[] } {
     if (!this.#isActive(input.participant)) {
       throw new Error(`${input.participant} has no active membership in this graph`);
     }
     const selected = this.#select(input.expression);
+    const pages = this.pages().filter((p) => selected.has(p.id));
     return {
       graph: this.id,
-      matchingPages: this.pages()
-        .filter((p) => selected.has(p.id))
-        .map((p) => p.id),
+      matchingPages: pages.map((p) => p.id),
+      matchingBlocks: this.#evidence(input.expression, pages),
     };
+  }
+
+  /*
+   * Los bloques que dicen lo que se preguntó.
+   *
+   * Una consulta selecciona páginas, pero cuando la pregunta era por texto o por
+   * etiqueta hay un bloque concreto que la contesta, y devolver sólo la página
+   * obliga a quien lee a buscar otra vez a mano lo que aquí ya se encontró.
+   *
+   * Sólo los términos en positivo: un `!~borrador` no tiene bloque que enseñar
+   * —lo que selecciona es la ausencia— y sacar el bloque de una negación diría
+   * exactamente lo contrario de lo que la pregunta pedía.
+   *
+   * Y son evidencia, no prueba: en una pregunta con `*`, una página puede haber
+   * entrado por la otra rama y contener además la palabra. Lo que esto afirma es
+   * «aquí lo dice», no «por esto entró».
+   */
+  #evidence(expression: QueryExpression, pages: Page[]): BlockId[] {
+    const texts: string[] = [];
+    const tags: string[] = [];
+    const walk = (node: QueryExpression, negated: boolean): void => {
+      switch (node.kind) {
+        case 'ContentTerm':
+          if (!negated) texts.push(node.text);
+          return;
+        case 'TagTerm':
+          if (!negated) tags.push(node.tag);
+          return;
+        case 'NotTerm':
+          walk(node.operand, !negated);
+          return;
+        case 'AndTerm':
+        case 'OrTerm':
+          for (const operand of node.operands) walk(operand, negated);
+          return;
+        default:
+          return;
+      }
+    };
+    walk(expression, false);
+    if (texts.length === 0 && tags.length === 0) return [];
+
+    const found: BlockId[] = [];
+    for (const page of pages) {
+      for (const block of this.blocksOf(page.id)) {
+        const says =
+          texts.some((text) => matches(block.content, text)) ||
+          tags.some((tag) => this.tagsOf(block.stableId).includes(tag));
+        if (says) found.push(block.stableId);
+      }
+    }
+    return found;
   }
 
   #select(expression: QueryExpression): Set<PageId> {

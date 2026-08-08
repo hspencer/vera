@@ -400,3 +400,82 @@ describe('unported Logseq queries', () => {
     assert.equal(held.length, 1, '@invariant OneUnportedRecordPerBlock');
   });
 });
+
+/*
+ * Los bloques que dicen lo que se preguntó, y cuándo se tocó cada página.
+ *
+ * Las dos cosas hacen falta para contestar una consulta y ninguna estaba: la
+ * evaluación devolvía sólo identificadores de página, y `Page` tiene fecha de
+ * creación pero no de la última vez que alguien la escribió.
+ */
+describe('what a query answers besides the pages', () => {
+  it('names the blocks that say what was asked', () => {
+    const graph = inhabitedGraph();
+    const page = makePage(graph, 'Con pasaje');
+    const says = makeBlock(graph, page, 'hablamos de pictogramas');
+    makeBlock(graph, page, 'y de otra cosa');
+
+    const result = graph.query({ expression: contentTerm('pictogramas'), participant: OWNER });
+
+    assert.deepEqual(result.matchingPages, [page]);
+    assert.deepEqual(result.matchingBlocks, [says]);
+  });
+
+  it('a negated term shows no block: what it selects is the absence', () => {
+    const graph = inhabitedGraph();
+    const page = makePage(graph, 'Sin nada');
+    submit(graph, { kind: 'set_property', page, propertyKey: 'mudo', propertyValue: 'si' });
+
+    const result = graph.query({
+      expression: and(propertyTerm('mudo', 'si'), not(contentTerm('pictogramas'))),
+      participant: OWNER,
+    });
+
+    assert.deepEqual(result.matchingPages, [page]);
+    assert.deepEqual(result.matchingBlocks, []);
+  });
+
+  it('a question with no text term has no blocks to show', () => {
+    const graph = inhabitedGraph();
+    const page = makePage(graph, 'Fichada');
+    submit(graph, { kind: 'set_property', page, propertyKey: 'lang', propertyValue: 'es' });
+
+    const result = graph.query({ expression: propertyTerm('lang', 'es'), participant: OWNER });
+
+    assert.deepEqual(result.matchingBlocks, []);
+  });
+
+  it('a page remembers when it was last written to', () => {
+    const graph = inhabitedGraph();
+    const page = makePage(graph, 'Tocada');
+    const born = graph.updatedAt(page);
+    assert.equal(typeof born, 'number');
+
+    submit(graph, {
+      kind: 'create_block',
+      page,
+      parent: null,
+      position: 0,
+      content: 'algo nuevo',
+    });
+
+    assert.ok((graph.updatedAt(page) ?? 0) >= (born ?? 0));
+  });
+
+  it('writing a block dates the page that holds it, not another one', () => {
+    const graph = inhabitedGraph();
+    const written = makePage(graph, 'Escrita');
+    const quiet = makePage(graph, 'Quieta');
+    const block = makeBlock(graph, written, 'primera version');
+    const before = graph.updatedAt(quiet);
+
+    submit(graph, { kind: 'edit_block', block, content: 'segunda version' });
+
+    assert.equal(graph.updatedAt(quiet), before);
+  });
+
+  it('a page nobody has is dated by nothing', () => {
+    const graph = inhabitedGraph();
+    assert.equal(graph.updatedAt('page:no-existe'), null);
+  });
+});
