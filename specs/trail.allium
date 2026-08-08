@@ -1270,6 +1270,24 @@ enum CrossingSense { directed | mutual }
 -- derivada contesta y esta entidad no pregunta. Explicar por qué dos páginas se
 -- tocan es un acto de escritura por derecho propio, y a campo través es
 -- exactamente donde más falta hace: nadie las había unido todavía.
+-- Cómo se escribe, decidido el 7 de agosto de 2026: un bloque que cuelga de
+-- aquel desde el que se afirma, con sus propiedades.
+--
+--     - PICTOS toma la rejilla de Guemil y la lleva a generación.
+--       - profundiza lo que Guemil dejó planteado: su rejilla se vuelve generativa.
+--         explica:: [[Guemil]]
+--         término:: profundiza
+--
+-- Colgando y no al lado, porque la jerarquía ya dice de qué frase cuelga la
+-- explicación y no hay que guardarlo aparte. Y en propiedades y no en prosa,
+-- porque las propiedades no se recalculan al editar el texto: la explicación
+-- sobrevive a corregir una tilde en la frase que la ocasionó, que es exactamente
+-- lo que no ocurriría si colgara del enlace derivado.
+--
+-- De ahí que esta entidad no se guarde en ninguna parte: se ve mirando los
+-- bloques que llevan `explica::`. No hay tabla, no hay operación de crear ni de
+-- borrar, y no hay forma de que una relación quede huérfana de la frase que la
+-- dice — se escribe el bloque y hay relación; se borra el bloque y no la hay.
 entity Crossing {
     graph: core/Graph
 
@@ -1348,6 +1366,19 @@ rule ExplainingARelation {
             sense: sense,
             term: term
         )
+
+    @invariant ExplainingIsThreeOrdinaryWrites
+        -- Crear el bloque, decir a dónde apunta y, si se quiso, con qué término.
+        -- Tres operaciones de las que ya había y ninguna propia: no hay
+        -- `explain_relation` en el dominio, y por tanto no hay ningún camino por
+        -- el que una relación entre en el corpus sin pasar por donde pasa todo lo
+        -- demás, con su autoría, su canal y su revisión.
+
+    @invariant TheProseIsRequiredAndTheTermIsNot
+        -- Se puede explicar sin clasificar. Un término que el vocabulario no
+        -- tiene se lee igual desde los dos lados: no se le inventa un recíproco,
+        -- porque inventarlo pondría en boca de una página una afirmación que
+        -- nadie escribió.
 
     @guidance
         -- La conectiva nace en la página del bloque de origen y no en un sitio

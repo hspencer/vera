@@ -7,6 +7,8 @@
 
 import { answersIn } from './vocabulary.ts';
 import { looksLikeQuery } from './query-source.ts';
+import { EXPLAINS, SENSE, TERM, relationKey, senseIn, titleIn } from './relations.ts';
+import type { Crossing } from './relations.ts';
 import {
   excerpt,
   isDateTitle,
@@ -269,6 +271,90 @@ export class VeraGraph {
 
   backlinks(target: PageId): PageLink[] {
     return [...(this.#linksByTarget.get(target) ?? [])];
+  }
+
+  // -------------------------------------------------------------------------
+  // La relación explicada (trail.allium)
+  // -------------------------------------------------------------------------
+
+  /*
+   * Los cruces no se guardan: se ven.
+   *
+   * Un bloque que lleva `explica:: [[Página]]` está afirmando algo sobre esa
+   * página, y eso es todo lo que hace falta para que haya un cruce. No hay
+   * entidad que mantener, ni tabla, ni operación de crear: se escribe el bloque
+   * y hay relación; se borra el bloque y no la hay.
+   *
+   * La clave es el bloque y la página, y no el enlace derivado, porque
+   * @invariant EdgesAreDerivedFromContent manda que ningún enlace sobreviva a la
+   * frase que lo produjo: una explicación colgada de ahí moriría al corregir una
+   * tilde, y con ella una grabación que quizá costó decir.
+   */
+  crossings(): Crossing[] {
+    const found: Crossing[] = [];
+    const seen = new Set<string>();
+
+    for (const [subject, properties] of this.#propertiesBySubject) {
+      const block = this.#blocks.get(subject);
+      if (block === undefined) continue;
+
+      let target: string | null = null;
+      let term: string | null = null;
+      let sense: string | null = null;
+      for (const property of properties) {
+        const key = relationKey(property.key);
+        if (key === EXPLAINS) target = property.value;
+        else if (key === TERM) term = property.value;
+        else if (key === SENSE) sense = property.value;
+      }
+      if (target === null) continue;
+
+      const title = titleIn(target);
+      if (title === '') continue;
+      const to = this.#pageTitled(title);
+
+      // Una página no se explica respecto de sí misma: no diría nada.
+      if (to !== undefined && to.id === block.page) continue;
+
+      // @invariant OneCrossingPerBlockAndTarget: un bloque dice una sola cosa
+      // sobre una página. Si hay dos, rige la primera en el orden del grafo y la
+      // otra no se cuenta dos veces; lo que haya que añadir se añade a la
+      // conectiva, que es un bloque y crece.
+      const from = block.parent ?? block.stableId;
+      const key = `${from}→${titleKey(title)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      found.push({
+        connective: block.stableId,
+        said: block.content,
+        fromBlock: from,
+        fromPage: block.page,
+        targetTitle: title,
+        toPage: to?.id ?? null,
+        sense: senseIn(sense),
+        term: term === null || term.trim() === '' ? null : term.trim(),
+      });
+    }
+
+    return found;
+  }
+
+  /** Lo que esta página afirma sobre otras. */
+  crossingsOut(page: PageId): Crossing[] {
+    // Una relación mutua se lee en las dos columnas de las dos páginas: no es
+    // una clase aparte de relación, es una que vale en los dos sentidos.
+    return this.crossings().filter(
+      (crossing) => crossing.fromPage === page || (crossing.sense === 'mutual' && crossing.toPage === page),
+    );
+  }
+
+  /** Lo que otras páginas afirman sobre ésta. */
+  crossingsIn(page: PageId): Crossing[] {
+    return this.crossings().filter(
+      (crossing) =>
+        crossing.toPage === page || (crossing.sense === 'mutual' && crossing.fromPage === page),
+    );
   }
 
   /** Enlaces que nacen de un bloque, sin recorrer todos los del grafo. */

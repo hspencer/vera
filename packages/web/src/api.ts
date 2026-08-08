@@ -84,6 +84,37 @@ export interface PageView {
     { participant: string; kind: 'human' | 'agent' | null; channel: string; writtenAt: number }
   >;
   backlinks: Backlink[];
+  /** Lo que esta página afirma sobre otras. */
+  crossingsOut: CrossingRow[];
+  /** Y lo que otras afirman sobre ella, leído desde este lado. */
+  crossingsIn: CrossingRow[];
+}
+
+/**
+ * Una relación explicada, lista para leerse en su columna.
+ *
+ * `reads` es el término tal como se lee desde esta página: el término en la
+ * columna de salientes y su recíproco en la de entrantes. Lo que A afirma es que
+ * contradice a B; lo que B tiene que leer es que es contradicha por A.
+ */
+export interface CrossingRow {
+  /** El bloque que lleva lo dicho, y que es lo que se edita para cambiarla. */
+  connective: string;
+  /** Lo dicho. */
+  said: string;
+  /** El bloque desde el que se afirma. */
+  fromBlock: string;
+  fromPage: string;
+  /** La página del otro extremo, nula mientras nadie la haya escrito. */
+  toPage: string | null;
+  targetTitle: string;
+  /** Cómo se llama la otra página desde aquí. */
+  title: string;
+  sense: 'directed' | 'mutual';
+  term: string | null;
+  reads: string | null;
+  /** El extracto del bloque desde el que se afirma: el sujeto de la afirmación. */
+  says: string;
 }
 
 export interface Backlink {

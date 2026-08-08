@@ -12,7 +12,7 @@
 // que pueda divergir del grafo.
 
 import { answersIn, looksLikeQuery } from '@vera/core';
-import { api, type BlockView, type Change, type PageView } from './api.ts';
+import { api, type BlockView, type Change, type CrossingRow, type PageView } from './api.ts';
 import { renderMarkdown, type RenderOptions } from './markdown.ts';
 import { answerQueryBlock } from './query-block.ts';
 import { renderMermaid } from './mermaid.ts';
@@ -2021,6 +2021,20 @@ export function renderOutliner(
           label: 'Copiar el Markdown del bloque',
           run: () => copyText(node.block.content, toast),
         },
+        /*
+         * Explicar por qué esta página y aquélla se tocan.
+         *
+         * Desde aquí y no desde otro sitio: el momento en que alguien sabe por
+         * qué dos páginas se tocan es el momento en que las está mirando
+         * juntas. Lo que sale es un bloque hijo —la conectiva— que se escribe
+         * como cualquier otro; lo que Vera pone es a dónde apunta y con qué
+         * término, que es lo que hace que la relación se pueda leer desde el
+         * otro extremo.
+         */
+        {
+          label: 'Explicar relación…',
+          run: () => explainFrom(body, node.block, page.id, toast, callbacks),
+        },
         {
           label: 'Subir',
           ...(neighbourhoods.get(node.block.stableId)?.index === 0
@@ -2483,6 +2497,72 @@ export function renderOutliner(
   // la página no espera por ella para poder leerse.
   void renderMermaid(list);
 
+  /*
+   * Las dos columnas: lo que esta página afirma y lo que afirman sobre ella.
+   *
+   * Van antes de las referencias y no después, y son cosa distinta de ellas. Un
+   * retroenlace dice que alguien nombró esta página; una relación dice qué dijo
+   * al nombrarla. Se ven las relaciones explicadas existan o no menciones entre
+   * las dos páginas, y no se ven las menciones que nadie explicó: son dos
+   * preguntas distintas y ésta es la segunda.
+   */
+  for (const [rows, name, outgoing] of [
+    [page.crossingsOut ?? [], 'Afirma sobre otras', true],
+    [page.crossingsIn ?? [], 'Afirman sobre ésta', false],
+  ] as [CrossingRow[], string, boolean][]) {
+    if (rows.length === 0) continue;
+
+    const section = document.createElement('section');
+    section.className = 'relations';
+
+    const heading = document.createElement('h2');
+    heading.textContent = `${name} (${rows.length})`;
+    section.append(heading);
+
+    const list = document.createElement('ul');
+    for (const row of rows) {
+      const item = document.createElement('li');
+      item.className = 'relation';
+
+      // El término, cuando lo hay. Sin él la fila dice lo mismo con una palabra
+      // menos: explicar no exige clasificar.
+      if (row.reads !== null) {
+        const term = document.createElement('span');
+        term.className = 'relation-term';
+        term.textContent = row.reads;
+        item.append(term);
+      }
+
+      const other = document.createElement('button');
+      other.type = 'button';
+      other.className = 'relation-page';
+      other.textContent = row.title;
+      // Un destino que nadie ha escrito se ve como lo que es: la relación está
+      // en pie y la página todavía no.
+      if (outgoing && row.toPage === null) other.classList.add('unresolved');
+      other.addEventListener('click', () =>
+        callbacks.onOpen(outgoing ? (row.toPage ?? row.targetTitle) : row.fromPage, 'followed_reference'),
+      );
+      item.append(other);
+
+      // Lo dicho, que es la relación misma, y debajo la frase desde la que se
+      // afirma: una relación sin su frase es una flecha sin sujeto.
+      const said = document.createElement('p');
+      said.className = 'relation-said';
+      said.textContent = row.said;
+      item.append(said);
+
+      const from = document.createElement('p');
+      from.className = 'relation-from';
+      from.textContent = row.says;
+      item.append(from);
+
+      list.append(item);
+    }
+    section.append(list);
+    container.append(section);
+  }
+
   if (page.backlinks.length > 0) {
     const section = document.createElement('section');
     section.className = 'backlinks';
@@ -2517,6 +2597,108 @@ export function renderOutliner(
 
     container.append(section);
   }
+}
+
+/**
+ * Pregunta a qué página apunta esta relación, y con qué término.
+ *
+ * Se escribe en una línea —`profundiza [[Guemil]]`— porque son dos cosas y
+ * pedirlas en dos pasos convertiría en trámite lo que es un apunte. El término
+ * es lo que va delante y puede no ir: la prosa es obligatoria y clasificar no.
+ */
+export function explanationIn(said: string): { title: string; term: string | null } | null {
+  const linked = /\[\[([^\]]+)\]\]/.exec(said);
+  const title = (linked?.[1] ?? '').trim();
+  if (title === '') {
+    // Sin corchetes, lo escrito es el título entero y no hay término: adivinar
+    // dónde acaba uno y empieza el otro sería inventarse una separación.
+    const bare = said.trim();
+    return bare === '' ? null : { title: bare, term: null };
+  }
+  const before = said.slice(0, linked?.index ?? 0).trim();
+  return { title, term: before === '' ? null : before };
+}
+
+/**
+ * Crea la conectiva: un bloque que cuelga de aquel desde el que se afirma.
+ *
+ * Tres operaciones ordinarias y ninguna propia —@guarantee
+ * ComposingIsWritingAndNothingElse—: el bloque, a dónde apunta y, si se dijo,
+ * con qué término. Después se abre para escribir, porque lo que falta es
+ * justamente lo único que Vera no puede poner.
+ */
+async function explainFrom(
+  host: HTMLElement,
+  from: BlockView,
+  page: string,
+  notify: (message: string) => void,
+  callbacks: OutlinerCallbacks,
+): Promise<void> {
+  // Se pregunta donde se está leyendo, en un renglón bajo el bloque, y no en un
+  // diálogo del navegador: lo que se está haciendo es escribir sobre lo que se
+  // tiene delante, y un cuadro modal tapa justamente eso.
+  const asking = document.createElement('div');
+  asking.className = 'relation-ask';
+  host.append(asking);
+
+  const done = (): void => asking.remove();
+
+  editInPlace(asking, '', 'término y página, p. ej. profundiza [[Guemil]]', async (said) => {
+    const asked = explanationIn(said);
+    if (asked === null) {
+      notify('hace falta una página a la que apuntar');
+      done();
+      return true;
+    }
+
+    const born = await api.submit({
+      kind: 'create_block',
+      page,
+      parent: from.stableId,
+      position: 0,
+      content: '',
+    });
+    if (born.status === 'rejected') {
+      notify(`no se pudo explicar: ${born.reason}`);
+      done();
+      return true;
+    }
+
+    const connective = born.subjectId;
+    const puesta = await api.submit({
+      kind: 'set_property',
+      block: connective,
+      propertyKey: 'explica',
+      propertyValue: `[[${asked.title}]]`,
+    });
+    if (puesta.status === 'rejected') {
+      notify(`no se pudo explicar: ${puesta.reason}`);
+      done();
+      return true;
+    }
+
+    if (asked.term !== null) {
+      await api.submit({
+        kind: 'set_property',
+        block: connective,
+        propertyKey: 'término',
+        propertyValue: asked.term,
+      });
+    }
+
+    // El cursor donde va lo que falta: la frase. Es lo único que Vera no puede
+    // poner, y es la relación entera.
+    callbacks.onReload({ block: connective, at: 0 });
+    return true;
+  });
+
+  // Cancelar deja el renglón vacío y hay que retirarlo: editInPlace restituye lo
+  // que había, que aquí era nada.
+  asking.addEventListener('focusout', () => {
+    window.setTimeout(() => {
+      if (asking.querySelector('input') === null) done();
+    }, 0);
+  });
 }
 
 /**

@@ -23,6 +23,19 @@ export type { QueryExpression } from './query.ts';
 
 export { looksLikeQuery, readQuery, writeQuery } from './query-source.ts';
 export { answersIn } from './vocabulary.ts';
+
+export {
+  EXPLAINS,
+  SENSE,
+  STARTER_RELATIONS,
+  TERM,
+  inverseOf,
+  isSymmetric,
+  relationKey,
+  senseIn,
+  titleIn,
+} from './relations.ts';
+export type { Crossing, CrossingSense, RelationTerm } from './relations.ts';
 export type { QuerySource, QueryUnreadable, QueryView } from './query-source.ts';
 
 export {

@@ -12,8 +12,10 @@ import { extname, join, normalize, resolve } from 'node:path';
 import {
   VeraGraph,
   checkInvariants,
+  inverseOf,
   readQuery,
   writeQuery,
+  STARTER_RELATIONS,
   CHANGE_KINDS as CORE_CHANGE_KINDS,
   CONTRIBUTION_CHANNELS,
 } from '@vera/core';
@@ -305,6 +307,47 @@ export function createVeraServer(options: ServerOptions): VeraServer {
   // Las rutas del grafo y su objeto. Se leen una vez: el mapa cambia cuando se
   // ingiere un medio, no cuando se lee una página.
   const media = mediaReferences(store);
+
+  /*
+   * El vocabulario de relaciones, leído de donde manda.
+   *
+   * Vive en la página de ontología, bajo un bloque que empiece por «Relaciones»,
+   * con un término por hijo y su recíproco detrás de un separador:
+   *
+   *     Relaciones iniciales
+   *       profundiza · es profundizada por
+   *       se opone a · se opone a
+   *
+   * Sin esa página, o sin ese bloque, rige lo que Vera trae —@invariant
+   * DefaultsLiveInTheCode—, que es un mínimo para que explicar una relación no
+   * exija antes construir un vocabulario.
+   */
+  const relationVocabulary = (): { name: string; inverse: string }[] => {
+    const ontology = graph
+      .pages()
+      .find((candidate) =>
+        graph
+          .propertiesOf(candidate.id)
+          .some((property) => property.key === 'special-kind' && property.value === 'ontology'),
+      );
+    if (ontology === undefined) return STARTER_RELATIONS;
+
+    const heading = graph
+      .blocksOf(ontology.id)
+      .find((block) => /^Relaciones/i.test(block.content.trim()));
+    if (heading === undefined) return STARTER_RELATIONS;
+
+    const written = graph
+      .blocksOf(ontology.id)
+      .filter((block) => block.parent === heading.stableId)
+      .map((block) => block.content.split(/\s+[·/|]\s+/).map((one) => one.trim()))
+      .filter((pair) => pair[0] !== undefined && pair[0] !== '')
+      // Un término sin recíproco escrito es su propio recíproco: se lee igual
+      // desde los dos lados, que es lo que un simétrico hace.
+      .map((pair) => ({ name: pair[0] as string, inverse: pair[1] ?? (pair[0] as string) }));
+
+    return written.length > 0 ? written : STARTER_RELATIONS;
+  };
 
   const send = (response: ServerResponse, status: number, payload: unknown): void => {
     const body = JSON.stringify(payload);
@@ -1495,6 +1538,34 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 mediaType: entry.mediaType,
               }));
           })(),
+          /*
+           * Las dos columnas: lo que esta página afirma sobre otras y lo que
+           * otras afirman sobre ella.
+           *
+           * Separadas y no juntas porque la diferencia es quién lo dijo, que en
+           * un corpus con procedencia es la distinción entera. Cada fila lleva
+           * el bloque desde el que se afirma: una relación sin su frase es una
+           * flecha sin sujeto, dice que hay algo y no qué, y obliga a irse de la
+           * página para saberlo —que es lo que un retroenlace sin extracto ya
+           * hace hoy—.
+           *
+           * Un entrante se lee con el recíproco del término y no con el término:
+           * lo que A afirma es que contradice a B, y lo que B tiene que leer es
+           * que es contradicha por A. Enseñarlo tal cual invertiría el sujeto de
+           * la afirmación sin avisar.
+           */
+          crossingsOut: graph.crossingsOut(page.id).map((crossing) => ({
+            ...crossing,
+            title: crossing.toPage === null ? crossing.targetTitle : (graph.page(crossing.toPage)?.title ?? crossing.targetTitle),
+            reads: crossing.term,
+            says: excerpt(graph.block(crossing.fromBlock)?.content ?? ''),
+          })),
+          crossingsIn: graph.crossingsIn(page.id).map((crossing) => ({
+            ...crossing,
+            title: graph.page(crossing.fromPage)?.title ?? crossing.fromPage,
+            reads: inverseOf(crossing.term, relationVocabulary()),
+            says: excerpt(graph.block(crossing.fromBlock)?.content ?? ''),
+          })),
           // La denominación de origen de los bloques hablados de esta página.
           spokenOrigins: spokenOriginsOnPage(store, page.id),
           // @guarantee NothingSpokenIsStrandedFromTheWriting: lo hablado dentro

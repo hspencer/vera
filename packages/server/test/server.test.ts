@@ -346,3 +346,86 @@ describe('POST /query', () => {
     assert.equal(response.status, 403);
   });
 });
+
+/*
+ * Las dos columnas al pie de una página. Ver «La relación explicada» en
+ * specs/trail.allium: entrantes y salientes, y la diferencia entre ellas es
+ * quién lo dijo.
+ */
+describe('relaciones explicadas', () => {
+  async function explain(page: string, from: string, said: string, target: string, term?: string) {
+    const connective = await write({
+      kind: 'create_block',
+      page,
+      parent: from,
+      position: 0,
+      content: said,
+    });
+    await write({
+      kind: 'set_property',
+      block: connective,
+      propertyKey: 'explica',
+      propertyValue: `[[${target}]]`,
+    });
+    if (term !== undefined) {
+      await write({
+        kind: 'set_property',
+        block: connective,
+        propertyKey: 'término',
+        propertyValue: term,
+      });
+    }
+    return connective;
+  }
+
+  it('la página que afirma la lleva como saliente, y la nombrada como entrante', async () => {
+    const from = await write({ kind: 'create_page', title: 'PICTOS red', visibility: 'private' });
+    const to = await write({ kind: 'create_page', title: 'Guemil red', visibility: 'private' });
+    const said = await write({
+      kind: 'create_block',
+      page: from,
+      parent: null,
+      position: 0,
+      content: 'toma la rejilla y la lleva a generación',
+    });
+    await explain(from, said, 'profundiza lo que aquél dejó planteado', 'Guemil red', 'profundiza');
+
+    const salen = (await get(`/pages/${encodeURIComponent(from)}`)) as {
+      crossingsOut: { title: string; reads: string; says: string }[];
+      crossingsIn: unknown[];
+    };
+    assert.equal(salen.crossingsOut.length, 1);
+    assert.equal(salen.crossingsOut[0]?.title, 'Guemil red');
+    assert.equal(salen.crossingsOut[0]?.reads, 'profundiza');
+    // La fila enseña el bloque desde el que se afirma: una relación sin su frase
+    // es una flecha sin sujeto.
+    assert.match(salen.crossingsOut[0]?.says ?? '', /rejilla/);
+    assert.equal(salen.crossingsIn.length, 0);
+
+    const entran = (await get(`/pages/${encodeURIComponent(to)}`)) as {
+      crossingsIn: { title: string; reads: string }[];
+    };
+    assert.equal(entran.crossingsIn.length, 1);
+    assert.equal(entran.crossingsIn[0]?.title, 'PICTOS red');
+    // Un entrante se lee con el recíproco: lo que A afirma es que profundiza a
+    // B, y lo que B lee es que es profundizada por A.
+    assert.equal(entran.crossingsIn[0]?.reads, 'es profundizada por');
+  });
+
+  it('explicar es escribir: no hay operación propia', async () => {
+    // Todo lo anterior pasó por POST /operations, como cualquier edición. Si
+    // hubiera un camino propio, esta cuenta no cuadraría.
+    const before = (await get('/health')) as { lastSequence: number };
+    const page = await write({ kind: 'create_page', title: 'Cuenta red', visibility: 'private' });
+    const said = await write({
+      kind: 'create_block',
+      page,
+      parent: null,
+      position: 0,
+      content: 'algo',
+    });
+    await explain(page, said, 'se parece a aquello', 'Guemil red');
+    const after = (await get('/health')) as { lastSequence: number };
+    assert.equal(after.lastSequence - before.lastSequence, 4);
+  });
+});
