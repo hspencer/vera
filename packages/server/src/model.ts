@@ -85,13 +85,34 @@ export async function ask(
       { timeout: options.timeoutMs ?? 120_000, maxBuffer: 8 * 1024 * 1024 },
     );
 
-    // Y aun así se limpia lo que el programa pone alrededor: la línea de
-    // estadísticas al final es suya, no del modelo, y el prompt viene repetido
-    // al principio. Confiar en una bandera para que la salida sea sólo la
-    // respuesta es confiar en algo que ya falló una vez.
+    /*
+     * Y aun así se limpia lo que el programa pone alrededor.
+     *
+     * Delante viene su rótulo —el logo, la versión, el menú de comandos— y el
+     * prompt repetido; detrás, la línea de estadísticas. Nada de eso es del
+     * modelo. Confiar en una bandera para que la salida sea sólo la respuesta es
+     * confiar en algo que ya falló: `-no-cnv` no evita el rótulo en las
+     * versiones nuevas, y `--log-disable` tampoco.
+     *
+     * Y el eco no siempre se puede buscar entero, porque llama-cli lo corta él
+     * mismo por la mitad y escribe «... (truncated)» donde cortó. De ahí los
+     * tres intentos, del más exacto al más tolerante: el prompt entero, la marca
+     * de truncado, y la última línea del prompt. Lo que no se sepa recortar se
+     * devuelve tal cual y lo rechazará quien lo lea, que es mejor que devolver
+     * medio rótulo creyendo que es una respuesta.
+     */
     let text = stdout;
     const echoed = text.lastIndexOf(prompt);
+    const cut = text.lastIndexOf('(truncated)');
+    const tail = prompt
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '')
+      .at(-1);
+    const near = tail === undefined ? -1 : text.lastIndexOf(tail);
     if (echoed !== -1) text = text.slice(echoed + prompt.length);
+    else if (cut !== -1) text = text.slice(cut + '(truncated)'.length);
+    else if (near !== -1 && tail !== undefined) text = text.slice(near + tail.length);
     text = text.split(/\n\[ Prompt:/)[0] ?? '';
     text = text.replace(/\n?Exiting\.\.\.\s*$/, '').trim();
     return text === '' ? { error: 'el modelo no respondió nada' } : { text };

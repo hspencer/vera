@@ -11,9 +11,15 @@
 // Cada edición emite una operación. No hay guardado implícito ni estado local
 // que pueda divergir del grafo.
 
-import { DEFAULT_PROPERTY_NAMES, answersIn, looksLikeQuery } from '@vera/core';
+import {
+  DEFAULT_PROPERTY_NAMES,
+  answersIn,
+  looksLikeQuery,
+  renderMarkdown,
+  type RenderOptions,
+} from '@vera/core';
 import { api, type BlockView, type Change, type CrossingRow, type PageView } from './api.ts';
-import { renderMarkdown, type RenderOptions } from './markdown.ts';
+
 import { answerQueryBlock } from './query-block.ts';
 import { renderMermaid } from './mermaid.ts';
 import { is } from './bindings.ts';
@@ -1337,6 +1343,83 @@ async function downloadPage(page: { id: string; title: string }): Promise<void> 
   toast(`exportado ${name}`);
 }
 
+/**
+ * Trae el PDF que compuso el servidor y lo deja descargado.
+ *
+ * No se imprime desde aquí. Imprimir dejaba el resultado en manos de quien lo
+ * pidiera —márgenes del sistema, encabezados con la fecha y la dirección, el
+ * tamaño de papel de la impresora que hubiera— y un PDF que se guarda no puede
+ * depender de eso. El servidor lo compone en carta, sin fondo, sin las
+ * propiedades de la cabecera y sin las referencias del pie. Ver paper.ts.
+ */
+async function downloadPdf(
+  page: { id: string; title: string },
+  notify: (message: string) => void,
+): Promise<void> {
+  notify('componiendo el PDF…');
+  try {
+    const answer = await fetch(`/pages/${encodeURIComponent(page.id)}/pdf`);
+    if (!answer.ok) {
+      const said = (await answer.json().catch(() => ({}))) as { error?: string };
+      notify(said.error ?? 'no se pudo componer el PDF');
+      return;
+    }
+    const name = `${page.title.replace(/[/\\?%*:|"<>]/g, '_').trim() || page.id}.pdf`;
+    const url = URL.createObjectURL(await answer.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(url);
+    notify(`exportado ${name}`);
+  } catch {
+    notify('no se pudo componer el PDF');
+  }
+}
+
+/**
+ * Le da el bloque al modelo local como pedido y espera su respuesta.
+ *
+ * Puede tardar: el modelo corre en esta máquina, que es lo que hace que el
+ * pedido no salga de casa. Mientras tanto el bloque se marca —una animación
+ * miente cuando el proceso se cuelga, pero un bloque marcado dice cuál está
+ * ocupado— y al terminar se rehace la página, porque lo que cambió no es sólo
+ * ese bloque sino lo que cuelga de él.
+ */
+async function processBlock(
+  block: { stableId: string },
+  row: HTMLElement,
+  notify: (message: string) => void,
+  callbacks: OutlinerCallbacks,
+): Promise<void> {
+  row.classList.add('thinking');
+  notify('el modelo está leyendo el bloque…');
+  try {
+    const answer = await fetch(`/blocks/${encodeURIComponent(block.stableId)}/process`, {
+      method: 'POST',
+    });
+    const said = (await answer.json().catch(() => ({}))) as {
+      error?: string;
+      title?: string;
+      items?: number;
+    };
+    if (!answer.ok) {
+      notify(said.error ?? 'el modelo no pudo procesar el bloque');
+      return;
+    }
+    notify(
+      said.items === undefined || said.items === 0
+        ? `contestado: ${said.title ?? ''}`
+        : `contestado: ${said.title ?? ''} · ${said.items} ítems`,
+    );
+    callbacks.onReload(null);
+  } catch {
+    notify('el modelo no pudo procesar el bloque');
+  } finally {
+    row.classList.remove('thinking');
+  }
+}
+
 export interface Node {
   block: BlockView;
   children: Node[];
@@ -1935,17 +2018,13 @@ export function renderOutliner(
       },
       {
         /*
-         * Imprimir es exportar.
+         * El PDF lo compone el servidor y aquí sólo se descarga.
          *
-         * No se genera un PDF: se le pide al navegador que imprima, y su propio
-         * diálogo ya ofrece guardarlo como PDF en los tres sistemas. Generarlo
-         * aquí exigiría una biblioteca que rehiciera la tipografía por su
-         * cuenta, y lo que saldría no sería esta página sino una versión suya.
-         * Lo que sí es de Vera es decidir qué se imprime, y eso vive en la hoja
-         * de estilos: el documento, sin el taller alrededor.
+         * Pedirle al navegador que imprima dejaba el resultado en manos de quien
+         * lo pidiera. Lo que se guarda tiene que ser siempre el mismo documento.
          */
         label: 'Exportar a PDF',
-        run: () => window.print(),
+        run: () => void downloadPdf(page, toast),
       },
       {
         label: 'Eliminar la página',
@@ -2086,6 +2165,22 @@ export function renderOutliner(
          * término, que es lo que hace que la relación se pueda leer desde el
          * otro extremo.
          */
+        /*
+         * El bloque como pedido: lo escrito se le da al modelo local y la
+         * respuesta ocupa su sitio, con sus ítems colgando.
+         *
+         * El pedido no se pierde —queda en las revisiones del bloque— pero deja
+         * de estar a la vista, porque lo que uno vuelve a leer es la lista y no
+         * lo que pidió. Lo que sale queda firmado por el modelo y se dibuja como
+         * lo que es: no lo escribió quien escribió el pedido.
+         */
+        {
+          label: 'Procesar el bloque',
+          ...(node.block.content.trim() === ''
+            ? { blocked: 'un bloque vacío no pide nada' }
+            : {}),
+          run: () => void processBlock(node.block, row, toast, callbacks),
+        },
         {
           label: 'Explicar relación…',
           run: () => explainFrom(body, node.block, page.id, toast, callbacks),

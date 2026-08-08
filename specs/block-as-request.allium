@@ -1,0 +1,160 @@
+-- allium: 3
+-- block-as-request.allium
+
+-- Scope: Un bloque que se procesa a sí mismo — lo escrito en él es el pedido, y
+--   la respuesta del modelo local ocupa su sitio
+-- Includes: Qué bloque puede pedir, qué mano firma lo que sale, qué pasa con el
+--   pedido, hasta dónde puede crecer una respuesta, y qué se hace cuando lo que
+--   contesta el modelo no es una respuesta
+-- Excludes:
+--   - Procesar una página entera, que mira su forma y propone
+--     (ver page-processing.allium)
+--   - El vocabulario con que se clasifica una página
+--     (ver controlled-ontology.allium)
+--   - Qué modelo corre y con qué banderas, que es del código
+--   - La credencial con que un agente escribe desde fuera
+--     (ver agent-participation.allium)
+-- Dependencies: Block, Participant y ContributionChannel los gobierna
+--   core.allium; la autoría por bloque, agent-participation.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- Un bloque puede ser un pedido.
+--
+-- Se escribe «hazme una lista de compras con tomate cherry, quesos, coliflor y
+-- after shave», se pide procesar, y el bloque pasa a ser la lista con sus ítems
+-- colgando. No hay un campo aparte donde preguntar ni una ventana de
+-- conversación al lado: el sitio donde se pregunta es el sitio donde queda la
+-- respuesta, que es lo que distingue esto de tener un ayudante abierto en otra
+-- pestaña y pegar lo que conteste.
+contract ABlockCanBeAsked {
+    ask: (block: core/Block) -> Answer
+
+    @invariant TheModelIsLocalOrThereIsNone
+        -- El modelo corre en esta máquina o no hay modelo. Un cuaderno no manda
+        -- lo que uno escribe a un servidor ajeno para que se lo ordene, y donde
+        -- no haya con qué contestar se dice que no lo hay. Es el mismo
+        -- invariante que gobierna la lectura de una página.
+
+    @invariant TheAnswerIsSignedByTheMachineThatGaveIt
+        -- Lo que sale queda firmado por el modelo local, que no es el
+        -- bibliotecario. Cotito tiene criterio sobre el corpus —propone
+        -- vocabulario, migraciones, y lo que dice se lee como suyo—; esto es una
+        -- máquina contestando una pregunta, y mañana será otra máquina. Sin la
+        -- distinción, dentro de un año no habría forma de saber qué escribió una
+        -- persona, qué escribió el bibliotecario y qué salió de un modelo que ya
+        -- no está instalado.
+
+    @invariant TheBlockChangesHands
+        -- El bloque procesado deja de ser de quien lo escribió: su autoría pasa
+        -- al modelo, porque el texto que lleva ahora lo escribió el modelo. Es
+        -- lo que de verdad pasó, y la autoría por bloque no sirve para nada si
+        -- puede decir otra cosa.
+
+    @invariant TheRequestSurvivesInTheRecord
+        -- El pedido no se pierde: queda en las revisiones del bloque y en el
+        -- log, como cualquier edición. Deja de estar a la vista, que es distinto
+        -- de desaparecer, y es lo que se quiere: después uno vuelve a leer la
+        -- lista y no lo que pidió.
+
+    @invariant WhatHungThereStaysThere
+        -- Lo que ya colgaba del bloque sigue colgando y en su sitio. La
+        -- respuesta nace detrás. Un pedido repartido en varios bloques —«lista
+        -- de compras» con seis debajo— es un pedido de siete líneas, y
+        -- contestarlo no puede llevarse las seis por delante.
+
+    @invariant NoiseIsNotAnAnswer
+        -- Lo que el programa dice de sí mismo —su rótulo, su versión, su menú de
+        -- comandos— no se escribe. Cuando lo que llega no se puede leer como una
+        -- respuesta, no se escribe nada y se dice que no se pudo. Escribir
+        -- veintiocho bloques con el arranque de un programa dentro de un día es
+        -- peor que no contestar.
+
+    @invariant AnAnswerCannotBecomeAPage
+        -- Una respuesta tiene un tope de bloques. Un modelo que se enrolla no
+        -- puede convertir un bloque en doscientos: lo que pase del tope se
+        -- corta, y quien pidió la lista la ve corta, que es un resultado pobre
+        -- pero legible.
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- Lo que el modelo contestó, ya leído como bloques.
+value Answer {
+    -- Lo que pasa a ser el bloque.
+    title: String
+    -- Y lo que cuelga de él, cada uno con cuántos niveles por debajo va. Puede
+    -- no haber ninguno: no toda pregunta se contesta con una lista.
+    items: List<AnswerItem>
+}
+
+value AnswerItem {
+    text: String
+    depth: Integer
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule AskingABlockWritesThroughTheOneDoor {
+    when: ProcessBlock(participant, block)
+
+    let answer = ABlockCanBeAsked.ask(block)
+
+    requires: exists answer
+
+    ensures: written(answer)
+
+    @invariant ItIsAppliedAndThatIsAll
+        -- Lo que sale se escribe, sin panel donde revisarlo antes ni capa de
+        -- deshacer después. Cada bloque que nace es una operación con su autor y
+        -- su secuencia, como cualquier edición hecha a mano, y lo que quedó mal
+        -- se corrige escribiendo. Es la misma decisión que gobierna la puesta en
+        -- forma al procesar una página.
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface AskingFromABlock {
+    facing writer: core/Participant
+    context block: core/Block
+
+    exposes:
+        block.content
+        Answer
+
+    contracts:
+        fulfils ABlockCanBeAsked
+
+    @guarantee TheWaitIsVisibleOnTheBlockThatWaits
+        -- Mientras el modelo lee, el bloque que se procesó se ve ocupado. Corre
+        -- en esta máquina y puede tardar; lo que no puede es parecer que no pasa
+        -- nada.
+
+    @guarantee WhatCameFromAMachineLooksLikeIt
+        -- La respuesta se dibuja como lo generado y no como lo escrito, sin que
+        -- nadie tenga que acordarse de marcarlo: sale de la autoría, que sale
+        -- del canal, que lo pone el servidor.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- Hoy el pedido se sustituye. Quien quiera volver a pedir lo mismo tiene que
+-- escribirlo otra vez o ir a buscarlo a las revisiones del bloque.
+open question "¿Debería poder repetirse un pedido sobre un bloque ya contestado, y contra qué: contra la respuesta que hay, o contra el pedido que la ocasionó?"
+
+-- El modelo contesta con lo que sabe y con lo que cuelga del bloque. No mira el
+-- corpus: no sabe qué páginas existen ni qué dijo quien pregunta sobre esto
+-- mismo hace un año.
+open question "¿Debe un pedido poder alcanzar el corpus —las páginas que nombra, lo que ya se escribió sobre eso— o el valor de esto está justamente en que no lo haga?"

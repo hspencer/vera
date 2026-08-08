@@ -62,8 +62,18 @@ import {
   type Scope,
 } from './credentials.ts';
 import type { Reading } from './model.ts';
-import { readPage, mergeReadings, modelPresence, MOST_PASSES, READABLE_CHARS, STARTER_TYPES } from './model.ts';
+import {
+  ask,
+  readPage,
+  mergeReadings,
+  modelPresence,
+  MOST_PASSES,
+  READABLE_CHARS,
+  STARTER_TYPES,
+} from './model.ts';
+import { LOCAL_MODEL, LOCAL_MODEL_NAME, promptFor, readAnswer } from './answer.ts';
 import { mentionsOf } from './mentions.ts';
+import { paperHtml, toPdf } from './paper.ts';
 import { readLinks } from './process.ts';
 import { describeStructure, readingPasses, readStructure } from './structure.ts';
 import { describePlan, planTabularity } from './tabularity.ts';
@@ -376,6 +386,23 @@ export function createVeraServer(options: ServerOptions): VeraServer {
    * declara se edita como cualquier otra y cambiarla no debería pedir reiniciar.
    */
   const propertyNames = () => readPropertyNames(declared(/^Nombres de propiedades/i));
+
+  /*
+   * Los medios que una página nombra, con a qué objeto resuelve cada ruta.
+   *
+   * El bloque conserva su `../assets/foo.png` —lo que mantiene portable la
+   * proyección Markdown— y aquí viaja a qué apunta. Lo necesitan la vista de la
+   * página y el papel del que sale un PDF.
+   */
+  const assetsOf = (pageId: string): { path: string; url: string; mediaType: string }[] => {
+    const text = graph
+      .blocksOf(pageId)
+      .map((block) => block.content)
+      .join('\n');
+    return media
+      .filter((entry) => text.includes(entry.path))
+      .map((entry) => ({ path: entry.path, url: `/media/${entry.hash}`, mediaType: entry.mediaType }));
+  };
 
   /*
    * De qué servidores acepta este corpus una incrustación.
@@ -1394,6 +1421,125 @@ export function createVeraServer(options: ServerOptions): VeraServer {
 
     // Plegar no es un cambio del grafo, así que no pasa por /operations: no
     // genera operación ni revisión, y por eso tiene su propia ruta.
+    /*
+     * Un bloque que se procesa a sí mismo: lo escrito es el pedido.
+     *
+     * El bloque pasa a ser la respuesta y los ítems cuelgan de él. El pedido no
+     * se pierde —queda en las revisiones del bloque, como cualquier edición— y
+     * deja de estar a la vista, que es lo que se quiere: después uno vuelve a
+     * leer la lista, no lo que pidió.
+     *
+     * Firma el modelo local y no Cotito, y no es una formalidad: Cotito tiene
+     * criterio sobre el corpus y lo que dice se lee como suyo; esto es una
+     * máquina contestando una pregunta, y mañana será otra máquina. Ver
+     * answer.ts. La autoría del bloque cambia de mano al procesarlo, que es
+     * exactamente lo que pasó.
+     *
+     * Se aplica y ya, sin panel de sugerencias: lo que quedó mal se corrige
+     * escribiendo, como todo lo demás en Vera.
+     */
+    if (request.method === 'POST' && path.startsWith('/blocks/') && path.endsWith('/process')) {
+      const id = decodeURIComponent(path.slice('/blocks/'.length, -'/process'.length));
+      const block = graph.block(id);
+      if (block === undefined) {
+        send(response, 404, { error: 'no such block' });
+        return;
+      }
+      const said = block.content.trim();
+      if (said === '') {
+        send(response, 422, { error: 'un bloque vacío no pide nada' });
+        return;
+      }
+
+      const context = graph.childrenOf(block.stableId).map((child) => child.content);
+      void ask(promptFor(said, context), { maxTokens: 700, timeoutMs: 300_000 }).then((answered) => {
+        if ('error' in answered) {
+          send(response, 503, answered);
+          return;
+        }
+        const read = readAnswer(answered.text);
+        if (read === null) {
+          send(response, 502, { error: 'el modelo no contestó nada que se pueda escribir' });
+          return;
+        }
+
+        /*
+         * El modelo entra al grafo la primera vez que contesta.
+         *
+         * No se crea al arrancar: un grafo donde nunca se procesó un bloque no
+         * tiene por qué llevar dentro un participante que no escribió nada.
+         */
+        if (graph.participant(LOCAL_MODEL) === undefined) {
+          saveParticipant(store, { id: LOCAL_MODEL, name: LOCAL_MODEL_NAME, kind: 'agent' });
+          graph.addParticipant({ id: LOCAL_MODEL, name: LOCAL_MODEL_NAME, kind: 'agent' });
+          graph.admit(LOCAL_MODEL);
+        }
+
+        const stamp = Date.now();
+        let step = 0;
+        const write = (change: Change): string | null => {
+          const outcome = graph.submitOperation({
+            originId: `local-model:${block.stableId}:${stamp}:${(step += 1)}`,
+            participant: LOCAL_MODEL,
+            // @invariant TheChannelIsObservedAndNeverDeclared: un agente escribe
+            // por este canal y no por otro, y por eso lo escrito se dibuja como
+            // lo que es sin que nadie tenga que acordarse de marcarlo.
+            channel: 'agent_generation',
+            change,
+          });
+          if (outcome.status !== 'applied') return null;
+          recordOperation(store, graph, outcome.operation);
+          return outcome.operation.subjectId;
+        };
+
+        try {
+          if (write({ kind: 'edit_block', block: block.stableId, content: read.title }) === null) {
+            send(response, 422, { error: 'no se pudo escribir la respuesta en el bloque' });
+            return;
+          }
+
+          /*
+           * Los ítems, en orden y colgando de quien les toque.
+           *
+           * La pila guarda al último bloque escrito de cada nivel: un ítem de
+           * nivel dos cuelga del último de nivel uno, que es lo que significa
+           * estar sangrado debajo de él. Lo que ya colgaba del bloque se queda
+           * donde estaba y lo nuevo nace detrás.
+           */
+          const stack: string[] = [block.stableId];
+          for (const item of read.items) {
+            const depth = Math.min(item.depth, stack.length - 1);
+            stack.length = depth + 1;
+            const parent = stack[depth] ?? block.stableId;
+            const made = write({
+              kind: 'create_block',
+              page: block.page,
+              parent,
+              // Al final de lo que ya cuelgue de ese padre: lo que hubiera
+              // debajo del bloque estaba antes y sigue estando.
+              position: graph.childrenOf(parent).length,
+              content: item.text,
+            });
+            if (made === null) break;
+            stack.push(made);
+          }
+
+          send(response, 200, {
+            block: block.stableId,
+            title: read.title,
+            items: read.items.length,
+            participant: LOCAL_MODEL,
+          });
+        } catch (error) {
+          send(response, 500, {
+            error: 'no se pudo escribir lo que el modelo contestó',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+      return;
+    }
+
     if (request.method === 'POST' && path === '/folds') {
       const chunks: Buffer[] = [];
       request.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -1611,6 +1757,81 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       // El Markdown de una página, tal como git lo recibiría. Se sirve la misma
       // proyección determinista que baja el corpus a disco: exportar y versionar
       // no pueden dar dos textos distintos.
+      /*
+       * La página en papel, y el PDF que sale de ella.
+       *
+       * Dos rutas y no una porque son dos cosas distintas: `/paper` es el
+       * documento compuesto, que se puede mirar en una pestaña mientras se
+       * decide cómo tiene que verse, y `/pdf` es ese mismo documento pasado por
+       * un Chrome sin ventana. Componer aquí y no en el navegador de quien lo
+       * pide es lo que hace que el PDF sea siempre el mismo: carta, sin
+       * encabezados del sistema y sin depender de la impresora que hubiera
+       * configurada. Ver paper.ts.
+       */
+      if (path.startsWith('/pages/') && (path.endsWith('/paper') || path.endsWith('/pdf'))) {
+        const asPdf = path.endsWith('/pdf');
+        const named = decodeURIComponent(
+          path.slice('/pages/'.length, asPdf ? -'/pdf'.length : -'/paper'.length),
+        );
+        const page = graph.page(named) ?? graph.pageTitled(named);
+        if (page === undefined) {
+          send(response, 404, { error: 'no such page' });
+          return;
+        }
+
+        if (!asPdf) {
+          const html = paperHtml({
+            title: page.title,
+            blocks: graph.blocksOf(page.id).map((block) => ({
+              stableId: block.stableId,
+              parent: block.parent,
+              position: block.position,
+              content: block.content,
+            })),
+            assets: assetsOf(page.id),
+            embedHosts: embedHosts(),
+            indent: url.searchParams.get('sangria') !== null,
+          });
+          const body = Buffer.from(html, 'utf8');
+          response.writeHead(200, {
+            'content-type': 'text/html; charset=utf-8',
+            'content-length': body.byteLength,
+          });
+          response.end(body);
+          return;
+        }
+
+        /*
+         * Chrome pide el papel al propio Vera, por el bucle local.
+         *
+         * Por su dirección y no por un archivo temporal: así las imágenes, las
+         * fuentes y los medios se piden por su ruta de siempre y a su propio
+         * origen, y mirar el papel en una pestaña y componerlo en un PDF son la
+         * misma página y no dos parecidas.
+         */
+        const port = request.socket.localPort ?? 4173;
+        const suffix = url.searchParams.get('sangria') !== null ? '?sangria=1' : '';
+        const where = `http://127.0.0.1:${port}/pages/${encodeURIComponent(page.id)}/paper${suffix}`;
+        void toPdf(where).then((made) => {
+          if ('error' in made) {
+            send(response, 503, made);
+            return;
+          }
+          response.writeHead(200, {
+            'content-type': 'application/pdf',
+            'content-length': made.pdf.byteLength,
+            // El nombre del archivo va en las dos formas: la simple para quien
+            // sólo entienda ASCII y la codificada para el título de verdad, que
+            // lleva tildes y rayas.
+            'content-disposition':
+              `attachment; filename="${page.title.replace(/[^\w .-]/g, '_')}.pdf"; ` +
+              `filename*=UTF-8''${encodeURIComponent(`${page.title}.pdf`)}`,
+          });
+          response.end(made.pdf);
+        });
+        return;
+      }
+
       if (path.startsWith('/pages/') && path.endsWith('/markdown')) {
         const named = decodeURIComponent(
           path.slice('/pages/'.length, -'/markdown'.length),
@@ -1672,19 +1893,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           // Sólo los medios que esta página nombra. El bloque conserva su
           // `../assets/foo.png` —lo que mantiene portable la proyección
           // Markdown— y aquí viaja a qué objeto resuelve.
-          assets: (() => {
-            const text = graph
-              .blocksOf(page.id)
-              .map((block) => block.content)
-              .join('\n');
-            return media
-              .filter((entry) => text.includes(entry.path))
-              .map((entry) => ({
-                path: entry.path,
-                url: `/media/${entry.hash}`,
-                mediaType: entry.mediaType,
-              }));
-          })(),
+          assets: assetsOf(page.id),
           /*
            * Las dos columnas: lo que esta página afirma sobre otras y lo que
            * otras afirman sobre ella.

@@ -3744,6 +3744,19 @@ code {
 }
 
 
+/*
+ * El bloque que el modelo está leyendo.
+ *
+ * Marcado y no animado con un giro: lo que hay que poder saber es cuál está
+ * ocupado, y una animación sobre el propio texto lo vuelve ilegible justo
+ * mientras se espera.
+ */
+.block.thinking > .body {
+  opacity: 0.55;
+  border-left: 2px solid var(--accent, var(--link));
+  padding-left: 0.5rem;
+}
+
 /* --- Impresión y PDF ---------------------------------------------------- */
 
 /*

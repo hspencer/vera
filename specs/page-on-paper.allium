@@ -1,0 +1,140 @@
+-- allium: 3
+-- page-on-paper.allium
+
+-- Scope: La página compuesta para el papel, y el PDF que se descarga de ella
+-- Includes: Qué del documento va al papel y qué se queda en el taller, quién
+--   compone el PDF y dónde, qué pasa con lo que en papel no puede correr, y por
+--   qué el resultado no depende de quién lo pida
+-- Excludes:
+--   - La proyección Markdown del corpus, que es otro modo de salir y viaja a git
+--     (ver personal-site-projection.allium)
+--   - Publicar una página, que la pone donde otros la lean
+--     (ver personal-site-projection.allium)
+--   - Cómo se dibuja un bloque en pantalla (ver workspace-interface.allium)
+--   - Lo incrustado y su encierro (ver executable-content-sandbox.allium)
+-- Dependencies: Page y Block los gobierna core.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- El papel es el documento sin el taller alrededor.
+--
+-- Exportar a PDF era pedirle al navegador que imprimiera, y entonces lo que
+-- salía dependía de quién lo pidiera: los márgenes del sistema, el encabezado
+-- con la fecha y la dirección, el tamaño de papel de la impresora que hubiera
+-- configurada. Un archivo que se guarda y se manda no puede depender de eso.
+--
+-- Así que se compone aquí, con las mismas decisiones siempre. Y lo que se quita
+-- no se quita por gusto: las propiedades de la cabecera se pulsan, las
+-- referencias del pie llevan a otra página, la sangría del esquema se sostiene
+-- en unas viñetas que son botones. Nada de eso existe en un papel, y lo que
+-- queda cuando se va todo es el texto seguido, que es lo que un documento es
+-- cuando deja de ser una herramienta.
+contract APageBecomesADocument {
+    compose: (page: core/Page) -> Paper
+
+    @invariant TheSameDocumentEveryTime
+        -- El tamaño, los márgenes y la tipografía los decide Vera y no el
+        -- sistema de quien exporta. Dos personas que exportan la misma página
+        -- obtienen el mismo documento.
+
+    @invariant WhatIsNavigatedDoesNotTravel
+        -- Al papel no van las propiedades de la cabecera ni las referencias del
+        -- pie. No es que estorben: es que no se pueden usar. Una propiedad que
+        -- no se puede pulsar y un retroenlace que no lleva a ninguna parte son
+        -- ruido con forma de información.
+
+    @invariant TheTextIsRenderedByTheSameHandAsTheScreen
+        -- El Markdown del papel lo dibuja la misma función que dibuja la
+        -- pantalla. Dos renderizadores acaban diciendo cosas distintas del mismo
+        -- texto, y entonces el archivo que alguien guarda deja de ser la página
+        -- que leyó.
+
+    @invariant ItIsComposedAtHome
+        -- El PDF se compone en esta máquina. Mandar la página a un servicio que
+        -- la maquete sería mandar el corpus fuera para que se lo lea alguien, y
+        -- es exactamente lo que un cuaderno soberano no hace. Donde no haya con
+        -- qué componerlo se dice que no lo hay.
+
+    @invariant WhatRunsDoesNotRunOnPaper
+        -- Una incrustación impresa es un rectángulo en blanco. En su sitio va su
+        -- dirección, dicha corta —de dónde viene, no su carga—, que es lo único
+        -- que un papel puede llevar de ella.
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- La página compuesta, antes de ser un archivo.
+value Paper {
+    page: core/Page
+    -- El título encabeza el documento: es lo que lo nombra fuera de Vera, donde
+    -- no hay ninguna barra que lo diga.
+    title: String
+    -- Los bloques en orden de lectura, cada hijo tras su padre. Sin sangría: en
+    -- pantalla la jerarquía la sostienen las viñetas, y sin ellas quedan
+    -- escalones sin causa.
+    body: String
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule ExportingGivesAFileAndNotAPrintDialog {
+    when: ExportPage(participant, page)
+
+    let paper = APageBecomesADocument.compose(page)
+
+    requires: exists paper
+
+    ensures: downloaded(paper)
+
+    @invariant TheFileIsNamedAfterThePage
+        -- El archivo lleva el título de la página y no su identificador: se abre
+        -- fuera de Vera, donde `page:31015` no le dice nada a nadie.
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface PageExport {
+    facing reader: core/Participant
+    context page: core/Page
+
+    exposes:
+        Paper
+
+    contracts:
+        fulfils APageBecomesADocument
+
+    @guarantee ThePaperCanBeLookedAtBeforeItIsAFile
+        -- El documento compuesto se puede mirar sin generar nada. Decidir cómo
+        -- tiene que verse una página en papel abriendo y cerrando archivos es
+        -- decidirlo a ciegas.
+
+    @guarantee ExportingChangesNothing
+        -- Exportar no escribe en el grafo: no hay operación, no hay revisión, no
+        -- cambia la fecha de nada. Mirar una página de otra manera no es tocarla.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- La sangría del esquema se quita entera, y está por verse si un corpus con
+-- páginas muy anidadas se lee igual de bien así.
+open question "¿Debe el papel conservar alguna marca de profundidad —una sangría corta, un tamaño distinto— o la jerarquía en papel la sostienen sólo los encabezados?"
+
+-- Un bloque que pregunta trae su respuesta calculada en pantalla, y en el papel
+-- aparece la pregunta sin ella.
+open question "¿Debe una consulta viajar al papel con la tabla que contesta hoy, o un papel con una respuesta caduca dentro miente más que una pregunta sin contestar?"
+
+-- Hoy se exporta una página. Un corpus también se lee por recorridos, por
+-- consultas y por días seguidos.
+open question "¿Qué más merece salir en papel: un recorrido, el resultado de una consulta, un mes de bitácora?"

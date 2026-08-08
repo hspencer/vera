@@ -1,5 +1,10 @@
 // Renderizado de Markdown para la presentación de un bloque.
 //
+// Vive en el dominio y no en el cliente porque ya no es del cliente: la misma
+// función dibuja un bloque en pantalla y lo compone en el papel del que sale un
+// PDF. Duplicarla era garantizar que un día dijeran cosas distintas del mismo
+// texto.
+//
 // @invariant RenderedPresentationIsFaithful: encabezados, listas, citas, código,
 // tablas, imágenes, líneas horizontales y referencias a notas al pie se leen como
 // lo que son y no como sus marcas.
@@ -56,10 +61,20 @@ export function embedIn(source: string, hosts: readonly string[] = []): string |
 
   let host = '';
   let origin = '';
+  /*
+   * La dirección dicha corta: origen y ruta, sin consulta ni fragmento.
+   *
+   * Es la que se imprime cuando el marco no puede correr, y la larga no sirve
+   * para eso: una herramienta que recibe su documento en el fragmento trae ahí
+   * media hoja de base64, y lo que saldría en el papel serían veinte líneas de
+   * ruido donde debería leerse de dónde venía.
+   */
+  let address = '';
   try {
-    const address = new URL(src);
-    host = address.host;
-    origin = address.origin;
+    const parsed = new URL(src);
+    host = parsed.host;
+    origin = parsed.origin;
+    address = `${parsed.origin}${parsed.pathname}`;
   } catch {
     return null;
   }
@@ -73,7 +88,8 @@ export function embedIn(source: string, hosts: readonly string[] = []): string |
    * —el navegador no le deja cruzar a otro origen— y por eso lo de fuera sí
    * corre con el suyo. @invariant NothingReachesBack.
    */
-  if (typeof window !== 'undefined' && origin === window.location.origin) return null;
+  const here = (globalThis as { location?: { origin?: string } }).location?.origin;
+  if (here !== undefined && origin === here) return null;
 
   /*
    * Y sólo de un servidor registrado.
@@ -120,10 +136,10 @@ export function embedIn(source: string, hosts: readonly string[] = []): string |
    * a seis servidores por el hecho de abrirse.
    */
   return (
-    // La dirección entera viaja en el marcado aunque en pantalla se lea sólo
-    // quién aloja: impresa, una incrustación es un rectángulo en blanco, y lo
-    // único que puede salvarla es decir dónde estaba.
-    `<figure class="embed" data-source="${quoteAttribute(escapeHtml(src))}">` +
+    // La dirección viaja en el marcado aunque en pantalla se lea sólo quién
+    // aloja: impresa, una incrustación es un rectángulo en blanco, y lo único
+    // que puede salvarla es decir dónde estaba.
+    `<figure class="embed" data-source="${quoteAttribute(escapeHtml(address))}">` +
     `<iframe src="${quoteAttribute(escapeHtml(src))}" height="${height}" loading="lazy" ` +
     `referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-popups allow-same-origin" ` +
     `title="incrustado desde ${quoteAttribute(escapeHtml(host))}"></iframe>` +

@@ -22,6 +22,15 @@ export {
 export type { QueryExpression } from './query.ts';
 
 export { looksLikeQuery, readQuery, writeQuery } from './query-source.ts';
+
+/*
+ * Cómo se lee un bloque escrito en Markdown.
+ *
+ * Está en el dominio porque lo necesitan dos superficies —la pantalla y el
+ * papel— y una segunda copia habría acabado diciendo otra cosa del mismo texto.
+ */
+export { embedIn, inlineMarkdown, renderMarkdown } from './markdown.ts';
+export type { RenderOptions } from './markdown.ts';
 export { answersIn } from './vocabulary.ts';
 
 export {
