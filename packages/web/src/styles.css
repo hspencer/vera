@@ -118,10 +118,19 @@ body {
   line-height: 1.55;
 }
 
+/*
+ * Un botón sin fondo ni borde declarados se lleva los del sistema, y los del
+ * sistema no obedecen a ningún token: en medio de una paleta que alguien eligió
+ * aparece un rectángulo blanco con relieve de dos píxeles, dibujado por el
+ * navegador y no por Vera. Aquí se reponen a nada, y el botón que quiera fondo o
+ * borde los pide.
+ */
 button,
 input {
   font: inherit;
   color: inherit;
+  background: transparent;
+  border: 0;
 }
 
 /* --- Armazón ----------------------------------------------------------- */
@@ -881,6 +890,16 @@ input {
   outline: none;
 }
 
+/*
+ * El interruptor de visibilidad: una píldora de contorno, sin relleno.
+ *
+ * Sin relleno porque no es una etiqueta que informe sino un estado que se puede
+ * cambiar, y lo que dice cuál es el estado es el color: atenuado mientras la
+ * página es de uno, cálido cuando sale al mundo —el mismo cálido con que el mapa
+ * marca por dónde se ha pasado, que es el token de lo que está encendido—. Al
+ * pasar por encima se pone del color de lo que se sigue, que es lo que avisa de
+ * que se puede pulsar.
+ */
 .visibility {
   font-family: var(--font-ui);
   font-size: 0.7rem;
@@ -888,6 +907,12 @@ input {
   border: 1px solid var(--rule);
   border-radius: 999px;
   color: var(--text-dim);
+  background: transparent;
+}
+
+.visibility:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .visibility.public {
@@ -3262,6 +3287,39 @@ code {
 
 .query-title:hover { text-decoration: underline; }
 
+/*
+ * Una cabecera que ordena se pulsa, así que se dibuja como algo que se pulsa:
+ * contorno de un píxel del token de bordes y la esquina apenas rota —lo justo
+ * para leerse como una tecla y no como una palabra suelta—. Sin relleno: lo que
+ * la enciende es el color, no una mancha.
+ *
+ * El relieve de dos píxeles que traía antes no lo dibujaba Vera sino el
+ * navegador, y por eso no obedecía a ningún token ni cambiaba con el tema.
+ */
+.query-sort {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 0.3ex;
+  padding: 0.05rem 0.35rem;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.query-sort:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* La que manda ahora va del color de lo que se sigue, contorno incluido: es la
+   única de las cinco que está diciendo algo sobre lo que hay debajo. */
+.query-sort.sorted {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* El pasaje donde lo dice. Va detrás del título y atenuado: es la evidencia del
    acierto, no el acierto. */
 .query-says {
@@ -3308,6 +3366,22 @@ code {
 .query-table th:nth-child(3) { width: 28%; }
 .query-table th:nth-child(4) { width: 12%; }
 .query-table th:nth-child(5) { width: 12%; }
+
+/*
+ * Una tabla de respuesta no es una tabla del texto.
+ *
+ * Vive dentro de `.body`, donde hay una regla para las tablas que alguien
+ * escribe en Markdown: rejilla por los cuatro lados y cabecera con fondo. Eso
+ * está bien para una tabla que es contenido y está mal para ésta, que es una
+ * respuesta y quiere leerse como una lista ordenada. Se repone aquí, que es
+ * donde se sabe cómo quiere verse esto, y no se toca allí, que es donde se sabe
+ * cómo quiere verse aquello.
+ */
+.query-table th,
+.query-table td {
+  background: transparent;
+  border: 0;
+}
 
 /*
  * El aire de las celdas.
