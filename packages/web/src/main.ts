@@ -6,7 +6,13 @@
 import './styles.css';
 
 import { api, type PageSummary, type PageView } from './api.ts';
-import { nameProperties, renderOutliner, speakInto, type OutlinerCallbacks } from './outliner.ts';
+import {
+  allowEmbedsFrom,
+  nameProperties,
+  renderOutliner,
+  speakInto,
+  type OutlinerCallbacks,
+} from './outliner.ts';
 import { onRecording } from './audio-block.ts';
 import { isDay, today } from './autocomplete.ts';
 import { renderSettings, type Section } from './settings.ts';
@@ -95,6 +101,7 @@ let corpus: {
     updated: string;
     visible: string;
   };
+  embedHosts?: string[];
 } | null = null;
 
 /**
@@ -1335,6 +1342,7 @@ async function start(): Promise<void> {
   // Las palabras del corpus, antes de dibujar nada: la cabecera de una página
   // las necesita para llamar a sus renglones como los llame quien escribe.
   if (corpus?.names !== undefined) nameProperties(corpus.names);
+  if (corpus?.embedHosts !== undefined) allowEmbedsFrom(corpus.embedHosts);
 
   await loadPages();
 

@@ -49,6 +49,18 @@ contract EmbeddedContentIsSandboxed {
         -- página web convertiría media bitácora en marcado ajeno sin que nadie
         -- lo hubiera decidido.
 
+    @invariant OnlyFromAServerTheCorpusRegistered
+        -- Se incrusta lo que viene de un servidor que el corpus declaró, y lo
+        -- demás se lee como el texto que es. Quién puede correr dentro de una
+        -- página propia no puede decidirlo quien pegó la dirección: una
+        -- dirección se copia y se pega sin mirar, y entonces la decisión la
+        -- estaría tomando el sitio de donde se copió. La lista vive donde vive
+        -- el resto del vocabulario —la página de ontología, bajo
+        -- «Incrustaciones»— y un servidor registrado registra a los suyos:
+        -- `github.io` deja entrar a `eadpucv.github.io`, y quien quiera uno solo
+        -- escribe el nombre entero. Sin lista no entra nadie: el corpus que no
+        -- dijo nada no dijo que sí.
+
     @invariant NothingReachesBack
         -- Lo incrustado no alcanza nada de Vera: ni el grafo, ni el
         -- almacenamiento local, ni la sesión, ni la página que lo contiene. Corre
@@ -74,6 +86,14 @@ contract EmbeddedContentIsSandboxed {
         -- incrustaciones no puede saludar a seis servidores por el hecho de
         -- abrirse; se piden según se leen, que es cuando alguien las está
         -- mirando de verdad.
+
+    @invariant ItTravelsWhenThePageIsPublished
+        -- Una página publicada lleva sus incrustaciones. Convertirlas en enlace
+        -- al salir haría que publicar una nota sobre una herramienta publicara
+        -- una nota que no la contiene, y la diferencia entre contener y
+        -- mencionar es justo la que motivó la excepción. Lo que no viaja es este
+        -- encierro: fuera de Vera lo incrustado corre bajo las reglas del sitio
+        -- que lo sirva, y eso es cierto de todo lo que se publica.
 
     @invariant TheSourceSurvivesTheView
         -- El bloque sigue guardando el texto que se escribió, y editarlo lo
@@ -147,18 +167,12 @@ surface EmbeddedContent {
 -- Open Questions
 ------------------------------------------------------------
 
--- Hoy se incrusta lo que sea, con tal de que venga cifrado. La alternativa es que
--- el corpus declare a quién deja entrar —una lista en la página de ontología,
--- como el vocabulario— y que lo de fuera de esa lista se presente como un enlace
--- y no como un marco.
-open question "¿Debe el corpus declarar de qué servidores acepta incrustaciones, o basta con que cada una diga de dónde viene y quien lea decida si la mira?"
-
 -- Una incrustación es una petición a otro servidor cada vez que se lee la página
 -- que la lleva. Un día de bitácora con una incrustación se vuelve, para quien la
 -- aloja, un registro de cuándo se relee ese día.
 open question "¿Debe lo incrustado esperar a que alguien lo pida —un marco vacío con su dirección y un gesto para traerlo— en vez de pedirse al llegar a él?"
 
--- El corpus se proyecta a Markdown y puede publicarse. Una incrustación es
--- marcado activo, y lo que aquí corre encerrado allí correría bajo las reglas de
--- otro sitio.
-open question "¿Qué pasa con una incrustación cuando la página que la lleva se publica: viaja, se convierte en enlace, o no sale?"
+-- Lo incrustado no se imprime: en papel, y en el PDF que sale de imprimir, un
+-- marco es un rectángulo en blanco. Hoy se sustituye por su dirección, que es lo
+-- único que un papel puede llevar de él.
+open question "¿Debería una incrustación poder decir con qué imagen se representa cuando no puede correr —una portada que ella misma sirva—, o basta con su dirección?"

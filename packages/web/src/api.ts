@@ -241,6 +241,8 @@ export const api = {
         updated: string;
         visible: string;
       };
+      /** Y de qué servidores acepta incrustaciones. */
+      embedHosts?: string[];
     }>('/health'),
 
   pages: () => json<PageSummary[]>('/pages'),

@@ -64,6 +64,7 @@ const LABELS: Record<string, string> = {
   '--node-fill': 'nodos del grafo',
   '--link-stroke': 'aristas del grafo',
   '--warm': 'énfasis cálido',
+  '--line-height': 'interlínea',
   '--font-body': 'texto de lectura',
   '--font-ui': 'interfaz',
   '--font-mono': 'Markdown y código',

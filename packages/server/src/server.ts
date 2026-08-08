@@ -376,6 +376,25 @@ export function createVeraServer(options: ServerOptions): VeraServer {
    * declara se edita como cualquier otra y cambiarla no debería pedir reiniciar.
    */
   const propertyNames = () => readPropertyNames(declared(/^Nombres de propiedades/i));
+
+  /*
+   * De qué servidores acepta este corpus una incrustación.
+   *
+   * Ninguno por omisión: que algo de fuera corra dentro de una página propia no
+   * puede decidirlo quien pegó la dirección —una dirección se copia sin mirar—,
+   * así que lo decide el corpus, en la página que ya gobierna el resto de su
+   * vocabulario. Ver specs/executable-content-sandbox.allium.
+   */
+  const embedHosts = (): string[] =>
+    declared(/^Incrustaciones/i)
+      .map((line) => line.replace(/^[-*·]\s*/, '').trim())
+      // Un renglón puede llevar una explicación detrás del servidor; lo que vale
+      // es la primera palabra, que es la que nombra a quien aloja.
+      .map((line) => (line.split(/[\s—·]/)[0] ?? '').trim().toLowerCase())
+      // Y sólo cuenta si tiene forma de servidor, para que el apartado pueda
+      // llevar prosa entre los renglones sin que una frase acabe leyéndose como
+      // un permiso.
+      .filter((host) => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host));
   graph.namesProperties(propertyNames());
 
   const relationVocabulary = (): { name: string; inverse: string }[] => {
@@ -1557,6 +1576,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
            * hace al arrancar.
            */
           names: propertyNames(),
+          embedHosts: embedHosts(),
           pages: graph.pages().length,
           blocks: graph.allBlocks().length,
           lastSequence: graph.log().lastSequence,

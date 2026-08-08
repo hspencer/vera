@@ -79,6 +79,18 @@ export const DEFAULT_TOKENS: DesignToken[] = [
   // Multiplica el tamaño de base, así que arrastra todo lo medido en `rem` — la
   // interfaz y el texto a la vez, que es como debe crecer.
   { name: '--phone-scale', light: '1.35', dark: '1.35' },
+  // La interlínea: cada cuánto cae una línea de texto.
+  //
+  // Es la retícula de base de toda la aplicación. De ella salen el ritmo de la
+  // prosa y también el aire de lo que la interrumpe: un encabezado se separa de
+  // lo anterior exactamente una línea, y así lo que empieza abajo sigue cayendo
+  // donde habría caído. Sin número aquí, ese ritmo lo fijaban ocho valores
+  // sueltos repartidos por la hoja y ajustarlo pedía recompilar.
+  //
+  // Sin unidad, para que multiplique al tamaño de letra de cada sitio: 1.55 en
+  // el cuerpo son 1.55 veces 16 px, y en un teléfono, 1.55 veces lo que
+  // `--phone-scale` haya dejado.
+  { name: '--line-height', light: '1.55', dark: '1.55' },
   // Hasta dónde llega una línea de prosa.
   //
   // Una línea muy ancha se lee mal: el ojo pierde el comienzo de la siguiente al

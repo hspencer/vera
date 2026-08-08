@@ -107,6 +107,15 @@ textarea::placeholder {
   background: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
+/*
+ * La interlínea sale del token, y de ella sale la retícula.
+ *
+ * Cada cuánto cae una línea es lo que fija el ritmo de todo lo demás: un
+ * encabezado se separa de lo anterior exactamente una línea, y así lo que empieza
+ * debajo sigue cayendo donde habría caído sin él. Con el número escrito en la
+ * hoja, ese ritmo vivía en ocho sitios sueltos y no se podía ajustar sin
+ * recompilar. Ver `--line-height` en Ajustes → Apariencia.
+ */
 html,
 body {
   margin: 0;
@@ -115,7 +124,7 @@ body {
   color: var(--text);
   font-family: var(--font-body);
   font-size: 16px;
-  line-height: 1.55;
+  line-height: var(--line-height);
 }
 
 /*
@@ -1446,7 +1455,10 @@ input {
   color: inherit;
   font-family: var(--font-body);
   font-size: 1rem;
-  line-height: 1.55;
+  /* La misma que la del texto dibujado: si no, la línea se movería bajo el dedo
+     al empezar a escribir, que es lo que se arregló en la v0.1 y se volvería a
+     romper el día que una de las dos cambiara sin la otra. */
+  line-height: var(--line-height);
   /* El alto lo fija el contenido. Con `overflow` visible, `scrollHeight` mediría
      la barra de desplazamiento en vez del texto, y el campo crecería solo. */
   overflow-y: hidden;
@@ -1595,8 +1607,18 @@ code {
  *
  * Entre párrafos del mismo bloque el margen sigue: ahí sí separa dos cosas.
  */
-.body > :first-child,
-.body-text > :first-child {
+/*
+ * Salvo un encabezado, que sí pide su línea.
+ *
+ * Esta regla existe para que un bloque de prosa no cargue el medio `em` del
+ * párrafo por arriba y por abajo, y está bien. Pero en Vera cada bloque es su
+ * propio contenedor, así que un título es siempre el primer hijo de algo: la
+ * regla se los llevaba a todos por delante y el corpus entero quedaba sin aire
+ * antes de sus encabezados. Lo que un título separa no es un párrafo de otro,
+ * es un asunto del anterior.
+ */
+.body > :first-child:not(:is(h1, h2, h3, h4, h5, h6)),
+.body-text > :first-child:not(:is(h1, h2, h3, h4, h5, h6)) {
   margin-top: 0;
 }
 
@@ -1620,9 +1642,28 @@ code {
 .body h6 {
   font-family: var(--font-ui);
   line-height: 1.25;
-  margin: 0.6em 0 0.3em;
+  /*
+   * Una línea de aire por encima, ni más ni menos.
+   *
+   * En `rem` y no en `em`: la línea que se salta es una del texto que el
+   * encabezado interrumpe, no una suya —un `h2` tiene la letra más grande, y
+   * medir su hueco con su propio tamaño lo separaría más cuanto más grande
+   * fuera, que es justo lo que rompe la retícula—. Debajo, la mitad: un título
+   * pertenece a lo que viene después, y el aire dice de quién es.
+   */
+  margin: calc(var(--line-height) * 1rem) 0 calc(var(--line-height) * 0.5rem);
   font-weight: 600;
 }
+
+/*
+ * Y sin excepción para el primero.
+ *
+ * En un documento corriente un encabezado al principio no interrumpe nada y no
+ * pide aire. Aquí cada bloque es su propio contenedor y su encabezado es siempre
+ * el primer hijo: la excepción, que parecía sensata, dejaba a todos los títulos
+ * del corpus sin margen. Lo que separa un bloque del anterior es la línea, y eso
+ * es justamente lo que se pedía.
+ */
 
 .body h2 {
   font-size: 1.3rem;
@@ -3700,4 +3741,104 @@ code {
   font-family: var(--font-mono);
   font-size: 0.7rem;
   color: var(--text-dim);
+}
+
+
+/* --- Impresión y PDF ---------------------------------------------------- */
+
+/*
+ * La página, sola, sobre papel.
+ *
+ * «Exportar a PDF» no genera nada: le pide al navegador que imprima, y lo que
+ * hay que decidir aquí es qué se imprime. Todo lo que sirve para moverse por
+ * Vera —la barra, el mapa, los controles— no es del documento sino del taller,
+ * y en un papel sólo estorba.
+ *
+ * Los colores se fuerzan a tinta sobre blanco. Los tokens son de quien los
+ * puso, y en un tema oscuro el navegador imprimiría texto claro sobre papel
+ * blanco —los fondos no se imprimen por omisión—, que es un folio en blanco con
+ * el gasto de haberlo intentado.
+ */
+@media print {
+  #vera-root {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  #bar,
+  #graph,
+  #divider,
+  #map-panel,
+  #map-controls,
+  #results,
+  .toast,
+  .page-more,
+  .fold,
+  .property-add,
+  .block-menu,
+  .reference-explain,
+  .query-sort {
+    display: none !important;
+  }
+
+  #text {
+    height: auto;
+    overflow: visible;
+    padding: 0;
+  }
+
+  html,
+  body,
+  #text,
+  .body {
+    color: #000;
+    background: #fff;
+  }
+
+  .body a[href]:not([class]) {
+    color: #000;
+    text-decoration: underline;
+  }
+
+  /* Un encabezado al pie de una hoja, con lo suyo en la siguiente, no encabeza
+     nada. Lo mismo vale para lo que se lee de una pieza: una tabla, un marco. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    break-after: avoid;
+  }
+
+  .embed,
+  table,
+  figure,
+  blockquote {
+    break-inside: avoid;
+  }
+
+  /*
+   * Una incrustación impresa es un rectángulo en blanco: lo que corre no corre
+   * en el papel. Se sustituye por dónde estaba, que es lo único que un papel
+   * puede llevar de ella.
+   */
+  .embed iframe {
+    display: none;
+  }
+
+  .embed::after {
+    content: 'incrustado desde ' attr(data-source);
+    display: block;
+    padding: 0.5rem 0;
+    border-top: 1px solid #999;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    word-break: break-all;
+  }
+
+  .embed figcaption {
+    display: none;
+  }
 }

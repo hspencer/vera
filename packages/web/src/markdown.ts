@@ -36,7 +36,7 @@ const ATTRIBUTE = /(\w[\w-]*)\s*=\s*"([^"]*)"/g;
 /** Cuánto ocupa una incrustación que no dice cuánto ocupa. */
 const EMBED_HEIGHT = 460;
 
-export function embedIn(source: string): string | null {
+export function embedIn(source: string, hosts: readonly string[] = []): string | null {
   const found = EMBED.exec(source);
   if (found === null) return null;
 
@@ -75,6 +75,24 @@ export function embedIn(source: string): string | null {
    */
   if (typeof window !== 'undefined' && origin === window.location.origin) return null;
 
+  /*
+   * Y sólo de un servidor registrado.
+   *
+   * Que algo corra dentro de una página propia no puede decidirlo quien escribió
+   * el bloque —una dirección se copia y se pega sin mirar—, así que lo decide el
+   * corpus: la lista vive en la página de ontología y aquí no hay ninguna por
+   * omisión. Lo que no está en ella se lee como el texto que es, que es lo que
+   * Vera hace con todo el marcado desde siempre.
+   *
+   * Se admite el servidor y sus subdominios: registrar `github.io` deja entrar a
+   * `eadpucv.github.io`, y quien quiera sólo uno registra el nombre entero.
+   */
+  const allowed = hosts.some((one) => {
+    const clean = one.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    return clean !== '' && (host === clean || host.endsWith(`.${clean}`));
+  });
+  if (!allowed) return null;
+
   const height = /^\d{2,4}$/.test(said.get('height') ?? '')
     ? Number(said.get('height'))
     : EMBED_HEIGHT;
@@ -102,7 +120,10 @@ export function embedIn(source: string): string | null {
    * a seis servidores por el hecho de abrirse.
    */
   return (
-    `<figure class="embed">` +
+    // La dirección entera viaja en el marcado aunque en pantalla se lea sólo
+    // quién aloja: impresa, una incrustación es un rectángulo en blanco, y lo
+    // único que puede salvarla es decir dónde estaba.
+    `<figure class="embed" data-source="${quoteAttribute(escapeHtml(src))}">` +
     `<iframe src="${quoteAttribute(escapeHtml(src))}" height="${height}" loading="lazy" ` +
     `referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-popups allow-same-origin" ` +
     `title="incrustado desde ${quoteAttribute(escapeHtml(host))}"></iframe>` +
@@ -158,6 +179,15 @@ const SLOT = '\u0000';
  * degrada sola: es lo que ocurre mientras los binarios no se hayan ingerido.
  */
 export interface RenderOptions {
+  /**
+   * De qué servidores se acepta una incrustación.
+   *
+   * Vacía o ausente, ninguno: una incrustación es contenido de fuera que corre
+   * dentro de una página propia, y quién puede hacer eso lo dice el corpus y no
+   * quien escribió el bloque. Ver specs/executable-content-sandbox.allium y la
+   * página de ontología, bajo «Incrustaciones».
+   */
+  embedHosts?: readonly string[];
   resolveAsset?: (path: string) => { url: string; mediaType: string } | null;
   /**
    * Qué bloque nombra una referencia `((stable_id))`.
@@ -381,7 +411,7 @@ function cells(row: string): string[] {
 export function renderMarkdown(source: string, options: RenderOptions = {}): string {
   // Un bloque que es una incrustación entera se presenta como tal y no como su
   // marcado. Ver `embedIn` y specs/executable-content-sandbox.allium.
-  const embed = embedIn(source);
+  const embed = embedIn(source, options.embedHosts ?? []);
   if (embed !== null) return embed;
 
   const lines = source.split('\n');

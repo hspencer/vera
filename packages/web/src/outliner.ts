@@ -62,6 +62,18 @@ export function nameProperties(said: Partial<typeof names>): void {
 
 const corpusNames = (): typeof names => names;
 
+/*
+ * Y de qué servidores acepta este corpus una incrustación.
+ *
+ * Vacía mientras el arranque no diga otra cosa: lo que no está declarado se lee
+ * como el texto que es. Ver specs/executable-content-sandbox.allium.
+ */
+let embedHosts: readonly string[] = [];
+
+export function allowEmbedsFrom(hosts: readonly string[]): void {
+  embedHosts = [...hosts];
+}
+
 export interface OutlinerCallbacks {
   onNavigate(title: string): void;
   /**
@@ -1467,7 +1479,7 @@ export function renderOutliner(
     // Un eslabón que avanza sin mover el árbol no necesita rehacer la página.
     onChanged: () => undefined,
   };
-  const options: RenderOptions = {};
+  const options: RenderOptions = { embedHosts };
   const asset = assetResolver(page);
   if (asset !== undefined) options.resolveAsset = asset;
   const block = blockResolver(page);
@@ -1890,7 +1902,7 @@ export function renderOutliner(
   /*
    * Lo que se puede hacer con la página entera, en un menú.
    *
-   * Sacar algo del documento —copiarlo, descargarlo, y mañana un PDF— es una
+   * Sacar algo del documento —copiarlo, descargarlo, imprimirlo— es una
    * familia que va a crecer, y cada miembro puesto a la vista le quita sitio a
    * lo que la página dice. Lo que queda fuera del menú es `+ propiedad`, que no
    * saca nada sino que escribe, y la marca de visibilidad, que no es una acción
@@ -1920,6 +1932,20 @@ export function renderOutliner(
       {
         label: 'Descargar como .md',
         run: () => void downloadPage(page),
+      },
+      {
+        /*
+         * Imprimir es exportar.
+         *
+         * No se genera un PDF: se le pide al navegador que imprima, y su propio
+         * diálogo ya ofrece guardarlo como PDF en los tres sistemas. Generarlo
+         * aquí exigiría una biblioteca que rehiciera la tipografía por su
+         * cuenta, y lo que saldría no sería esta página sino una versión suya.
+         * Lo que sí es de Vera es decidir qué se imprime, y eso vive en la hoja
+         * de estilos: el documento, sin el taller alrededor.
+         */
+        label: 'Exportar a PDF',
+        run: () => window.print(),
       },
       {
         label: 'Eliminar la página',

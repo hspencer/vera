@@ -418,9 +418,17 @@ describe('renderMarkdown', () => {
 describe('incrustaciones', () => {
   const embed = '<iframe src="https://eadpucv.github.io/pix/#!/x" width="100%" height="574"></iframe>';
 
+  /*
+   * Quién puede entrar lo dice el corpus, no el bloque.
+   *
+   * Estas pruebas hablan de un corpus que ya registró a estos dos servidores;
+   * sin registro no entra nadie, y de eso hablan las últimas de aquí abajo.
+   */
+  const allowed = { embedHosts: ['eadpucv.github.io', 'ejemplo.cl'] };
+
   it('un bloque que es una incrustación entera se presenta como tal', () => {
-    const html = renderMarkdown(embed);
-    assert.match(html, /<figure class="embed">/);
+    const html = renderMarkdown(embed, allowed);
+    assert.match(html, /<figure class="embed"/);
     assert.match(html, /src="https:\/\/eadpucv\.github\.io\/pix\/#!\/x"/);
   });
 
@@ -431,35 +439,35 @@ describe('incrustaciones', () => {
      * arranca— y el navegador no le deja cruzar al de Vera. Lo que no lleva:
      * navegar la ventana de arriba, pantalla completa ni descargas.
      */
-    const html = renderMarkdown(embed);
+    const html = renderMarkdown(embed, allowed);
     assert.match(html, /sandbox="allow-scripts allow-forms allow-popups allow-same-origin"/);
     assert.ok(!html.includes('allow-top-navigation'));
     assert.ok(!html.includes('allow-downloads'));
   });
 
   it('y no dice desde qué página se la mira', () => {
-    assert.match(renderMarkdown(embed), /referrerpolicy="no-referrer"/);
+    assert.match(renderMarkdown(embed, allowed), /referrerpolicy="no-referrer"/);
   });
 
   it('no se pide hasta que se llega a ella', () => {
-    assert.match(renderMarkdown(embed), /loading="lazy"/);
+    assert.match(renderMarkdown(embed, allowed), /loading="lazy"/);
   });
 
   it('dice de dónde viene', () => {
     // @invariant AnEmbedIsNotAnonymous.
-    assert.match(renderMarkdown(embed), /incrustado desde eadpucv\.github\.io/);
+    assert.match(renderMarkdown(embed, allowed), /incrustado desde eadpucv\.github\.io/);
   });
 
   it('respeta el alto que se le puso, y si no tiene le da uno', () => {
-    assert.match(renderMarkdown(embed), /height="574"/);
+    assert.match(renderMarkdown(embed, allowed), /height="574"/);
     assert.match(
-      renderMarkdown('<iframe src="https://ejemplo.cl/x"></iframe>'),
+      renderMarkdown('<iframe src="https://ejemplo.cl/x"></iframe>', allowed),
       /height="460"/,
     );
   });
 
   it('sin cifrar no se incrusta: se lee como el texto que es', () => {
-    const html = renderMarkdown('<iframe src="http://ejemplo.cl/x"></iframe>');
+    const html = renderMarkdown('<iframe src="http://ejemplo.cl/x"></iframe>', allowed);
     assert.ok(!html.includes('<iframe'));
     assert.match(html, /&lt;iframe/);
   });
@@ -468,14 +476,14 @@ describe('incrustaciones', () => {
     // @invariant AWholeBlockOrNothing: si bastara con que apareciera en
     // cualquier parte, pegar una nota copiada de la web convertiría media
     // bitácora en marcado ajeno.
-    const html = renderMarkdown(`mira esto: ${embed} y sigue la frase`);
-    assert.ok(!html.includes('<figure class="embed">'));
+    const html = renderMarkdown(`mira esto: ${embed} y sigue la frase`, allowed);
+    assert.ok(!html.includes('<figure class="embed"'));
     assert.match(html, /&lt;iframe/);
   });
 
   it('dos incrustaciones en un bloque tampoco: es una o ninguna', () => {
-    const html = renderMarkdown(`${embed}\n${embed}`);
-    assert.ok(!html.includes('<figure class="embed">'));
+    const html = renderMarkdown(`${embed}\n${embed}`, allowed);
+    assert.ok(!html.includes('<figure class="embed"'));
   });
 
   it('lo que no es una incrustación sigue leyéndose como texto', () => {
@@ -487,9 +495,38 @@ describe('incrustaciones', () => {
   it('una dirección no se escapa de su atributo', () => {
     // La dirección viaja entre comillas: si una comilla suya pasara sin escapar,
     // lo que sigue dejaría de ser una dirección y pasaría a ser marcado.
-    const html = renderMarkdown('<iframe src="https://ejemplo.cl/?a=b" onload="alert(1)"></iframe>');
+    const html = renderMarkdown('<iframe src="https://ejemplo.cl/?a=b" onload="alert(1)"></iframe>', allowed);
     assert.ok(!html.includes('onload'), `atributo ajeno: ${html}`);
     const src = /src="([^"]*)"/.exec(html)?.[1] ?? '';
     assert.equal(src, 'https://ejemplo.cl/?a=b');
+  });
+
+  it('de un servidor que el corpus no registró, no entra', () => {
+    // Que algo corra dentro de una página propia no lo decide quien pegó la
+    // dirección: una dirección se copia y se pega sin mirar.
+    const html = renderMarkdown(embed, { embedHosts: ['otro.cl'] });
+    assert.ok(!html.includes('<figure class="embed"'));
+    assert.match(html, /&lt;iframe/);
+  });
+
+  it('sin lista, ninguno: el corpus que no dijo nada no dijo que sí', () => {
+    const html = renderMarkdown(embed);
+    assert.ok(!html.includes('<figure class="embed"'));
+  });
+
+  it('registrar un servidor registra a los suyos', () => {
+    // `github.io` deja entrar a `eadpucv.github.io`; quien quiera sólo uno
+    // registra el nombre entero.
+    const html = renderMarkdown(embed, { embedHosts: ['github.io'] });
+    assert.match(html, /<figure class="embed"/);
+  });
+
+  it('y no a quien sólo termina pareciéndose', () => {
+    // `noeadpucv.github.io` no es de `eadpucv.github.io`, aunque lo lleve dentro.
+    const html = renderMarkdown(
+      '<iframe src="https://malo-eadpucv.github.io/x"></iframe>',
+      { embedHosts: ['eadpucv.github.io'] },
+    );
+    assert.ok(!html.includes('<figure class="embed"'));
   });
 });
