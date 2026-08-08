@@ -320,11 +320,15 @@ export const api = {
      * con lo que había pasado. Una sola forma de respuesta lo evita en todos los
      * sitios a la vez, y no sólo donde alguien se acuerde de mirar.
      */
-    const said = (await response.json()) as SubmitResult & { error?: string; detail?: string };
-    if (!response.ok || !('status' in said)) {
-      const why = said.error ?? `el servidor contestó ${response.status}`;
-      return { status: 'rejected', reason: said.detail === undefined ? why : `${why}: ${said.detail}` };
-    }
-    return said;
+    const said = (await response.json()) as
+      | SubmitResult
+      | { error?: string; detail?: string };
+    // Un rechazo del dominio ya viene con su motivo, y el motivo es lo único
+    // que sirve: «una página ya lleva ese título» dice qué hacer, y «el servidor
+    // contestó 422» no dice nada. Sólo se inventa una respuesta cuando el
+    // servidor no mandó ninguna que se pueda leer.
+    if ('status' in said) return said;
+    const why = said.error ?? `el servidor contestó ${response.status}`;
+    return { status: 'rejected', reason: said.detail === undefined ? why : `${why}: ${said.detail}` };
   },
 };
