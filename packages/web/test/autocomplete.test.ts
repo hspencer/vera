@@ -208,7 +208,9 @@ describe('matchingCommands', () => {
   });
 
   it('filtra por nombre', () => {
-    assert.deepEqual(matchingCommands('cita').map((c) => c.name), ['cita']);
+    // «cita» encuentra también a `/zotero`, que dice servir para citar. Es lo
+    // que se quiere: quien busca «cita» está buscando las dos cosas.
+    assert.deepEqual(matchingCommands('cita').map((c) => c.name), ['cita', 'zotero']);
   });
 
   it('filtra también por lo que hace', () => {

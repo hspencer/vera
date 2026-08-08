@@ -49,6 +49,7 @@ import {
   type Store,
 } from '@vera/store';
 import { HASH, objectPath, putObject } from '@vera/store/objects';
+import { forgetSecret, saveSecret, secretsOf, useSecret } from '@vera/store/secrets';
 import { parseDocument } from '@vera/importer/document';
 import {
   SCOPES,
@@ -74,6 +75,14 @@ import {
 import { LOCAL_MODEL, LOCAL_MODEL_NAME, promptFor, readAnswer } from './answer.ts';
 import { mentionsOf } from './mentions.ts';
 import { paperHtml, toPdf } from './paper.ts';
+import {
+  BIBLIOGRAPHY_NAMES,
+  blocksFor,
+  propertiesFor,
+  servicePages,
+  titleFor,
+} from './services.ts';
+import { children, item, search, whoami, type ZoteroItem } from './zotero.ts';
 import { readLinks } from './process.ts';
 import { describeStructure, readingPasses, readStructure } from './structure.ts';
 import { describePlan, planTabularity } from './tabularity.ts';
@@ -386,6 +395,109 @@ export function createVeraServer(options: ServerOptions): VeraServer {
    * declara se edita como cualquier otra y cambiarla no debería pedir reiniciar.
    */
   const propertyNames = () => readPropertyNames(declared(/^Nombres de propiedades/i));
+
+  /*
+   * Qué páginas vinieron de fuera, y de qué ítem cada una.
+   *
+   * Se deriva del corpus y no de una tabla: la procedencia está escrita en la
+   * página que vino —`fuente:: zotero`, `zotero:: ABCD1234`— y por eso sobrevive
+   * a exportar el corpus, a reconstruirlo del log y a mirarlo con un editor de
+   * texto. Una tabla aparte diciendo lo mismo es una tabla que un día dice otra
+   * cosa.
+   */
+  const broughtFrom = (source: string): Map<string, { page: string; version: number }> => {
+    const found = new Map<string, { page: string; version: number }>();
+    for (const page of graph.pages()) {
+      const properties = graph.propertiesOf(page.id);
+      const from = properties.find((one) => one.key === BIBLIOGRAPHY_NAMES.source);
+      if (from === undefined || from.value.trim().toLowerCase() !== source) continue;
+      const key = properties.find((one) => one.key === BIBLIOGRAPHY_NAMES.key);
+      if (key === undefined) continue;
+      const version = properties.find((one) => one.key === BIBLIOGRAPHY_NAMES.version);
+      found.set(key.value.trim(), {
+        page: page.id,
+        version: Number(version?.value ?? 0) || 0,
+      });
+    }
+    return found;
+  };
+
+  /*
+   * Traer un ítem: se vuelve una página, o refresca la que ya era.
+   *
+   * Escribe por la puerta de siempre —una operación por cambio, con su autor y
+   * su secuencia— y por el canal `import`, que es lo que este acto es: material
+   * que viene de fuera. Firma quien es dueño del grafo, porque es quien pidió
+   * traerlo; el ítem no lo escribió nadie de aquí, y eso lo dice la procedencia
+   * que la página lleva puesta.
+   */
+  const bringItem = (
+    found: ZoteroItem,
+    library: string,
+    notes: readonly string[],
+  ): { page: string; title: string; created: boolean; refreshed: boolean } => {
+    const stamp = Date.now();
+    let step = 0;
+    const write = (change: Change): string | null => {
+      const outcome = graph.submitOperation({
+        originId: `zotero:${found.key}:${stamp}:${(step += 1)}`,
+        participant: owner.id,
+        channel: 'import',
+        change,
+      });
+      if (outcome.status !== 'applied') return null;
+      recordOperation(store, graph, outcome.operation);
+      return outcome.operation.subjectId;
+    };
+
+    const kind = propertyNames().kind;
+    const held = broughtFrom('zotero').get(found.key);
+    const properties = propertiesFor(found, library, kind, 'Referencia');
+
+    if (held !== undefined) {
+      /*
+       * Ya estaba. Se refresca sólo si Zotero tiene algo más nuevo.
+       *
+       * Y se refrescan las propiedades, no los bloques: lo que alguien escribió
+       * en esa página después de traerla es suyo, y una sincronización que lo
+       * pisara convertiría el corpus en una copia de Zotero. @guarantee
+       * VeraAggregatesResearchContext.
+       */
+      if (found.version > held.version) {
+        for (const property of properties) {
+          write({
+            kind: 'set_property',
+            page: held.page,
+            propertyKey: property.key,
+            propertyValue: property.value,
+          });
+        }
+      }
+      return {
+        page: held.page,
+        title: graph.page(held.page)?.title ?? found.title,
+        created: false,
+        refreshed: found.version > held.version,
+      };
+    }
+
+    const title = titleFor(found, (name) => graph.pageTitled(name) !== undefined);
+    const made = write({ kind: 'create_page', title, visibility: 'private' });
+    if (made === null) throw new Error('el dominio rechazó crear la página del ítem');
+    for (const property of properties) {
+      write({
+        kind: 'set_property',
+        page: made,
+        propertyKey: property.key,
+        propertyValue: property.value,
+      });
+    }
+    const blocks = blocksFor(found, notes);
+    blocks.forEach((content, index) => {
+      write({ kind: 'create_block', page: made, parent: null, position: index, content });
+    });
+    return { page: made, title, created: true, refreshed: false };
+  };
 
   /*
    * Los medios que una página nombra, con a qué objeto resuelve cada ruta.
@@ -1342,6 +1454,29 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     // guarda una lista privada de títulos que trata distinto, porque una regla
     // que no se puede leer del corpus es una regla contra la que el corpus no se
     // puede auditar.
+      /*
+       * Las conexiones con servicios de fuera, con lo que se puede saber de
+       * ellas sin abrir ninguna.
+       *
+       * El estado es derivado y no está escrito en ninguna parte: si hay clave
+       * lo dice la tabla de secretos, cuándo se usó por última vez también, y
+       * cuántas páginas vinieron de ahí se cuenta mirando el corpus. Escribirlo
+       * en la página sería tener dos sitios diciendo lo mismo.
+       */
+      if (path === '/services') {
+        const brought = broughtFrom('zotero');
+        send(
+          response,
+          200,
+          servicePages(graph, SPECIAL_KIND).map((service) => ({
+            ...service,
+            secrets: secretsOf(store, service.id),
+            pages: service.service === 'zotero' ? brought.size : 0,
+          })),
+        );
+        return;
+      }
+
     if (request.method === 'GET' && path === '/special-pages') {
       const found = graph
         .pages()
@@ -1537,6 +1672,201 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           });
         }
       });
+      return;
+    }
+
+    /*
+     * Los servicios de fuera, gobernados desde el corpus.
+     *
+     * Una conexión vive en una página especial que se lee y se edita como
+     * cualquier otra —qué servicio, qué biblioteca, qué se trae— y lo único que
+     * no está ahí es el secreto, que vive fuera del log porque un log
+     * append-only no sabe olvidar. Ver services.ts, secrets.ts y
+     * specs/service-connections.allium.
+     */
+    if (path.startsWith('/services/')) {
+      const rest = path.slice('/services/'.length);
+      const slash = rest.lastIndexOf('/');
+      const named = decodeURIComponent(slash === -1 ? rest : rest.slice(0, slash));
+      const what = slash === -1 ? '' : rest.slice(slash + 1);
+      const page = graph.page(named) ?? graph.pageTitled(named);
+      if (page === undefined) {
+        send(response, 404, { error: 'no such page' });
+        return;
+      }
+      const service = servicePages(graph, SPECIAL_KIND).find((one) => one.id === page.id);
+      if (service === undefined) {
+        send(response, 422, {
+          error: `«${page.title}» no declara ser un servicio: le falta special-kind:: service y servicio::`,
+        });
+        return;
+      }
+
+      /*
+       * Guardar el secreto, y olvidarlo.
+       *
+       * Entra por aquí y no por `POST /operations` a propósito: no es una
+       * operación, no genera revisión y no se puede replicar. Olvidarlo lo borra
+       * de verdad, que es lo único que «olvidar» significa tratándose de una
+       * clave.
+       */
+      if (request.method === 'PUT' && what === 'secret') {
+        const chunks: Buffer[] = [];
+        request.on('data', (chunk: Buffer) => chunks.push(chunk));
+        request.on('end', () => {
+          let body: { name?: unknown; secret?: unknown };
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+          } catch {
+            send(response, 400, { error: 'the body must be JSON' });
+            return;
+          }
+          const secret = typeof body.secret === 'string' ? body.secret.trim() : '';
+          const name = typeof body.name === 'string' && body.name.trim() !== '' ? body.name.trim() : 'clave';
+          if (secret === '') {
+            send(response, 400, { error: 'una clave vacía no es una clave' });
+            return;
+          }
+          saveSecret(store, page.id, name, secret, Date.now());
+          send(response, 200, { page: page.id, secrets: secretsOf(store, page.id) });
+        });
+        return;
+      }
+
+      if (request.method === 'DELETE' && what === 'secret') {
+        const name = url.searchParams.get('name') ?? 'clave';
+        const gone = forgetSecret(store, page.id, name);
+        send(response, gone ? 200 : 404, gone ? { page: page.id, secrets: secretsOf(store, page.id) } : { error: 'ahí no había ninguna clave guardada' });
+        return;
+      }
+
+      // De aquí en adelante hace falta la clave. Sin ella no se pregunta nada:
+      // una petición sin credencial a un servicio de fuera es una petición que
+      // igualmente le dice que aquí hay alguien.
+      const key = useSecret(store, page.id, 'clave', Date.now());
+      if (key === null) {
+        send(response, 428, { error: `«${page.title}» todavía no tiene una clave guardada` });
+        return;
+      }
+      if (service.service !== 'zotero') {
+        send(response, 501, { error: `Vera todavía no sabe hablar con ${service.service}` });
+        return;
+      }
+
+      /** Con qué biblioteca hablar: la declarada, o la de quien es dueño de la clave. */
+      const libraryOf = async (): Promise<string | { error: string }> => {
+        if (service.library !== null) return service.library;
+        const who = await whoami(key);
+        if ('error' in who) return who;
+        return `users/${who.userId}`;
+      };
+
+      /*
+       * Probar la conexión: quién soy y qué puedo.
+       *
+       * Es esta petición y no una búsqueda vacía: una búsqueda que no devuelve
+       * nada no distingue entre una clave mala y una biblioteca vacía.
+       */
+      if (request.method === 'POST' && what === 'check') {
+        void whoami(key).then((who) => {
+          if ('error' in who) {
+            send(response, 502, who);
+            return;
+          }
+          send(response, 200, {
+            page: page.id,
+            service: service.service,
+            identity: who,
+            library: service.library ?? `users/${who.userId}`,
+            declared: service.library !== null,
+          });
+        });
+        return;
+      }
+
+      /** Buscar en la biblioteca: autor, título, año. */
+      if (request.method === 'GET' && what === 'search') {
+        const text = (url.searchParams.get('q') ?? '').trim();
+        if (text === '') {
+          send(response, 400, { error: 'no se busca nada sin decir qué' });
+          return;
+        }
+        void libraryOf().then(async (library) => {
+          if (typeof library !== 'string') {
+            send(response, 502, library);
+            return;
+          }
+          const found = await search(key, library, text);
+          if ('error' in found) {
+            send(response, 502, found);
+            return;
+          }
+          /*
+           * Cada resultado dice si ya está en el corpus.
+           *
+           * Sin esto, citar dos veces el mismo libro crea dos páginas, y quien
+           * busca no tiene forma de saberlo hasta que ya pasó.
+           */
+          const here = broughtFrom('zotero');
+          send(response, 200, {
+            page: page.id,
+            library,
+            total: found.total,
+            items: found.items.map((one) => ({ ...one, alreadyHere: here.get(one.key) ?? null })),
+          });
+        });
+        return;
+      }
+
+      /*
+       * Traer un ítem: se vuelve una página del corpus, con su procedencia.
+       *
+       * Si ya estaba, no nace otra: se refresca la que hay cuando Zotero tiene
+       * una versión más nueva, y si no, se devuelve tal cual. @invariant
+       * ZoteroRecordIdentityIsUniqueWithinLibrary.
+       */
+      if (request.method === 'POST' && what === 'bring') {
+        const chunks: Buffer[] = [];
+        request.on('data', (chunk: Buffer) => chunks.push(chunk));
+        request.on('end', () => {
+          let body: { item?: unknown };
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+          } catch {
+            send(response, 400, { error: 'the body must be JSON' });
+            return;
+          }
+          const itemKey = typeof body.item === 'string' ? body.item.trim() : '';
+          if (itemKey === '') {
+            send(response, 400, { error: 'no se dijo qué ítem traer' });
+            return;
+          }
+          void libraryOf().then(async (library) => {
+            if (typeof library !== 'string') {
+              send(response, 502, library);
+              return;
+            }
+            const found = await item(key, library, itemKey);
+            if ('error' in found) {
+              send(response, 502, found);
+              return;
+            }
+            const notes = await children(key, library, itemKey);
+            try {
+              const made = bringItem(found, library, 'notes' in notes ? notes.notes : []);
+              send(response, 200, made);
+            } catch (error) {
+              send(response, 500, {
+                error: 'no se pudo escribir la página del ítem',
+                detail: error instanceof Error ? error.message : String(error),
+              });
+            }
+          });
+        });
+        return;
+      }
+
+      send(response, 404, { error: 'no such service route' });
       return;
     }
 

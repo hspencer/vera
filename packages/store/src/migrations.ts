@@ -134,7 +134,35 @@ const addPageOriginCreatedAt: Migration = {
   },
 };
 
-export const MIGRATIONS: readonly Migration[] = [addWalkedChannel, addPageOriginCreatedAt];
+/**
+ * 3 — el secreto de un servicio.
+ *
+ * Una página de servicio gobierna a la vista todo lo que se puede mirar, y el
+ * secreto vive aquí, fuera del log: el log es append-only, y una clave escrita
+ * en él no se puede desescribir nunca. Ver service-connections.allium y la tabla
+ * en schema.sql, que es la misma forma dicha en el sitio de destino.
+ */
+const addServiceSecrets: Migration = {
+  version: 3,
+  name: 'secretos de servicio',
+  apply(db) {
+    db.exec(`CREATE TABLE IF NOT EXISTS service_secrets (
+      graph_id      TEXT NOT NULL REFERENCES graphs (id),
+      page_id       TEXT NOT NULL REFERENCES pages (id) ON DELETE CASCADE,
+      name          TEXT NOT NULL,
+      secret        TEXT NOT NULL,
+      saved_at      INTEGER NOT NULL,
+      last_used_at  INTEGER,
+      PRIMARY KEY (graph_id, page_id, name)
+    ) STRICT`);
+  },
+};
+
+export const MIGRATIONS: readonly Migration[] = [
+  addWalkedChannel,
+  addPageOriginCreatedAt,
+  addServiceSecrets,
+];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */
 export const SCHEMA_VERSION = MIGRATIONS.reduce((top, m) => Math.max(top, m.version), 0);

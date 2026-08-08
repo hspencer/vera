@@ -210,7 +210,7 @@ export interface Command {
    * ese punto de la escritura, y quien atiende el comando es el outliner, porque
    * el hecho ocurre en el grafo y no en el texto.
    */
-  acts?: 'hablar' | 'elegir-fecha' | 'importar';
+  acts?: 'hablar' | 'elegir-fecha' | 'importar' | 'zotero';
 }
 
 /**
@@ -252,6 +252,21 @@ export const COMMANDS: Command[] = [
     inserts: '',
     caret: 0,
     acts: 'importar',
+  },
+  /*
+   * Citar algo de la bibliografía.
+   *
+   * Busca por autor, título o año en Zotero y deja el enlace a la página del
+   * ítem, que nace si no estaba. Citar y traer son el mismo gesto: separarlos
+   * obligaría a irse de la frase que uno estaba escribiendo —que era, justamente,
+   * la que cita— para volver después.
+   */
+  {
+    name: 'zotero',
+    hint: 'citar algo de la bibliografía: buscar por autor o título',
+    inserts: '',
+    caret: 0,
+    acts: 'zotero',
   },
   // Fechas. Un día es una página, así que fechar algo es enlazarlo: escribir
   // «hoy» como texto deja una palabra que dentro de un mes será falsa, y

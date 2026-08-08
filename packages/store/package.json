@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/store.ts",
     "./projection": "./src/projection.ts",
-    "./objects": "./src/objects.ts"
+    "./objects": "./src/objects.ts",
+    "./secrets": "./src/secrets.ts"
   },
   "dependencies": {
     "@vera/core": "*"

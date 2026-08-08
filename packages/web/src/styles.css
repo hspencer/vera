@@ -3744,6 +3744,175 @@ code {
 }
 
 
+/* --- Conexiones con servicios de fuera ---------------------------------- */
+
+/*
+ * El panel de una conexión, dentro de su propia página.
+ *
+ * Con la forma de lo que es —una ficha con filas de clave y valor— y no la de un
+ * cuadro de diálogo: esto no es una ventana de ajustes que se abre y se cierra,
+ * es parte de una página del corpus que se lee como cualquier otra.
+ */
+.service {
+  margin: 0 0 1.5rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.85rem;
+}
+
+.service-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.service-name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.service-state {
+  color: var(--text-dim);
+}
+
+.service-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.service-key {
+  min-width: 6rem;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+
+.service-value {
+  color: var(--text);
+}
+
+/* Los botones de aquí obedecen a los mismos tokens que los demás: fondo
+   transparente, borde de un pixel y el color del enlace. */
+.service-button {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--link);
+  border-radius: 0.3ex;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+
+.service-button:hover {
+  background: var(--link);
+  color: var(--bg);
+}
+
+.service-button.probe {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+}
+
+.service-button .icon {
+  width: 0.9em;
+  height: 0.9em;
+}
+
+/* El campo de la clave es de contraseña: lo que se pega ahí no se queda escrito
+   en la pantalla de nadie. */
+.service-field {
+  flex: 1 1 14rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3ex;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+.service-result {
+  margin-top: 0.5rem;
+  color: var(--text-dim);
+}
+
+.service-result.bad {
+  color: var(--warn, var(--text));
+}
+
+/*
+ * El buscador bibliográfico, junto a lo que se está escribiendo.
+ *
+ * Flotante y anclado al editor, como el calendario: lo que se busca se busca sin
+ * salir de la frase que lo pide.
+ */
+.zotero-picker {
+  position: absolute;
+  z-index: 40;
+  width: min(32rem, 90vw);
+  padding: 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3ex;
+  background: var(--bg-raised);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
+}
+
+.zotero-field {
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3ex;
+  background: none;
+  color: var(--text);
+  font: inherit;
+}
+
+.zotero-state {
+  padding: 0.3rem 0.1rem;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.zotero-results {
+  max-height: 22rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.zotero-item {
+  padding: 0.35rem 0.4rem;
+  border-radius: 0.3ex;
+  cursor: pointer;
+}
+
+.zotero-item:hover {
+  background: var(--bg-hover, var(--rule));
+}
+
+.zotero-title {
+  font-size: 0.9rem;
+}
+
+.zotero-meta {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+/* Lo que ya está en el corpus se distingue: citarlo dos veces no puede ser dos
+   páginas sin que nadie lo note. */
+.zotero-item.here .zotero-title {
+  color: var(--link);
+}
+
 /*
  * El bloque que el modelo está leyendo.
  *

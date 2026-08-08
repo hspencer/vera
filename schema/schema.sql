@@ -438,3 +438,40 @@ CREATE TABLE IF NOT EXISTS block_authorship (
 
 CREATE INDEX IF NOT EXISTS block_authorship_by_participant
     ON block_authorship (participant_id);
+
+
+-- ---------------------------------------------------------------------------
+-- Servicios de fuera: lo que Vera necesita presentar para hablar con ellos
+-- ---------------------------------------------------------------------------
+
+-- El secreto de un servicio, y sólo el secreto.
+--
+-- Una página de servicio gobierna todo lo demás a la vista —qué servicio es, qué
+-- biblioteca, qué colecciones, cuándo se sincronizó— porque eso es conocimiento y
+-- el conocimiento vive en el corpus. El secreto no: es un valor que hay que
+-- poder presentar y que no se puede publicar.
+--
+-- Fuera del log a propósito. El log es append-only y es lo que hace auditable a
+-- Vera; una clave escrita ahí no se puede desescribir nunca, ni rotándola ni
+-- borrando el bloque. Aquí, en cambio, olvidar una clave la borra de verdad, que
+-- es lo único que significa «olvidar» tratándose de un secreto.
+--
+-- Y por eso mismo no viaja: no entra al Markdown que se copia o se descarga, no
+-- entra a la proyección, no se indexa y no se publica. Lo que la página enseña de
+-- él es que está guardado, cuándo, y sus últimos caracteres.
+--
+-- Ver specs/service-connections.allium.
+CREATE TABLE IF NOT EXISTS service_secrets (
+    graph_id      TEXT NOT NULL REFERENCES graphs (id),
+    -- La página que gobierna este servicio. Borrarla olvida su secreto: una
+    -- credencial sin página que la explique es una llave sin puerta.
+    page_id       TEXT NOT NULL REFERENCES pages (id) ON DELETE CASCADE,
+    -- Cuál de las credenciales de ese servicio es. Casi siempre una —«clave»—,
+    -- pero hay servicios que piden dos, y nombrarlas es más barato que
+    -- descubrir el día que haga falta que aquí sólo cabía una.
+    name          TEXT NOT NULL,
+    secret        TEXT NOT NULL,
+    saved_at      INTEGER NOT NULL,
+    last_used_at  INTEGER,
+    PRIMARY KEY (graph_id, page_id, name)
+) STRICT;

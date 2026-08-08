@@ -145,6 +145,72 @@ export interface Hit {
   rank: number;
 }
 
+/** Lo que se sabe de una clave guardada sin enseñarla. */
+export interface ServiceSecret {
+  name: string;
+  /** Los últimos caracteres, para reconocerla. Vacío si es demasiado corta. */
+  tail: string;
+  savedAt: number;
+  lastUsedAt: number | null;
+}
+
+/** Una conexión con algo de fuera, gobernada por una página del corpus. */
+export interface ServiceView {
+  id: string;
+  title: string;
+  service: string;
+  library: string | null;
+  collections: string[];
+  secrets: ServiceSecret[];
+  /** Cuántas páginas del corpus vinieron de ahí. Se cuenta, no se guarda. */
+  pages: number;
+}
+
+export interface ServiceCheck {
+  page: string;
+  service: string;
+  library: string;
+  declared: boolean;
+  identity: {
+    userId: number;
+    username: string;
+    access: { library: boolean; notes: boolean; write: boolean; groups: number };
+  };
+}
+
+/** Un ítem bibliográfico tal como se ofrece para citarlo. */
+export interface ServiceItem {
+  key: string;
+  version: number;
+  itemType: string;
+  title: string;
+  creators: string[];
+  date: string | null;
+  publication: string | null;
+  publisher: string | null;
+  doi: string | null;
+  isbn: string | null;
+  url: string | null;
+  abstract: string | null;
+  tags: string[];
+  /** Si ya está en el corpus, qué página es. Nulo si todavía no vino. */
+  alreadyHere: { page: string; version: number } | null;
+}
+
+export interface ServiceSearch {
+  page: string;
+  library: string;
+  total: number;
+  items: ServiceItem[];
+}
+
+export interface BroughtItem {
+  page: string;
+  title: string;
+  created: boolean;
+  refreshed: boolean;
+}
+
 export type Change =
   | { kind: 'create_page'; title: string; visibility: 'private' | 'public' }
   | { kind: 'rename_page'; page: string; title: string }
@@ -246,6 +312,66 @@ export const api = {
     }>('/health'),
 
   pages: () => json<PageSummary[]>('/pages'),
+
+  /*
+   * Las conexiones con servicios de fuera.
+   *
+   * Cada una es una página especial del corpus; lo que viaja aquí es lo que de
+   * ella se puede saber sin abrirla, incluido el estado de su clave —que está
+   * guardada o no lo está, cuándo se usó, y sus últimos caracteres— pero nunca
+   * la clave. Ver specs/service-connections.allium.
+   */
+  services: () => json<ServiceView[]>('/services'),
+
+  /**
+   * Guarda la clave de un servicio.
+   *
+   * No pasa por `POST /operations` y es deliberado: no es una operación, no deja
+   * revisión y no viaja al Markdown ni a la proyección. El log es append-only, y
+   * una clave escrita en él no se puede desescribir nunca.
+   */
+  saveSecret: async (page: string, secret: string, name = 'clave'): Promise<ServiceSecret[] | { error: string }> => {
+    const answer = await fetch(`/services/${encodeURIComponent(page)}/secret`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, secret }),
+    });
+    const said = (await answer.json().catch(() => ({}))) as { secrets?: ServiceSecret[]; error?: string };
+    return answer.ok && said.secrets !== undefined ? said.secrets : { error: said.error ?? 'no se pudo guardar' };
+  },
+
+  /** La borra de verdad: aquí olvidar significa olvidar. */
+  forgetSecret: async (page: string, name = 'clave'): Promise<boolean> => {
+    const answer = await fetch(
+      `/services/${encodeURIComponent(page)}/secret?name=${encodeURIComponent(name)}`,
+      { method: 'DELETE' },
+    );
+    return answer.ok;
+  },
+
+  checkService: async (page: string): Promise<ServiceCheck | { error: string }> => {
+    const answer = await fetch(`/services/${encodeURIComponent(page)}/check`, { method: 'POST' });
+    const said = (await answer.json().catch(() => ({}))) as ServiceCheck & { error?: string };
+    return answer.ok ? said : { error: said.error ?? 'no se pudo probar la conexión' };
+  },
+
+  searchService: async (page: string, text: string): Promise<ServiceSearch | { error: string }> => {
+    const answer = await fetch(
+      `/services/${encodeURIComponent(page)}/search?q=${encodeURIComponent(text)}`,
+    );
+    const said = (await answer.json().catch(() => ({}))) as ServiceSearch & { error?: string };
+    return answer.ok ? said : { error: said.error ?? 'no se pudo buscar' };
+  },
+
+  bringItem: async (page: string, item: string): Promise<BroughtItem | { error: string }> => {
+    const answer = await fetch(`/services/${encodeURIComponent(page)}/bring`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ item }),
+    });
+    const said = (await answer.json().catch(() => ({}))) as BroughtItem & { error?: string };
+    return answer.ok ? said : { error: said.error ?? 'no se pudo traer' };
+  },
 
   page: (id: string) => json<PageView>(`/pages/${encodeURIComponent(id)}`),
 

@@ -81,7 +81,7 @@ contract SelfDescription {
 
 -- What a special page governs. Open on purpose: the list grows, and each new
 -- kind is a decision to be argued rather than a value to be added quietly.
-enum SpecialKind { ontology | presentation | instructions }
+enum SpecialKind { ontology | presentation | instructions | service }
 
 enum ProposalStatus { proposed | accepted | rejected }
 

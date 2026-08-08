@@ -24,6 +24,7 @@ import { answerQueryBlock } from './query-block.ts';
 import { renderMermaid } from './mermaid.ts';
 import { is } from './bindings.ts';
 import { icon } from './icons.ts';
+import { isServicePage, pickBibliography, renderService } from './service-page.ts';
 import { createPage } from './pages.ts';
 import { createSession, type SaveIntent } from './session.ts';
 import {
@@ -2036,6 +2037,20 @@ export function renderOutliner(
 
   container.append(header);
 
+  /*
+   * Si esta página gobierna una conexión, su panel va aquí: debajo de lo que la
+   * página dice de sí misma y encima de lo que tenga escrito.
+   *
+   * Se pide después de dibujar y no antes porque el estado de la clave vive
+   * fuera del corpus —no viaja con la página— y esperarlo para enseñar el texto
+   * dejaría la página en blanco mientras tanto. Ver service-page.ts.
+   */
+  if (isServicePage(page.properties)) {
+    void renderService(page.id, toast).then((panel) => {
+      if (panel !== null) header.after(panel);
+    });
+  }
+
   const list = document.createElement('div');
   list.className = 'blocks';
   container.append(list);
@@ -3752,6 +3767,26 @@ function startEditing(
         });
       });
       chooser.click();
+      return;
+    }
+
+    /*
+     * Citar de la bibliografía. Como el calendario: el sitio donde cae lo
+     * elegido se guarda ahora, porque entre abrir el buscador y elegir un ítem
+     * pasa tiempo y el cursor puede haberse ido a otra parte.
+     */
+    if (acts === 'zotero') {
+      const at = applied.cursor;
+      void pickBibliography(editor, toast, (picked) => {
+        const written = `[[${picked.title}]]`;
+        editor.value = editor.value.slice(0, at) + written + editor.value.slice(at);
+        const after = at + written.length;
+        editor.setSelectionRange(after, after);
+        session.type(editor.value);
+        autosize();
+        scheduleSave();
+        editor.focus();
+      });
       return;
     }
 

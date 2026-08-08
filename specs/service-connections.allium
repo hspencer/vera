@@ -1,0 +1,201 @@
+-- allium: 3
+-- service-connections.allium
+
+-- Scope: Conectar Vera con servicios de fuera, gobernando cada conexión desde
+--   una página del corpus y guardando su secreto donde un secreto puede borrarse
+-- Includes: Qué página gobierna una conexión, qué declara, dónde vive su
+--   credencial y por qué no en el registro, qué se puede saber de una conexión
+--   sin abrirla, y qué distingue probar una conexión de usarla
+-- Excludes:
+--   - Qué se hace con lo que se trae de cada servicio; para Zotero, lo gobierna
+--     bibliographic-integration.allium
+--   - Las credenciales con que alguien de fuera escribe en Vera, que van al
+--     revés y se guardan resumidas (ver agent-participation.allium)
+--   - El vocabulario de tipos y propiedades (ver controlled-ontology.allium)
+--   - El protocolo de cada servicio, sus cabeceras y sus formatos
+-- Dependencies: Page y Property las gobierna core.allium; qué hace especial a
+--   una página, special-pages.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- Una conexión se gobierna desde una página, no desde un archivo.
+--
+-- Lo normal en un programa es que las conexiones vivan en un JSON o en un
+-- archivo de configuración: para saber si uno puso la clave, y cuál, hay que
+-- abrirlo con un editor de texto, y para cambiar algo hay que saber la sintaxis.
+-- Nada de eso se puede leer, buscar, enlazar ni fechar, que es todo lo que Vera
+-- sabe hacer con lo que guarda.
+--
+-- Así que una conexión es una página: dice qué servicio es, con qué biblioteca
+-- habla y qué trae, y se edita como se edita cualquier otra. Se puede escribir al
+-- lado por qué se conectó eso, qué se decidió no traer, qué pasó el día que dejó
+-- de funcionar. Es lo que un archivo de configuración nunca va a poder llevar.
+contract AConnectionIsGovernedByAPage {
+    read: (page: core/Page) -> Connection
+
+    @invariant WhatCanBeReadLivesInTheCorpus
+        -- Qué servicio, qué biblioteca, qué colecciones: todo eso son
+        -- propiedades de la página, escritas por quien conectó y leídas por
+        -- Vera. Nada de eso se guarda en otro sitio, porque dos sitios diciendo
+        -- lo mismo acaban diciendo cosas distintas.
+
+    @invariant TheSecretIsTheOnlyThingThatIsNotWritten
+        -- La credencial no es una propiedad. No por importante sino por ser de
+        -- otra clase: es un valor que hay que poder presentar, no algo que se
+        -- sepa. Vive fuera del registro de operaciones, no viaja al Markdown que
+        -- se copia o se descarga, no se indexa y no se publica.
+
+    @invariant ALogThatOnlyAddsCannotKeepASecret
+        -- Y ésa es la razón entera: el registro de Vera sólo añade —es lo que la
+        -- hace auditable— y una clave escrita en él no se puede desescribir
+        -- nunca. Rotarla no borra la vieja, borrar el bloque tampoco, y quien
+        -- exporte el corpus se la lleva. Donde el secreto vive, olvidarlo lo
+        -- borra, que es lo único que «olvidar» significa tratándose de una clave.
+
+    @invariant TheSecretIsSeenWithoutBeingShown
+        -- De una credencial guardada se enseña que está, cuándo se guardó,
+        -- cuándo se usó por última vez y sus últimos caracteres. Lo bastante para
+        -- saber cuál de las tres puso uno; nunca su valor.
+
+    @invariant ForgettingTheGoverningPageForgetsTheSecret
+        -- Borrar la página que gobierna una conexión borra su credencial. Una
+        -- llave sin puerta que la explique no es una llave: es algo que quedó ahí.
+
+    @invariant NothingIsAskedWithoutACredential
+        -- Sin credencial guardada no se le pregunta nada al servicio. Una
+        -- petición sin clave falla igual, y aun así le dice a quien está al otro
+        -- lado que aquí hay alguien mirando.
+}
+
+-- Probar una conexión no es usarla.
+--
+-- Probar es preguntar quién soy y qué puedo; usar es traer material. La
+-- distinción importa porque una búsqueda vacía no distingue entre una clave mala
+-- y una biblioteca vacía, y quien acaba de pegar una clave necesita saber cuál de
+-- las dos cosas le está pasando.
+contract AConnectionCanBeProven {
+    prove: (connection: Connection) -> Proof
+
+    @invariant ProvingBringsNothingBack
+        -- La prueba no trae material ni escribe nada en el corpus. Es una
+        -- pregunta sobre la credencial, no sobre lo que hay al otro lado.
+
+    @invariant TheServiceSaysWhatTheKeyCanDo
+        -- Lo que la credencial permite lo dice el servicio, no Vera. Deducirlo
+        -- de lo que se pidió al crearla sería creerle a la memoria de alguien
+        -- sobre una casilla marcada hace un año.
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- Una conexión, leída desde la página que la gobierna.
+value Connection {
+    page: core/Page
+    -- Con qué se habla. En minúsculas, que es como se compara.
+    service: String
+    -- Con qué parte de ese servicio. Puede faltar: se le pregunta a él.
+    library: String?
+    -- Lo que la página dice traer.
+    collections: List<String>
+    -- Lo que se puede contar de sus credenciales sin contarlas.
+    secrets: List<SecretStatus>
+}
+
+value SecretStatus {
+    -- Cuál es. Casi siempre una, pero hay servicios que piden dos, y nombrarlas
+    -- es más barato que descubrir el día que haga falta que sólo cabía una.
+    name: String
+    -- Los últimos caracteres, para reconocerla. Vacío si es demasiado corta como
+    -- para que enseñar cuatro no sea enseñar media.
+    tail: String
+    saved_at: Timestamp
+    last_used_at: Timestamp?
+}
+
+value Proof {
+    connection: Connection
+    -- De quién es la credencial, según el servicio.
+    identity: String
+    -- Y qué le deja hacer, también según él.
+    allows: List<String>
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule SavingACredentialIsNotAnOperation {
+    when: SaveCredential(participant, connection, name)
+
+    ensures: stored(connection, name)
+
+    @invariant ItLeavesNoRevision
+        -- Guardar una credencial no genera operación ni revisión y no se puede
+        -- reproducir desde el registro. Es lo contrario de todo lo demás que
+        -- Vera guarda, y es a propósito: lo que se puede reproducir no se puede
+        -- olvidar.
+}
+
+rule ForgettingMeansForgetting {
+    when: ForgetCredential(participant, connection, name)
+
+    ensures: not stored(connection, name)
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface ServicePage {
+    facing owner: core/Participant
+    context page: core/Page
+
+    exposes:
+        Connection
+        SecretStatus
+
+    contracts:
+        fulfils AConnectionIsGovernedByAPage
+        fulfils AConnectionCanBeProven
+
+    provides:
+        SaveCredential(participant, connection, name)
+        ForgetCredential(participant, connection, name)
+
+    @guarantee TheCredentialIsPutWhereItIsExplained
+        -- Se pone, se cambia y se olvida en la misma página que dice qué es esa
+        -- conexión y para qué está. No hay una pantalla de ajustes aparte donde
+        -- vivan todas las claves juntas y ninguna diga a qué sirve.
+
+    @guarantee WhatIsTypedIsNotLeftOnScreen
+        -- Lo que se pega en el campo de la credencial no se queda escrito a la
+        -- vista. Una clave en pantalla es una clave en la captura que alguien
+        -- hizo de la pantalla.
+
+    @guarantee TheStateIsDerivedAndNeverWritten
+        -- Si hay credencial, cuándo se usó y cuántas páginas vinieron de ahí no
+        -- se escriben en la página: se derivan al mirarla. Es la misma decisión
+        -- que con la fecha de creación de una página.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- La credencial se guarda tal cual en la base de datos local. Cifrarla exigiría
+-- una llave, y esa llave viviría al lado, que es cifrar mudándose de problema.
+open question "¿Debería una credencial guardada estar cifrada con algo que no viva en la misma máquina —una frase que se escribe al arrancar, la llave del sistema— o el límite honesto es que quien alcanza el disco ya alcanzó el corpus entero?"
+
+-- Hoy Vera trae material cuando alguien lo pide, uno a uno. Un servicio también
+-- podría hablar solo: refrescar lo que cambió, avisar de lo que desapareció.
+open question "¿Debe una conexión poder sincronizar sin que nadie se lo pida, y entonces con qué frecuencia y con qué mano firmando lo que escribe?"
+
+-- Cómo se llaman en el corpus las propiedades de lo que se trae —autor, fecha,
+-- editorial— lo decide hoy el código, con valores por defecto en castellano.
+open question "¿Debe la ontología declarar cómo se llama cada campo de lo que un servicio trae, como ya declara los nombres de las propiedades que Vera necesita conocer?"
