@@ -80,6 +80,7 @@ contract BlockManipulation {
     discard_empty: (participant: core/Participant, block: core/Block) -> core/Page
     select_range: (from: core/Block, to: core/Block) -> BlockSelection
     discard_selection: (participant: core/Participant, selection: BlockSelection) -> core/Page
+    shift_selection: (participant: core/Participant, selection: BlockSelection, deeper: Bool) -> core/Page
 
     @invariant ReferenceNamesStableIdentity
         -- A copied reference names the block's stable_id, so it keeps pointing at
@@ -128,6 +129,30 @@ contract BlockManipulation {
         -- first, because the graph refuses to remove a block that still has
         -- children. The sequence is ordinary and auditable operation by
         -- operation, exactly as ApplyRemovePage requires of emptying a page.
+
+    @invariant OnlyTheRootsOfASelectionMove
+        -- Shifting a selection moves only those blocks in it that do not hang
+        -- from another block in it. A subtree travels with the block it hangs
+        -- from, so moving a parent and then its child would move the child
+        -- twice and land it somewhere nobody asked for.
+
+    @invariant ShiftingASelectionMeansWhatItMeansForOne
+        -- Indenting makes each block a child of the sibling above it, at the end
+        -- of that sibling's children; outdenting makes it a sibling of its own
+        -- parent, immediately after it. These are the same two rules that govern
+        -- a single block. A range does not get its own idea of what Tab means,
+        -- because someone who learned it on one block already knows it.
+
+    @invariant AShiftedSelectionKeepsItsOrder
+        -- Blocks that were read in an order are read in that order afterwards.
+        -- What a range adds over a single block is only the sequence in which
+        -- the moves are submitted; the destination of each is decided before any
+        -- of them moves.
+
+    @invariant AShiftedSelectionStaysSelected
+        -- Shifting leaves the same blocks chosen, so the gesture can be repeated
+        -- without pointing at them again. Indenting three levels is three
+        -- presses, not three selections.
 
     @invariant NothingIsSelectedWhileWriting
         -- A selection and a caret are two different answers to "what does the

@@ -21,6 +21,9 @@ export {
 } from './query.ts';
 export type { QueryExpression } from './query.ts';
 
+export { looksLikeQuery, readQuery, writeQuery } from './query-source.ts';
+export type { QuerySource, QueryUnreadable, QueryView } from './query-source.ts';
+
 export {
   excerpt,
   isDateTitle,

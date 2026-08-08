@@ -171,12 +171,26 @@ variant SemanticTypeTerm : QueryExpression {
     include_suggested: Boolean
 }
 
+-- Los dos términos de enlace nombran un título, no una página.
+--
+-- Estaban escritos como `core/Page` y no puede ser: lo que se escribe es
+-- `->[[Ciudad Abierta]]`, y un título no es todavía una página. Puede que esa
+-- página no exista —el corpus está lleno de enlaces a páginas que nadie ha
+-- escrito, y ésa es una de las cosas que un grafo así hace bien—, puede que se
+-- cree mañana, y puede que se renombre pasado. Exigir una página para poder
+-- preguntar convertiría «enlaza a algo que aún no escribo» en un error de
+-- sintaxis.
+--
+-- Y hay una razón más honda: un enlace en Vera guarda el título que se escribió
+-- aunque no resuelva. Preguntar por los enlaces a un título es preguntar por lo
+-- que los bloques dicen, que es lo que hay; preguntar por una identidad sería
+-- preguntar por lo que el grafo resolvió, que es menos.
 variant LinksToTerm : QueryExpression {
-    target: core/Page
+    target_title: String
 }
 
 variant LinkedFromTerm : QueryExpression {
-    origin: core/Page
+    origin_title: String
 }
 
 variant AndTerm : QueryExpression {
@@ -412,10 +426,12 @@ invariant DisjunctionNeedsTwoOperands {
         expression.kind = OrTerm implies expression.operands.count >= 2
 }
 
-invariant LinkTermsStayWithinOneGraph {
+-- Un término de enlace nombra un título y se resuelve dentro del grafo que se
+-- consulta: nunca alcanza el de otro. Un título que ninguna página lleva
+-- selecciona vacío, que es la respuesta correcta y no un error.
+invariant LinkTermsSelectWithinTheEvaluatedGraph {
     for evaluation in QueryEvaluations:
-        evaluation.expression.kind = LinksToTerm
-            implies evaluation.expression.target.graph = evaluation.graph
+        evaluation.matching_pages.all(p => p.graph = evaluation.graph)
 }
 
 invariant PortedQueryKeepsItsSourceText {

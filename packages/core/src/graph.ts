@@ -1065,16 +1065,33 @@ export class VeraGraph {
               (expression.value === null || p.value === expression.value),
           ),
         );
-      case 'LinksToTerm':
-        return new Set(
-          this.links().filter((l) => l.target === expression.target).map((l) => l.sourcePage),
-        );
-      case 'LinkedFromTerm':
+      /*
+       * Los enlaces se comparan por título y con el mismo plegado que el resto
+       * del grafo: `[[ciudad abierta]]` y `[[Ciudad Abierta]]` son el mismo
+       * enlace, y preguntar por uno tiene que encontrar el otro.
+       *
+       * Por título y no por identidad a propósito: un enlace guarda lo que se
+       * escribió aunque no resuelva, así que esto encuentra también las páginas
+       * que apuntan a algo que nadie ha escrito todavía. Un título que ninguna
+       * página lleva selecciona vacío, que es la respuesta y no un error.
+       */
+      case 'LinksToTerm': {
+        const wanted = titleKey(expression.targetTitle);
         return new Set(
           this.links()
-            .filter((l) => l.sourcePage === expression.origin && l.target !== null)
+            .filter((l) => titleKey(l.targetTitle) === wanted)
+            .map((l) => l.sourcePage),
+        );
+      }
+      case 'LinkedFromTerm': {
+        const from = this.#pageTitled(expression.originTitle);
+        if (from === undefined) return new Set<PageId>();
+        return new Set(
+          this.links()
+            .filter((l) => l.sourcePage === from.id && l.target !== null)
             .map((l) => l.target as PageId),
         );
+      }
       case 'AndTerm': {
         const sets = expression.operands.map((o) => this.#select(o));
         const first = sets[0] ?? new Set<PageId>();

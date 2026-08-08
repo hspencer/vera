@@ -2137,6 +2137,96 @@ export function renderOutliner(
     pickRange(pickedOn, next);
   };
 
+  /** El padre de un bloque, segun la pagina y no segun el arbol dibujado. */
+  const parentOf = (id: string): string | null =>
+    page.blocks.find((b) => b.stableId === id)?.parent ?? null;
+
+  /** Los hijos de alguien, en su orden. */
+  const childrenOf = (parent: string | null): BlockView[] =>
+    page.blocks.filter((b) => b.parent === parent).sort((a, b) => a.position - b.position);
+
+  /**
+   * Los escogidos que no cuelgan de otro escogido.
+   *
+   * Mover un padre se lleva a sus hijos por definicion, asi que mover ademas al
+   * hijo seria moverlo dos veces y dejarlo donde no se pidio. En orden de
+   * lectura, que es el que importa para decidir quien entra donde.
+   */
+  const pickedRoots = (): string[] => {
+    const under = (id: string): boolean => {
+      let at = parentOf(id);
+      let hops = 0;
+      while (at !== null && hops < 1000) {
+        if (picked.has(at)) return true;
+        at = parentOf(at);
+        hops += 1;
+      }
+      return false;
+    };
+    return visible.filter((id) => picked.has(id) && !under(id));
+  };
+
+  /**
+   * Indentar o desindentar lo escogido, con la misma semantica que un bloque suelto.
+   *
+   * Indentar: cada uno pasa a ser hijo del hermano de encima, al final de sus
+   * hijos. Desindentar: cada uno pasa a colgar de su abuelo, justo detras de su
+   * antiguo padre. Es literalmente lo que `resolveTab` decide para uno solo; lo
+   * unico que anade un tramo es el orden en que se envian los movimientos.
+   *
+   * Indentando se va de arriba abajo: el hermano de encima de un tramo de
+   * hermanos es el mismo para todos —el primero que no se esta moviendo— y al
+   * anadirse al final por turnos conservan su orden. Desindentando se va de abajo
+   * arriba: cada uno se mete justo detras del padre, asi que procesar al reves es
+   * lo que los deja en el orden en que estaban.
+   */
+  const shiftPicked = async (deeper: boolean): Promise<void> => {
+    const roots = pickedRoots();
+    if (roots.length === 0) return;
+
+    const moves: Change[] = [];
+    for (const id of deeper ? roots : [...roots].reverse()) {
+      const parent = parentOf(id);
+      if (deeper) {
+        const brothers = childrenOf(parent);
+        const at = brothers.findIndex((b) => b.stableId === id);
+        // El hermano de encima que no se este moviendo tambien.
+        let into: string | null = null;
+        for (let i = at - 1; i >= 0; i -= 1) {
+          const candidate = brothers[i]?.stableId;
+          if (candidate !== undefined && !picked.has(candidate)) {
+            into = candidate;
+            break;
+          }
+        }
+        if (into === null) continue;
+        moves.push({
+          kind: 'move_block',
+          block: id,
+          page: page.id,
+          parent: into,
+          position: Number.MAX_SAFE_INTEGER,
+        });
+        continue;
+      }
+      if (parent === null) continue;
+      const grand = parentOf(parent);
+      const uncles = childrenOf(grand);
+      const at = uncles.findIndex((b) => b.stableId === parent);
+      moves.push({ kind: 'move_block', block: id, page: page.id, parent: grand, position: at + 1 });
+    }
+
+    if (moves.length === 0) {
+      toast(deeper ? 'no hay un hermano encima al que entrar' : 'ya están en el primer nivel');
+      return;
+    }
+    for (const move of moves) {
+      if (!(await submitQuietly(move))) break;
+    }
+    // Lo escogido sigue escogido: se puede volver a pulsar Tab sin reapuntar.
+    callbacks.onReload(null);
+  };
+
   /*
    * Quitar lo escogido.
    *
@@ -2316,6 +2406,13 @@ export function renderOutliner(
     if ((event.key === 'Backspace' || event.key === 'Delete') && picked.size > 0) {
       event.preventDefault();
       void dropPicked();
+      return;
+    }
+    if (event.key === 'Tab' && picked.size > 0) {
+      // Sin esto, Tab se lleva el foco a otro control y la seleccion se queda
+      // puesta sobre algo que ya no responde a las teclas.
+      event.preventDefault();
+      void shiftPicked(!event.shiftKey);
     }
   };
   document.addEventListener('keydown', onPickedKeys);

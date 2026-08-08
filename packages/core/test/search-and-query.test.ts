@@ -215,14 +215,42 @@ describe('query terms', () => {
 
   it('selects the pages that link to a page', () => {
     const graph = inhabitedGraph();
-    const target = makePage(graph, 'Centro');
+    makePage(graph, 'Centro');
     const source = makePage(graph, 'Origen');
     makePage(graph, 'Ajena');
     makeBlock(graph, source, 'ver [[Centro]]');
 
-    const result = graph.query({ expression: linksTo(target), participant: OWNER });
+    const result = graph.query({ expression: linksTo('Centro'), participant: OWNER });
 
     assert.deepEqual(result.matchingPages, [source]);
+  });
+
+  it('selects by the title that was written, even without distinguishing case', () => {
+    const graph = inhabitedGraph();
+    makePage(graph, 'Ciudad Abierta');
+    const source = makePage(graph, 'Origen');
+    makeBlock(graph, source, 'ver [[ciudad abierta]]');
+
+    const result = graph.query({ expression: linksTo('Ciudad Abierta'), participant: OWNER });
+
+    assert.deepEqual(result.matchingPages, [source]);
+  });
+
+  it('a title no page carries selects nothing, which is the answer and not an error', () => {
+    const graph = inhabitedGraph();
+    const source = makePage(graph, 'Origen');
+    makeBlock(graph, source, 'ver [[Nadie la ha escrito]]');
+
+    // El enlace existe aunque su destino no: preguntar por el título encuentra la
+    // página que lo nombra, y preguntar por otro no encuentra nada.
+    assert.deepEqual(
+      graph.query({ expression: linksTo('Nadie la ha escrito'), participant: OWNER }).matchingPages,
+      [source],
+    );
+    assert.deepEqual(
+      graph.query({ expression: linksTo('Otra cualquiera'), participant: OWNER }).matchingPages,
+      [],
+    );
   });
 
   it('composes terms with and', () => {

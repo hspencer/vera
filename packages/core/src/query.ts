@@ -3,15 +3,13 @@
 // El vocabulario está enumerado: se puede descubrir qué es preguntable sin leer
 // una gramática ni adivinar un dialecto.
 
-import type { PageId } from './types.ts';
-
 export type QueryExpression =
   | { readonly kind: 'TitleTerm'; readonly text: string }
   | { readonly kind: 'ContentTerm'; readonly text: string }
   | { readonly kind: 'TagTerm'; readonly tag: string }
   | { readonly kind: 'PropertyTerm'; readonly key: string; readonly value: string | null }
-  | { readonly kind: 'LinksToTerm'; readonly target: PageId }
-  | { readonly kind: 'LinkedFromTerm'; readonly origin: PageId }
+  | { readonly kind: 'LinksToTerm'; readonly targetTitle: string }
+  | { readonly kind: 'LinkedFromTerm'; readonly originTitle: string }
   | { readonly kind: 'AndTerm'; readonly operands: readonly QueryExpression[] }
   | { readonly kind: 'OrTerm'; readonly operands: readonly QueryExpression[] }
   | { readonly kind: 'NotTerm'; readonly operand: QueryExpression };
@@ -33,12 +31,21 @@ export function propertyTerm(key: string, value?: string): QueryExpression {
   return { kind: 'PropertyTerm', key, value: value ?? null };
 }
 
-export function linksTo(target: PageId): QueryExpression {
-  return { kind: 'LinksToTerm', target };
+/*
+ * Los dos términos de enlace nombran un título y no una página.
+ *
+ * Lo que se escribe es `->[[Ciudad Abierta]]`, y un título no es todavía una
+ * página: puede no existir —el corpus está lleno de enlaces a páginas que nadie
+ * ha escrito— y puede renombrarse. Además, un enlace en Vera guarda el título tal
+ * como se escribió aunque no resuelva, así que preguntar por el título pregunta
+ * por lo que los bloques dicen, que es más que lo que el grafo resolvió.
+ */
+export function linksTo(targetTitle: string): QueryExpression {
+  return { kind: 'LinksToTerm', targetTitle };
 }
 
-export function linkedFrom(origin: PageId): QueryExpression {
-  return { kind: 'LinkedFromTerm', origin };
+export function linkedFrom(originTitle: string): QueryExpression {
+  return { kind: 'LinkedFromTerm', originTitle };
 }
 
 // invariant CombiningTermsNeedTwoOperands
