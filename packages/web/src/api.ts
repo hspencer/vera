@@ -171,10 +171,20 @@ export interface QueryHit {
   title: string;
   /** Lo que la página dice ser, para la columna de la tabla. Puede no decirlo. */
   type: string | null;
+  /** De qué trata, ya partido: cada respuesta es una y lleva a su página. */
+  topic: string[];
+  /** Cuándo nació. */
+  created: number;
   /** Cuándo se la tocó por última vez. */
   updated: number | null;
   /** Dónde lo dice, cuando la pregunta era por texto. */
   says: { block: string; excerpt: string } | null;
+}
+
+/** Por qué columna se está mirando una tabla, y en qué sentido. */
+export interface QuerySort {
+  by: 'title' | 'type' | 'topic' | 'created' | 'updated';
+  desc: boolean;
 }
 
 export type QueryAnswer =
@@ -182,6 +192,9 @@ export type QueryAnswer =
       view: 'list' | 'table';
       /** La pregunta tal como Vera la entendió, vuelta a escribir. */
       asked: string;
+      /** Cómo llama este corpus a lo que las columnas enseñan. */
+      names: { kind: string; topic: string };
+      sort: QuerySort;
       count: number;
       pages: QueryHit[];
       /** Cuántas cumplen y no viajaron. Recortar en silencio sería mentir. */
@@ -217,7 +230,17 @@ export const api = {
       blocks: number;
       lastSequence: number;
       /** Cómo llama este corpus a las propiedades que Vera necesita conocer. */
-      names: { kind: string; topic: string; explains: string; term: string; sense: string; day: string };
+      names: {
+        kind: string;
+        topic: string;
+        explains: string;
+        term: string;
+        sense: string;
+        day: string;
+        created: string;
+        updated: string;
+        visible: string;
+      };
     }>('/health'),
 
   pages: () => json<PageSummary[]>('/pages'),
@@ -237,12 +260,14 @@ export const api = {
    * nombrar a una persona o un asunto que no tiene por qué quedar escrito fuera
    * del corpus.
    */
-  query: async (source: string): Promise<QueryAnswer> => {
+  query: async (source: string, sort?: QuerySort): Promise<QueryAnswer> => {
     try {
       const response = await fetch('/query', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ source }),
+        // El orden viaja aparte de la pregunta: es cómo se está mirando y no qué
+        // se seleccionó, así que no se escribe en el bloque de nadie.
+        body: JSON.stringify(sort === undefined ? { source } : { source, sort }),
       });
       return (await response.json()) as QueryAnswer;
     } catch {

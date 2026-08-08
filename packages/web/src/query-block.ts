@@ -9,7 +9,7 @@
 // proyectos y se dejó el de la semana pasada es peor que ninguna lista: se le
 // cree.
 
-import { api, type QueryAnswer, type QueryHit } from './api.ts';
+import { api, type QueryAnswer, type QueryHit, type QuerySort } from './api.ts';
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
@@ -61,23 +61,39 @@ export function answerQueryBlock(
   const answer = document.createElement('div');
   answer.className = 'query-answer';
   answer.setAttribute('aria-live', 'polite');
-
-  const waiting = document.createElement('p');
-  waiting.className = 'query-waiting';
-  waiting.textContent = 'preguntando…';
-  answer.append(waiting);
   host.append(answer);
 
-  void api.query(source).then((said) => {
+  /*
+   * Ordenar vuelve a preguntar, y no reordena lo que llegó.
+   *
+   * Una pregunta puede seleccionar dos mil páginas y de ellas viajan doscientas:
+   * ordenar aquí ordenaría las doscientas primeras por título, que no es ordenar
+   * la respuesta sino el trozo que cupo. El orden va al servidor, que ordena
+   * antes de recortar.
+   */
+  const ask = (sort?: QuerySort): void => {
     answer.innerHTML = '';
-    answer.append(...drawAnswer(said, handlers));
-  });
+    const waiting = document.createElement('p');
+    waiting.className = 'query-waiting';
+    waiting.textContent = 'preguntando…';
+    answer.append(waiting);
 
+    void api.query(source, sort).then((said) => {
+      answer.innerHTML = '';
+      answer.append(...drawAnswer(said, handlers, ask));
+    });
+  };
+
+  ask();
   return answer;
 }
 
 /** Lo que se lee debajo de la pregunta, según cómo haya salido. */
-export function drawAnswer(said: QueryAnswer, handlers: QueryBlockHandlers): HTMLElement[] {
+export function drawAnswer(
+  said: QueryAnswer,
+  handlers: QueryBlockHandlers,
+  again: (sort?: QuerySort) => void = () => {},
+): HTMLElement[] {
   if ('error' in said) return [drawUnreadable(said)];
 
   const head = document.createElement('p');
@@ -110,7 +126,12 @@ export function drawAnswer(said: QueryAnswer, handlers: QueryBlockHandlers): HTM
     return [why];
   }
 
-  return [head, said.view === 'table' ? drawTable(said.pages, handlers) : drawList(said.pages, handlers)];
+  return [
+    head,
+    said.view === 'table'
+      ? drawTable(said.pages, handlers, said.names, said.sort, again)
+      : drawList(said.pages, handlers),
+  ];
 }
 
 function drawUnreadable(said: { error: string; at: number; near: string }): HTMLElement {
@@ -160,31 +181,58 @@ function drawList(pages: QueryHit[], handlers: QueryBlockHandlers): HTMLElement 
 }
 
 /*
- * La tabla, con las tres columnas de siempre.
+ * La tabla.
  *
- * Elegir columnas es lo que convierte una tabla en un índice de trabajo y es
- * también lo que trae columnas vacías, anchos imposibles en el teléfono y una
- * preferencia que hay que guardar en alguna parte. Primero que la tabla exista.
+ * Cinco columnas: el título, lo que la página dice ser, de qué trata, cuándo
+ * nació y cuándo se la tocó por última vez. Las dos primeras y la tercera se
+ * llaman como el corpus las llame —vienen con la respuesta—, porque preguntar
+ * por `tipo` y ver una columna que diga otra cosa obliga a saberse dos palabras
+ * para una.
+ *
+ * Y las cabeceras ordenan. Pulsar una vuelve a preguntar con ese orden: ordenar
+ * en la pantalla ordenaría el trozo que cupo, y el trozo que cupo se eligió por
+ * título.
  */
-function drawTable(pages: QueryHit[], handlers: QueryBlockHandlers): HTMLElement {
+function drawTable(
+  pages: QueryHit[],
+  handlers: QueryBlockHandlers,
+  names: { kind: string; topic: string },
+  sort: QuerySort,
+  again: (sort?: QuerySort) => void,
+): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'query-table-wrap';
 
   const table = document.createElement('table');
   table.className = 'query-table';
 
+  const columns: { key: QuerySort['by']; name: string }[] = [
+    { key: 'title', name: 'título' },
+    { key: 'type', name: names.kind },
+    { key: 'topic', name: names.topic },
+    { key: 'created', name: 'creación' },
+    { key: 'updated', name: 'actualización' },
+  ];
+
   const head = document.createElement('thead');
   const headRow = document.createElement('tr');
-  /*
-   * «escrita» y no «actualización».
-   *
-   * Es la misma columna —cuándo se tocó la página por última vez— dicha en corto.
-   * Con el mapa abierto al lado, el hueco de un bloque son trescientos píxeles, y
-   * un encabezado de trece letras se come el ancho de la columna que encabeza.
-   */
-  for (const name of ['título', 'tipo', 'escrita']) {
+  for (const column of columns) {
     const cell = document.createElement('th');
-    cell.textContent = name;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'query-sort';
+    button.textContent = column.name;
+    const mine = sort.by === column.key;
+    if (mine) {
+      button.classList.add('sorted');
+      // La flecha dice hacia dónde está ordenado ahora, no hacia dónde iría al
+      // pulsar: es el estado y no la promesa.
+      button.append(document.createTextNode(sort.desc ? ' ↓' : ' ↑'));
+    }
+    button.title = mine && !sort.desc ? `ordenar por ${column.name}, al revés` : `ordenar por ${column.name}`;
+    // Pulsar la misma cabecera da la vuelta; pulsar otra empieza por arriba.
+    button.addEventListener('click', () => again({ by: column.key, desc: mine ? !sort.desc : false }));
+    cell.append(button);
     headRow.append(cell);
   }
   head.append(headRow);
@@ -202,11 +250,38 @@ function drawTable(pages: QueryHit[], handlers: QueryBlockHandlers): HTMLElement
     // donde no hay dato hace que la columna parezca contestada.
     type.textContent = hit.type ?? '';
 
+    /*
+     * Los conceptos, uno por uno y cada uno enlazado.
+     *
+     * Una página es varias cosas a la vez y el corpus lo escribe con comas. La
+     * cadena entera no lleva a ninguna parte —no existe una página llamada
+     * «contactos, PUCV, EAD»—, así que cada respuesta es su propio enlace.
+     */
+    const topic = document.createElement('td');
+    topic.className = 'query-cell-topic';
+    for (const [at, one] of (hit.topic ?? []).entries()) {
+      if (at > 0) topic.append(document.createTextNode(', '));
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'query-title';
+      link.textContent = one;
+      link.title = `ir a ${one}`;
+      link.addEventListener('click', (event) => {
+        event.stopPropagation();
+        handlers.onNavigate(one);
+      });
+      topic.append(link);
+    }
+
+    const born = document.createElement('td');
+    born.className = 'query-cell-when';
+    born.textContent = saidDate(hit.created);
+
     const when = document.createElement('td');
     when.className = 'query-cell-when';
     when.textContent = saidDate(hit.updated);
 
-    row.append(title, type, when);
+    row.append(title, type, topic, born, when);
     body.append(row);
   }
 

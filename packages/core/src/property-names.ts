@@ -22,13 +22,27 @@
 //       - term · término
 //       - sense · sentido
 //       - day · bitácora
+//       - created · creación
+//       - updated · actualización
+//       - visible · público
 //
 // Una sola palabra no puede declararse así y se queda dentro del código:
 // `special-kind`, la que dice cuál es la página de ontología. No cabe declararla
 // en la página que sirve para encontrarla.
 
 /** Los papeles que el código conoce. */
-export type PropertyRole = 'kind' | 'topic' | 'explains' | 'term' | 'sense' | 'day';
+export type PropertyRole =
+  | 'kind'
+  | 'topic'
+  | 'explains'
+  | 'term'
+  | 'sense'
+  | 'day'
+  // Las tres derivadas: no se guardan en ninguna propiedad y aun así se leen y
+  // se preguntan como si lo fueran. Ver DERIVED más abajo.
+  | 'created'
+  | 'updated'
+  | 'visible';
 
 export type PropertyNames = Readonly<Record<PropertyRole, string>>;
 
@@ -47,12 +61,47 @@ export const DEFAULT_PROPERTY_NAMES: PropertyNames = {
   sense: 'sentido',
   // Éste no es una clave sino un valor: la clase con que nace un día.
   day: 'bitácora',
+  created: 'creación',
+  updated: 'actualización',
+  visible: 'público',
 };
+
+/*
+ * Las tres que se leen y se preguntan como propiedades y no se guardan como
+ * tales.
+ *
+ * Cuándo nació una página, cuándo se la tocó por última vez y si es pública son
+ * cosas que Vera ya sabe: la primera es del propio registro de la página, la
+ * segunda sale del log —cada operación trae su fecha— y la tercera tiene su
+ * propia operación y su propia columna, con sus reglas.
+ *
+ * Guardarlas además como propiedad daría dos sitios diciendo lo mismo, y dos
+ * sitios que dicen lo mismo acaban diciendo cosas distintas. Lo que sí hacen
+ * falta es que se puedan preguntar, y para eso basta con que quien evalúa las
+ * reconozca por su nombre antes de ir a buscarlas entre lo escrito.
+ */
+export const DERIVED: readonly PropertyRole[] = ['created', 'updated', 'visible'];
+
+/** Qué papel derivado nombra una clave, si nombra alguno. */
+export function derivedRole(key: string, names: PropertyNames): PropertyRole | null {
+  const clean = key.trim().toLowerCase();
+  return DERIVED.find((role) => names[role].toLowerCase() === clean) ?? null;
+}
 
 /** La única palabra que no se puede declarar: con ella se encuentra la ontología. */
 export const SPECIAL_KIND = 'special-kind';
 
-const ROLES: PropertyRole[] = ['kind', 'topic', 'explains', 'term', 'sense', 'day'];
+const ROLES: PropertyRole[] = [
+  'kind',
+  'topic',
+  'explains',
+  'term',
+  'sense',
+  'day',
+  'created',
+  'updated',
+  'visible',
+];
 
 /**
  * Lee lo que una página declara, y deja lo demás como estaba.

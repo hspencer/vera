@@ -11,6 +11,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 
 import {
   VeraGraph,
+  answersIn,
   checkInvariants,
   SPECIAL_KIND,
   inverseOf,
@@ -1421,7 +1422,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       const chunks: Buffer[] = [];
       request.on('data', (chunk: Buffer) => chunks.push(chunk));
       request.on('end', () => {
-        let body: { source?: unknown; participant?: unknown };
+        let body: { source?: unknown; participant?: unknown; sort?: unknown };
         try {
           body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
         } catch {
@@ -1457,19 +1458,60 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         }
 
         const names = propertyNames();
+        const valueOf = (page: string, key: string): string | null =>
+          graph.propertiesOf(page).find((property) => property.key === key)?.value ?? null;
+
         const found = outcome.matchingPages
           .map((id) => graph.page(id))
           .filter((page): page is NonNullable<typeof page> => page !== undefined)
           .map((page) => ({
             id: page.id,
             title: page.title,
-            type:
-              graph.propertiesOf(page.id).find((property) => property.key === names.kind)?.value ??
-              null,
+            type: valueOf(page.id, names.kind),
+            /*
+             * Los conceptos, ya partidos.
+             *
+             * Una página es varias cosas a la vez y el corpus lo escribe con
+             * comas; partirlo aquí y no en la pantalla es lo que permite que cada
+             * palabra sea un enlace en vez de una cadena que no lleva a ninguna
+             * parte. La regla de partir vive en el dominio: si el cliente
+             * partiera por su cuenta, las palabras que ofrece y las que dibuja
+             * podrían dejar de ser las mismas.
+             */
+            topic: answersIn(valueOf(page.id, names.topic) ?? ''),
+            created: page.createdAt,
             updated: graph.updatedAt(page.id),
             says: says.get(page.id) ?? null,
-          }))
-          .sort((a, b) => a.title.localeCompare(b.title, 'es'));
+          }));
+
+        /*
+         * Ordenar antes de recortar, siempre.
+         *
+         * Es la diferencia entre ordenar la respuesta y ordenar el trozo de la
+         * respuesta que cupo: con dos mil páginas seleccionadas, lo segundo
+         * enseñaría las doscientas primeras por título ordenadas por fecha, que
+         * no es lo que nadie pidió.
+         *
+         * Y el orden no se escribe en la pregunta: es cómo se está mirando, no
+         * qué se seleccionó. Pulsar una cabecera no debería reescribir el bloque
+         * de nadie.
+         */
+        const sort = body.sort as { by?: unknown; desc?: unknown } | undefined;
+        const by = typeof sort?.by === 'string' ? sort.by : 'title';
+        const desc = sort?.desc === true;
+        const dicho = (value: string | null): string => value ?? '';
+        const compare: Record<string, (a: (typeof found)[number], b: (typeof found)[number]) => number> = {
+          title: (a, b) => a.title.localeCompare(b.title, 'es'),
+          type: (a, b) => dicho(a.type).localeCompare(dicho(b.type), 'es'),
+          topic: (a, b) => (a.topic[0] ?? '').localeCompare(b.topic[0] ?? '', 'es'),
+          created: (a, b) => a.created - b.created,
+          updated: (a, b) => (a.updated ?? 0) - (b.updated ?? 0),
+        };
+        const order = compare[by] ?? compare['title'];
+        // Desempate por título: dos páginas del mismo tipo no pueden bailar entre
+        // dos lecturas de la misma pregunta.
+        found.sort((a, b) => (order?.(a, b) ?? 0) || a.title.localeCompare(b.title, 'es'));
+        if (desc) found.reverse();
 
         // Se contesta entero cuánto es y se manda un tramo: una pregunta puede
         // seleccionar dos mil páginas, y ninguna pantalla las lee. Lo recortado
@@ -1485,6 +1527,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
            * que haya que adivinarlo —@guarantee AnEmptyAnswerExplainsItself—.
            */
           asked: writeQuery(read.expression, read.view),
+          /** Cómo llama este corpus a lo que la tabla enseña en sus columnas. */
+          names: { kind: names.kind, topic: names.topic },
+          sort: { by, desc },
           count: found.length,
           pages: found.slice(0, MOST_ANSWERS),
           more: Math.max(0, found.length - MOST_ANSWERS),

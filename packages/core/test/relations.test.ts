@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 
 import {
   DEFAULT_PROPERTY_NAMES,
+  calendarDay,
+  propertyTerm,
   STARTER_RELATIONS,
   inverseOf,
   isSymmetric,
@@ -268,5 +270,86 @@ describe('los nombres de las propiedades', () => {
     });
 
     assert.deepEqual(graph.crossingsOut(from), []);
+  });
+});
+
+/*
+ * Lo que la cabecera enseña como propiedad se pregunta como propiedad.
+ *
+ * Cuándo nació una página, cuándo se la tocó y si es pública no están escritas
+ * en ninguna propiedad —la primera es de la página, la segunda sale del registro
+ * y la tercera tiene su propia operación—, y aun así se leen ahí arriba junto a
+ * las demás. Guardarlas además daría dos sitios diciendo lo mismo; lo que hacía
+ * falta es que se puedan preguntar.
+ */
+describe('las propiedades derivadas', () => {
+  it('se pregunta si una página es pública', () => {
+    const graph = inhabitedGraph();
+    const abierta = makePage(graph, 'Abierta');
+    makePage(graph, 'Cerrada');
+    submit(graph, { kind: 'set_page_visibility', page: abierta, visibility: 'public' });
+
+    assert.deepEqual(
+      graph.query({ expression: propertyTerm('público', 'sí'), participant: OWNER }).matchingPages,
+      [abierta],
+    );
+    assert.equal(
+      graph.query({ expression: propertyTerm('público', 'no'), participant: OWNER }).matchingPages
+        .length,
+      1,
+    );
+  });
+
+  it('y por el día en que nació, dicho como se titula una bitácora', () => {
+    const graph = inhabitedGraph();
+    const page = makePage(graph, 'Fechada');
+    const hoy = calendarDay(Date.now());
+
+    assert.deepEqual(
+      graph.query({ expression: propertyTerm('creación', hoy), participant: OWNER }).matchingPages,
+      [page],
+    );
+    assert.deepEqual(
+      graph.query({ expression: propertyTerm('creación', '1999-01-01'), participant: OWNER })
+        .matchingPages,
+      [],
+    );
+  });
+
+  it('la palabra la dice el corpus, como todas las demás', () => {
+    const graph = inhabitedGraph();
+    graph.namesProperties({ ...DEFAULT_PROPERTY_NAMES, visible: 'tūmatanui' });
+    const abierta = makePage(graph, 'Abierta');
+    submit(graph, { kind: 'set_page_visibility', page: abierta, visibility: 'public' });
+
+    assert.deepEqual(
+      graph.query({ expression: propertyTerm('tūmatanui', 'sí'), participant: OWNER })
+        .matchingPages,
+      [abierta],
+    );
+    // Y con la palabra de antes ya no contesta: no hay dos nombres para una cosa.
+    assert.deepEqual(
+      graph.query({ expression: propertyTerm('público', 'sí'), participant: OWNER }).matchingPages,
+      [],
+    );
+  });
+
+  it('una propiedad escrita con ese nombre no la tapa', () => {
+    // Si alguien llama `creación` a una propiedad suya, lo derivado sigue
+    // contestando: es lo que la cabecera enseña con ese nombre.
+    const graph = inhabitedGraph();
+    const page = makePage(graph, 'Con las dos');
+    submit(graph, {
+      kind: 'set_property',
+      page,
+      propertyKey: 'creación',
+      propertyValue: 'a mano',
+    });
+
+    assert.deepEqual(
+      graph.query({ expression: propertyTerm('creación', 'a mano'), participant: OWNER })
+        .matchingPages,
+      [],
+    );
   });
 });

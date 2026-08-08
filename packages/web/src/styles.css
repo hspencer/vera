@@ -1210,7 +1210,7 @@ input {
 .complete {
   position: absolute;
   z-index: 50;
-  min-width: 16rem;
+  min-width: 30rem;
   max-width: min(34rem, 90vw);
   max-height: 15rem;
   overflow-y: auto;
@@ -2282,6 +2282,57 @@ code {
   cursor: pointer;
 }
 
+/*
+ * El deslizador de transparencia, que es tambien la muestra.
+ *
+ * Su carril va del transparente al color entero sobre un damero: cuanto se ve
+ * del damero es cuanta transparencia tiene, asi que ensena exactamente lo que el
+ * token va a valer. Un cuadrito aparte para eso se leia como un segundo selector
+ * de color, que es justo lo que no es.
+ */
+.token-alpha {
+  flex: 1;
+  min-width: 3rem;
+  max-width: 6rem;
+  height: 1.7rem;
+  margin: 0;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background-image:
+    linear-gradient(to right, transparent, var(--token-rgb, currentColor)),
+    conic-gradient(
+      from 45deg,
+      color-mix(in srgb, var(--text) 22%, transparent) 0deg 90deg,
+      transparent 90deg 180deg,
+      color-mix(in srgb, var(--text) 22%, transparent) 180deg 270deg,
+      transparent 270deg 360deg
+    );
+  background-size: 100% 100%, 8px 8px;
+}
+
+.token-alpha::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.5rem;
+  height: 1.7rem;
+  border-radius: 2px;
+  background: var(--bg);
+  border: 1px solid var(--text);
+  cursor: pointer;
+}
+
+.token-alpha::-moz-range-thumb {
+  width: 0.5rem;
+  height: 1.7rem;
+  border-radius: 2px;
+  background: var(--bg);
+  border: 1px solid var(--text);
+  cursor: pointer;
+}
+
 .token-hex {
   font-family: var(--font-mono);
   min-width: 0;
@@ -3245,13 +3296,17 @@ code {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
-  min-width: 16rem;
+  min-width: 30rem;
   font-size: 0.82rem;
 }
 
-.query-table th:nth-child(1) { width: 55%; }
-.query-table th:nth-child(2) { width: 20%; }
-.query-table th:nth-child(3) { width: 25%; }
+/* Con cinco columnas el reparto se reparte: el título y los conceptos son los
+   que crecen, porque son los que llevan palabras. */
+.query-table th:nth-child(1) { width: 34%; }
+.query-table th:nth-child(2) { width: 14%; }
+.query-table th:nth-child(3) { width: 28%; }
+.query-table th:nth-child(4) { width: 12%; }
+.query-table th:nth-child(5) { width: 12%; }
 
 /*
  * El aire de las celdas.

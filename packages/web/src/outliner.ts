@@ -11,7 +11,7 @@
 // Cada edición emite una operación. No hay guardado implícito ni estado local
 // que pueda divergir del grafo.
 
-import { answersIn, looksLikeQuery } from '@vera/core';
+import { DEFAULT_PROPERTY_NAMES, answersIn, looksLikeQuery } from '@vera/core';
 import { api, type BlockView, type Change, type CrossingRow, type PageView } from './api.ts';
 import { renderMarkdown, type RenderOptions } from './markdown.ts';
 import { answerQueryBlock } from './query-block.ts';
@@ -46,6 +46,21 @@ import {
   type KeyOutcome,
   type Neighbourhood,
 } from './keys.ts';
+
+/*
+ * Cómo llama este corpus a lo que Vera necesita nombrar.
+ *
+ * Lo trae el arranque, leído de la página de ontología, y se guarda aquí para
+ * que dibujar una página no tenga que preguntarlo. Mientras no llegue rige lo
+ * que Vera trae, que es lo mismo que rige en el servidor.
+ */
+let names = { ...DEFAULT_PROPERTY_NAMES };
+
+export function nameProperties(said: Partial<typeof names>): void {
+  names = { ...names, ...said };
+}
+
+const corpusNames = (): typeof names => names;
 
 export interface OutlinerCallbacks {
   onNavigate(title: string): void;
@@ -1519,7 +1534,18 @@ export function renderOutliner(
 
   const visibilityKey = document.createElement('dt');
   visibilityKey.className = 'property-key';
-  visibilityKey.textContent = 'público';
+  /*
+   * Los tres renglones que no salen de una propiedad escrita.
+   *
+   * Se llaman como el corpus los llame —lo declara la ontología, igual que las
+   * demás— porque lo que la cabecera enseña como propiedad tiene que poder
+   * preguntarse como propiedad: `? público=sí`, `? creación=2026-08-07`. Lo que
+   * no hacen es guardarse: la visibilidad tiene su operación y su columna, y las
+   * dos fechas las sabe el registro. Dos sitios diciendo lo mismo acaban
+   * diciendo cosas distintas.
+   */
+  const derived = corpusNames();
+  visibilityKey.textContent = derived.visible;
 
   const visibilityValue = document.createElement('dd');
   visibilityValue.className = 'property-value governed';
@@ -1584,14 +1610,14 @@ export function renderOutliner(
     properties.append(key, value);
   };
   temporal(
-    'fecha de creación',
+    derived.created,
     page.originCreatedAt ?? page.createdAt,
     page.originCreatedAt === null
       ? 'No se recuperó una fecha anterior: ésta es la fecha cierta de entrada a Vera.'
       : 'Recuperada del corpus de origen.',
   );
   temporal(
-    'fecha de actualización',
+    derived.updated,
     page.lastEditedAt,
     'Derivada automáticamente de la última revisión de la página.',
   );

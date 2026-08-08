@@ -34,7 +34,9 @@ export {
 } from './relations.ts';
 export {
   DEFAULT_PROPERTY_NAMES,
+  DERIVED,
   SPECIAL_KIND,
+  derivedRole,
   readPropertyNames,
 } from './property-names.ts';
 export type { PropertyNames, PropertyRole } from './property-names.ts';
@@ -42,6 +44,7 @@ export type { Crossing, CrossingSense, RelationTerm } from './relations.ts';
 export type { QuerySource, QueryUnreadable, QueryView } from './query-source.ts';
 
 export {
+  calendarDay,
   excerpt,
   isDateTitle,
   matches,

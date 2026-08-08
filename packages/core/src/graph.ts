@@ -9,9 +9,10 @@ import { answersIn } from './vocabulary.ts';
 import { looksLikeQuery } from './query-source.ts';
 import { relationKeyOf, senseIn, titleIn } from './relations.ts';
 import type { Crossing } from './relations.ts';
-import { DEFAULT_PROPERTY_NAMES } from './property-names.ts';
-import type { PropertyNames } from './property-names.ts';
+import { DEFAULT_PROPERTY_NAMES, derivedRole } from './property-names.ts';
+import type { PropertyNames, PropertyRole } from './property-names.ts';
 import {
+  calendarDay,
   excerpt,
   isDateTitle,
   matches,
@@ -1286,7 +1287,25 @@ export class VeraGraph {
         return this.#pagesWhere((page) =>
           this.blocksOf(page.id).some((b) => this.tagsOf(b.stableId).includes(expression.tag)),
         );
-      case 'PropertyTerm':
+      case 'PropertyTerm': {
+        /*
+         * Tres claves no están escritas en ninguna propiedad y se contestan
+         * igual: cuándo nació la página, cuándo se la tocó y si es pública.
+         *
+         * Se miran antes que lo escrito porque son las que el pie de la página
+         * enseña como propiedades: lo que se ve como propiedad tiene que poder
+         * preguntarse como propiedad, y guardarlas además en una tabla daría dos
+         * sitios diciendo lo mismo. Ver DERIVED en property-names.ts.
+         */
+        const derived = derivedRole(expression.key, this.#names);
+        if (derived !== null) {
+          return this.#pagesWhere((page) => {
+            const said = this.#derivedValue(page, derived);
+            return expression.value === null
+              ? said !== null
+              : said !== null && said.toLowerCase() === expression.value.toLowerCase();
+          });
+        }
         return this.#pagesWhere((page) =>
           this.propertiesOf(page.id).some(
             (p) =>
@@ -1294,6 +1313,7 @@ export class VeraGraph {
               (expression.value === null || p.value === expression.value),
           ),
         );
+      }
       /*
        * Los enlaces se comparan por título y con el mismo plegado que el resto
        * del grafo: `[[ciudad abierta]]` y `[[Ciudad Abierta]]` son el mismo
@@ -1339,6 +1359,24 @@ export class VeraGraph {
         return this.#pagesWhere((page) => !excluded.has(page.id));
       }
     }
+  }
+
+  /*
+   * Lo que una propiedad derivada contesta de una página.
+   *
+   * Las fechas se dicen como se titula un día —`2026-08-07`— porque es como se
+   * escriben en este corpus y porque así preguntar por una fecha y enlazar a su
+   * bitácora se escriben igual. Lo público se dice sí o no: es lo que la
+   * cabecera enseña y lo que alguien escribiría al preguntarlo.
+   */
+  #derivedValue(page: Page, role: PropertyRole): string | null {
+    if (role === 'created') return calendarDay(page.createdAt);
+    if (role === 'updated') {
+      const when = this.updatedAt(page.id);
+      return when === null ? null : calendarDay(when);
+    }
+    if (role === 'visible') return page.visibility === 'public' ? 'sí' : 'no';
+    return null;
   }
 
   #pagesWhere(predicate: (page: Page) => boolean): Set<PageId> {

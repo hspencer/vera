@@ -6,7 +6,7 @@
 import './styles.css';
 
 import { api, type PageSummary, type PageView } from './api.ts';
-import { renderOutliner, speakInto, type OutlinerCallbacks } from './outliner.ts';
+import { nameProperties, renderOutliner, speakInto, type OutlinerCallbacks } from './outliner.ts';
 import { onRecording } from './audio-block.ts';
 import { isDay, today } from './autocomplete.ts';
 import { renderSettings, type Section } from './settings.ts';
@@ -84,7 +84,17 @@ let corpus: {
   pages: number;
   blocks: number;
   lastSequence: number;
-  names?: { kind: string; day: string };
+  names?: {
+    kind: string;
+    topic: string;
+    explains: string;
+    term: string;
+    sense: string;
+    day: string;
+    created: string;
+    updated: string;
+    visible: string;
+  };
 } | null = null;
 
 /**
@@ -1298,6 +1308,9 @@ async function start(): Promise<void> {
   // El estado del corpus se guarda, no se dibuja: ahora vive en Ajustes →
   // Memoria y se pinta cuando alguien lo abre.
   corpus = await api.health();
+  // Las palabras del corpus, antes de dibujar nada: la cabecera de una página
+  // las necesita para llamar a sus renglones como los llame quien escribe.
+  if (corpus?.names !== undefined) nameProperties(corpus.names);
 
   await loadPages();
 

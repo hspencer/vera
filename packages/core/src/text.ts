@@ -103,6 +103,19 @@ export function titleKey(title: string): string {
  * no consultar una tabla aparte. Una sola grafía, la del calendario, que es la
  * que ordena los días al ordenar sus títulos.
  */
+/**
+ * El día de un instante, dicho como se titula una bitácora.
+ *
+ * En hora local y no en UTC, por la misma razón por la que un día se titula con
+ * la fecha de quien escribe: si son las once de la noche del lunes para quien
+ * mira, es lunes.
+ */
+export function calendarDay(at: number): string {
+  const when = new Date(at);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`;
+}
+
 export function isDateTitle(title: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(title.trim());
 }

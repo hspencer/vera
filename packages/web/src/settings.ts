@@ -311,27 +311,92 @@ function drawAppearance(
     let control: HTMLElement;
 
     if (kind === 'color') {
-      // Un color se elige mirándolo. Junto al selector va su valor, porque el
-      // token sigue siendo texto y hay quien prefiere escribirlo.
+      /*
+       * Un color se elige mirándolo. Junto al selector va su valor, porque el
+       * token sigue siendo texto y hay quien prefiere escribirlo.
+       *
+       * Y el texto es el que manda sobre la transparencia, porque el selector no
+       * sabe de ella: `<input type="color">` es de tres canales por
+       * especificación, y al darle `#8fa2a363` devuelve `#8fa2a3` sin decir
+       * nada. Medido. Como al tocarlo se escribía su valor de vuelta al token,
+       * bastaba rozar el selector para que un color translúcido se volviera
+       * opaco y nadie se enterara.
+       *
+       * Ahora el selector lleva sólo los tres canales y la transparencia viaja
+       * aparte: se conserva al elegir un tono nuevo, y se escribe en el campo de
+       * texto, que sí admite los ocho dígitos. Ni el modelo ni CSS tenían nada
+       * en contra —`rgba(143, 162, 163, 0.39)` es lo que el navegador lee de
+       * `#8fa2a363`—; era el control el que no llegaba.
+       */
       const wrap = document.createElement('span');
       wrap.className = 'token-color';
+
+      /** Los tres canales por un lado y la transparencia por otro. */
+      const opaqueOf = (value: string): string => value.trim().slice(0, 7);
+      const alphaOf = (value: string): string => {
+        const held = value.trim();
+        return /^#[0-9a-f]{8}$/i.test(held) ? held.slice(7) : '';
+      };
+
+      let alpha = alphaOf(current);
+
       const picker = document.createElement('input');
       picker.type = 'color';
-      picker.value = current;
+      picker.value = opaqueOf(current);
       const text = document.createElement('input');
       text.type = 'text';
       text.className = 'token-hex';
       text.value = current;
+      text.title = 'seis dígitos, u ocho para dar transparencia: #8fa2a363';
 
-      picker.addEventListener('input', () => {
-        text.value = picker.value;
-        handlers.onTokenChange(token, picker.value);
-      });
-      text.addEventListener('change', () => {
-        picker.value = text.value;
-        handlers.onTokenChange(token, text.value);
-      });
-      wrap.append(picker, text);
+      /*
+       * La transparencia, con su propio control.
+       *
+       * El selector del navegador no la ofrece, y dejarla sólo en el campo de
+       * texto significa que para bajar un color al 40 % hay que saberse que eso
+       * se escribe `66` en hexadecimal. Un tono se elige mirándolo y una
+       * transparencia también.
+       *
+       * El deslizador es además la muestra: su carril va del transparente al
+       * color entero sobre un damero, así que enseña exactamente lo que el token
+       * va a valer. Por eso no hace falta un cuadrito aparte —había uno y era un
+       * segundo selector de color a la vista, que es justo lo que no es—.
+       */
+      const opacity = document.createElement('input');
+      opacity.type = 'range';
+      opacity.className = 'token-alpha';
+      opacity.min = '0';
+      opacity.max = '100';
+      opacity.setAttribute('aria-label', `opacidad de ${LABELS[token.name] ?? token.name}`);
+
+      const pctOf = (hex: string): number =>
+        hex === '' ? 100 : Math.round((parseInt(hex, 16) / 255) * 100);
+      const hexOf = (pct: number): string =>
+        pct >= 100 ? '' : Math.round((pct / 100) * 255).toString(16).padStart(2, '0');
+
+      /** Deja los tres controles diciendo lo mismo, y pinta el carril. */
+      const settle = (value: string): void => {
+        const rgb = opaqueOf(value);
+        alpha = alphaOf(value);
+        picker.value = rgb;
+        text.value = value;
+        opacity.value = String(pctOf(alpha));
+        wrap.style.setProperty('--token-rgb', rgb);
+        opacity.title = `${pctOf(alpha)} % de opacidad`;
+      };
+      settle(current);
+
+      const emit = (value: string): void => {
+        settle(value);
+        handlers.onTokenChange(token, value);
+      };
+
+      // La transparencia sobrevive a elegir un tono nuevo: es otra decisión.
+      picker.addEventListener('input', () => emit(picker.value + alpha));
+      opacity.addEventListener('input', () => emit(picker.value + hexOf(Number(opacity.value))));
+      text.addEventListener('change', () => emit(text.value.trim()));
+
+      wrap.append(picker, opacity, text);
       control = wrap;
     } else if (kind === 'font') {
       const select = document.createElement('select');
