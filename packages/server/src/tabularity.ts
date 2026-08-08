@@ -22,7 +22,7 @@ import type { Block, Change } from '@vera/core';
 import type { PageStructure } from './structure.ts';
 
 /** Las clases de arreglo, para contarlas en el registro. */
-export type FixKind = 'empty' | 'separate' | 'heading' | 'split' | 'hoist';
+export type FixKind = 'empty' | 'separate' | 'heading' | 'split' | 'hoist' | 'nest';
 
 export interface PlanStep {
   kind: FixKind;
@@ -348,6 +348,73 @@ export function planTabularity(page: string, blocks: Block[], structure: PageStr
     }
   }
 
+  /*
+   * Y el ultimo paso: que cada encabezado se lleve lo que encabeza.
+   *
+   * @invariant AHeadingTakesWhatFollowsItUntilItsPeer. En Markdown la jerarquia
+   * la lleva la marca `#` y no la sangria, asi que al volverse bloques la marca
+   * sobrevive y la jerarquia no: queda una lista de renglones del mismo peso
+   * donde el documento tenia secciones. Y un titulo asi no se puede plegar,
+   * porque plegar recoge lo que cuelga y de un titulo plano no cuelga nada.
+   *
+   * Es el gemelo de `hoist`: aquel sube un encabezado que quedo demasiado hondo,
+   * este baja lo que se quedo demasiado plano. Van en este orden porque `hoist`
+   * decide de quien es hermano cada encabezado, y esto reparte a los hermanos.
+   *
+   * Se recorre de atras hacia adelante para que un encabezado se lleve a sus
+   * seguidores antes de que otro mas importante se lo lleve a el: yendo al
+   * derecho, `#` se llevaria a `##` y a todo lo demas de golpe, y `##` se
+   * quedaria sin nada que encabezar.
+   */
+  const nest = (parent: string | null): void => {
+    const kids = [...(kin.get(parent) ?? [])];
+    for (let at = kids.length - 1; at >= 0; at -= 1) {
+      const id = kids[at];
+      if (id === undefined) continue;
+      const level = headingLevelOf(contentOf.get(id) ?? '');
+      if (level === null) continue;
+
+      // Lo que viene detras, hasta el siguiente encabezado de rango igual o mas
+      // importante. Se relee la lista viva: los pasos anteriores ya la movieron.
+      const brothers = kin.get(parent) ?? [];
+      const from = brothers.indexOf(id);
+      if (from < 0) continue;
+      const takes: string[] = [];
+      for (let i = from + 1; i < brothers.length; i += 1) {
+        const next = brothers[i];
+        if (next === undefined) continue;
+        const its = headingLevelOf(contentOf.get(next) ?? '');
+        if (its !== null && its <= level) break;
+        // @invariant OneFixPerBlockPerRound: lo que este plan ya rehizo se deja
+        // para la vuelta siguiente, cuando la pagina vuelva a leerse como quedo.
+        if (touched.has(next)) break;
+        takes.push(next);
+      }
+      if (takes.length === 0) continue;
+
+      for (const moved of takes) {
+        const to = (kin.get(id) ?? []).length;
+        steps.push({
+          kind: 'nest',
+          change: { kind: 'move_block', block: moved, page, parent: id, position: to },
+        });
+        takeOut(parent, moved);
+        putAt(id, moved, to);
+        touched.add(moved);
+      }
+    }
+  };
+
+  // Por cada nivel del arbol, empezando por la raiz. Los hijos recien mudados se
+  // reparten tambien: un `##` que acaba de entrar bajo un `#` se lleva a su vez
+  // lo suyo.
+  const levels: (string | null)[] = [null];
+  for (let i = 0; i < levels.length && i < 10_000; i += 1) {
+    const parent = levels[i] as string | null;
+    nest(parent);
+    for (const child of kin.get(parent) ?? []) levels.push(child);
+  }
+
   return { steps, touched: [...touched] };
 }
 
@@ -368,6 +435,8 @@ export function describePlan(steps: PlanStep[]): string[] {
     split: (many) => (many === 1 ? 'un párrafo largo partido' : `${many} párrafos largos partidos`),
     hoist: (many) =>
       many === 1 ? 'un encabezado puesto en su nivel' : `${many} encabezados puestos en su nivel`,
+    nest: (many) =>
+      many === 1 ? 'un bloque metido bajo su título' : `${many} bloques metidos bajo su título`,
   };
   return [...counts].map(([kind, many]) => say[kind](many));
 }

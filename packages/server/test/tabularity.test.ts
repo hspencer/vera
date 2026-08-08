@@ -148,8 +148,30 @@ describe('planTabularity', () => {
   });
 
   it('una página sana no da ningún paso', () => {
-    const blocks = page(['# Título', '  Un párrafo con su punto.', '## Sección', '  Otro.'].join('\n'));
+    // Sana de veras: cada título ya se lleva lo suyo, y el `##` ya cuelga del `#`.
+    const blocks = page(
+      ['# Título', '  Un párrafo con su punto.', '  ## Sección', '    Otro.'].join('\n'),
+    );
     assert.deepEqual(plan(blocks).steps, []);
+  });
+
+  /*
+   * Esta prueba tenía antes el árbol de arriba sin sangrar el `##`, y lo llamaba
+   * sano. Dejó de serlo cuando se añadió `nest_under_heading`: un `##` hermano de
+   * un `#` es exactamente el defecto que ese arreglo existe para corregir, porque
+   * plegar el `#` tiene que recoger también la sección que lleva dentro.
+   */
+  it('un título que era hermano del anterior pasa a colgar de él', () => {
+    const blocks = page(['# Título', '  Un párrafo con su punto.', '## Sección', '  Otro.'].join('\n'));
+    const moves = plan(blocks).steps.filter((step) => step.kind === 'nest');
+    assert.equal(moves.length, 1);
+    assert.deepEqual(moves[0]?.change, {
+      kind: 'move_block',
+      block: 'block:3',
+      page: 'page:1',
+      parent: 'block:1',
+      position: 1,
+    });
   });
 
   it('dice qué tocó, para no proponer nada más sobre eso en la misma vuelta', () => {
@@ -196,6 +218,16 @@ describe('describePlan', () => {
 });
 
 describe('lo delicado no se toca', () => {
+  /*
+   * Lo que afirman estas pruebas es que el bloque delicado no se rehace: no se
+   * parte ni se separa. Antes lo decían exigiendo que el plan entero fuera vacío,
+   * y eso afirmaba de paso algo mucho más fuerte —que a la página no le pasa
+   * nada—, que dejó de ser cierto al añadirse `nest_under_heading`: mover *otro*
+   * bloque bajo el título no toca una letra del delicado.
+   */
+  const rehacen = (blocks: Block[]) =>
+    plan(blocks).steps.filter((step) => step.kind === 'split' || step.kind === 'separate');
+
   const con = (content: string): Block[] => [
     { stableId: 'block:1', page: 'page:1', parent: null, position: 0, content, createdAt: 0 },
     { stableId: 'block:2', page: 'page:1', parent: null, position: 1, content: 'otra cosa.', createdAt: 0 },
@@ -203,21 +235,112 @@ describe('lo delicado no se toca', () => {
 
   it('no parte un bloque con una valla de código', () => {
     const codigo = `# Cómo se corre\n\`\`\`bash\nnpm run dev\nnpm test\n\`\`\``;
-    assert.deepEqual(plan(con(codigo)).steps, []);
+    assert.deepEqual(rehacen(con(codigo)), []);
   });
 
   it('no parte una tabla', () => {
     const tabla = `# Precios\n| uno | dos |\n| --- | --- |\n| 1 | 2 |`;
-    assert.deepEqual(plan(con(tabla)).steps, []);
+    assert.deepEqual(rehacen(con(tabla)), []);
   });
 
   it('no parte un bloque con propiedades dentro', () => {
-    assert.deepEqual(plan(con('# Ficha\nautor:: alguien')).steps, []);
+    assert.deepEqual(rehacen(con('# Ficha\nautor:: alguien')), []);
   });
 
   it('pero el defecto se sigue viendo', () => {
     const codigo = `# Cómo se corre\n\`\`\`bash\nnpm run dev\n\`\`\``;
     const defects = readStructure(con(codigo)).observations.map((one) => one.defect);
     assert.ok(defects.includes('mixed_units'));
+  });
+});
+
+/*
+ * Anidar bajo el título.
+ *
+ * En Markdown la jerarquía la lleva la marca `#` y no la sangría, así que al
+ * volverse bloques la marca sobrevive y la jerarquía no. Sin esto un título no
+ * se puede plegar: plegar recoge lo que cuelga, y de un título plano no cuelga
+ * nada. Ver @invariant AHeadingTakesWhatFollowsItUntilItsPeer.
+ */
+describe('anidar bajo el título', () => {
+  /** El árbol que queda tras aplicar el plan, dibujado con sangría. */
+  const after = (source: string): string[] => {
+    const blocks = page(source);
+    const parent = new Map(blocks.map((b) => [b.stableId, b.parent]));
+    const order = new Map(blocks.map((b) => [b.stableId, b.position]));
+    const text = new Map(blocks.map((b) => [b.stableId, b.content]));
+    for (const step of plan(blocks).steps) {
+      const change = step.change;
+      if (change.kind !== 'move_block') continue;
+      parent.set(change.block, change.parent);
+      order.set(change.block, change.position);
+    }
+    const kids = (of: string | null): string[] =>
+      [...parent.entries()]
+        .filter(([, at]) => at === of)
+        .map(([id]) => id)
+        .sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+    const out: string[] = [];
+    const walk = (of: string | null, depth: number): void => {
+      for (const id of kids(of)) {
+        out.push('  '.repeat(depth) + (text.get(id) ?? ''));
+        walk(id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return out;
+  };
+
+  it('un título se lleva lo que viene detrás', () => {
+    assert.deepEqual(after('# Uno\nprimero\nsegundo'), ['# Uno', '  primero', '  segundo']);
+  });
+
+  it('y lo deja al llegar a otro título de su mismo rango', () => {
+    assert.deepEqual(after('# Uno\nprimero\n# Dos\nsegundo'), [
+      '# Uno',
+      '  primero',
+      '# Dos',
+      '  segundo',
+    ]);
+  });
+
+  it('un título menos importante entra, y se lleva lo suyo', () => {
+    assert.deepEqual(after('# Uno\n## Uno.uno\nhondo\n# Dos'), [
+      '# Uno',
+      '  ## Uno.uno',
+      '    hondo',
+      '# Dos',
+    ]);
+  });
+
+  it('no se lleva lo que ya está más allá de su par', () => {
+    assert.deepEqual(after('## Menor\nsuyo\n# Mayor\najeno'), [
+      '## Menor',
+      '  suyo',
+      '# Mayor',
+      '  ajeno',
+    ]);
+  });
+
+  it('lo que ya colgaba del título se queda donde estaba, y lo nuevo va detrás', () => {
+    assert.deepEqual(after('# Uno\n  ya dentro\nnuevo'), ['# Uno', '  ya dentro', '  nuevo']);
+  });
+
+  it('aplicarlo dos veces da la misma página que aplicarlo una', () => {
+    const una = after('# Uno\nprimero\n## Dos\nsegundo');
+    assert.deepEqual(una, ['# Uno', '  primero', '  ## Dos', '    segundo']);
+    // El árbol ya anidado no propone ningún movimiento más.
+    const ya = page('# Uno\n  primero\n  ## Dos\n    segundo');
+    assert.deepEqual(
+      plan(ya).steps.filter((step) => step.kind === 'nest'),
+      [],
+    );
+  });
+
+  it('una página sin títulos no se toca', () => {
+    assert.deepEqual(
+      plan(page('uno\ndos\ntres')).steps.filter((step) => step.kind === 'nest'),
+      [],
+    );
   });
 });

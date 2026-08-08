@@ -182,6 +182,16 @@ contract ShapingPlan {
         -- sus saltos deja media tabla en un sitio y media en otro. El defecto se
         -- ve y se dice; el arreglo no se hace, porque ahí ya no es conservador.
 
+    @invariant AHeadingTakesWhatFollowsItUntilItsPeer
+        -- Lo que un encabezado se lleva es lo que viene detrás de él como
+        -- hermano, hasta el siguiente encabezado de rango igual o más
+        -- importante. Ni menos —un título que sólo se lleva el párrafo de al
+        -- lado no se puede plegar— ni más: pasado su par, lo que sigue ya es de
+        -- otro, y llevárselo cambiaría lo que el documento decía.
+        --
+        -- Lo que ya cuelga del encabezado no se toca, así que aplicarlo dos
+        -- veces da la misma página que aplicarlo una.
+
     @invariant TheOrderIsPartOfThePlan
         -- Los pasos valen en el orden en que salen: las posiciones de cada uno
         -- cuentan con que el anterior entró. Aplicarlos salteados o al revés no
@@ -192,7 +202,7 @@ contract ShapingPlan {
 -- Enumerations
 ------------------------------------------------------------
 
--- Los cinco arreglos, dichos por lo que hacen.
+-- Los seis arreglos, dichos por lo que hacen.
 enum FixKind {
     -- Quitar un bloque sin nada escrito. Sólo hojas, y nunca el último que le
     -- queda a la página: sin él no quedaría dónde escribir.
@@ -210,6 +220,20 @@ enum FixKind {
     -- Llevar un encabezado al nivel que su propia marca declara, cuando cuelga
     -- de otro más hondo. Mueve el bloque; no toca una letra.
     | hoist_heading
+    -- Meter bajo un encabezado lo que viene detrás de él como hermano, hasta el
+    -- siguiente encabezado de rango igual o mayor. Mueve bloques; no toca una
+    -- letra.
+    --
+    -- Es el gemelo de `hoist_heading` y llegó después que él: aquel corrige un
+    -- encabezado que quedó demasiado hondo, y éste, un encabezado que se quedó
+    -- plano y sin lo que encabeza. Un documento capturado suele traer los dos
+    -- defectos, porque en Markdown la jerarquía la lleva la marca `#` y no la
+    -- sangría, y al volverse bloques la marca sobrevive y la jerarquía no.
+    --
+    -- Sin esto un título no se puede plegar: plegar recoge lo que cuelga, y de un
+    -- título plano no cuelga nada. La página se lee como una lista de renglones
+    -- del mismo peso donde el documento tenía secciones.
+    | nest_under_heading
 }
 
 -- Los defectos de forma que se saben reconocer contando.
@@ -444,7 +468,7 @@ rule ProcessingPutsThePageInForm {
     ensures: applied(fix.change)
 
     @invariant NothingIsAddedAndNothingIsLost
-        -- Ninguno de los cinco arreglos escribe una palabra que no estuviera ni
+        -- Ninguno de los seis arreglos escribe una palabra que no estuviera ni
         -- borra una que estuviera. Se corta por donde el texto ya venía cortado,
         -- se prefija un `#` a lo que ya se comportaba como título y se cambia un
         -- bloque de sitio. Lo que exigiría interpretar —resumir, fusionar,
