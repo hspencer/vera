@@ -554,9 +554,22 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
 
     case 'set_property':
     case 'remove_property': {
+      /*
+       * El sujeto son las dos columnas a la vez, no una o la otra.
+       *
+       * Decía `page_id IS ? OR block_id IS ?`, y como toda propiedad de página
+       * lleva `block_id` nulo, ese `OR` casaba con **todas** las propiedades de
+       * página del corpus: poner `type` en una página borraba `type` de las mil
+       * novecientas restantes. En memoria no se notaba —el grafo lo hace bien y
+       * se reconstruye del registro al arrancar—, así que la tabla se vaciaba en
+       * silencio y sólo mentía a quien mirase la base por fuera.
+       *
+       * `IS` en las dos y unidas por `AND`: `IS` porque una de ellas es nula
+       * siempre y `=` no compara nulos.
+       */
       db.prepare(
         `DELETE FROM property_assignments
-         WHERE key = ? AND (page_id IS ? OR block_id IS ?)`,
+         WHERE key = ? AND page_id IS ? AND block_id IS ?`,
       ).run(change.propertyKey, change.page ?? null, change.block ?? null);
       if (change.kind === 'set_property') {
         db.prepare(

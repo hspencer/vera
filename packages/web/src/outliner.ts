@@ -11,7 +11,7 @@
 // Cada edición emite una operación. No hay guardado implícito ni estado local
 // que pueda divergir del grafo.
 
-import { answersIn, looksLikeQuery } from '@vera/core';
+import { answersIn, looksLikeQuery, propertyLabel } from '@vera/core';
 import { api, type BlockView, type Change, type CrossingRow, type PageView } from './api.ts';
 import { renderMarkdown, type RenderOptions } from './markdown.ts';
 import { answerQueryBlock } from './query-block.ts';
@@ -682,17 +682,6 @@ interface Suggestion {
 /** Las claves con que se guarda lo que el bibliotecario propone. */
 const TYPE_KEY = 'type';
 const CONCEPT_KEY = 'concepto';
-const PROPERTY_LABELS: Record<string, string> = {
-  type: 'tipo',
-  status: 'estado',
-  lang: 'idioma',
-  public: 'público',
-  date: 'fecha',
-  start: 'inicio',
-  due: 'vencimiento',
-  aliases: 'alias',
-};
-
 /**
  * Procesa la página, cuenta lo que va haciendo, y propone cambios.
  *
@@ -1604,7 +1593,7 @@ export function renderOutliner(
   for (const property of written) {
     const key = document.createElement('dt');
     key.className = 'property-key';
-    key.textContent = PROPERTY_LABELS[property.key] ?? property.key;
+    key.textContent = propertyLabel(property.key);
     key.tabIndex = 0;
     key.title = 'renombrar la propiedad';
     key.addEventListener('click', () => {

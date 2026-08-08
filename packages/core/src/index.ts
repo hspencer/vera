@@ -22,6 +22,7 @@ export {
 export type { QueryExpression } from './query.ts';
 
 export { looksLikeQuery, readQuery, writeQuery } from './query-source.ts';
+export { canonicalPropertyKey, propertyLabel } from './property-keys.ts';
 export { answersIn } from './vocabulary.ts';
 
 export {

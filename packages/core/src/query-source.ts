@@ -23,6 +23,7 @@
 // es el grafo, y por eso este archivo no sabe qué páginas existen.
 
 import type { QueryExpression } from './query.ts';
+import { canonicalPropertyKey, propertyLabel } from './property-keys.ts';
 
 export type QueryView = 'list' | 'table';
 
@@ -269,7 +270,11 @@ function readAtom(cursor: Cursor): QueryExpression {
   }
   cursor.at += 1;
   const value = readValue(cursor);
-  return { kind: 'PropertyTerm', key, value: value === '' ? null : value };
+  return {
+    kind: 'PropertyTerm',
+    key: canonicalPropertyKey(key),
+    value: value === '' ? null : value,
+  };
 }
 
 /** El título entre dobles corchetes de un término de enlace. */
@@ -349,7 +354,7 @@ export function writeQuery(expression: QueryExpression, view: QueryView = 'list'
 function write(expression: QueryExpression, within: string | null): string {
   switch (expression.kind) {
     case 'PropertyTerm':
-      return `${expression.key}=${expression.value === null ? '' : quote(expression.value)}`;
+      return `${propertyLabel(expression.key)}=${expression.value === null ? '' : quote(expression.value)}`;
     case 'ContentTerm':
       return `~${quote(expression.text)}`;
     case 'LinksToTerm':

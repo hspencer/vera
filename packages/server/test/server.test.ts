@@ -264,7 +264,7 @@ describe('POST /query', () => {
 
   it('contesta con las páginas que la cumplen', async () => {
     const page = await write({ kind: 'create_page', title: 'Consultada', visibility: 'private' });
-    await write({ kind: 'set_property', page, propertyKey: 'tipo', propertyValue: 'proyecto' });
+    await write({ kind: 'set_property', page, propertyKey: 'type', propertyValue: 'proyecto' });
 
     const answer = await ask('? tipo=proyecto');
     const pages = answer['pages'] as { id: string; title: string }[];

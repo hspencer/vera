@@ -694,3 +694,58 @@ describe('reproducir un registro con huecos', () => {
     assert.notEqual(held, undefined, 'la operación nueva dejó su revisión');
   });
 });
+
+/*
+ * Una propiedad es de su sujeto y de ningún otro.
+ *
+ * El borrado previo a escribir decía `page_id IS ? OR block_id IS ?`, y como
+ * toda propiedad de página lleva el bloque nulo, ese `OR` casaba con las
+ * propiedades de página de **todo** el corpus: poner `type` en una página
+ * borraba `type` de las mil novecientas restantes. En memoria no se veía —el
+ * grafo lo hace bien y se reconstruye del registro—, así que la tabla se vaciaba
+ * en silencio y sólo mentía a quien mirase la base por fuera.
+ */
+describe('materializar una propiedad', () => {
+  it('poner una propiedad en una página no toca la de otra', () => {
+    const { store, write } = freshStore();
+    const una = write({ kind: 'create_page', title: 'Una', visibility: 'private' });
+    const otra = write({ kind: 'create_page', title: 'Otra', visibility: 'private' });
+
+    write({ kind: 'set_property', page: una, propertyKey: 'type', propertyValue: 'nota' });
+    write({ kind: 'set_property', page: otra, propertyKey: 'type', propertyValue: 'proyecto' });
+
+    assert.equal(count(store, 'property_assignments'), 2);
+    const held = (
+      store.db
+        .prepare('SELECT page_id, value FROM property_assignments WHERE key = ? ORDER BY value')
+        .all('type') as { page_id: string; value: string }[]
+      // node:sqlite devuelve filas sin prototipo, y `deepEqual` estricto lo nota.
+    ).map((row) => ({ page_id: row.page_id, value: row.value }));
+    assert.deepEqual(held, [
+      { page_id: una, value: 'nota' },
+      { page_id: otra, value: 'proyecto' },
+    ]);
+  });
+
+  it('ni la de un bloque de la misma página', () => {
+    const { store, write } = freshStore();
+    const page = write({ kind: 'create_page', title: 'Con bloque', visibility: 'private' });
+    const block = write({ kind: 'create_block', page, parent: null, position: 0, content: 'algo' });
+
+    write({ kind: 'set_property', page, propertyKey: 'explica', propertyValue: '[[X]]' });
+    write({ kind: 'set_property', block, propertyKey: 'explica', propertyValue: '[[Y]]' });
+
+    assert.equal(count(store, 'property_assignments'), 2);
+  });
+
+  it('y volver a ponerla la reemplaza en vez de duplicarla', () => {
+    const { store, write } = freshStore();
+    const page = write({ kind: 'create_page', title: 'Repetida', visibility: 'private' });
+    write({ kind: 'set_property', page, propertyKey: 'status', propertyValue: 'draft' });
+    write({ kind: 'set_property', page, propertyKey: 'status', propertyValue: 'vigente' });
+
+    assert.equal(count(store, 'property_assignments'), 1);
+    const held = store.db.prepare('SELECT value FROM property_assignments').get() as { value: string };
+    assert.equal(held.value, 'vigente');
+  });
+});

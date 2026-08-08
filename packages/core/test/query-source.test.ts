@@ -24,7 +24,7 @@ describe('readQuery · los términos', () => {
   it('lee una propiedad con su valor', () => {
     assert.deepEqual(read('? tipo=proyecto').expression, {
       kind: 'PropertyTerm',
-      key: 'tipo',
+      key: 'type',
       value: 'proyecto',
     });
   });
@@ -32,7 +32,7 @@ describe('readQuery · los términos', () => {
   it('un valor puede llevar espacios, que el corpus los lleva', () => {
     assert.deepEqual(read('? tipo=entrada diaria').expression, {
       kind: 'PropertyTerm',
-      key: 'tipo',
+      key: 'type',
       value: 'entrada diaria',
     });
   });
@@ -48,7 +48,7 @@ describe('readQuery · los términos', () => {
   it('entre comillas caben los signos', () => {
     assert.deepEqual(read('? tipo="ida + vuelta"').expression, {
       kind: 'PropertyTerm',
-      key: 'tipo',
+      key: 'type',
       value: 'ida + vuelta',
     });
   });
@@ -74,7 +74,7 @@ describe('readQuery · los términos', () => {
   it('niega con «!»', () => {
     assert.deepEqual(read('? !tipo=proyecto').expression, {
       kind: 'NotTerm',
-      operand: { kind: 'PropertyTerm', key: 'tipo', value: 'proyecto' },
+      operand: { kind: 'PropertyTerm', key: 'type', value: 'proyecto' },
     });
   });
 });
@@ -118,6 +118,11 @@ describe('readQuery · la presentación', () => {
 
   it('«; tabla» pide la tabla', () => {
     assert.equal(read('? tipo=proyecto ; tabla').view, 'table');
+  });
+
+  it('la clave humana y la heredada nombran la misma propiedad', () => {
+    assert.deepEqual(read('? tipo=proyecto'), read('? type=proyecto'));
+    assert.equal(writeQuery(read('? type=proyecto').expression), '? tipo=proyecto');
   });
 
   it('la presentación no cambia la selección', () => {
@@ -202,8 +207,8 @@ describe('writeQuery', () => {
   });
 
   it('pone comillas sólo cuando hacen falta', () => {
-    assert.equal(writeQuery({ kind: 'PropertyTerm', key: 'tipo', value: 'entrada diaria' }), '? tipo=entrada diaria');
-    assert.equal(writeQuery({ kind: 'PropertyTerm', key: 'tipo', value: 'ida + vuelta' }), '? tipo="ida + vuelta"');
+    assert.equal(writeQuery({ kind: 'PropertyTerm', key: 'type', value: 'entrada diaria' }), '? tipo=entrada diaria');
+    assert.equal(writeQuery({ kind: 'PropertyTerm', key: 'type', value: 'ida + vuelta' }), '? tipo="ida + vuelta"');
   });
 
   it('no finge saber escribir un término que no tiene signo', () => {
