@@ -123,6 +123,30 @@ export type Change =
   | { kind: 'set_property'; page?: string; block?: string; propertyKey: string; propertyValue: string }
   | { kind: 'remove_property'; page?: string; block?: string; propertyKey: string };
 
+/** Una página que cumple una pregunta, con lo que hace falta para leerla. */
+export interface QueryHit {
+  id: string;
+  title: string;
+  /** Lo que la página dice ser, para la columna de la tabla. Puede no decirlo. */
+  type: string | null;
+  /** Cuándo se la tocó por última vez. */
+  updated: number | null;
+  /** Dónde lo dice, cuando la pregunta era por texto. */
+  says: { block: string; excerpt: string } | null;
+}
+
+export type QueryAnswer =
+  | {
+      view: 'list' | 'table';
+      /** La pregunta tal como Vera la entendió, vuelta a escribir. */
+      asked: string;
+      count: number;
+      pages: QueryHit[];
+      /** Cuántas cumplen y no viajaron. Recortar en silencio sería mentir. */
+      more: number;
+    }
+  | { error: string; at: number; near: string };
+
 export type SubmitResult =
   | { status: 'applied'; sequence: number; subjectId: string }
   | { status: 'duplicate'; sequence: number; subjectId: string }
@@ -155,6 +179,27 @@ export const api = {
   specialPages: () => json<{ id: string; title: string; kind: string }[]>('/special-pages'),
 
   search: (text: string) => json<Hit[]>(`/search?q=${encodeURIComponent(text)}`),
+
+  /**
+   * Le pregunta al grafo.
+   *
+   * La pregunta va en el cuerpo y no en la dirección: una dirección se guarda
+   * —en el historial, en lo que se copia al compartir— y una consulta puede
+   * nombrar a una persona o un asunto que no tiene por qué quedar escrito fuera
+   * del corpus.
+   */
+  query: async (source: string): Promise<QueryAnswer> => {
+    try {
+      const response = await fetch('/query', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source }),
+      });
+      return (await response.json()) as QueryAnswer;
+    } catch {
+      return { error: 'no se pudo preguntar: el servidor no contestó', at: 0, near: '' };
+    }
+  },
 
   /**
    * Trae un documento de fuera y devuelve la página que salió de él.

@@ -1210,7 +1210,7 @@ input {
 .complete {
   position: absolute;
   z-index: 50;
-  min-width: 18rem;
+  min-width: 16rem;
   max-width: min(34rem, 90vw);
   max-height: 15rem;
   overflow-y: auto;
@@ -3120,4 +3120,147 @@ code {
   opacity: 0.5;
   cursor: default;
   text-decoration: none;
+}
+
+/* --------------------------------------------------------------------------
+ * La respuesta de un bloque que pregunta.
+ *
+ * Va debajo del texto de la pregunta y sangrada como lo que colgaría de ella:
+ * no es contenido de la página —nadie la escribió— pero se lee en su sitio, que
+ * es donde está la pregunta. Atenuada, porque lo que manda en la página es lo
+ * escrito y esto es una consecuencia.
+ * -------------------------------------------------------------------------- */
+
+.query-answer {
+  margin: 0.25rem 0 0.5rem;
+  padding-left: 0.9rem;
+  border-left: 1px solid var(--rule);
+  font-size: 0.86rem;
+}
+
+.query-waiting,
+.query-count,
+.query-empty,
+.query-problem {
+  margin: 0.2rem 0;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  font-family: var(--font-mono);
+}
+
+/* Preguntar sobre dos mil páginas tarda. Un hueco en blanco no se distingue de
+   un cero, así que mientras viaja se dice que se está preguntando. */
+.query-waiting::before { content: '· '; }
+
+.query-more { opacity: 0.8; }
+
+/* Lo que no se entendió. En el color de lo que sale mal, y con el fragmento que
+   lo rompe al lado: un error que no señala dónde obliga a leer la línea entera
+   buscando qué sobra. */
+.query-problem { color: var(--voice); }
+.query-problem::before { content: '✗ '; }
+
+.query-near {
+  font-family: var(--font-mono);
+  background: color-mix(in srgb, var(--voice) 12%, transparent);
+  padding: 0 0.2rem;
+  border-radius: 2px;
+}
+
+.query-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.query-list li {
+  padding: 0.08rem 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+/* Un título de la respuesta se pulsa y lleva a su página, como cualquier enlace
+   del corpus. Se dibuja como texto y no como botón: una lista de cuarenta
+   botones es una pared. */
+.query-title {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: left;
+}
+
+.query-title:hover { text-decoration: underline; }
+
+/* El pasaje donde lo dice. Va detrás del título y atenuado: es la evidencia del
+   acierto, no el acierto. */
+.query-says {
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* La tabla se desplaza sola cuando no cabe; la página nunca. En un teléfono, tres
+   columnas con títulos largos se salen, y que se salga el documento entero por
+   una tabla es peor que arrastrarla. */
+.query-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/*
+ * Reparto fijo, y un suelo.
+ *
+ * Con reparto automático el título manda: un par de títulos largos se llevan el
+ * ancho entero y empujan tipo y fecha fuera de la pantalla, que es justo lo que
+ * la tabla venía a evitar. Con reparto fijo cada columna sabe lo suyo desde el
+ * principio y los títulos envuelven, que es lo que un título sabe hacer.
+ *
+ * El suelo existe porque el hueco puede ser estrechísimo —con el mapa abierto al
+ * lado son cuatrocientos píxeles— y por debajo de esto la columna del título
+ * queda en una palabra por línea. Antes que eso, que la tabla se arrastre.
+ */
+.query-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  min-width: 16rem;
+  font-size: 0.82rem;
+}
+
+.query-table th:nth-child(1) { width: 55%; }
+.query-table th:nth-child(2) { width: 20%; }
+.query-table th:nth-child(3) { width: 25%; }
+
+.query-table th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.15rem 0.6rem 0.15rem 0;
+  white-space: nowrap;
+}
+
+.query-table td {
+  padding: 0.15rem 0.6rem 0.15rem 0;
+  vertical-align: baseline;
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 50%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.query-cell-type,
+.query-cell-when {
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  white-space: nowrap;
 }

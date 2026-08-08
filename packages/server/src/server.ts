@@ -13,6 +13,7 @@ import {
   VeraGraph,
   checkInvariants,
   readQuery,
+  writeQuery,
   CHANGE_KINDS as CORE_CHANGE_KINDS,
   CONTRIBUTION_CHANNELS,
 } from '@vera/core';
@@ -1358,6 +1359,15 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         // se declara, como todo lo demás.
         send(response, 200, {
           view: read.view,
+          /*
+           * La pregunta tal como Vera la entendió.
+           *
+           * No es un adorno: cuando la respuesta es cero, lo único que quien
+           * mira necesita saber es si el corpus no tiene nada o si la pregunta
+           * decía otra cosa. Devolver el árbol vuelto a escribir contesta eso sin
+           * que haya que adivinarlo —@guarantee AnEmptyAnswerExplainsItself—.
+           */
+          asked: writeQuery(read.expression, read.view),
           count: found.length,
           pages: found.slice(0, MOST_ANSWERS),
           more: Math.max(0, found.length - MOST_ANSWERS),

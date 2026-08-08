@@ -11,8 +11,10 @@
 // Cada edición emite una operación. No hay guardado implícito ni estado local
 // que pueda divergir del grafo.
 
+import { answersIn, looksLikeQuery } from '@vera/core';
 import { api, type BlockView, type Change, type PageView } from './api.ts';
 import { renderMarkdown, type RenderOptions } from './markdown.ts';
+import { answerQueryBlock } from './query-block.ts';
 import { renderMermaid } from './mermaid.ts';
 import { is } from './bindings.ts';
 import { icon } from './icons.ts';
@@ -1637,7 +1639,29 @@ export function renderOutliner(
 
     const offered = page.domains?.[property.key] ?? [];
 
-    if (isChoosable(offered)) {
+    /*
+     * Dos preguntas distintas que estaban siendo una sola.
+     *
+     * La primera es si esto es una pregunta cerrada: si el corpus contesta esta
+     * clave con unas pocas palabras, se contesta eligiendo de un menú. La
+     * segunda es si el valor lleva varias respuestas dentro: si las lleva, cada
+     * una es una palabra y cada palabra lleva a su página.
+     *
+     * Estaban anidadas —sólo se partía por comas dentro de la rama de
+     * vocabulario— y por eso `concepto` se dibujaba como una cadena. Medido
+     * sobre el corpus: mil cincuenta y una palabras distintas, y las doce más
+     * usadas cubren el 19 % del uso. `concepto` es vocabulario abierto, como las
+     * etiquetas: no es una pregunta cerrada y nunca lo será, y aun así sus
+     * valores son varios y cada uno nombra algo que existe.
+     *
+     * Que una no sea la otra es lo que hace que `AAC`, `PictoNet` y `doctorado`
+     * puedan seguirse por separado sin que nadie tenga que declarar un
+     * vocabulario primero.
+     */
+    const answers = answersIn(property.value);
+    const several = answers.length > 1;
+
+    if (isChoosable(offered) || several) {
       /*
        * Un valor de vocabulario se contesta eligiendo y se sigue pulsando, y son
        * dos cosas distintas con dos sitios distintos.
@@ -1664,7 +1688,7 @@ export function renderOutliner(
        */
       const words = document.createElement('span');
       words.className = 'property-words';
-      for (const one of property.value.split(',').map((v) => v.trim()).filter((v) => v !== '')) {
+      for (const one of answers) {
         const follow = document.createElement('button');
         follow.type = 'button';
         follow.className = 'property-word';
@@ -1692,29 +1716,55 @@ export function renderOutliner(
       }
       const follow = words;
 
-      const choose = document.createElement('button');
-      choose.type = 'button';
-      choose.className = 'property-choose';
-      choose.innerHTML = icon('chevron-down');
-      choose.setAttribute('aria-label', `elegir ${property.key}`);
-      choose.title = `elegir ${property.key}`;
-      choose.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openBlockMenu(choose, [
-          // Los más dichos, y sólo esos. La cola larga de una propiedad son sus
-          // erratas; ofrecerlas al mismo nivel que los términos las volvería a
-          // sembrar, que es cómo se llegó a tener treinta y ocho tipos.
-          ...offered.slice(0, OFFERED_AT_MOST).map((option) => ({
-            label: option.value === property.value ? `${option.value} ·` : option.value,
-            run: () => void answer(option.value),
-          })),
-          // Un vocabulario que no crece donde se usa deja de crecer, y con él
-          // deja de etiquetarse. Ver @guarantee AVocabularyGrowsAtThePointOfUse.
-          { label: 'escribir otro…', run: () => editInPlace(value, property.value, `valor de ${property.key}`, answer) },
-        ]);
-      });
+      /*
+       * El chevrón sólo donde hay de dónde elegir.
+       *
+       * Un vocabulario abierto —`concepto`, con mil palabras— no cabe en un menú
+       * de doce, y ofrecer las doce más usadas seria decir que la respuesta esta
+       * entre ellas cuando cubren el diecinueve por ciento del uso. Ahí se
+       * escribe, y para eso ya están las palabras: se pulsan y se editan.
+       */
+      value.append(follow);
 
-      value.append(follow, choose);
+      if (isChoosable(offered)) {
+        const choose = document.createElement('button');
+        choose.type = 'button';
+        choose.className = 'property-choose';
+        choose.innerHTML = icon('chevron-down');
+        choose.setAttribute('aria-label', `elegir ${property.key}`);
+        choose.title = `elegir ${property.key}`;
+        choose.addEventListener('click', (event) => {
+          event.stopPropagation();
+          openBlockMenu(choose, [
+            // Los más dichos, y sólo esos. La cola larga de una propiedad son sus
+            // erratas; ofrecerlas al mismo nivel que los términos las volvería a
+            // sembrar, que es cómo se llegó a tener treinta y ocho tipos.
+            ...offered.slice(0, OFFERED_AT_MOST).map((option) => ({
+              label: option.value === property.value ? `${option.value} ·` : option.value,
+              run: () => void answer(option.value),
+            })),
+            // Un vocabulario que no crece donde se usa deja de crecer, y con él
+            // deja de etiquetarse. Ver @guarantee AVocabularyGrowsAtThePointOfUse.
+            { label: 'escribir otro…', run: () => editInPlace(value, property.value, `valor de ${property.key}`, answer) },
+          ]);
+        });
+        value.append(choose);
+      } else {
+        /*
+         * Sin de dónde elegir, no hay chevrón.
+         *
+         * Un vocabulario abierto —`concepto`, con mil palabras— no cabe en un
+         * menú de doce, y ofrecer las doce más usadas diría que la respuesta
+         * está entre ellas cuando cubren el diecinueve por ciento del uso. Aquí
+         * se escribe, pulsando el hueco de la fila: las palabras no, que cada
+         * una lleva a su página.
+         */
+        value.title = `editar ${property.key}`;
+        value.addEventListener('click', (event) => {
+          if ((event.target as HTMLElement).closest('.property-word') !== null) return;
+          editInPlace(value, property.value, `valor de ${property.key}`, answer);
+        });
+      }
     } else {
       /*
        * Un valor vacío se dibuja con una palabra, o no se puede pulsar.
@@ -1939,6 +1989,17 @@ export function renderOutliner(
       text.innerHTML = renderMarkdown(node.block.content, options);
       markMissingImages(text);
       body.append(text);
+
+      /*
+       * Un bloque que pregunta se contesta al leerse.
+       *
+       * No hay nada que pulsar ni nada que guardar: se pregunta al dibujar la
+       * página, contra el grafo como esté entonces. Guardar la respuesta sería
+       * guardar una lista que envejece sin decirlo.
+       */
+      if (looksLikeQuery(node.block.content)) {
+        answerQueryBlock(body, node.block.content, { onNavigate: callbacks.onNavigate });
+      }
     }
 
     bullet.addEventListener('click', (event) => {
@@ -2774,6 +2835,13 @@ function startEditing(
     text.className = 'body-text';
     text.innerHTML = renderMarkdown(content, options);
     body.append(text);
+
+    // Editada la pregunta, se vuelve a preguntar. Es lo mismo que hace el
+    // dibujado inicial: la respuesta no vive en ninguna parte, así que no hay
+    // nada que invalidar —sólo hay que volver a pedirla.
+    if (looksLikeQuery(content)) {
+      answerQueryBlock(body, content, { onNavigate: callbacks.onNavigate });
+    }
 
     markMissingImages(body);
     void renderMermaid(body);

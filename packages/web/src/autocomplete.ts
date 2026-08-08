@@ -233,6 +233,15 @@ export const COMMANDS: Command[] = [
   { name: 'tarea', hint: 'casilla por hacer', inserts: '- [ ] ', caret: 6 },
   { name: 'nota', hint: 'referencia a nota al pie', inserts: '[^1]', caret: 3 },
   { name: 'pagina', hint: 'enlace a otra página', inserts: '[[]]', caret: 2 },
+  /*
+   * Preguntarle al grafo.
+   *
+   * El comando no hace nada que no se pueda hacer escribiendo `? ` a mano: pone
+   * la marca y deja el cursor detrás. Existe porque es donde uno va a buscar qué
+   * se puede hacer desde el teclado, y porque ahorra recordar la sintaxis sin
+   * inventar una segunda forma de crear lo mismo.
+   */
+  { name: '?', hint: 'consulta: preguntarle al grafo', inserts: '? ', caret: 2 },
   { name: 'audio', hint: 'hablar aquí mismo', inserts: '', caret: 0, acts: 'hablar' },
   // Importar no escribe aquí: crea una página aparte y lleva a ella. Está en
   // esta lista porque es donde uno va a buscar «qué puedo hacer desde el
