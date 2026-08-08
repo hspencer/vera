@@ -2563,39 +2563,96 @@ export function renderOutliner(
     container.append(section);
   }
 
-  if (page.backlinks.length > 0) {
-    const section = document.createElement('section');
-    section.className = 'backlinks';
-
-    const heading = document.createElement('h2');
-    heading.textContent = `Referencias (${page.backlinks.length})`;
-    section.append(heading);
-
-    // Una referencia que no se puede seguir no es una referencia. Cada backlink
-    // abre la página que lo produjo y muestra el bloque donde ocurre.
-    const list = document.createElement('ul');
-    for (const backlink of page.backlinks) {
-      const item = document.createElement('li');
-      const link = document.createElement('button');
-      link.className = 'backlink';
-
-      const where = document.createElement('span');
-      where.className = 'backlink-page';
-      where.textContent = backlink.title;
-
-      const excerpt = document.createElement('span');
-      excerpt.className = 'backlink-excerpt';
-      excerpt.textContent = backlink.excerpt;
-
-      link.append(where, excerpt);
-      // Un backlink: la pregunta era quién había hablado de esto.
-      link.addEventListener('click', () => callbacks.onOpen(backlink.page, 'followed_backlink'));
-      item.append(link);
-      list.append(item);
+  /*
+   * Las referencias, en los dos sentidos y con las mutuas aparte.
+   *
+   * El pie contestaba media pregunta: quién habla de esta página. La otra mitad
+   * —de qué habla ella— estaba sólo dentro del texto, y para saber de qué es
+   * vecina una página había que releerla entera.
+   *
+   * Y las que van en los dos sentidos van juntas, porque no son dos hechos sino
+   * uno: dos páginas que se nombran mutuamente están relacionadas de una manera
+   * que ninguna de las dos listas por separado dice. Repetirlas en las otras dos
+   * columnas las contaría dos veces y escondería justo lo que tienen de
+   * particular.
+   */
+  {
+    const out = new Map((page.references ?? []).map((one) => [one.title.toLowerCase(), one]));
+    const back = new Map<string, (typeof page.backlinks)[number]>();
+    for (const one of page.backlinks) {
+      if (!back.has(one.title.toLowerCase())) back.set(one.title.toLowerCase(), one);
     }
-    section.append(list);
 
-    container.append(section);
+    const both: { title: string; page: string | null; excerpt: string; says: string }[] = [];
+    for (const [key, one] of out) {
+      const other = back.get(key);
+      if (other === undefined) continue;
+      both.push({ title: one.title, page: one.page, excerpt: one.excerpt, says: other.excerpt });
+    }
+    const mutual = new Set(both.map((one) => one.title.toLowerCase()));
+
+    const draw = (
+      name: string,
+      rows: { title: string; page: string | null; excerpt: string; says?: string }[],
+      gesture: 'followed_reference' | 'followed_backlink',
+    ): void => {
+      if (rows.length === 0) return;
+      const section = document.createElement('section');
+      section.className = 'backlinks';
+
+      const heading = document.createElement('h2');
+      heading.textContent = `${name} (${rows.length})`;
+      section.append(heading);
+
+      const list = document.createElement('ul');
+      for (const row of rows) {
+        const item = document.createElement('li');
+        const link = document.createElement('button');
+        link.className = 'backlink';
+
+        const where = document.createElement('span');
+        where.className = 'backlink-page';
+        where.textContent = row.title;
+        // Una página nombrada y todavía sin escribir es una deuda a la vista, no
+        // un enlace roto: se dibuja como lo que es.
+        if (row.page === null) where.classList.add('unwritten');
+
+        const said = document.createElement('span');
+        said.className = 'backlink-excerpt';
+        said.textContent = row.excerpt;
+
+        link.append(where, said);
+        // Lo que la otra página dice de ésta, cuando se nombran las dos. Es la
+        // mitad que no se lee desde aquí.
+        if (row.says !== undefined) {
+          const answers = document.createElement('span');
+          answers.className = 'backlink-excerpt reciprocal';
+          answers.textContent = row.says;
+          link.append(answers);
+        }
+        link.addEventListener('click', () =>
+          callbacks.onOpen(row.page ?? row.title, gesture),
+        );
+        item.append(link);
+        list.append(item);
+      }
+      section.append(list);
+      container.append(section);
+    };
+
+    draw('En los dos sentidos', both, 'followed_reference');
+    draw(
+      'Nombra a',
+      [...out.values()].filter((one) => !mutual.has(one.title.toLowerCase())),
+      'followed_reference',
+    );
+    draw(
+      'La nombran',
+      [...back.values()]
+        .filter((one) => !mutual.has(one.title.toLowerCase()))
+        .map((one) => ({ title: one.title, page: one.page, excerpt: one.excerpt })),
+      'followed_backlink',
+    );
   }
 }
 
@@ -2641,13 +2698,11 @@ async function explainFrom(
   asking.className = 'relation-ask';
   host.append(asking);
 
-  const done = (): void => asking.remove();
-
   editInPlace(asking, '', 'término y página, p. ej. profundiza [[Guemil]]', async (said) => {
     const asked = explanationIn(said);
     if (asked === null) {
       notify('hace falta una página a la que apuntar');
-      done();
+      asking.remove();
       return true;
     }
 
@@ -2660,7 +2715,7 @@ async function explainFrom(
     });
     if (born.status === 'rejected') {
       notify(`no se pudo explicar: ${born.reason}`);
-      done();
+      asking.remove();
       return true;
     }
 
@@ -2673,7 +2728,7 @@ async function explainFrom(
     });
     if (puesta.status === 'rejected') {
       notify(`no se pudo explicar: ${puesta.reason}`);
-      done();
+      asking.remove();
       return true;
     }
 
@@ -2686,18 +2741,11 @@ async function explainFrom(
       });
     }
 
+    notify(`explicada la relación con ${asked.title}`);
     // El cursor donde va lo que falta: la frase. Es lo único que Vera no puede
     // poner, y es la relación entera.
     callbacks.onReload({ block: connective, at: 0 });
     return true;
-  });
-
-  // Cancelar deja el renglón vacío y hay que retirarlo: editInPlace restituye lo
-  // que había, que aquí era nada.
-  asking.addEventListener('focusout', () => {
-    window.setTimeout(() => {
-      if (asking.querySelector('input') === null) done();
-    }, 0);
   });
 }
 

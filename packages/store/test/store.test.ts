@@ -581,3 +581,116 @@ describe('borrar el audio', () => {
     store.close();
   });
 });
+
+/*
+ * Un hueco en el registro no puede envenenar lo que venga después.
+ *
+ * Una operación aceptada por el dominio puede fallar al guardarse —la
+ * transacción revierte el disco y la memoria se queda con el cambio—, y eso deja
+ * un número de secuencia escrito y sin fila. Al arrancar de nuevo, contar las
+ * operaciones reproducidas dejaba el contador por detrás de ese número: la
+ * siguiente escritura reclamaba uno que ya existía, la base la rechazaba, y el
+ * hueco se hacía más grande. Un corpus que se estropea más cuanto más se usa.
+ */
+/** Deja el registro sin esa operación, como la deja una transacción revertida. */
+function hollow(store: ReturnType<typeof openStore>, sequence: number): void {
+  const held = store.db.prepare('SELECT id FROM operations WHERE sequence = ?').get(sequence) as
+    | { id: string }
+    | undefined;
+  if (held === undefined) return;
+  store.db.prepare('DELETE FROM revisions WHERE operation_id = ?').run(held.id);
+  store.db.prepare('DELETE FROM operations WHERE id = ?').run(held.id);
+}
+
+describe('reproducir un registro con huecos', () => {
+  it('la siguiente operación no reclama un número ya escrito', () => {
+    const { store, write } = freshStore();
+    const page = write({ kind: 'create_page', title: 'Con hueco', visibility: 'private' });
+    write({ kind: 'create_block', page, parent: null, position: 0, content: 'uno' });
+    write({ kind: 'create_block', page, parent: null, position: 1, content: 'dos' });
+
+    // El hueco, tal como ocurre: la transacción entera revertida, así que ni la
+    // operación ni su revisión llegaron a escribirse.
+    hollow(store, 2);
+
+    const vuelto = loadGraph(store, 'mind');
+    assert.equal(vuelto.log().lastSequence, 3, 'el contador sigue al último número escrito');
+
+    const outcome = vuelto.submitOperation({
+      originId: 'después-del-hueco',
+      participant: OWNER,
+      channel: 'typed_text',
+      change: { kind: 'create_block', page, parent: null, position: 2, content: 'tres' },
+    });
+    assert.equal(outcome.status, 'applied');
+    if (outcome.status !== 'applied') return;
+    assert.equal(outcome.operation.sequence, 4);
+    // Y se puede guardar: es la prueba entera, porque el síntoma era una clave
+    // única rechazando la escritura.
+    recordOperation(store, vuelto, outcome.operation);
+    // Tres filas: las dos que quedaron y la nueva. El hueco no se rellena —lo que
+    // no ocurrió no ocurrió— y por eso el número no vuelve a usarse.
+    assert.equal(count(store, 'operations'), 3);
+  });
+
+  it('una operación reproducida conserva su identidad', () => {
+    const { store, write } = freshStore();
+    write({ kind: 'create_page', title: 'Identidad', visibility: 'private' });
+    const escritas = store.db
+      .prepare('SELECT id FROM operations ORDER BY sequence')
+      .all()
+      .map((row) => (row as { id: string }).id);
+
+    const vuelto = loadGraph(store, 'mind');
+    assert.deepEqual(
+      vuelto.operations().map((one) => one.id),
+      escritas,
+      'reproducir no reinventa los identificadores de las operaciones',
+    );
+  });
+
+  it('y la operación siguiente no reclama una identidad ya escrita', () => {
+    const { store, write } = freshStore();
+    const page = write({ kind: 'create_page', title: 'Sin choque', visibility: 'private' });
+    write({ kind: 'create_block', page, parent: null, position: 0, content: 'uno' });
+
+    const vuelto = loadGraph(store, 'mind');
+    const outcome = vuelto.submitOperation({
+      originId: 'nueva',
+      participant: OWNER,
+      channel: 'typed_text',
+      change: { kind: 'create_block', page, parent: null, position: 1, content: 'dos' },
+    });
+    assert.equal(outcome.status, 'applied');
+    if (outcome.status !== 'applied') return;
+    const held = store.db
+      .prepare('SELECT 1 FROM operations WHERE id = ?')
+      .get(outcome.operation.id);
+    assert.equal(held, undefined, 'la identidad de la operación nueva no estaba escrita');
+    recordOperation(store, vuelto, outcome.operation);
+  });
+
+  it('lo escrito después de un hueco conserva su revisión', () => {
+    // Buscar la revisión por el número de la operación dejaba sin revisión a
+    // todo lo posterior a un hueco, y nada lo decía.
+    const { store, write } = freshStore();
+    const page = write({ kind: 'create_page', title: 'Con revisión', visibility: 'private' });
+    write({ kind: 'create_block', page, parent: null, position: 0, content: 'uno' });
+    hollow(store, 2);
+
+    const vuelto = loadGraph(store, 'mind');
+    const outcome = vuelto.submitOperation({
+      originId: 'con-revisión',
+      participant: OWNER,
+      channel: 'typed_text',
+      change: { kind: 'create_block', page, parent: null, position: 1, content: 'dos' },
+    });
+    if (outcome.status !== 'applied') throw new Error('no se aplicó');
+    recordOperation(store, vuelto, outcome.operation);
+
+    const held = store.db
+      .prepare('SELECT operation_id FROM revisions WHERE operation_id = ?')
+      .get(outcome.operation.id);
+    assert.notEqual(held, undefined, 'la operación nueva dejó su revisión');
+  });
+});

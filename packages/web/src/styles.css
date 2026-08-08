@@ -3358,3 +3358,18 @@ code {
 .relation-ask {
   margin: 0.2rem 0 0;
 }
+
+/* Una página nombrada y todavía sin escribir. Es una deuda a la vista, no un
+   enlace roto: se dibuja como lo que es y se puede pulsar igual, que es como se
+   escribe la que falta. */
+.backlink-page.unwritten {
+  color: var(--text-dim);
+  text-decoration: underline dotted;
+}
+
+/* Lo que la otra página dice de ésta, en las que se nombran en los dos
+   sentidos. Va debajo y más atenuado: es la mitad que no se lee desde aquí. */
+.backlink-excerpt.reciprocal {
+  opacity: 0.75;
+  font-style: italic;
+}

@@ -39,17 +39,32 @@ export function kindOf(token: DesignToken): TokenKind {
   return 'text';
 }
 
+/*
+ * La reserva del sistema de diseño.
+ *
+ * No son valores neutros de fábrica: son los que Herbert ajustó usando Vera y
+ * dejó fijados el 8 de agosto de 2026 —fondo ciruela en oscuro, verde pálido en
+ * los nodos, naranja quemado de acento—. @guarantee EditableDesignSystem dice
+ * que el sistema se ajusta desde dentro; esto es el otro extremo del mismo
+ * gesto: lo ajustado vuelve al código, así que una instancia nueva y un
+ * navegador sin nada guardado nacen ya con el aspecto de Vera y no con un gris
+ * de biblioteca.
+ *
+ * Quien tenga tokens propios guardados no se entera: `loadTokens` los superpone
+ * a éstos token a token. Esto es lo que se ve cuando no hay nada superpuesto, y
+ * es también a lo que vuelve «restablecer».
+ */
 export const DEFAULT_TOKENS: DesignToken[] = [
-  { name: '--bg', light: '#fbfbf9', dark: '#16181c' },
-  { name: '--bg-raised', light: '#ffffff', dark: '#1e2127' },
-  { name: '--text', light: '#22242a', dark: '#d8dae0' },
-  { name: '--text-dim', light: '#6b7080', dark: '#878d9c' },
-  { name: '--rule', light: '#e3e3de', dark: '#2b2f38' },
-  { name: '--accent', light: '#045591', dark: '#4a9ade' },
-  { name: '--node-central', light: '#045591', dark: '#4a9ade' },
-  { name: '--node-fill', light: '#9aa0ab', dark: '#6d7480' },
-  { name: '--link-stroke', light: '#d5d7d2', dark: '#333842' },
-  { name: '--warm', light: '#ef7a1c', dark: '#ef7a1c' },
+  { name: '--bg', light: '#e6ebe9', dark: '#2e0024' },
+  { name: '--bg-raised', light: '#e8ebf1', dark: '#351725' },
+  { name: '--text', light: '#454f6e', dark: '#cde0cf' },
+  { name: '--text-dim', light: '#6b7080', dark: '#a4a696' },
+  { name: '--rule', light: '#d1d1d2', dark: '#24001c' },
+  { name: '--accent', light: '#a84a0b', dark: '#ee895d' },
+  { name: '--node-central', light: '#045591', dark: '#ec5f22' },
+  { name: '--node-fill', light: '#393a3c', dark: '#acc8af' },
+  { name: '--link-stroke', light: '#c5c8c1', dark: '#54273c' },
+  { name: '--warm', light: '#e6706a', dark: '#ec9d98' },
   // Grabando. El rojo se reserva para cuando la grabación está corriendo, que
   // es lo que significa en toda grabadora desde antes de que existiera esta
   // aplicación. En reposo el botón va perfilado: un rojo permanente deja de
@@ -75,8 +90,8 @@ export const DEFAULT_TOKENS: DesignToken[] = [
   // cubre el griego ni el árabe que el corpus también trae, y es mejor que se
   // lean en otra letra a que no se lean.
   { name: '--font-body', light: PLEX_SANS, dark: PLEX_SANS },
-  { name: '--font-ui', light: PLEX_SANS, dark: PLEX_SANS },
-  { name: '--font-mono', light: PLEX_MONO, dark: PLEX_MONO },
+  { name: '--font-ui', light: 'system-ui, sans-serif', dark: PLEX_SANS },
+  { name: '--font-mono', light: PLEX_MONO, dark: 'ui-monospace, "SF Mono", Menlo, monospace' },
 ];
 
 const TOKENS_KEY = 'vera.tokens';

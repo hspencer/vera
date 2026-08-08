@@ -455,10 +455,19 @@ export class VeraGraph {
 
     this.#recordRevision(submission, subjectId, at);
 
-    // rule RecordAcceptedSubmission: la secuencia se asigna aquí y sólo aquí.
-    this.#lastSequence += 1;
+    /*
+     * rule RecordAcceptedSubmission: la secuencia se asigna aquí y sólo aquí.
+     *
+     * Salvo al reproducir, que no asigna sino que recuerda. Numerar de nuevo lo
+     * ya numerado parece inofensivo y no lo es: un hueco en el registro —una
+     * operación aceptada que no se pudo guardar— deja la cuenta por detrás del
+     * último número escrito, y la siguiente escritura reclama un número que ya
+     * existe. La base la rechaza, esa tampoco se guarda, y el hueco crece.
+     */
+    this.#lastSequence = input.sequence ?? this.#lastSequence + 1;
+    if (input.operationId !== undefined) this.#observeId(input.operationId);
     const operation: Operation = {
-      id: this.#nextId('op'),
+      id: input.operationId ?? this.#nextId('op'),
       originId: input.originId,
       submission,
       sequence: this.#lastSequence,

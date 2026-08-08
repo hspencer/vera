@@ -217,6 +217,27 @@ export interface OperationInput {
    * que todo lo posterior se desplazara y el registro dejara de poder leerse.
    */
   readonly subjectId?: string | undefined;
+  /**
+   * Qué número llevaba, cuando ya lo llevaba.
+   *
+   * Igual que `subjectId`, sólo lo trae la reproducción. Contar las operaciones
+   * reproducidas y numerarlas de nuevo parece lo mismo y no lo es: basta con que
+   * el registro tenga un hueco —una operación que se aceptó y no se pudo
+   * guardar— para que la cuenta quede por detrás del último número escrito, y
+   * entonces la siguiente escritura reclama un número que ya existe. La base lo
+   * rechaza, esa operación tampoco se guarda, y el hueco se hace más grande: un
+   * corpus que se estropea más cuanto más se usa.
+   */
+  readonly sequence?: number | undefined;
+  /**
+   * Y con qué identidad quedó registrada.
+   *
+   * Por la misma razón: el identificador de una operación sale del mismo
+   * contador que el de las páginas y los bloques, y reproducir no lo observaba.
+   * El contador volvía a arrancar por detrás y la siguiente operación pedía un
+   * identificador que ya estaba escrito.
+   */
+  readonly operationId?: string | undefined;
 }
 
 export interface PageLink {

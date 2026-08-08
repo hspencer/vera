@@ -14,6 +14,7 @@ import {
   checkInvariants,
   inverseOf,
   readQuery,
+  titleKey,
   writeQuery,
   STARTER_RELATIONS,
   CHANGE_KINDS as CORE_CHANGE_KINDS,
@@ -268,9 +269,14 @@ function readOperation(body: SubmitBody): { error: string } | {
 export function createVeraServer(options: ServerOptions): VeraServer {
   const store = openStore({ path: options.databasePath, graphName: 'mind' });
 
-  // El grafo en memoria se reconstruye del log al arrancar y responde las
-  // lecturas; el disco conserva la verdad.
-  const graph = loadGraph(store, 'mind');
+  /*
+   * El grafo en memoria se reconstruye del log al arrancar y responde las
+   * lecturas; el disco conserva la verdad.
+   *
+   * Y por eso puede volver a reconstruirse: `let` y no `const` porque cuando
+   * persistir falla hay que rehacerlo. Ver más abajo, donde se recoge ese fallo.
+   */
+  let graph = loadGraph(store, 'mind');
 
   /*
    * De quién es este grafo lo dice el grafo, no la configuración.
@@ -437,6 +443,21 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         try {
           recordOperation(store, graph, outcome.operation);
         } catch (error) {
+          /*
+           * La memoria vuelve a ser la del disco.
+           *
+           * El dominio ya había aplicado el cambio cuando la escritura falló, y
+           * la transacción sólo revierte el disco: sin esto quedaba un bloque
+           * que existía en memoria y en ninguna parte más. Se dibujaba como
+           * cualquier otro, todo lo que colgara de él fallaba con un error que
+           * hablaba de otra cosa, y al reiniciar desaparecía sin que nadie
+           * hubiera borrado nada.
+           *
+           * Reconstruir del log cuesta unos segundos y ocurre casi nunca. La
+           * alternativa —seguir sirviendo un grafo que no es el que está
+           * guardado— cuesta que ya no se sepa cuál de los dos es Vera.
+           */
+          graph = loadGraph(store, 'mind');
           send(response, 500, {
             error: 'no se pudo persistir la operación',
             detail: error instanceof Error ? error.message : String(error),
@@ -1643,6 +1664,40 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               excerpt: excerpt(block?.content ?? ''),
             };
           }),
+          /*
+           * Y las que salen: a quién nombra esta página.
+           *
+           * Estaban en el texto y en ninguna lista. Un enlace saliente se ve
+           * leyendo la página entera; el pie contestaba sólo la mitad de la
+           * pregunta —quién habla de esto— y no la otra —de qué habla esto—, que
+           * es la que dice de qué es vecina una página sin tener que releerla.
+           *
+           * Se manda una fila por página nombrada y no una por mención: nombrar
+           * cinco veces a la misma página es un dato sobre el texto y no sobre el
+           * grafo, y una lista que la repitiera cinco veces se leería como cinco
+           * vecinas. La frase que viaja es la primera, que es donde se presenta.
+           *
+           * Un título que nadie ha escrito viaja igual, con `page` nulo. Es lo
+           * que el corpus tiene de más honesto: una página nombrada y todavía sin
+           * escribir es una deuda a la vista, no un enlace roto.
+           */
+          references: (() => {
+            const seen = new Map<string, { page: string | null; title: string; block: string; excerpt: string }>();
+            for (const block of graph.blocksOf(page.id)) {
+              for (const link of graph.linksOf(block.stableId)) {
+                const target = link.target === null ? undefined : graph.page(link.target);
+                const key = titleKey(target?.title ?? link.targetTitle);
+                if (key === '' || seen.has(key)) continue;
+                seen.set(key, {
+                  page: link.target,
+                  title: target?.title ?? link.targetTitle,
+                  block: block.stableId,
+                  excerpt: excerpt(block.content),
+                });
+              }
+            }
+            return [...seen.values()];
+          })(),
         });
         return;
       }
@@ -1741,7 +1796,16 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     }
   };
 
-  return { handle, graph, store, close: () => store.close() };
+  // El grafo se expone por función y no por valor: puede reconstruirse, y quien
+  // lo tuviera capturado se quedaría mirando el de antes.
+  return {
+    handle,
+    get graph() {
+      return graph;
+    },
+    store,
+    close: () => store.close(),
+  };
 }
 
 export function listen(options: ServerOptions & { port: number; host?: string }): {

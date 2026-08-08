@@ -155,9 +155,15 @@ export function recordOperation(store: Store, graph: VeraGraph, operation: Opera
       store.graphId,
     );
 
-    // La revisión que corresponde a ESTA operación, no la última del grafo: al
-    // persistir en lote la última sería siempre la misma para todas.
-    const revision = graph.revisions()[operation.sequence - 1];
+    /*
+     * La revisión que corresponde a ESTA operación.
+     *
+     * Por su lugar en la lista y no por su número: revisiones y operaciones se
+     * empujan a la vez, así que van en paralelo, pero los números tienen huecos
+     * en cuanto una operación no se pudo guardar. Buscando por número, todo lo
+     * que viniera después de un hueco se quedaba sin revisión y nadie lo decía.
+     */
+    const revision = graph.revisions()[graph.operations().findIndex((one) => one.id === operation.id)];
     if (revision !== undefined) {
       db.prepare(
         `INSERT INTO revisions (id, operation_id, graph_id, page_id, block_id, authored_by, channel, recorded_at)
@@ -210,7 +216,9 @@ export function recordAllOperations(store: Store, graph: VeraGraph): void {
     );
 
     const revisions = graph.revisions();
-    for (const operation of graph.operations()) {
+    // Por su lugar y no por su número, como en recordOperation: los números
+    // pueden tener huecos y los lugares no.
+    for (const [at, operation] of graph.operations().entries()) {
       const submission = operation.submission;
       insertOperation.run(
         operation.id,
@@ -227,7 +235,7 @@ export function recordAllOperations(store: Store, graph: VeraGraph): void {
         submission.submittedAt,
         operation.appliedAt,
       );
-      const revision = revisions[operation.sequence - 1];
+      const revision = revisions[at];
       if (revision !== undefined) {
         insertRevision.run(
           `rev:${operation.sequence}`,
@@ -712,6 +720,12 @@ export function loadGraph(store: Store, graphName = 'mind'): VeraGraph {
           | 'import',
         change: JSON.parse(row.change_payload) as Change,
         submittedAt: row.submitted_at,
+        // El número y la identidad de la operación salen del registro, como el
+        // sujeto y por la misma razón: reproducir es rehacer lo que ocurrió, no
+        // volver a decidirlo. Contarlo otra vez desplazaba todo lo posterior en
+        // cuanto el registro tuviera un hueco.
+        sequence: row.sequence,
+        operationId: row.id,
         // El sujeto sale del registro y no se vuelve a derivar. Ver `subjectId`
         // en OperationInput: derivarlo ataba la legibilidad del registro a que
         // ninguna regla cambiara jamás cuántos identificadores consume.

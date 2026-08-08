@@ -84,6 +84,8 @@ export interface PageView {
     { participant: string; kind: 'human' | 'agent' | null; channel: string; writtenAt: number }
   >;
   backlinks: Backlink[];
+  /** A quién nombra esta página: una fila por página nombrada, no por mención. */
+  references: Reference[];
   /** Lo que esta página afirma sobre otras. */
   crossingsOut: CrossingRow[];
   /** Y lo que otras afirman sobre ella, leído desde este lado. */
@@ -115,6 +117,15 @@ export interface CrossingRow {
   reads: string | null;
   /** El extracto del bloque desde el que se afirma: el sujeto de la afirmación. */
   says: string;
+}
+
+/** Una página que ésta nombra. `page` es nulo mientras nadie la haya escrito. */
+export interface Reference {
+  page: string | null;
+  title: string;
+  /** El bloque donde se la nombra por primera vez, que es donde se presenta. */
+  block: string;
+  excerpt: string;
 }
 
 export interface Backlink {
@@ -297,6 +308,23 @@ export const api = {
         change,
       }),
     });
-    return (await response.json()) as SubmitResult;
+
+    /*
+     * Un fallo del servidor también es una respuesta, y tiene que tener la misma
+     * forma que un rechazo del dominio.
+     *
+     * Cuando persistir falla, el servidor contesta 500 con `{error, detail}` y
+     * sin `status`. Quien llamaba leía `status`, veía `undefined`, lo tomaba por
+     * «no rechazado» y seguía con un identificador vacío: el error que acababa
+     * enseñándose era el de la operación siguiente, que no tenía nada que ver
+     * con lo que había pasado. Una sola forma de respuesta lo evita en todos los
+     * sitios a la vez, y no sólo donde alguien se acuerde de mirar.
+     */
+    const said = (await response.json()) as SubmitResult & { error?: string; detail?: string };
+    if (!response.ok || !('status' in said)) {
+      const why = said.error ?? `el servidor contestó ${response.status}`;
+      return { status: 'rejected', reason: said.detail === undefined ? why : `${why}: ${said.detail}` };
+    }
+    return said;
   },
 };
