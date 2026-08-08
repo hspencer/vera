@@ -2512,12 +2512,9 @@ export function renderOutliner(
   ] as [CrossingRow[], string, boolean][]) {
     if (rows.length === 0) continue;
 
-    const section = document.createElement('section');
-    section.className = 'relations';
-
-    const heading = document.createElement('h2');
-    heading.textContent = `${name} (${rows.length})`;
-    section.append(heading);
+    const folded = foldingSection(`rel:${name}`, `${name} (${rows.length})`, 2);
+    folded.section.classList.add('relations');
+    const section = folded.body;
 
     const list = document.createElement('ul');
     for (const row of rows) {
@@ -2560,21 +2557,25 @@ export function renderOutliner(
       list.append(item);
     }
     section.append(list);
-    container.append(section);
+    container.append(folded.section);
   }
 
   /*
-   * Las referencias, en los dos sentidos y con las mutuas aparte.
+   * Referencias: una sola sección, en los dos sentidos.
    *
-   * El pie contestaba media pregunta: quién habla de esta página. La otra mitad
-   * —de qué habla ella— estaba sólo dentro del texto, y para saber de qué es
+   * El pie contestaba media pregunta —quién habla de esta página— y la otra
+   * mitad, de qué habla ella, estaba sólo dentro del texto: para saber de qué es
    * vecina una página había que releerla entera.
    *
-   * Y las que van en los dos sentidos van juntas, porque no son dos hechos sino
-   * uno: dos páginas que se nombran mutuamente están relacionadas de una manera
-   * que ninguna de las dos listas por separado dice. Repetirlas en las otras dos
-   * columnas las contaría dos veces y escondería justo lo que tienen de
-   * particular.
+   * Las dos columnas van a la par porque son la misma pregunta mirada desde los
+   * dos lados. Las que van en los dos sentidos van debajo y juntas, porque no
+   * son dos hechos sino uno: dos páginas que se nombran mutuamente están
+   * relacionadas de una manera que ninguna de las dos columnas dice por
+   * separado, y repetirlas arriba las contaría dos veces.
+   *
+   * Y cada renglón lleva su pluma. El momento en que alguien sabe por qué dos
+   * páginas se tocan es el momento en que las está mirando juntas, y aquí están
+   * juntas: explicar desde otro sitio sería pedirle que se acuerde después.
    */
   {
     const out = new Map((page.references ?? []).map((one) => [one.title.toLowerCase(), one]));
@@ -2583,77 +2584,259 @@ export function renderOutliner(
       if (!back.has(one.title.toLowerCase())) back.set(one.title.toLowerCase(), one);
     }
 
-    const both: { title: string; page: string | null; excerpt: string; says: string }[] = [];
+    interface Row {
+      title: string;
+      page: string | null;
+      excerpt: string;
+      /** El bloque de esta página donde ocurre la mención, si ocurre aquí. */
+      from: string | null;
+      /** Y lo que la otra dice de ésta, cuando se nombran las dos. */
+      says?: string;
+    }
+
+    const both: Row[] = [];
     for (const [key, one] of out) {
       const other = back.get(key);
       if (other === undefined) continue;
-      both.push({ title: one.title, page: one.page, excerpt: one.excerpt, says: other.excerpt });
+      both.push({
+        title: one.title,
+        page: one.page,
+        excerpt: one.excerpt,
+        from: one.block,
+        says: other.excerpt,
+      });
     }
     const mutual = new Set(both.map((one) => one.title.toLowerCase()));
+    const names: Row[] = [...out.values()]
+      .filter((one) => !mutual.has(one.title.toLowerCase()))
+      .map((one) => ({ title: one.title, page: one.page, excerpt: one.excerpt, from: one.block }));
+    const named: Row[] = [...back.values()]
+      .filter((one) => !mutual.has(one.title.toLowerCase()))
+      .map((one) => ({ title: one.title, page: one.page, excerpt: one.excerpt, from: null }));
 
-    const draw = (
-      name: string,
-      rows: { title: string; page: string | null; excerpt: string; says?: string }[],
-      gesture: 'followed_reference' | 'followed_backlink',
-    ): void => {
-      if (rows.length === 0) return;
-      const section = document.createElement('section');
-      section.className = 'backlinks';
+    if (both.length + names.length + named.length > 0) {
+      const whole = foldingSection(
+        'referencias',
+        `Referencias (${both.length + names.length + named.length})`,
+        2,
+      );
+      whole.section.classList.add('references');
+      const section = whole.body;
 
-      const heading = document.createElement('h2');
-      heading.textContent = `${name} (${rows.length})`;
-      section.append(heading);
+      const list = (rows: Row[], gesture: 'followed_reference' | 'followed_backlink'): HTMLElement => {
+        const ul = document.createElement('ul');
+        for (const row of rows) {
+          const item = document.createElement('li');
+          item.className = 'reference';
 
-      const list = document.createElement('ul');
-      for (const row of rows) {
-        const item = document.createElement('li');
-        const link = document.createElement('button');
-        link.className = 'backlink';
+          /*
+           * La pluma, arriba a la izquierda. Explicar por qué estas dos páginas
+           * se tocan es escribir, y lo que escribe cuelga del bloque donde la
+           * mención ocurre —o, si la mención está en la otra página, de un bloque
+           * nuevo al final de ésta, porque la afirmación es de aquí.
+           */
+          const quill = document.createElement('button');
+          quill.type = 'button';
+          quill.className = 'reference-explain';
+          quill.innerHTML = icon('feather');
+          quill.title = `explicar por qué ${row.title} tiene que ver con esta página`;
+          quill.setAttribute('aria-label', `explicar la relación con ${row.title}`);
+          quill.addEventListener('click', (event) => {
+            event.stopPropagation();
+            explainTowards(item, row.title, row.from, page, toast, callbacks);
+          });
 
-        const where = document.createElement('span');
-        where.className = 'backlink-page';
-        where.textContent = row.title;
-        // Una página nombrada y todavía sin escribir es una deuda a la vista, no
-        // un enlace roto: se dibuja como lo que es.
-        if (row.page === null) where.classList.add('unwritten');
+          const link = document.createElement('button');
+          link.type = 'button';
+          link.className = 'backlink';
 
-        const said = document.createElement('span');
-        said.className = 'backlink-excerpt';
-        said.textContent = row.excerpt;
+          const where = document.createElement('span');
+          where.className = 'backlink-page';
+          where.textContent = row.title;
+          // Una página nombrada y todavía sin escribir es una deuda a la vista,
+          // no un enlace roto: se dibuja como lo que es.
+          if (row.page === null) where.classList.add('unwritten');
 
-        link.append(where, said);
-        // Lo que la otra página dice de ésta, cuando se nombran las dos. Es la
-        // mitad que no se lee desde aquí.
-        if (row.says !== undefined) {
-          const answers = document.createElement('span');
-          answers.className = 'backlink-excerpt reciprocal';
-          answers.textContent = row.says;
-          link.append(answers);
+          const said = document.createElement('span');
+          said.className = 'backlink-excerpt';
+          said.textContent = row.excerpt;
+
+          link.append(where, said);
+          if (row.says !== undefined) {
+            const answers = document.createElement('span');
+            answers.className = 'backlink-excerpt reciprocal';
+            answers.textContent = row.says;
+            link.append(answers);
+          }
+          link.addEventListener('click', () => callbacks.onOpen(row.page ?? row.title, gesture));
+
+          item.append(quill, link);
+          ul.append(item);
         }
-        link.addEventListener('click', () =>
-          callbacks.onOpen(row.page ?? row.title, gesture),
-        );
-        item.append(link);
-        list.append(item);
-      }
-      section.append(list);
-      container.append(section);
-    };
+        return ul;
+      };
 
-    draw('En los dos sentidos', both, 'followed_reference');
-    draw(
-      'Nombra a',
-      [...out.values()].filter((one) => !mutual.has(one.title.toLowerCase())),
-      'followed_reference',
-    );
-    draw(
-      'La nombran',
-      [...back.values()]
-        .filter((one) => !mutual.has(one.title.toLowerCase()))
-        .map((one) => ({ title: one.title, page: one.page, excerpt: one.excerpt })),
-      'followed_backlink',
-    );
+      const columns = document.createElement('div');
+      columns.className = 'reference-columns';
+      for (const [name, rows, gesture] of [
+        ['Nombra a', names, 'followed_reference'],
+        ['La nombran', named, 'followed_backlink'],
+      ] as [string, Row[], 'followed_reference' | 'followed_backlink'][]) {
+        if (rows.length === 0) continue;
+        const column = foldingSection(`ref:${name}`, `${name} (${rows.length})`, 3);
+        column.section.classList.add('reference-column');
+        column.body.append(list(rows, gesture));
+        columns.append(column.section);
+      }
+      if (columns.children.length > 0) section.append(columns);
+
+      if (both.length > 0) {
+        const mutuals = foldingSection(
+          'ref:ambos',
+          `En los dos sentidos (${both.length})`,
+          3,
+        );
+        mutuals.section.classList.add('reference-mutual');
+        mutuals.body.append(list(both, 'followed_reference'));
+        section.append(mutuals.section);
+      }
+
+      container.append(whole.section);
+    }
   }
+}
+
+/*
+ * Lo plegado al pie, recordado mientras dure la sesión.
+ *
+ * Cada guardado redibuja la página entera, así que sin esto una sección plegada
+ * se abriría sola en cuanto alguien escribiera una letra. No baja al corpus: qué
+ * tiene uno plegado es del taller, como lo es dónde está el divisor.
+ */
+const shutBelow = new Set<string>();
+
+/**
+ * Una sección del pie que se pliega.
+ *
+ * `details` y `summary` del navegador y no un botón propio: traen el teclado, el
+ * lector de pantalla y el triángulo sin que haya que escribirlos, y lo que se
+ * pliega sigue estando en el documento —se encuentra buscando en la página.
+ */
+function foldingSection(name: string, label: string, level: 2 | 3): {
+  section: HTMLElement;
+  body: HTMLElement;
+} {
+  const section = document.createElement('details');
+  section.className = 'folding';
+  section.open = !shutBelow.has(name);
+  section.addEventListener('toggle', () => {
+    if (section.open) shutBelow.delete(name);
+    else shutBelow.add(name);
+  });
+
+  const head = document.createElement('summary');
+  const title = document.createElement(level === 2 ? 'h2' : 'h3');
+  title.textContent = label;
+  head.append(title);
+
+  const body = document.createElement('div');
+  body.className = 'folding-body';
+
+  section.append(head, body);
+  return { section, body };
+}
+
+/**
+ * Explica una relación cuyo destino ya se sabe.
+ *
+ * Desde una referencia, la página del otro extremo no hay que preguntarla: está
+ * ahí, es la que se está mirando. Lo que falta es lo único que Vera no puede
+ * poner, así que la caja pide eso —la frase— y, delante de dos puntos, el
+ * término si se quiere: `profundiza: su rejilla se vuelve generativa`.
+ */
+async function explainTowards(
+  host: HTMLElement,
+  title: string,
+  from: string | null,
+  page: PageView,
+  notify: (message: string) => void,
+  callbacks: OutlinerCallbacks,
+): Promise<void> {
+  const asking = document.createElement('div');
+  asking.className = 'relation-ask';
+  host.append(asking);
+
+  editInPlace(asking, '', `por qué ${title} tiene que ver con esta página`, async (said) => {
+    const clean = said.trim();
+    if (clean === '') {
+      asking.remove();
+      return true;
+    }
+
+    const split = termAndProse(clean);
+
+    /*
+     * Dónde cuelga lo que se escribe.
+     *
+     * Si la mención ocurre en esta página, del bloque que la dice: ahí es donde
+     * la afirmación tiene sujeto. Si ocurre en la otra —alguien nos nombró—, lo
+     * que se está escribiendo es texto nuevo de esta página, y va al final como
+     * cualquier cosa que se escribe.
+     */
+    const roots = page.blocks.filter((block) => block.parent === null).length;
+    const born = await api.submit(
+      from === null
+        ? { kind: 'create_block', page: page.id, parent: null, position: roots, content: split.prose }
+        : { kind: 'create_block', page: page.id, parent: from, position: 0, content: split.prose },
+    );
+    if (born.status === 'rejected') {
+      notify(`no se pudo explicar: ${born.reason}`);
+      asking.remove();
+      return true;
+    }
+
+    const puesta = await api.submit({
+      kind: 'set_property',
+      block: born.subjectId,
+      propertyKey: 'explica',
+      propertyValue: `[[${title}]]`,
+    });
+    if (puesta.status === 'rejected') {
+      notify(`no se pudo explicar: ${puesta.reason}`);
+      asking.remove();
+      return true;
+    }
+
+    if (split.term !== null) {
+      await api.submit({
+        kind: 'set_property',
+        block: born.subjectId,
+        propertyKey: 'término',
+        propertyValue: split.term,
+      });
+    }
+
+    notify(`explicada la relación con ${title}`);
+    callbacks.onReload(null);
+    return true;
+  });
+}
+
+/**
+ * Parte «profundiza: la frase» en su término y su frase.
+ *
+ * Los dos puntos y no un espacio: el término puede llevarlos —«precede a»— y la
+ * frase empieza por donde sea. Sin dos puntos, todo es frase: la prosa es
+ * obligatoria y clasificar no.
+ */
+export function termAndProse(said: string): { term: string | null; prose: string } {
+  const at = said.indexOf(':');
+  if (at === -1) return { term: null, prose: said.trim() };
+  const term = said.slice(0, at).trim();
+  const prose = said.slice(at + 1).trim();
+  // Unos dos puntos con media frase delante no son un término: son puntuación.
+  if (term === '' || term.length > 24 || prose === '') return { term: null, prose: said.trim() };
+  return { term, prose };
 }
 
 /**

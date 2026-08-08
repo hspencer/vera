@@ -3290,15 +3290,7 @@ code {
   margin: 2rem 0 0;
 }
 
-.relations h2 {
-  font-size: 0.78rem;
-  font-weight: 400;
-  font-family: var(--font-mono);
-  color: var(--text-dim);
-  border-bottom: 1px solid var(--rule);
-  padding-bottom: 0.3rem;
-  margin: 0 0 0.6rem;
-}
+
 
 .relations ul {
   list-style: none;
@@ -3372,4 +3364,99 @@ code {
 .backlink-excerpt.reciprocal {
   opacity: 0.75;
   font-style: italic;
+}
+
+/* --------------------------------------------------------------------------
+ * El pie de la página: relaciones y referencias, plegables.
+ *
+ * `details` del navegador: trae el teclado, el lector de pantalla y el triángulo
+ * sin escribirlos, y lo plegado sigue estando en el documento, así que buscar en
+ * la página lo encuentra igual.
+ * -------------------------------------------------------------------------- */
+
+.folding {
+  margin: 1.6rem 0 0;
+}
+
+.folding > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.3rem;
+}
+
+.folding > summary::-webkit-details-marker { display: none; }
+
+/* El triángulo, dibujado como el chevrón de los bloques: apunta a la derecha
+   cuando está plegado y abajo cuando está abierto. */
+.folding > summary::before {
+  content: '›';
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+
+.folding[open] > summary::before { transform: rotate(90deg); }
+
+.folding > summary h2,
+.folding > summary h3 {
+  font-size: 0.78rem;
+  font-weight: 400;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.folding > summary h3 { font-size: 0.72rem; }
+
+.folding-body { padding-top: 0.6rem; }
+
+/* Las dos columnas: nombra a / la nombran, a la par porque son la misma
+   pregunta mirada desde los dos lados. En una pantalla estrecha se apilan, que
+   es lo que dos columnas de treinta caracteres piden. */
+.reference-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0 2rem;
+}
+
+.references ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Cada renglón: la pluma a la izquierda y el enlace al lado. La pluma se queda
+   tenue hasta que se pasa por encima; está siempre, pero no pide nada. */
+.reference {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.reference-explain {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0.1rem;
+  cursor: pointer;
+  color: var(--text-dim);
+  opacity: 0.35;
+  flex: none;
+  line-height: 0;
+}
+
+.reference-explain svg {
+  width: 0.85em;
+  height: 0.85em;
+}
+
+.reference:hover .reference-explain,
+.reference-explain:focus-visible {
+  opacity: 1;
+  color: var(--accent);
 }
