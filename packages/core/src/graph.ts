@@ -6,6 +6,7 @@
 // ninguno tiene una puerta trasera.
 
 import { answersIn } from './vocabulary.ts';
+import { looksLikeQuery } from './query-source.ts';
 import {
   excerpt,
   isDateTitle,
@@ -840,6 +841,27 @@ export class VeraGraph {
     if (block === undefined) return;
 
     this.#clearLinksOf(id);
+
+    /*
+     * Un bloque que pregunta no aporta enlaces ni etiquetas.
+     *
+     * `? ->[[Ciudad Abierta]]` nombra esa página, y aun así preguntar por algo no
+     * es hablar de algo: con seis consultas en una portada, los retroenlaces de
+     * la página más consultada se llenan de preguntas que no dicen nada de ella,
+     * y el vecindario del mapa se puebla de aristas que sólo cuentan que alguien
+     * quiso una lista. Lo decidió Herbert el 7 de agosto de 2026, mirando a
+     * «Vera» aparecer entre los retroenlaces de sí misma por una consulta.
+     *
+     * El enlace se sigue viendo y se sigue pulsando en el texto de la pregunta:
+     * lo que no ocurre es que cuente como un enlace del corpus.
+     */
+    if (looksLikeQuery(block.content)) {
+      this.#linksByBlock.set(id, []);
+      this.#tags.set(id, []);
+      this.#unportedByBlock.delete(id);
+      return;
+    }
+
     const fresh: PageLink[] = [];
     for (const title of referencedTitles(block.content)) {
       const target = this.#pageTitled(title);

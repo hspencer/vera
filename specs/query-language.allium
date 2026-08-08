@@ -95,6 +95,16 @@ contract CompactQuerySource {
         -- rompe. No devuelve cero resultados: cero resultados es una respuesta, y
         -- darla cuando no se entendió la pregunta es mentir con la forma correcta.
 
+    @invariant AskingIsNotSaying
+        -- Un bloque que pregunta no aporta enlaces ni etiquetas al corpus.
+        -- `? ->[[Ciudad Abierta]]` nombra esa página y aun así preguntar por algo
+        -- no es hablar de algo: con seis consultas en una portada, los
+        -- retroenlaces de la página más consultada se llenan de preguntas que no
+        -- dicen nada de ella, y el vecindario del mapa se puebla de aristas que
+        -- sólo cuentan que alguien quiso una lista. El enlace se sigue viendo y
+        -- se sigue pulsando en el texto de la pregunta; lo que no ocurre es que
+        -- cuente como un enlace del corpus.
+
     @invariant TheSourceIsTheQuestion
         -- Lo que se guarda es el texto que se escribió, y de él sale el árbol
         -- cada vez. No se guarda el árbol serializado aparte ni, mucho menos, una
@@ -226,12 +236,18 @@ entity QueryPresentation {
         -- cuatro puede cambiar qué selecciona la expresión.
 }
 
+-- Lo que sale de contestar una pregunta. No se guarda en ninguna parte: se
+-- contesta al leer y se tira, que es lo que impide que una lista envejezca sin
+-- decirlo. Por eso tampoco lleva fecha de evaluación —un sello de tiempo que
+-- nadie conserva no es un campo, es una promesa que no se puede comprobar.
 entity QueryEvaluation {
     graph: core/Graph
     expression: QueryExpression
     evaluated_by: core/Participant
-    evaluated_at: Timestamp
     matching_pages: Set<core/Page>
+    -- Los bloques que dicen lo que se preguntó, cuando la pregunta era por texto
+    -- o por etiqueta. Sólo de los términos en positivo: una negación no tiene
+    -- bloque que enseñar, porque lo que selecciona es la ausencia.
     matching_blocks: Set<core/Block>
 }
 
@@ -306,7 +322,6 @@ rule EvaluateQueryAgainstGraph {
         graph: graph,
         expression: expression,
         evaluated_by: participant,
-        evaluated_at: now,
         matching_pages: select_pages(graph, expression, participant),
         matching_blocks: select_blocks(graph, expression, participant)
     )
@@ -317,53 +332,45 @@ rule EvaluateQueryAgainstGraph {
         -- to the contract: what this spec fixes is the vocabulary and the scope.
 }
 
--- Escribir una pregunta es escribir un bloque.
+-- Escribir una pregunta es escribir un bloque, y no hay más operación que ésa.
 --
--- No hay operación propia: se teclea `?` y lo que sigue en un bloque cualquiera,
--- y eso ya es la consulta. `/?` no hace nada que no se pueda hacer escribiendo;
--- pone la marca y el cursor donde toca, que es lo que ahorra recordar la sintaxis
--- sin inventar una segunda forma de crear lo mismo.
-rule ParticipantPutsAQueryOnAPage {
-    when: PlaceStandingQuery(participant, graph, page, block, source)
+-- Aquí hubo dos reglas —poner una consulta en una página y quitarla— y no existe
+-- ninguna de las dos: se teclea `?` y lo que sigue en un bloque cualquiera, y eso
+-- ya es la consulta; se borra el bloque, y deja de serlo. Inventar operaciones
+-- propias habría dado dos caminos para crear la misma cosa y un sitio más donde
+-- algo puede quedar huérfano.
+--
+-- Así que StandingQuery no es una fila que alguien escribe: es lo que resulta de
+-- mirar los bloques de una página. Se mueve, se pliega, se copia a otra página y
+-- se borra como cualquier bloque, viaja en la proyección Markdown y sobrevive a
+-- exportar el corpus fuera de Vera.
+rule ABlockThatAsksIsAStandingQuery {
+    when: BlockSettled(participant, graph, page, block)
 
-    let membership = core/Membership{graph, participant}
-    let read = CompactQuerySource.read(source)
+    let read = CompactQuerySource.read(block.content)
 
-    requires: exists membership
-    requires: membership.status = active
-    requires: page.graph = graph
-    requires: block.page = page
+    requires: asks(block.content)
 
-    ensures: StandingQuery.created(
+    ensures: StandingQuery.derived(
         graph: graph,
         page: page,
         block: block,
         expression: read,
-        presentation: presentation_of(source),
+        presentation: presentation_of(block.content),
         origin: authored,
         authored_by: participant
     )
 
     @invariant TheQuestionIsOrdinaryContent
-        -- Vive en el texto del bloque y no en una tabla aparte. Se mueve, se
-        -- pliega, se copia a otra página y se borra como cualquier bloque, viaja
-        -- en la proyección Markdown y sobrevive a exportar el corpus fuera de
-        -- Vera. Un lugar propio para guardarlas sería un sitio más donde algo
-        -- puede quedar huérfano.
-}
-
-rule ParticipantRemovesAStandingQuery {
-    when: RemoveStandingQuery(participant, query)
-
-    requires: query.origin = authored
-
-    ensures: not exists query
+        -- Vive en el texto del bloque y no en una tabla aparte. Lo que se guarda
+        -- es lo que se escribió, y de ahí sale el árbol cada vez: una fuente y una
+        -- copia acaban discrepando, y entonces hay dos preguntas donde había una.
 
     @guidance
-        -- Sólo las escritas. Una derivada no se quita porque no se puso: es lo
-        -- que la página resulta ser al mirar el resto del grafo, igual que sus
-        -- retroenlaces, y quitarla sería pedirle al corpus que dejara de decir
-        -- algo que dice.
+        -- `authored` y no `derived` pese a que esta regla la derive del contenido:
+        -- el origen dice quién la puso —y la puso alguien, escribiéndola—, no cómo
+        -- la encuentra Vera. Las derivadas de verdad, que son las que una página
+        -- presenta por lo que el resto del grafo dice de ella, siguen sin existir.
 }
 
 rule PreserveUnportedLegacyQuery {
@@ -473,8 +480,6 @@ surface GraphQuerying {
 
     provides:
         EvaluateQuery(participant, graph, expression)
-        PlaceStandingQuery(participant, graph, page, block, source)
-        RemoveStandingQuery(participant, query) when query.graph = graph
         PortLegacyQuery(participant, unported, expression) when unported.graph = graph
 
     contracts:
@@ -538,14 +543,6 @@ open question "Do property terms compare values as text only, or does Vera need 
 open question "Can a participant save a query under a name and embed it in a page, the way the imported corpus embeds Logseq query macros?"
 
 -- Las cuatro que aparecieron al fijar la sintaxis compacta.
-
--- Un `[[Vera]]` dentro de una consulta es texto de un bloque, y el grafo indexa
--- los enlaces de los bloques. Tal como está, preguntar por las páginas que
--- enlazan a Vera crea un enlace a Vera desde la página que pregunta: aparece en
--- sus retroenlaces y en su vecindario del mapa. Puede defenderse —el bloque sí la
--- nombra— y puede ser justo lo que ensucia el mapa de quien use consultas a
--- diario.
-open question "¿Un [[título]] dentro de una consulta es un enlace del corpus, o el bloque que pregunta queda fuera del índice de enlaces?"
 
 -- `?` es un signo que alguien puede escribir sin querer preguntarle nada a Vera.
 open question "¿Un bloque que empieza por `?` y no se deja leer como consulta es un error señalado, o vuelve a ser prosa corriente hasta que se arregle?"

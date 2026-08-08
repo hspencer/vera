@@ -479,3 +479,55 @@ describe('what a query answers besides the pages', () => {
     assert.equal(graph.updatedAt('page:no-existe'), null);
   });
 });
+
+/*
+ * Preguntar por algo no es hablar de algo.
+ *
+ * Un `? ->[[Ciudad Abierta]]` nombra esa página y aun así no la enlaza: con seis
+ * consultas en una portada, los retroenlaces de la página más consultada se
+ * llenarían de preguntas que no dicen nada de ella.
+ */
+describe('a block that asks is not a block that says', () => {
+  it('contributes no link to the graph', () => {
+    const graph = inhabitedGraph();
+    const centre = makePage(graph, 'Centro');
+    const asking = makePage(graph, 'Pregunta');
+    makeBlock(graph, asking, '? ->[[Centro]]');
+
+    assert.deepEqual(graph.backlinks(centre), []);
+    assert.deepEqual(
+      graph.query({ expression: linksTo('Centro'), participant: OWNER }).matchingPages,
+      [],
+    );
+  });
+
+  it('contributes no tag either', () => {
+    const graph = inhabitedGraph();
+    const page = makePage(graph, 'Pregunta');
+    const block = makeBlock(graph, page, '? ~#accesibilidad');
+
+    assert.deepEqual(graph.tagsOf(block), []);
+  });
+
+  it('and the block beside it still links as it always did', () => {
+    const graph = inhabitedGraph();
+    const centre = makePage(graph, 'Centro');
+    const saying = makePage(graph, 'Dice');
+    makeBlock(graph, saying, 'ver [[Centro]]');
+    makeBlock(graph, saying, '? ->[[Centro]]');
+
+    assert.equal(graph.backlinks(centre).length, 1);
+  });
+
+  it('a question that stops being one links again', () => {
+    const graph = inhabitedGraph();
+    const centre = makePage(graph, 'Centro');
+    const page = makePage(graph, 'Cambia');
+    const block = makeBlock(graph, page, '? ->[[Centro]]');
+    assert.deepEqual(graph.backlinks(centre), []);
+
+    submit(graph, { kind: 'edit_block', block, content: 'al final sí, [[Centro]]' });
+
+    assert.equal(graph.backlinks(centre).length, 1);
+  });
+});

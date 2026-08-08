@@ -1401,6 +1401,19 @@ input {
  * otra cosa» de algo que es el mismo párrafo.
  */
 .editor {
+  /*
+   * En bloque, y no como la caja en línea que un `<textarea>` es por defecto.
+   *
+   * Una caja en línea se apoya en una línea base, y su contenedor le reserva
+   * debajo el hueco del descendente: medido, `.body` pasaba de 24,8 a 31,8
+   * píxeles al entrar a editar —siete de aire que no eran de nadie— y todo lo
+   * que venía debajo bajaba con ella. Parecía un margen y no lo era: ninguna
+   * regla lo pedía, lo ponía el modo de composición.
+   *
+   * Es lo que faltaba para que fuera verdad lo que dice la regla de al lado: que
+   * la caja mide igual editando que leyendo.
+   */
+  display: block;
   width: 100%;
   border: 0;
   padding: 0;
