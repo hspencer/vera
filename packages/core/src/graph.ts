@@ -5,6 +5,7 @@
 // @guarantee EqualMutationPath: humanos y agentes cruzan la misma frontera, y
 // ninguno tiene una puerta trasera.
 
+import { answersIn } from './vocabulary.ts';
 import {
   excerpt,
   isDateTitle,
@@ -252,9 +253,9 @@ export class VeraGraph {
     const counts = new Map<string, number>();
     for (const property of this.#allProperties()) {
       if (property.key !== key) continue;
-      const value = property.value.trim();
-      if (value === '') continue;
-      counts.set(value, (counts.get(value) ?? 0) + 1);
+      for (const value of answersIn(property.value)) {
+        counts.set(value, (counts.get(value) ?? 0) + 1);
+      }
     }
     return [...counts]
       .map(([value, uses]) => ({ value, uses }))
