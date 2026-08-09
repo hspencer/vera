@@ -65,6 +65,7 @@ const LABELS: Record<string, string> = {
   '--link-stroke': 'aristas del grafo',
   '--warm': 'énfasis cálido',
   '--line-height': 'interlínea',
+  '--text-size': 'tamaño del texto',
   '--indent': 'sangría por nivel',
   '--phone-scale': 'tamaño en el teléfono',
   '--content-width': 'ancho de la columna',

@@ -935,6 +935,19 @@ function wireSearch(): void {
   };
 
   /*
+   * Dónde empieza la lista, medido y no supuesto.
+   *
+   * En un teléfono la lista va `fixed` —tiene que salirse de la barra, que
+   * recorta— y entonces su sitio no lo puede saber la hoja de estilo: la barra
+   * crece con lo que lleve dentro y con el hueco que reserva el aparato arriba.
+   * Se mide el campo, que es lo que la lista continúa.
+   */
+  const place = (): void => {
+    const under = Math.round(input.getBoundingClientRect().bottom) + 4;
+    results.style.setProperty('--results-top', `${under}px`);
+  };
+
+  /*
    * Lo señalado ahora mismo, para poder abrirlo con Enter.
    *
    * Sin esto, en un teléfono hay que apuntar con el dedo a un renglón de una
@@ -989,6 +1002,7 @@ function wireSearch(): void {
       });
       results.insertBefore(item, before);
     }
+    place();
     results.hidden = false;
   };
 
@@ -1047,6 +1061,7 @@ function wireSearch(): void {
         });
         results.append(item);
       }
+      place();
       results.hidden = false;
     }, 120);
   });

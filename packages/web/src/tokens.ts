@@ -78,7 +78,14 @@ export const DEFAULT_TOKENS: DesignToken[] = [
   // @guarantee EditableDesignSystem existe para poder ajustar sin recompilar.
   // Multiplica el tamaño de base, así que arrastra todo lo medido en `rem` — la
   // interfaz y el texto a la vez, que es como debe crecer.
-  { name: '--phone-scale', light: '1.45', dark: '1.45' },
+  { name: '--phone-scale', light: '1.35', dark: '1.35' },
+  // De qué tamaño se lee.
+  //
+  // Un token porque es la primera cosa que alguien quiere ajustar y la última
+  // que debería pedir recompilar. Rige el texto y sólo el texto: la interfaz la
+  // mide `--phone-scale` sobre la raíz, que son dos cosas distintas aunque
+  // durante un tiempo pareciera que eran una.
+  { name: '--text-size', light: '16px', dark: '16px' },
   // La interlínea: cada cuánto cae una línea de texto.
   //
   // Es la retícula de base de toda la aplicación. De ella salen el ritmo de la
@@ -137,24 +144,6 @@ export type GraphViewMode = 'graph_2d' | 'graph_3d';
  * También descarta los que ya no existen: un token retirado del código deja de
  * arrastrarse en el navegador de quien lo tuviera guardado.
  */
-/*
- * Valores que fueron el defecto y dejaron de serlo.
- *
- * Un token guardado gana siempre al del código —es de quien lo ajustó— pero
- * quien nunca tocó uno lleva guardado el defecto de entonces, y entonces cambiar
- * el defecto no le llega nunca. Aquí se distingue lo elegido de lo heredado: si
- * lo guardado es exactamente el defecto viejo, nadie lo eligió, y pasa a regir el
- * nuevo. Un valor distinto de los dos sí lo eligió alguien y no se toca.
- *
- * La lista crece cuando un defecto cambia y encoge cuando ya no queda nadie con
- * el viejo. No es un mecanismo de migración: es una forma de decir «esto no lo
- * decidiste tú».
- */
-const OUTGROWN: Record<string, string[]> = {
-  // La talla en un teléfono se quedó corta al agrandar también la del texto.
-  '--phone-scale': ['1.35'],
-};
-
 export function loadTokens(): DesignToken[] {
   const held = localStorage.getItem(TOKENS_KEY);
   if (held === null) return structuredClone(DEFAULT_TOKENS);
@@ -164,15 +153,13 @@ export function loadTokens(): DesignToken[] {
     const byName = new Map(saved.filter((t) => typeof t?.name === 'string').map((t) => [t.name, t]));
     return DEFAULT_TOKENS.map((token) => {
       const mine = byName.get(token.name);
-      if (mine === undefined) return { ...token };
-      const outgrown = OUTGROWN[token.name] ?? [];
-      const kept = (said: unknown, fallback: string): string =>
-        typeof said === 'string' && !outgrown.includes(said.trim()) ? said : fallback;
-      return {
-        name: token.name,
-        light: kept(mine.light, token.light),
-        dark: kept(mine.dark, token.dark),
-      };
+      return mine === undefined
+        ? { ...token }
+        : {
+            name: token.name,
+            light: typeof mine.light === 'string' ? mine.light : token.light,
+            dark: typeof mine.dark === 'string' ? mine.dark : token.dark,
+          };
     });
   } catch {
     return structuredClone(DEFAULT_TOKENS);

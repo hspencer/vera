@@ -123,8 +123,24 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-body);
-  font-size: 16px;
   line-height: var(--line-height);
+}
+
+/*
+ * De qué tamaño se lee, dicho una vez.
+ *
+ * Estaba escrito aquí como `16px` sobre `html` y sobre `body` a la vez, y de esos
+ * dos sitios salían dos problemas que parecían no tener relación: en un teléfono
+ * la raíz se agranda para que crezca la interfaz —todo está medido en `rem`— y
+ * `body` la volvía a fijar en dieciséis, así que el texto no crecía nunca; y el
+ * editor, que pedía `1rem`, sí crecía, porque `rem` mira la raíz. Escribir se veía
+ * casi un cincuenta por ciento más grande que leer.
+ *
+ * Ahora `body` lleva el tamaño del texto y el editor lo hereda. Son la misma
+ * medida en un solo sitio, que es lo que hace imposible que vuelvan a separarse.
+ */
+body {
+  font-size: var(--text-size, 16px);
 }
 
 /*
@@ -1454,7 +1470,16 @@ input {
   background: none;
   color: inherit;
   font-family: var(--font-body);
-  font-size: 1rem;
+  /*
+   * Del tamaño del bloque, heredado y no repetido.
+   *
+   * Decía `1rem`, que era lo mismo que el texto dibujado mientras nada más lo
+   * cambiara: dos números iguales escritos en dos sitios, que es como empiezan
+   * las diferencias. Heredarlo lo ata al bloque que se está editando, sea cual
+   * sea su tamaño —el de un teléfono, el de un encabezado— y deja de haber una
+   * segunda verdad que mantener.
+   */
+  font-size: inherit;
   /* La misma que la del texto dibujado: si no, la línea se movería bajo el dedo
      al empezar a escribir, que es lo que se arregló en la v0.1 y se volvería a
      romper el día que una de las dos cambiara sin la otra. */
@@ -1980,7 +2005,20 @@ code {
    * depende del aparato y de quién lo sostiene.
    */
   html {
-    font-size: calc(100% * var(--phone-scale, 1.45));
+    font-size: calc(100% * var(--phone-scale, 1.35));
+  }
+
+  /*
+   * Y el texto, un poco más grande que en un escritorio.
+   *
+   * Un poco: se lee de cerca y en movimiento, pero una columna de teléfono con
+   * el texto a la talla de la interfaz cabe seis palabras por línea. El factor
+   * vive aquí y no en un token porque no es una preferencia sino la diferencia
+   * entre dos distancias de lectura; lo que sí se ajusta desde dentro de Vera es
+   * `--text-size`, y esto lo acompaña.
+   */
+  body {
+    font-size: calc(var(--text-size, 16px) * 1.12);
   }
 
   /*
@@ -2095,6 +2133,32 @@ code {
 
   #search-wrap {
     display: none;
+  }
+
+  /*
+   * Y la lista de resultados se sale de la barra, o no se ve.
+   *
+   * La barra es desplazable a lo ancho en un teléfono —`overflow-x: auto`— y eso
+   * la convierte en contenedor de recorte en los dos ejes: el eje que no se
+   * declara pasa de `visible` a `auto` por la propia especificación de CSS. La
+   * lista cuelga de la barra y se dibuja justo por debajo de su caja, o sea
+   * fuera, así que quedaba recortada entera. No es que el autocompletado no
+   * funcionara: es que en un teléfono no se veía ningún resultado, nunca.
+   *
+   * `fixed` la saca del recorte porque su contenedor es la ventana y no la
+   * barra. Dónde empieza lo dice quien la abre, midiendo el campo: es lo único
+   * que no se puede saber desde aquí, porque la barra crece con lo que lleve.
+   */
+  #results {
+    position: fixed;
+    top: var(--results-top, 3.4rem);
+    left: calc(0.7rem + env(safe-area-inset-left));
+    right: calc(0.7rem + env(safe-area-inset-right));
+    max-height: 70vh;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    box-shadow: 0 10px 34px rgb(0 0 0 / 26%);
+    z-index: 26;
   }
 
   /* Desplegado se pone encima de la primera fila, que es de donde salió. */
