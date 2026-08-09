@@ -39,7 +39,15 @@ enum ParticipantStatus { active | suspended }
 -- escribiera ese testimonio de su cuenta, y entonces habría texto en el corpus
 -- que ningún participante puso: es exactamente lo que la autoría por bloque
 -- existe para impedir.
-enum ContributionChannel { typed_text | authenticated_voice | agent_generation | import | walked }
+-- Cómo se produjo lo que un bloque lleva dentro.
+--
+-- `drawn` es de la misma clase que `authenticated_voice` y por la misma razón:
+-- son las dos formas en que algo llega al corpus con denominación de origen
+-- humana. Una grabación prueba que alguien habló; un trazo con su presión prueba
+-- que alguien lo hizo con la mano sobre una pantalla. En un corpus donde también
+-- escriben máquinas, eso no es un detalle de cómo entró el contenido: es lo que
+-- distingue lo que salió de una persona. Ver hand-drawing.allium.
+enum ContributionChannel { typed_text | authenticated_voice | agent_generation | import | walked | drawn }
 enum Visibility { private | public }
 -- The change vocabulary of the first usable Vera. Links between pages are not a
 -- change kind: they are derived from block content and therefore a consequence of

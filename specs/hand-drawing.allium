@@ -1,0 +1,320 @@
+-- allium: 3
+-- hand-drawing.allium
+
+-- Scope: Dibujar a mano dentro de una página — el trazo hecho con el dedo o con
+--   un lápiz sobre la pantalla, y el bloque en que queda
+-- Includes: Cómo se abre el lienzo, qué guarda un trazo, dónde viven los trazos,
+--   de qué tamaño y de qué color se ve el dibujo, cómo se vuelve a dibujar sobre
+--   uno terminado, y qué pasa con lo que no se puede leer como dibujo
+-- Excludes:
+--   - Los medios que Vera guarda como archivo —imagen, PDF, audio, SVG traído de
+--     fuera— (ver content-media.allium)
+--   - El marcado activo que trae su propio programa (ver
+--     executable-content-sandbox.allium)
+--   - El dibujo del grafo, que Vera calcula y nadie traza (ver
+--     graph-navigation.allium)
+--   - Reconocer qué hay dibujado: se declara aquí como pendiente
+-- Dependencies: Block y ContributionChannel los gobierna core.allium; la edición
+--   ordinaria de un bloque, block-editing.allium; el sistema de tokens que da
+--   los colores, workspace-interface.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- Un dibujo es un bloque, y sus trazos son su texto.
+--
+-- Podría haber sido un archivo en el almacén, como una foto. No lo es, y la
+-- diferencia importa: un archivo tiene su propia vida —se guarda aparte, se
+-- versiona aparte, se pierde aparte— y un dibujo hecho aquí es una nota más. Con
+-- los trazos dentro del bloque, todo lo que Vera ya sabe hacer con un bloque
+-- vale sin escribir nada nuevo: se versiona con su historia, se deshace con el
+-- mismo deshacer, viaja en la proyección Markdown, se copia, se mueve, cuelga de
+-- otro bloque y conserva de qué mano salió.
+--
+-- El precio es que el texto de ese bloque no es prosa, y Vera promete que editar
+-- un bloque devuelve lo que se escribió. La promesa se sostiene porque editar un
+-- dibujo no abre el editor de texto: abre el lienzo. Quien quiera las
+-- coordenadas las tiene donde están todas las demás —copiar el Markdown del
+-- bloque— y ahí no hay ninguna sorpresa.
+contract ADrawingIsABlock {
+    draw: (block: core/Block) -> Drawing
+
+    @invariant TheStrokesAreTheContent
+        -- Lo dibujado se guarda en el propio bloque, como texto, en una valla de
+        -- código que dice qué es. No hay archivo aparte, no hay tabla aparte, no
+        -- hay identidad aparte que mantener.
+
+    @invariant EditingADrawingOpensTheCanvas
+        -- Tocar un dibujo abre el lienzo con lo dibujado dentro, no un campo de
+        -- texto con sus coordenadas. Es la misma promesa que
+        -- @invariant EditingRevealsTheSource cumple para la prosa: al pulsar se
+        -- vuelve editable lo que se está mirando, y lo que se está mirando aquí
+        -- es un dibujo.
+
+    @invariant WhatCannotBeReadAsADrawingIsReadAsText
+        -- Un bloque que dice ser un dibujo y no se puede leer como tal se
+        -- presenta como el bloque de código que es. No se pierde, no se vacía y
+        -- no se arregla solo: se ve lo que hay. Es lo mismo que Vera hace con
+        -- todo el marcado que no sabe presentar.
+
+    @invariant AHandLeavesItsName
+        -- Un dibujo entra por su propio canal, `drawn`, y no por el de lo
+        -- tecleado. Es de la misma clase que la voz autenticada y por la misma
+        -- razón: un trazo con su presión es prueba de que alguien lo hizo con la
+        -- mano sobre una pantalla. En un corpus donde también escriben máquinas,
+        -- eso no es cómo entró el contenido: es de dónde viene. Ver
+        -- ContributionChannel en core.allium.
+
+    @invariant ItIsWrittenOnceAndNotStrokeByStroke
+        -- Lo dibujado llega al grafo cuando se cierra el lienzo, en una sola
+        -- escritura. Guardar trazo a trazo dejaría trescientas operaciones por
+        -- dibujo en un registro que sólo sabe añadir, y la historia del bloque
+        -- —que es lo que hace que nada se pierda— quedaría inservible para leerla.
+}
+
+-- Lo que un trazo guarda, y lo que deliberadamente no guarda.
+--
+-- Guarda por dónde pasó y con cuánta fuerza. Un lápiz sobre una tableta informa
+-- de la presión en cada punto, y esa presión es la mitad de lo que hace que un
+-- trazo a mano se parezca a un trazo a mano: sin ella todas las líneas son la
+-- misma línea. Se guarda con el trazo porque es del trazo, no de cómo se
+-- presenta.
+--
+-- No guarda color. Ninguno. El color de la tinta es el del texto de la página y
+-- el del papel es el de su fondo, y los dos los decide el tema, que cambia. Un
+-- dibujo con su color escrito dentro sería el único elemento de Vera que no
+-- obedece a los tokens, y en tema oscuro se vería negro sobre negro. No hay
+-- selector de color porque no hay color que elegir: hay tinta.
+contract AStrokeRemembersHowItWasMade {
+    trace: (drawing: Drawing) -> Stroke
+
+    @invariant PressureTravelsWithThePoint
+        -- Cada punto lleva la presión con que se hizo. Donde el aparato no la
+        -- informe —un dedo, un ratón— vale la misma para todos, y eso es una
+        -- respuesta y no una ausencia: el trazo sigue siendo legible.
+
+    @invariant NoColourIsStored
+        -- El dibujo no dice de qué color es. La tinta es el color del texto y el
+        -- papel es el fondo de la página; los dos vienen del tema y cambian con
+        -- él. Es lo que hace que un dibujo hecho de día se lea de noche.
+
+    @invariant TheEncodingIsCheapAndStillATextFile
+        -- Los puntos se escriben corto —enteros, y cada uno respecto del
+        -- anterior, que es un número de una o dos cifras porque la mano se mueve
+        -- poco entre muestra y muestra— y la presión sólo cuando cambia. Un
+        -- trazo por renglón.
+        --
+        -- Corto pero texto, y esto se midió antes de decidirlo. Sobre un dibujo
+        -- simulado de tres mil ciento veinte puntos en cuarenta trazos: en
+        -- decimales absolutos ocupa cincuenta y tres mil bytes; así, veinticuatro
+        -- mil; empaquetado en base64, dieciséis mil. Base64 gana un tercio en
+        -- crudo y lo pierde comprimido —seis mil seiscientos contra ocho mil
+        -- doscientos— porque empaquetar destruye justamente la repetición de la
+        -- que vive un compresor, y la proyección del corpus va a git, que
+        -- comprime. Encima cuesta las dos cosas que hacen que esto valga la pena
+        -- estar dentro del bloque: que añadir un trazo sea una línea de
+        -- diferencia, y que dentro de veinte años alguien pueda leer el formato
+        -- mirándolo.
+
+    @invariant NoThicknessIsChosen
+        -- Tampoco hay grosor que elegir. El grosor sale de la presión, que es de
+        -- dónde sale en un lápiz de verdad. Un selector de grosor sería una
+        -- pregunta que la mano ya está contestando.
+}
+
+------------------------------------------------------------
+-- Entities and Values
+------------------------------------------------------------
+
+-- Lo dibujado, leído desde el bloque que lo lleva.
+value Drawing {
+    block: core/Block
+    strokes: List<Stroke>
+    -- El recuadro que ocupa lo dibujado, no el lienzo en que se dibujó. Es lo
+    -- que decide de qué tamaño se ve: en una tableta se dibuja sobre toda la
+    -- pantalla y casi siempre se usa un trozo.
+    extents: Extents
+}
+
+value Stroke {
+    -- Los puntos por donde pasó, en orden. Un trazo es el recorrido entre apoyar
+    -- y levantar; dos trazos separados no son uno con un salto.
+    points: List<Point>
+}
+
+value Point {
+    -- En el espacio del propio dibujo y no en el de la pantalla: se puede
+    -- acercar y alejar mientras se dibuja, así que dos puntos hechos con la
+    -- lente en distinto sitio tienen que poder compararse.
+    x: Decimal
+    y: Decimal
+    -- Entre nada y todo. Lo que informa el aparato, sin interpretar: convertirla
+    -- aquí en un grosor ataría el dibujo a cómo se presenta hoy.
+    pressure: Decimal
+}
+
+value Extents {
+    left: Decimal
+    top: Decimal
+    width: Decimal
+    height: Decimal
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule DrawingOpensAWholeScreen {
+    when: StartDrawing(participant, block)
+
+    ensures: canvas_open(participant, block)
+
+    @invariant TheCanvasIsTheWholeScreen
+        -- Se dibuja sobre toda la pantalla y no dentro de un recuadro del ancho
+        -- de una columna. Dibujar es un gesto del brazo antes que del ojo, y un
+        -- lienzo del tamaño de un párrafo obliga a dibujar en pequeño lo que se
+        -- estaba pensando en grande. Lo que después se vea en la página es otra
+        -- pregunta, y la contesta el recuadro de los trazos.
+
+    @invariant TheCanvasHasNoEdgeAndNoScale
+        -- Se puede acercar y alejar con dos dedos mientras se dibuja, y arrastrar
+        -- para llegar a otra parte. El dibujo es vectorial, así que acercarse no
+        -- pierde nada: es la única forma de hacer un detalle pequeño con un dedo
+        -- gordo, y de que el lienzo no sea del tamaño de la pantalla sino del
+        -- tamaño de lo que haga falta. Lo que la lente hace no queda escrito en
+        -- ninguna parte: es cómo se está mirando, no qué se dibujó.
+
+    @invariant NothingElseIsOnTheCanvas
+        -- En el lienzo no hay paleta, ni regla de grosores, ni barra de
+        -- herramientas. No es minimalismo: es que no hay nada que elegir. Lo
+        -- único que puede pasar ahí es dibujar, deshacer y salir.
+}
+
+rule LeavingTheCanvasKeepsWhatWasDrawn {
+    when: FinishDrawing(participant, block)
+
+    let drawing = ADrawingIsABlock.draw(block)
+
+    requires: exists drawing
+
+    ensures: written(drawing)
+
+    @invariant BothGesturesFinish
+        -- Salir y aceptar son el mismo gesto: lo dibujado se queda. No hay una
+        -- tecla que guarde y otra que tire, porque en un dibujo hecho a mano no
+        -- existe el momento en que uno decide si lo quiere: ya lo hizo. Lo que
+        -- no se quiera se deshace, que es como se deshace todo lo demás.
+
+    @invariant AnEmptyCanvasWritesNothing
+        -- Abrir el lienzo y salir sin dibujar no deja bloque ni operación.
+        -- Mirar no es escribir, aquí como en el resto de Vera.
+}
+
+rule UndoingInsideTheCanvasIsNotUndoingInTheGraph {
+    when: UndoStroke(participant, block)
+
+    requires: canvas_open(participant, block)
+
+    ensures: stroke_removed(block)
+
+    @invariant TheCanvasHasItsOwnUndo
+        -- Mientras se dibuja, deshacer quita el último trazo y no toca el grafo:
+        -- todavía no hay nada escrito. Al cerrar el lienzo, todo lo dibujado es
+        -- una sola operación, y deshacerla devuelve el bloque a como estaba. Son
+        -- dos deshaceres a escalas distintas, como el del editor de texto y el
+        -- de la página.
+}
+
+rule ADrawingIsShownAtItsOwnSize {
+    when: RenderBlock(participant, block)
+
+    let drawing = ADrawingIsABlock.draw(block)
+
+    requires: exists drawing
+
+    ensures: shown(drawing)
+
+    @invariant WhatIsShownIsEverythingThatWasDrawn
+        -- Al cerrar el lienzo se enseña el dibujo entero, no el trozo que se
+        -- estaba mirando. La lente con que se dibujó —lo acercado, lo
+        -- arrastrado— no deja rastro: el encuadre lo da el recuadro de los
+        -- trazos, que es lo único que depende de lo dibujado y no de cómo se
+        -- miraba mientras se hacía.
+
+    @invariant ItsOwnSizePlusAMargin
+        -- Y se ve del tamaño de ese recuadro más un margen, no estirado al ancho
+        -- de la columna. Un garabato pequeño se ve pequeño: quien lo hizo
+        -- pequeño quiso decir eso.
+
+    @invariant AndItShrinksIfItDoesNotFit
+        -- Lo que no cabe en la columna se encoge hasta caber, guardando la
+        -- proporción. Un dibujo hecho a lo ancho de una tableta no puede
+        -- desbordar la lectura ni obligar a arrastrar de lado.
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface Drawable {
+    facing participant: core/Participant
+    context block: core/Block
+
+    exposes:
+        Drawing
+
+    contracts:
+        fulfils ADrawingIsABlock
+        fulfils AStrokeRemembersHowItWasMade
+
+    provides:
+        StartDrawing(participant, block)
+        FinishDrawing(participant, block)
+        UndoStroke(participant, block)
+
+    @guarantee ItIsMadeForAHandAndNotForAMouse
+        -- Está pensado para el dedo y para el lápiz sobre una tableta. Con un
+        -- ratón funciona y se nota que no era para eso: no hay presión que
+        -- informar y el trazo sale parejo. No se compensa inventándole una
+        -- presión al ratón, que sería dibujar por quien dibuja.
+
+    @guarantee TheInkIsTheTextAndThePaperIsThePage
+        -- Lo dibujado se ve con el color del texto sobre el fondo de la página, y
+        -- cambia con el tema como cambia todo lo demás. Un dibujo no es una
+        -- ilustración pegada encima: es algo escrito a mano en el mismo cuaderno.
+
+    @guarantee TheGraphIsNotTouchedUntilTheCanvasCloses
+        -- Mientras se dibuja no se escribe nada. Quien cierre la ventana a mitad
+        -- de un dibujo lo pierde, y eso es lo honesto: nada a medias quedó dicho.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- Salir y aceptar hacen lo mismo, y aun así la tecla de salir significa
+-- «descartar» en casi todo lo demás. Quien la pulse esperando tirar el dibujo se
+-- lo va a encontrar escrito.
+open question "¿Hace falta un gesto para descartar un dibujo sin escribirlo, o basta con que deshacer lo quite justo después?"
+
+-- Un dibujo no tiene texto, así que no aparece en ninguna búsqueda y no dice
+-- nada a quien no puede verlo. Las imágenes de Vera sí llevan una descripción, y
+-- ésta es la clase de cosa que nadie escribe si hay que pedirla.
+open question "¿Debe un dibujo poder llevar una descripción —para encontrarlo y para quien no lo ve— y quién la escribe: quien dibujó, el modelo local mirándolo, o nadie?"
+
+-- Los trazos viven en el bloque, y el registro sólo sabe añadir. Redibujar diez
+-- veces sobre el mismo bloque deja diez versiones enteras del dibujo en la
+-- historia.
+open question "¿Debe la historia de un bloque de dibujo guardarse entera cada vez, o hay un punto en que un dibujo pesa lo bastante como para guardar sólo lo que cambió?"
+
+-- Hoy sólo se puede quitar el último trazo. Borrar un trazo del medio, o una
+-- parte de uno, pediría señalarlo, y señalar pide una herramienta que el lienzo
+-- no tiene.
+open question "¿Alcanza con deshacer el último trazo, o hace falta una goma —y entonces qué la distingue de la primera herramienta que rompe que en el lienzo no haya nada que elegir?"
+
+-- El corpus podría saber qué hay dibujado. El modelo local corre en esta máquina
+-- y lee páginas; mirar un dibujo es otra clase de lectura.
+open question "¿Debe Vera intentar leer lo que un dibujo dice —una palabra escrita a mano, un diagrama— o un dibujo es justamente lo que uno guarda cuando no quiere que sea texto?"
