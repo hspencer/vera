@@ -359,6 +359,38 @@ export const api = {
   ontology: () => json<OntologyView>('/ontology'),
 
   /**
+   * Qué se desharía, sin deshacerlo.
+   *
+   * Existe para poder decirlo antes: «deshacer» a secas obliga a mirar la
+   * pantalla después para saber qué pasó.
+   */
+  whatUndo: (page: string) =>
+    json<{ says?: string[]; nothing?: string; operations?: number }>(
+      `/undo?pagina=${encodeURIComponent(page)}`,
+    ),
+
+  /**
+   * Y deshacerlo, que son operaciones nuevas y no un borrado del registro.
+   *
+   * Sobre la página que se está mirando: deshacer es «vuelve esto al momento
+   * anterior», y «esto» es lo que se tiene delante.
+   */
+  undo: async (
+    page: string,
+    direction: 'deshacer' | 'rehacer' = 'deshacer',
+  ): Promise<{ done?: string[]; nothing?: string; error?: string }> => {
+    const again = direction === 'rehacer' ? '&rehacer' : '';
+    const answer = await fetch(`/undo?pagina=${encodeURIComponent(page)}${again}`, {
+      method: 'POST',
+    });
+    return (await answer.json().catch(() => ({ error: 'no se pudo deshacer' }))) as {
+      done?: string[];
+      nothing?: string;
+      error?: string;
+    };
+  },
+
+  /**
    * Guarda la clave de un servicio.
    *
    * No pasa por `POST /operations` y es deliberado: no es una operación, no deja

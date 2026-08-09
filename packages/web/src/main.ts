@@ -607,6 +607,7 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
     // Pulsar el nombre de otra página dentro del texto que se lee.
     onNavigate: (title) => void openTitle(title, 'followed_reference'),
     onOpen: (target, gesture) => void openPage(target, null, { gesture }),
+    onUndo: (direction) => undoLast(direction),
     onChanged: () => void refreshGraph(),
     // @invariant ReferenceResolvesToItsBlock: seguir una referencia deja al
     // participante en el bloque que nombra, no sólo en su página. Llegar a una
@@ -1262,6 +1263,50 @@ function wireTheme(): void {
     if (mapPanelOpen) setPanel(false);
   });
 
+  /*
+   * Deshacer lo último, fuera del editor.
+   *
+   * Dentro de un campo manda el deshacer del navegador: mientras se escribe,
+   * Ctrl+Z tiene que devolver la palabra que se acaba de borrar y no la página
+   * al momento anterior. Son dos deshaceres a escalas distintas y cada uno vive
+   * donde se le espera.
+   */
+  document.addEventListener('keydown', (event) => {
+    const undoing = is('undo', event);
+    const redoing = is('redo', event);
+    if (!undoing && !redoing) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('input, textarea, [contenteditable]') !== null) return;
+    event.preventDefault();
+    void undoLast(undoing ? 'deshacer' : 'rehacer');
+  });
+
+}
+
+/**
+ * Deshace el último gesto y cuenta qué deshizo.
+ *
+ * Lo calcula el servidor leyendo el registro hacia atrás —no hay pila de
+ * deshacer, no hace falta: los estados anteriores ya están todos guardados— y lo
+ * que aplica son operaciones nuevas. Por eso queda dicho quién deshizo y cuándo,
+ * y por eso deshacer se puede deshacer.
+ */
+export async function undoLast(direction: 'deshacer' | 'rehacer' = 'deshacer'): Promise<void> {
+  if (workspace.activePage === null) return;
+  const said = await api.undo(workspace.activePage, direction);
+  if (said.error !== undefined) {
+    notice(said.error);
+    return;
+  }
+  if (said.nothing !== undefined) {
+    notice(said.nothing);
+    return;
+  }
+  const done = said.done ?? [];
+  notice(done.length === 0 ? 'No había nada que deshacer.' : `Deshecho: ${done.join(' · ')}.`);
+  // Se rehace la página entera: deshacer un gesto puede haber movido bloques de
+  // sitio, devuelto uno que no estaba y cambiado el texto de otro a la vez.
+  if (workspace.activePage !== null) await openPage(workspace.activePage);
 }
 
 // ---------------------------------------------------------------------------

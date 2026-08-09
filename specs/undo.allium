@@ -1,0 +1,173 @@
+-- allium: 3
+-- undo.allium
+
+-- Scope: Deshacer lo último y volver a hacerlo, calculado sobre el registro de
+--   operaciones y no sobre una pila en memoria
+-- Includes: Qué cuenta como «lo último», cómo se calcula la operación contraria
+--   de otra, qué no se sabe deshacer y qué pasa cuando deshacer falla a medias
+-- Excludes:
+--   - El deshacer del navegador dentro de un campo de texto, que es de otra
+--     escala y no es de Vera
+--   - La reversión de una migración de vocabulario, que se propone y se aplica
+--     con su propia deliberación (ver controlled-ontology.allium)
+--   - Restaurar una página entera borrada, que se declara aquí como pendiente
+-- Dependencies: Operation, Change y Block los gobierna core.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- Deshacer no guarda nada: lee.
+--
+-- Un programa cualquiera lleva una pila de deshacer en memoria, y por eso pierde
+-- lo deshacible al recargar y no puede decir quién deshizo qué. Vera no la
+-- necesita: el registro de operaciones ya tiene todos los estados anteriores de
+-- todo, y lo que falta no es guardar más sino saber leer hacia atrás.
+--
+-- De ahí salen tres cosas que no se podrían tener con una pila:
+--
+--   - No se borra nada del registro. Deshacer añade, como cualquier escritura, y
+--     queda dicho quién deshizo y cuándo. Un deshacer que borrara del log
+--     rompería la promesa que sostiene todo lo demás.
+--   - Deshacer se puede deshacer sin código nuevo: la contraria de una operación
+--     es una operación, y la suya se calcula igual.
+--   - Sobrevive a cerrar el navegador, a reiniciar el servidor y a mirar el
+--     corpus desde otro aparato.
+contract TheLogIsTheUndoStack {
+    undo: (page: core/Page) -> Undoing
+
+    @invariant UndoingIsWritingAndNeverErasing
+        -- Deshacer aplica operaciones nuevas. Nada se quita del registro, nunca.
+
+    @invariant TheOnlyHandYouCanUndoIsYourOwn
+        -- Se deshace lo propio. Deshacer lo que escribió otra mano —un agente,
+        -- el modelo local— no es deshacer: es corregir a alguien, y eso se hace
+        -- escribiendo y firmando el cambio con el propio nombre.
+
+    @invariant AGestureIsNotAnOperation
+        -- Lo que se deshace es un gesto: una tanda seguida de operaciones de la
+        -- misma mano, sin silencios largos en medio. Unir dos bloques con un
+        -- retroceso son cinco operaciones y quien pulsó una tecla espera
+        -- deshacer una cosa. La pausa que separa dos gestos se mide; no se
+        -- declara.
+
+    @invariant AGestureDoesNotCrossPages
+        -- Y un gesto no cruza de página. Sin eso, dos cosas que ocurren a la vez
+        -- en sitios distintos —otra ventana abierta, un guion escribiendo
+        -- mientras alguien teclea— se leen como un solo gesto, y deshacer se
+        -- lleva por delante trabajo que no tenía nada que ver con lo que se
+        -- quería deshacer.
+
+    @invariant WhatComesBackComesBackAsItself
+        -- Un bloque devuelto vuelve con su propio identificador. No contradice
+        -- StableBlockAddress —esa promesa dice que un identificador no se
+        -- reasigna, y aquí no se reasigna nada—: vuelve el mismo bloque al mismo
+        -- nombre, que es lo que la promesa protege. Con identidad nueva, lo que
+        -- le apuntaba seguiría apuntando al que se fue.
+
+    @invariant AllOrNothing
+        -- O se deshace el gesto entero o no se deshace nada. Media reversión
+        -- deja un estado que nadie eligió y del que nadie se acuerda, que es
+        -- peor que no haber deshecho. Si un paso falla al aplicarse, se devuelve
+        -- lo ya aplicado y se dice que no se pudo.
+
+    @invariant WhatCannotBeUndoneIsSaid
+        -- Lo que no se sabe deshacer se nombra y no se intenta. Un deshacer que
+        -- hace lo que puede es un deshacer en el que hay que mirar después qué
+        -- pasó, y entonces no sirve.
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- Un gesto: lo que alguien entiende que hizo de una vez.
+value Gesture {
+    -- Las operaciones que lo componen, en el orden en que ocurrieron.
+    operations: List<core/Operation>
+    by: core/Participant
+    page: core/Page
+}
+
+-- Lo que hay que escribir para volver al momento anterior.
+value Undoing {
+    -- Las contrarias, del final del gesto hacia su principio: si una mudó un
+    -- hijo y otra borró al padre, devolver al padre tiene que ocurrir antes de
+    -- devolverle el hijo.
+    changes: List<core/Change>
+    -- Y lo que van a hacer, dicho en palabras, para poder enseñarlo antes.
+    says: List<String>
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule UndoingWalksBackwardsAndNotInCircles {
+    when: Undo(participant, page)
+
+    let gesture = TheLogIsTheUndoStack.undo(page)
+
+    requires: exists gesture
+
+    ensures: written(gesture)
+
+    @invariant PressingUndoTwiceGoesTwoStepsBack
+        -- Deshacer dos veces va dos pasos atrás y no rebota entre dos estados.
+        -- Una tanda de contrarias es un gesto aparte y nunca es lo que se
+        -- deshace: para eso está rehacer, que es deshacer un deshacer y sale de
+        -- la misma máquina.
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface Undoable {
+    facing writer: core/Participant
+    context page: core/Page
+
+    exposes:
+        Undoing
+
+    contracts:
+        fulfils TheLogIsTheUndoStack
+
+    provides:
+        Undo(participant, page)
+        Redo(participant, page)
+
+    @guarantee ItSaysWhatItUndid
+        -- Al terminar se dice qué se deshizo, en palabras. «Deshecho» a secas
+        -- obliga a mirar la pantalla para saber qué pasó, y lo que se acaba de
+        -- deshacer puede no estar a la vista.
+
+    @guarantee TheTextEditorKeepsItsOwnUndo
+        -- Dentro de un campo de texto manda el deshacer del navegador: mientras
+        -- se escribe, deshacer tiene que devolver la palabra que se acaba de
+        -- borrar y no la página al momento anterior. Son dos deshaceres a
+        -- escalas distintas y cada uno vive donde se le espera.
+
+    @guarantee TwoDoorsForTheSameThing
+        -- El atajo y el menú de la página llaman a lo mismo. Quien no se sabe
+        -- los atajos tiene que poder deshacer igual.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- Borrar una página es vaciarla bloque a bloque y después quitarla. Deshacerlo
+-- entero es rehacer la página y volver a escribir dentro cada bloque; se puede,
+-- porque el registro lo tiene todo, pero no es deshacer un gesto.
+open question "¿Cómo se restaura una página borrada: como un deshacer más, o como un acto propio que se pide por su nombre y enseña antes qué va a devolver?"
+
+-- El silencio que separa dos gestos son dos segundos y medio, elegidos contra
+-- los novecientos milisegundos que tarda la escritura en guardar sola.
+open question "¿Debería la pausa que separa dos gestos depender de qué se hizo —escribir seguido es un gesto largo, mover bloques son gestos cortos— en vez de ser un número igual para todo?"
+
+-- Hoy se deshace lo propio y lo de otras manos no. Un agente que escribe cien
+-- bloques en el corpus deja cien bloques que hay que quitar a mano.
+open question "¿Qué gesto retira lo que escribió un agente: deshacer con su nombre, una reversión que se pide sobre su tanda, o simplemente borrar como se borra cualquier cosa?"

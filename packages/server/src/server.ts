@@ -15,6 +15,9 @@ import {
   checkInvariants,
   FIELD_KINDS,
   SPECIAL_KIND,
+  invert,
+  nextToRedo,
+  nextToUndo,
   inverseOf,
   namesFromRoles,
   readObjectDeclarations,
@@ -31,6 +34,7 @@ import type {
   Change,
   ContributionChannel,
   DeclaredBlock,
+  Operation,
   OriginEvidence,
   ParticipantId,
 } from '@vera/core';
@@ -1986,6 +1990,147 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       }
 
       send(response, 404, { error: 'no such service route' });
+      return;
+    }
+
+    /*
+     * Deshacer lo último.
+     *
+     * No hay pila de deshacer y no hace falta: el registro ya tiene todos los
+     * estados anteriores de todo, y deshacer es calcular la operación contraria
+     * leyéndolo hacia atrás. Lo que se aplica son operaciones nuevas —queda
+     * dicho quién deshizo y cuándo— y por eso deshacer se puede deshacer sin una
+     * línea de código más. Ver core/undo.ts y specs/undo.allium.
+     *
+     * `GET` dice qué se desharía, sin tocar nada, para poder enseñarlo antes de
+     * hacerlo. `POST` lo hace.
+     */
+    if ((request.method === 'GET' || request.method === 'POST') && path === '/undo') {
+      const log = graph.operations();
+      const world = {
+        childrenOf: (block: string) => graph.childrenOf(block).map((one) => one.stableId),
+        exists: (block: string) => graph.block(block) !== undefined,
+      };
+
+      /*
+       * Sólo se deshace lo propio.
+       *
+       * Deshacer lo que escribió otra mano —un agente, el modelo local— no es
+       * deshacer: es corregir a alguien, y eso se hace escribiendo y firmando el
+       * cambio con el propio nombre. @invariant TheOnlyHandYouCanUndoIsYourOwn.
+       */
+      /*
+       * Y rehacer es deshacer un deshacer: la misma máquina, otro objetivo.
+       *
+       * Se distinguen porque si no, pulsar deshacer dos veces rebotaría entre
+       * dos estados en vez de caminar hacia atrás.
+       */
+      const redoing = url.searchParams.get('rehacer') !== null;
+      /*
+       * Y sobre una página, no sobre el corpus entero.
+       *
+       * Deshacer es «vuelve esto al momento anterior», y «esto» es la página que
+       * se está mirando. Sin acotarlo, dos cosas que ocurren a la vez en sitios
+       * distintos —otra ventana, un guion escribiendo mientras alguien teclea—
+       * se leen como un solo gesto y deshacer se lleva por delante trabajo ajeno
+       * al que se quería deshacer.
+       */
+      const said = url.searchParams.get('pagina');
+      const here = said === null ? undefined : (graph.page(said) ?? graph.pageTitled(said))?.id;
+      if (said !== null && here === undefined) {
+        send(response, 404, { error: 'no such page' });
+        return;
+      }
+      const scope: { by: string; page?: string } = { by: owner.id };
+      if (here !== undefined) scope.page = here;
+      const gesture = redoing ? nextToRedo(log, scope) : nextToUndo(log, scope);
+      if (gesture.length === 0) {
+        send(response, 200, {
+          nothing: redoing ? 'no hay nada que rehacer' : 'no hay nada tuyo que deshacer',
+        });
+        return;
+      }
+
+      const undoing = invert(log, gesture, world);
+      if ('refusal' in undoing) {
+        send(response, 200, { nothing: undoing.refusal, operations: gesture.length });
+        return;
+      }
+
+      if (request.method === 'GET') {
+        send(response, 200, {
+          says: undoing.says,
+          operations: gesture.length,
+          when: gesture.at(-1)?.appliedAt ?? null,
+        });
+        return;
+      }
+
+      const stamp = Date.now();
+      let step = 0;
+      const done: string[] = [];
+      const applied: Operation[] = [];
+
+      const write = (change: Change, why: string): string | null => {
+        const outcome = graph.submitOperation({
+          originId: `${why}:${gesture.at(-1)?.sequence ?? 0}:${stamp}:${(step += 1)}`,
+          participant: owner.id,
+          channel: 'typed_text',
+          change,
+        });
+        if (outcome.status !== 'applied') {
+          return outcome.status === 'rejected' ? outcome.reason : 'repetido';
+        }
+        recordOperation(store, graph, outcome.operation);
+        applied.push(outcome.operation);
+        return null;
+      };
+
+      /*
+       * Si un paso falla, se devuelve lo que ya se había aplicado.
+       *
+       * Media reversión deja un estado que nadie eligió y del que nadie se
+       * acuerda —es peor que no haber deshecho nada—, y por eso el plan se
+       * calcula entero antes de tocar nada. Aun así, aplicar puede fallar por
+       * algo que el plan no vio: entonces se deshace el deshacer, con la misma
+       * máquina, y se dice que no se pudo.
+       */
+      const putBack = (): void => {
+        const back = invert(graph.operations(), applied, world);
+        if ('refusal' in back) return;
+        for (const change of back.changes) {
+          const outcome = graph.submitOperation({
+            originId: `undo-back:${stamp}:${(step += 1)}`,
+            participant: owner.id,
+            channel: 'typed_text',
+            change,
+          });
+          if (outcome.status !== 'applied') return;
+          recordOperation(store, graph, outcome.operation);
+        }
+      };
+
+      try {
+        for (const change of undoing.changes) {
+          const failed = write(change, 'undo');
+          if (failed !== null) {
+            putBack();
+            send(response, 422, {
+              error: `no se pudo deshacer: ${failed}. Nada cambió.`,
+            });
+            return;
+          }
+          done.push(undoing.says[done.length] ?? '');
+        }
+      } catch (error) {
+        putBack();
+        send(response, 500, {
+          error: 'no se pudo deshacer. Nada cambió.',
+          detail: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+      send(response, 200, { done, operations: gesture.length, undone: undoing.undoing });
       return;
     }
 

@@ -24,6 +24,26 @@ export type { QueryExpression } from './query.ts';
 export { looksLikeQuery, readQuery, writeQuery } from './query-source.ts';
 
 /*
+ * Deshacer lo último, calculado sobre el registro y no sobre una pila en
+ * memoria: los estados anteriores ya están todos guardados. Ver undo.ts.
+ */
+export {
+  GESTURE_GAP,
+  UNDO_ORIGIN,
+  blockBefore,
+  contraryOf,
+  gesturesIn,
+  invert,
+  lastGesture,
+  nextToRedo,
+  nextToUndo,
+  pageOf,
+  pagesOf,
+  runOf,
+} from './undo.ts';
+export type { Inverse, Undoing, World } from './undo.ts';
+
+/*
  * Las dos páginas que dicen de qué está hecho este corpus: qué propiedades hay y
  * qué clase de campo es cada una, y qué objetos hay y qué propiedades los
  * constituyen. Ver ontology.ts.

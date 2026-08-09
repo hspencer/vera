@@ -83,6 +83,9 @@ export function allowEmbedsFrom(hosts: readonly string[]): void {
 
 export interface OutlinerCallbacks {
   onNavigate(title: string): void;
+  /** Deshacer el último gesto de esta página, o rehacerlo. Lo calcula el
+   *  servidor leyendo el registro hacia atrás. */
+  onUndo?(direction: 'deshacer' | 'rehacer'): void | Promise<void>;
   /**
    * Abrir otra página, diciendo por qué gesto.
    *
@@ -2039,6 +2042,21 @@ export function renderOutliner(
   more.addEventListener('click', (event) => {
     event.stopPropagation();
     openBlockMenu(more, [
+      /*
+       * Deshacer lo último, también desde aquí.
+       *
+       * Con Ctrl+Z fuera del editor y con este renglón, que es donde va a
+       * buscarlo quien no se sabe los atajos. Lo mismo por dos puertas y no dos
+       * cosas parecidas: las dos llaman a lo mismo.
+       */
+      {
+        label: 'Deshacer lo último',
+        run: () => void callbacks.onUndo?.('deshacer'),
+      },
+      {
+        label: 'Rehacer',
+        run: () => void callbacks.onUndo?.('rehacer'),
+      },
       {
         // Deliberado y sobre esta página, nunca de oficio: resolver un enlace es
         // preguntarle al servidor que lo tiene, y eso le dice que aquí alguien

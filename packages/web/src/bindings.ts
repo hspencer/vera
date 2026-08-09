@@ -31,6 +31,38 @@ export const BINDINGS: Binding[] = [
     group: 'navegación',
     match: (event) => event.key === 'Escape',
   },
+  /*
+   * Deshacer lo último.
+   *
+   * Fuera del editor, porque dentro manda el deshacer del navegador: mientras se
+   * escribe, Ctrl+Z tiene que devolver la palabra que se acaba de borrar y no la
+   * página entera al momento anterior. Son dos deshaceres a escalas distintas y
+   * cada uno vive donde se le espera.
+   */
+  {
+    id: 'undo',
+    keys: 'Ctrl/Cmd + Z',
+    what: 'Deshace el último gesto de esta página: la devuelve al momento anterior',
+    when: 'fuera del editor de un bloque',
+    group: 'estructura',
+    match: (event) =>
+      (event.key === 'z' || event.key === 'Z') &&
+      (event.metaKey || event.ctrlKey) &&
+      !event.shiftKey &&
+      !event.altKey,
+  },
+  {
+    id: 'redo',
+    keys: 'Ctrl/Cmd + Shift + Z',
+    what: 'Rehace lo que se acaba de deshacer',
+    when: 'fuera del editor de un bloque',
+    group: 'estructura',
+    match: (event) =>
+      (event.key === 'z' || event.key === 'Z') &&
+      (event.metaKey || event.ctrlKey) &&
+      event.shiftKey &&
+      !event.altKey,
+  },
   {
     id: 'open-node',
     keys: 'Enter o Espacio',
