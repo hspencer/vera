@@ -210,7 +210,7 @@ export interface Command {
    * ese punto de la escritura, y quien atiende el comando es el outliner, porque
    * el hecho ocurre en el grafo y no en el texto.
    */
-  acts?: 'hablar' | 'elegir-fecha' | 'importar' | 'zotero';
+  acts?: 'hablar' | 'elegir-fecha' | 'importar' | 'zotero' | 'dibujar';
 }
 
 /**
@@ -243,6 +243,14 @@ export const COMMANDS: Command[] = [
    */
   { name: '?', hint: 'consulta: preguntarle al grafo', inserts: '? ', caret: 2 },
   { name: 'audio', hint: 'hablar aquí mismo', inserts: '', caret: 0, acts: 'hablar' },
+  /*
+   * Dibujar a mano.
+   *
+   * No deja texto aquí: abre el lienzo a pantalla completa y lo que salga ocupa
+   * el bloque. Está en esta lista porque es donde uno va a buscar qué puede
+   * hacer, aunque lo que haga no sea escribir. Ver specs/hand-drawing.allium.
+   */
+  { name: 'dibujo', hint: 'dibujar a mano, a pantalla completa', inserts: '', caret: 0, acts: 'dibujar' },
   // Importar no escribe aquí: crea una página aparte y lleva a ella. Está en
   // esta lista porque es donde uno va a buscar «qué puedo hacer desde el
   // teclado», y no porque deje texto en el bloque.

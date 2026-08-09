@@ -141,7 +141,8 @@ CREATE TABLE IF NOT EXISTS operations (
     subject_id             TEXT NOT NULL,
     channel                TEXT NOT NULL CHECK (
                                channel IN ('typed_text', 'authenticated_voice',
-                                           'agent_generation', 'import', 'walked')),
+                                           'agent_generation', 'import', 'walked',
+                                           'drawn')),
     evidence_reference     TEXT,
     evidence_captured_at   INTEGER,
     submitted_at           INTEGER NOT NULL,
@@ -432,7 +433,8 @@ CREATE TABLE IF NOT EXISTS block_authorship (
     participant_id  TEXT NOT NULL REFERENCES participants (id),
     channel         TEXT NOT NULL CHECK (
                         channel IN ('typed_text', 'authenticated_voice',
-                                    'agent_generation', 'import', 'walked')),
+                                    'agent_generation', 'import', 'walked',
+                                    'drawn')),
     written_at      INTEGER NOT NULL
 ) STRICT;
 

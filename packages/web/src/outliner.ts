@@ -14,7 +14,9 @@
 import {
   DEFAULT_PROPERTY_NAMES,
   answersIn,
+  looksLikeDrawing,
   looksLikeQuery,
+  readDrawing,
   renderMarkdown,
   type RenderOptions,
 } from '@vera/core';
@@ -1486,6 +1488,85 @@ async function showHistory(
   row.append(panel);
 }
 
+/**
+ * Abre el lienzo y deja lo dibujado en un bloque.
+ *
+ * Si el bloque estaba vacío —lo normal: se escribió `/dibujo` y nada más—, el
+ * dibujo lo ocupa. Si había algo escrito, eso se queda donde está y el dibujo
+ * nace debajo: los trazos son el texto de un bloque de dibujo, así que una frase
+ * y un dibujo no caben en el mismo.
+ *
+ * Se escribe por el canal `drawn`, que no es un detalle de cómo entró: un trazo
+ * con su presión es prueba de que alguien lo hizo con la mano.
+ * @invariant AHandLeavesItsName.
+ */
+async function drawInto(
+  block: string,
+  page: string,
+  written: string,
+  callbacks: OutlinerCallbacks,
+  notify: (message: string) => void,
+): Promise<void> {
+  const { openCanvas } = await import('./canvas.ts');
+  const drawn = await openCanvas();
+  if (drawn.content === '') {
+    // @invariant AnEmptyCanvasWritesNothing: mirar el lienzo no es escribir. Lo
+    // que hubiera escrito vuelve como estaba, sin el comando.
+    await api.submit({ kind: 'edit_block', block, content: written });
+    callbacks.onReload(null);
+    return;
+  }
+
+  const said =
+    written === ''
+      ? await api.submit({ kind: 'edit_block', block, content: drawn.content }, 'drawn')
+      : await (async () => {
+          await api.submit({ kind: 'edit_block', block, content: written });
+          return api.submit(
+            {
+              kind: 'create_block',
+              page,
+              parent: null,
+              position: Number.MAX_SAFE_INTEGER,
+              content: drawn.content,
+            },
+            'drawn',
+          );
+        })();
+  if (said.status === 'rejected') {
+    notify(`no se pudo guardar el dibujo: ${said.reason}`);
+    return;
+  }
+  callbacks.onReload(null);
+}
+
+/**
+ * Vuelve a dibujar sobre un dibujo terminado.
+ *
+ * Con lo que ya había dentro: seguir dibujando es seguir, no empezar otro. Es lo
+ * que hace que tocar un dibujo abra el lienzo y no un campo con sus coordenadas.
+ * @invariant EditingADrawingOpensTheCanvas.
+ */
+async function redraw(
+  block: BlockView,
+  callbacks: OutlinerCallbacks,
+  notify: (message: string) => void,
+): Promise<void> {
+  const { openCanvas } = await import('./canvas.ts');
+  const drawn = await openCanvas(readDrawing(block.content));
+  // Borrar todos los trazos y salir deja el bloque vacío, no lo borra: quitar un
+  // bloque es otra decisión y tiene su propio gesto.
+  const said = await api.submit(
+    { kind: 'edit_block', block: block.stableId, content: drawn.content },
+    'drawn',
+  );
+  if (said.status === 'rejected') {
+    notify(`no se pudo guardar el dibujo: ${said.reason}`);
+    return;
+  }
+  callbacks.onReload(null);
+}
+
 export interface Node {
   block: BlockView;
   children: Node[];
@@ -2404,6 +2485,18 @@ export function renderOutliner(
         window.getSelection()?.removeAllRanges();
         return;
       }
+      /*
+       * Un dibujo se abre dibujando.
+       *
+       * Sus trazos son el texto del bloque, y abrir un campo con las
+       * coordenadas sería enseñar el formato a quien quería seguir un trazo.
+       * @invariant EditingADrawingOpensTheCanvas.
+       */
+      if (looksLikeDrawing(node.block.content)) {
+        void redraw(node.block, callbacks, toast);
+        return;
+      }
+
       // Empezar a escribir deshace lo escogido. @invariant NothingIsSelectedWhileWriting.
       if (picked.size > 0) clearPicked();
       pickedOn = node.block.stableId;
@@ -3898,6 +3991,20 @@ function startEditing(
         });
       });
       chooser.click();
+      return;
+    }
+
+    /*
+     * Dibujar no escribe aquí: abre el lienzo y lo que salga es el bloque.
+     *
+     * El bloque entero, y no lo dibujado detrás de lo que hubiera escrito: los
+     * trazos son el texto de un bloque de dibujo, así que un dibujo y una frase
+     * no caben en el mismo. Lo que estuviera a medio escribir se queda donde
+     * está y el dibujo nace en un bloque nuevo debajo.
+     */
+    if (acts === 'dibujar') {
+      const written = editor.value.replace(/\/dibujo\s*$/, '').trimEnd();
+      void drawInto(block.stableId, context.page, written, callbacks, toast);
       return;
     }
 

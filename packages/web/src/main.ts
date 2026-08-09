@@ -142,12 +142,28 @@ function drawMemory(host: HTMLElement): void {
   // todo, y un índice de todo no es un índice: para eso está el buscador, que
   // encuentra por lo que uno recuerda en vez de obligar a reconocer un título en
   // una lista. Lo que sí pertenece a Memoria es lo que decide cómo funciona esta
-  // instancia. @invariant SpecialityIsDeclaredNotGuessed: se reconocen por lo que
-  // declaran, no por una lista de títulos escrita en el código.
-  const kinds: { key: string; label: string; what: string }[] = [
-    { key: 'ontology', label: 'Ontología', what: 'los tipos, conceptos y propiedades con que se clasifica' },
-    { key: 'presentation', label: 'Presentación', what: 'los tokens de diseño' },
+  // instancia.
+  //
+  // Se dibuja lo que el corpus declara, y no las clases que este archivo
+  // enumere. @invariant SpecialityIsDeclaredNotGuessed: una página es especial
+  // porque lo dice en una propiedad que cualquiera puede leer, y un panel que
+  // sólo sabe enseñar tres clases escritas aquí convierte esa declaración en
+  // decorado. Es lo que pasaba: «Propiedades», «Objetos» y «Zotero» gobiernan de
+  // verdad —el servidor las lee en cada petición— y no aparecían en ninguna
+  // parte, mientras el renglón de «Ontología» seguía diciendo que gobernaba los
+  // tipos y las propiedades, que se habían mudado a esas dos páginas.
+  //
+  // Lo que queda escrito aquí es sólo el nombre legible de cada clase. Una que
+  // este cliente no conozca se dibuja igual, con su clave a la vista: el corpus
+  // puede declarar algo que esta versión todavía no sabe nombrar, y esconderlo
+  // sería volver a tener la lista privada que el invariante prohíbe.
+  const KNOWN: { key: string; label: string; what: string }[] = [
+    { key: 'ontology', label: 'Ontología', what: 'con qué vocabulario se clasifica' },
+    { key: 'properties', label: 'Propiedades', what: 'cada propiedad y qué clase de campo es' },
+    { key: 'objects', label: 'Objetos', what: 'cada clase de cosa y qué propiedades la constituyen' },
     { key: 'instructions', label: 'Instrucciones', what: 'lo que el bibliotecario tiene dicho' },
+    { key: 'presentation', label: 'Presentación', what: 'los tokens de diseño' },
+    { key: 'service', label: 'Servicio', what: 'con qué servicio de fuera habla el corpus' },
   ];
 
   const heading = document.createElement('h3');
@@ -160,32 +176,62 @@ function drawMemory(host: HTMLElement): void {
   host.append(special);
 
   void api.specialPages().then((found) => {
-    for (const kind of kinds) {
-      const page = found.find((p) => p.kind === kind.key);
+    const row = (label: string, what: string): HTMLButtonElement => {
       const item = document.createElement('button');
       item.type = 'button';
       item.className = 'index-item';
-
       const name = document.createElement('span');
-      name.textContent = page === undefined ? `${kind.label} — sin definir` : page.title;
-      const what = document.createElement('span');
-      what.className = 'count';
-      what.textContent = kind.what;
-      item.append(name, what);
-
-      if (page === undefined) {
-        // Que falte no es un error: lo que la página diría tiene un valor por
-        // defecto en el código. @invariant DefaultsLiveInTheCode.
-        item.title = `Todavía no hay una página que gobierne ${kind.label.toLowerCase()}. Rige lo que trae Vera.`;
-        item.disabled = true;
-      } else {
-        item.addEventListener('click', () => {
-          closeSettings();
-          // Del menú: se llegó de fuera, sin que nada de lo leído lo explique.
-          void openPage(page.id, null, { gesture: 'opened_directly' });
-        });
-      }
+      name.textContent = label;
+      const said = document.createElement('span');
+      said.className = 'count';
+      said.textContent = what;
+      item.append(name, said);
       special.append(item);
+      return item;
+    };
+
+    // Por el orden en que se leen, no por el orden en que el corpus las
+    // devuelva: el vocabulario antes que lo que se declara con él, y las
+    // conexiones al final. Lo que este cliente no conozca va después de todo.
+    const rank = (kind: string): number => {
+      const at = KNOWN.findIndex((one) => one.key === kind);
+      return at === -1 ? KNOWN.length : at;
+    };
+
+    const declared = [...found].sort(
+      (a, b) => rank(a.kind) - rank(b.kind) || a.title.localeCompare(b.title, 'es'),
+    );
+
+    for (const page of declared) {
+      // Varias de una misma clase es normal y no un conflicto: un corpus puede
+      // hablar con dos servicios. Se dibujan las que haya, cada una con su
+      // título, que es lo que la distingue de la otra.
+      const known = KNOWN.find((one) => one.key === page.kind);
+      const item = row(page.title, known?.what ?? `gobierna «${page.kind}»`);
+      item.addEventListener('click', () => {
+        closeSettings();
+        // Del menú: se llegó de fuera, sin que nada de lo leído lo explique.
+        void openPage(page.id, null, { gesture: 'opened_directly' });
+      });
+    }
+
+    /*
+     * Y las que podrían gobernar y no gobiernan.
+     *
+     * Que falte no es un error: lo que la página diría tiene un valor por
+     * defecto en el código —@invariant DefaultsLiveInTheCode—, y decirlo aquí es
+     * la única forma de que alguien sepa que ese sitio existe y está libre.
+     *
+     * `service` no se ofrece: un corpus sin ninguna conexión no tiene un
+     * servicio pendiente de escribir, tiene ninguno, y un renglón que invitara a
+     * escribirlo estaría pidiendo una decisión que nadie tomó.
+     */
+    for (const kind of KNOWN) {
+      if (kind.key === 'service') continue;
+      if (found.some((page) => page.kind === kind.key)) continue;
+      const item = row(`${kind.label} — sin definir`, kind.what);
+      item.title = `Todavía no hay una página que gobierne ${kind.label.toLowerCase()}. Rige lo que trae Vera.`;
+      item.disabled = true;
     }
   });
 }

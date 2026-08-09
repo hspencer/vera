@@ -158,10 +158,86 @@ const addServiceSecrets: Migration = {
   },
 };
 
+
+/**
+ * 4 — el canal `drawn`.
+ *
+ * Un dibujo hecho a mano llega con denominación de origen humana, como una
+ * grabación: un trazo con su presión prueba que alguien lo hizo con la mano
+ * sobre una pantalla. Ver specs/hand-drawing.allium. Dos CHECK lo rechazaban, y
+ * un CHECK no se cambia sin rehacer la tabla — es la misma operación que hizo
+ * falta para `walked`, y por eso esta migración se parece tanto a la primera.
+ */
+const addDrawnChannel: Migration = {
+  version: 4,
+  name: 'canal drawn',
+  apply(db) {
+    rebuildTable(
+      db,
+      'operations',
+      `CREATE TABLE operations_new (
+          id                     TEXT PRIMARY KEY,
+          graph_id               TEXT NOT NULL REFERENCES graphs (id),
+          origin_id              TEXT NOT NULL,
+          sequence               INTEGER NOT NULL,
+          participant_id         TEXT NOT NULL REFERENCES participants (id),
+          change_kind            TEXT NOT NULL,
+          change_payload         TEXT NOT NULL,
+          subject_id             TEXT NOT NULL,
+          channel                TEXT NOT NULL CHECK (
+                                     channel IN ('typed_text', 'authenticated_voice',
+                                                 'agent_generation', 'import', 'walked',
+                                                 'drawn')),
+          evidence_reference     TEXT,
+          evidence_captured_at   INTEGER,
+          submitted_at           INTEGER NOT NULL,
+          applied_at             INTEGER NOT NULL,
+          CHECK (channel <> 'authenticated_voice' OR evidence_reference IS NOT NULL)
+      ) STRICT`,
+      [
+        'id',
+        'graph_id',
+        'origin_id',
+        'sequence',
+        'participant_id',
+        'change_kind',
+        'change_payload',
+        'subject_id',
+        'channel',
+        'evidence_reference',
+        'evidence_captured_at',
+        'submitted_at',
+        'applied_at',
+      ],
+      [
+        'CREATE UNIQUE INDEX operations_origin ON operations (graph_id, origin_id)',
+        'CREATE UNIQUE INDEX operations_sequence ON operations (graph_id, sequence)',
+      ],
+    );
+
+    rebuildTable(
+      db,
+      'block_authorship',
+      `CREATE TABLE block_authorship_new (
+          block_id        TEXT PRIMARY KEY REFERENCES blocks (id) ON DELETE CASCADE,
+          participant_id  TEXT NOT NULL REFERENCES participants (id),
+          channel         TEXT NOT NULL CHECK (
+                              channel IN ('typed_text', 'authenticated_voice',
+                                          'agent_generation', 'import', 'walked',
+                                          'drawn')),
+          written_at      INTEGER NOT NULL
+      ) STRICT`,
+      ['block_id', 'participant_id', 'channel', 'written_at'],
+      ['CREATE INDEX block_authorship_by_participant ON block_authorship (participant_id)'],
+    );
+  },
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   addWalkedChannel,
   addPageOriginCreatedAt,
   addServiceSecrets,
+  addDrawnChannel,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

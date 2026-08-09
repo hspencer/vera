@@ -1558,10 +1558,24 @@ export function createVeraServer(options: ServerOptions): VeraServer {
              * declara, no propiedades del corpus, y contarlas aquí sería
              * pedirle a la ontología que se declare a sí misma para siempre.
              */
+            /*
+             * Cualquier página que declare gobernar, y no una lista de clases
+             * escrita aquí.
+             *
+             * @invariant SpecialityIsDeclaredNotGuessed. La lista enumeraba
+             * cinco clases y `governing` devuelve la primera de cada una, así
+             * que la página de un servicio —y la segunda de cualquier clase que
+             * llegue a tener dos— quedaba fuera: su `special-kind::` y su
+             * `servicio::` se contaban como propiedades del corpus, cuando son
+             * la gramática con que esa página declara lo que declara.
+             */
             const governed = new Set(
-              ['ontology', 'properties', 'objects', 'presentation', 'instructions']
-                .map((one) => governing(one)?.id)
-                .filter((one): one is string => one !== undefined),
+              graph
+                .pages()
+                .filter((page) =>
+                  graph.propertiesOf(page.id).some((property) => property.key === SPECIAL_KIND),
+                )
+                .map((page) => page.id),
             );
             const subjects = [
               ...graph.pages().map((one) => one.id),

@@ -35,6 +35,8 @@
  * quien escribe sabe siempre en cuál de los dos casos está. Ver
  * specs/executable-content-sandbox.allium.
  */
+import { drawingSvg, readDrawing } from './drawing.ts';
+
 const EMBED = /^\s*<iframe\b([^>]*)>\s*<\/iframe>\s*$/i;
 const ATTRIBUTE = /(\w[\w-]*)\s*=\s*"([^"]*)"/g;
 
@@ -464,6 +466,27 @@ export function renderMarkdown(source: string, options: RenderOptions = {}): str
         body.push(current);
         at += 1;
       }
+      /*
+       * Una valla que dice `dibujo` no es código: es lo dibujado a mano.
+       *
+       * Sus trazos son el texto del bloque —ver drawing.ts y
+       * specs/hand-drawing.allium— y aquí se vuelven la figura. Sin color:
+       * `currentColor` toma la tinta del texto de la página y no hay fondo, así
+       * que un dibujo hecho de día se lee de noche.
+       *
+       * Lo que no se pueda leer como dibujo cae al caso de abajo y se presenta
+       * como el bloque de código que es. @invariant
+       * WhatCannotBeReadAsADrawingIsReadAsText: un dibujo roto no se arregla
+       * solo ni se vacía; se ve lo que hay.
+       */
+      if (/^dibujo$/i.test(language.trim())) {
+        const drawn = drawingSvg(readDrawing(['```dibujo', ...body, '```'].join('\n')));
+        if (drawn !== null) {
+          html += `<figure class="drawn">${drawn.svg}</figure>`;
+          continue;
+        }
+      }
+
       // El lenguaje viene de la línea cruda, así que aquí sí hay que escapar
       // todo: `quoteAttribute` sólo completa lo que `escapeHtml` ya hizo.
       const attribute =

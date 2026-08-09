@@ -38,10 +38,11 @@ describe('enumerations', () => {
     assert.ok(!CHANGE_KINDS.includes('link_pages' as never));
   });
 
-  it('declares the five contribution channels', () => {
+  it('declares the six contribution channels', () => {
     assert.deepEqual([...CONTRIBUTION_CHANNELS].sort(), [
       'agent_generation',
       'authenticated_voice',
+      'drawn',
       'import',
       'typed_text',
       'walked',
@@ -52,6 +53,16 @@ describe('enumerations', () => {
   // este canal lo firmaría Vera. Ver trail/TheTestimonyIsWrittenByWhoeverWalked.
   it('admits what someone produced by walking', () => {
     assert.ok(CONTRIBUTION_CHANNELS.includes('walked'));
+  });
+
+  /*
+   * Dibujar es producir con la mano, y eso deja denominación de origen humana.
+   * Es de la misma clase que la voz autenticada: una grabación prueba que
+   * alguien habló, un trazo con su presión prueba que alguien lo hizo con la
+   * mano. Ver hand-drawing/AHandLeavesItsName.
+   */
+  it('admits what someone drew with their hand', () => {
+    assert.ok(CONTRIBUTION_CHANNELS.includes('drawn'));
   });
 
   it('declares two visibilities', () => {

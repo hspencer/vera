@@ -69,6 +69,22 @@ export type {
  * papel— y una segunda copia habría acabado diciendo otra cosa del mismo texto.
  */
 export { embedIn, inlineMarkdown, renderMarkdown } from './markdown.ts';
+
+/*
+ * Lo dibujado a mano: sus trazos son el texto de su bloque. Ver drawing.ts y
+ * specs/hand-drawing.allium.
+ */
+export {
+  DRAWING_FENCE,
+  NIB,
+  drawingSvg,
+  extentsOf,
+  looksLikeDrawing,
+  outlineOf,
+  readDrawing,
+  writeDrawing,
+} from './drawing.ts';
+export type { DrawnSvg, Extents, Nib, Point, Stroke } from './drawing.ts';
 export type { RenderOptions } from './markdown.ts';
 export { answersIn } from './vocabulary.ts';
 

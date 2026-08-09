@@ -29,6 +29,17 @@ export const CONTRIBUTION_CHANNELS = [
   'agent_generation',
   'import',
   'walked',
+  /*
+   * Lo hecho con la mano sobre una pantalla.
+   *
+   * De la misma clase que `authenticated_voice` y por la misma razón: son las
+   * dos formas en que algo llega al corpus con denominación de origen humana.
+   * Una grabación prueba que alguien habló; un trazo con su presión prueba que
+   * alguien lo hizo con la mano. En un corpus donde también escriben máquinas,
+   * eso no es cómo entró el contenido: es de dónde viene. Ver
+   * specs/hand-drawing.allium.
+   */
+  'drawn',
 ] as const;
 export type ContributionChannel = (typeof CONTRIBUTION_CHANNELS)[number];
 

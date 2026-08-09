@@ -3853,7 +3853,7 @@ code {
  */
 .hit.picked {
   background: var(--bg-raised);
-  outline: 1px solid var(--link);
+  outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
 
@@ -3863,6 +3863,81 @@ code {
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: 0.7rem;
+}
+
+/* --- Dibujar a mano ----------------------------------------------------- */
+
+/*
+ * El lienzo ocupa la pantalla entera.
+ *
+ * Dibujar es un gesto del brazo antes que del ojo, y un lienzo del tamaño de un
+ * párrafo obliga a dibujar en pequeño lo que se estaba pensando en grande. Ver
+ * specs/hand-drawing.allium.
+ */
+.canvas-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--bg);
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+.canvas-sheet {
+  display: block;
+  /* El cursor de cruz dice que aquí se dibuja; en una tableta no se ve ninguno
+     y lo dice el propio lienzo vacío. */
+  cursor: crosshair;
+}
+
+/*
+ * Los dos únicos controles.
+ *
+ * Abajo y a un lado, donde cae el pulgar de quien sostiene una tableta y donde
+ * no estorban a la mano que dibuja. No son una barra de herramientas: son los
+ * dos gestos que el lienzo admite además de dibujar, y en un teclado tienen su
+ * atajo.
+ */
+.canvas-controls {
+  position: absolute;
+  right: calc(1rem + env(safe-area-inset-right));
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 0.5rem;
+}
+
+.canvas-button {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.3ex;
+  background: var(--bg);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.canvas-button.done {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/*
+ * El dibujo terminado, dentro de la página.
+ *
+ * Del tamaño de sus trazos más un margen, y encogido si no cabe en la columna:
+ * un garabato pequeño se ve pequeño, y uno hecho a lo ancho de una tableta no
+ * desborda la lectura. La tinta la toma del texto —el SVG viene con
+ * `currentColor` y sin fondo—, así que un dibujo hecho de día se lee de noche.
+ */
+.drawn {
+  margin: 0.4rem 0;
+}
+
+.drawn svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 /* --- La historia de un bloque ------------------------------------------- */
@@ -3921,10 +3996,10 @@ code {
 .history-close,
 .history-copy {
   padding: 0 0.4rem;
-  border: 1px solid var(--link);
+  border: 1px solid var(--accent);
   border-radius: 0.3ex;
   background: none;
-  color: var(--link);
+  color: var(--accent);
   font: inherit;
   font-size: 0.7rem;
   cursor: pointer;
@@ -3989,17 +4064,17 @@ code {
    transparente, borde de un pixel y el color del enlace. */
 .service-button {
   padding: 0.1rem 0.5rem;
-  border: 1px solid var(--link);
+  border: 1px solid var(--accent);
   border-radius: 0.3ex;
   background: none;
-  color: var(--link);
+  color: var(--accent);
   font: inherit;
   font-size: 0.8em;
   cursor: pointer;
 }
 
 .service-button:hover {
-  background: var(--link);
+  background: var(--accent);
   color: var(--bg);
 }
 
@@ -4100,7 +4175,7 @@ code {
 /* Lo que ya está en el corpus se distingue: citarlo dos veces no puede ser dos
    páginas sin que nadie lo note. */
 .zotero-item.here .zotero-title {
-  color: var(--link);
+  color: var(--accent);
 }
 
 /*
@@ -4112,7 +4187,7 @@ code {
  */
 .block.thinking > .body {
   opacity: 0.55;
-  border-left: 2px solid var(--accent, var(--link));
+  border-left: 2px solid var(--accent, var(--accent));
   padding-left: 0.5rem;
 }
 

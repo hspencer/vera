@@ -541,7 +541,15 @@ export const api = {
   graph: (centre: string, depth: number) =>
     json<GraphData>(`/graph/${encodeURIComponent(centre)}?depth=${depth}`),
 
-  async submit(change: Change): Promise<SubmitResult> {
+  /**
+   * Escribe un cambio.
+   *
+   * El canal dice cómo se produjo lo que va dentro, y casi siempre es tecleado.
+   * `drawn` es la excepción que hay que nombrar: lo hecho con la mano sobre una
+   * pantalla llega con denominación de origen humana, como una grabación, y el
+   * bloque lo conserva. Ver specs/hand-drawing.allium.
+   */
+  async submit(change: Change, channel: 'typed_text' | 'drawn' = 'typed_text'): Promise<SubmitResult> {
     const response = await fetch('/operations', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -558,7 +566,7 @@ export const api = {
        */
       body: JSON.stringify({
         originId: originId(),
-        channel: 'typed_text',
+        channel,
         change,
       }),
     });
