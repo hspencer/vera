@@ -145,6 +145,23 @@ export interface Hit {
   rank: number;
 }
 
+/** Un estado por el que pasó un bloque. */
+export interface BlockState {
+  sequence: number;
+  at: number;
+  by: string;
+  channel: string;
+  what: string;
+  content: string | null;
+}
+
+export interface BlockHistory {
+  block: string;
+  alive: boolean;
+  now: string | null;
+  states: BlockState[];
+}
+
 /** Una propiedad declarada, con qué clase de campo es. */
 export interface PropertyDeclared {
   name: string;
@@ -357,6 +374,16 @@ export const api = {
    * principio de la sesión diría lo de antes.
    */
   ontology: () => json<OntologyView>('/ontology'),
+
+  /**
+   * Todo lo que un bloque dijo, y cuándo.
+   *
+   * Sale del registro, que ya lo tenía. No había forma de mirarlo sin abrir la
+   * base de datos, y un corpus que promete que nada se pierde tiene que poder
+   * enseñarlo: si no, la promesa hay que creérsela.
+   */
+  history: (block: string) =>
+    json<BlockHistory>(`/blocks/${encodeURIComponent(block)}/history`),
 
   /**
    * Qué se desharía, sin deshacerlo.

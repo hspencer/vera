@@ -3744,6 +3744,66 @@ code {
 }
 
 
+/* --- La historia de un bloque ------------------------------------------- */
+
+.history {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border-left: 2px solid var(--rule);
+  font-size: 0.8rem;
+}
+
+.history-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.history-state {
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--rule);
+}
+
+.history-state:first-of-type {
+  border-top: none;
+}
+
+/* El estado en el que está ahora, para no confundirlo con los de antes. */
+.history-state.now .history-text {
+  color: var(--text);
+}
+
+.history-text {
+  white-space: pre-wrap;
+  color: var(--text-dim);
+}
+
+.history-when {
+  display: block;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+
+.history-close,
+.history-copy {
+  padding: 0 0.4rem;
+  border: 1px solid var(--link);
+  border-radius: 0.3ex;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.history-copy {
+  margin-top: 0.2rem;
+}
+
 /* --- Conexiones con servicios de fuera ---------------------------------- */
 
 /*

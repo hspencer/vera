@@ -1424,6 +1424,68 @@ async function processBlock(
   }
 }
 
+/**
+ * Enseña por qué estados pasó un bloque, junto al bloque.
+ *
+ * Junto a él y no en otra pantalla: lo que se está preguntando es «¿qué decía
+ * esto antes?», y esa pregunta se hace mirándolo. Cada estado se puede copiar;
+ * ninguno se aplica solo, porque volver a un estado anterior es escribir y se
+ * escribe a mano o se deshace, que ya existe.
+ */
+async function showHistory(
+  block: string,
+  row: HTMLElement,
+  notify: (message: string) => void,
+): Promise<void> {
+  row.querySelector('.history')?.remove();
+  let said;
+  try {
+    said = await api.history(block);
+  } catch {
+    notify('no se pudo leer la historia de este bloque');
+    return;
+  }
+
+  const panel = document.createElement('div');
+  panel.className = 'history';
+  const head = document.createElement('div');
+  head.className = 'history-head';
+  head.textContent =
+    said.states.length === 1
+      ? 'nació así y no se ha tocado'
+      : `${said.states.length} estados${said.alive ? '' : ' · el bloque ya no está'}`;
+  const shut = document.createElement('button');
+  shut.type = 'button';
+  shut.className = 'history-close';
+  shut.textContent = 'cerrar';
+  shut.addEventListener('click', () => panel.remove());
+  head.append(shut);
+  panel.append(head);
+
+  for (const state of [...said.states].reverse()) {
+    const line = document.createElement('div');
+    line.className = state.content === said.now ? 'history-state now' : 'history-state';
+    const when = document.createElement('span');
+    when.className = 'history-when';
+    when.textContent = `${new Date(state.at).toISOString().slice(0, 16).replace('T', ' ')} · ${state.what} · ${state.by}`;
+    line.append(when);
+    if (state.content !== null) {
+      const text = document.createElement('div');
+      text.className = 'history-text';
+      text.textContent = state.content === '' ? '(vacío)' : state.content;
+      line.append(text);
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'history-copy';
+      copy.textContent = 'copiar';
+      copy.addEventListener('click', () => copyText(state.content ?? '', notify));
+      line.append(copy);
+    }
+    panel.append(line);
+  }
+  row.append(panel);
+}
+
 export interface Node {
   block: BlockView;
   children: Node[];
@@ -2224,6 +2286,18 @@ export function renderOutliner(
         {
           label: 'Copiar el Markdown del bloque',
           run: () => copyText(node.block.content, toast),
+        },
+        /*
+         * Todo lo que este bloque dijo alguna vez.
+         *
+         * El registro lo tenía desde siempre y no había forma de mirarlo sin
+         * abrir la base de datos. Un corpus que promete que nada se pierde tiene
+         * que poder enseñarlo, o la promesa hay que creérsela; y cuando algo
+         * parece perdido, éste es el sitio donde se comprueba que no.
+         */
+        {
+          label: 'Ver la historia del bloque',
+          run: () => void showHistory(node.block.stableId, row, toast),
         },
         /*
          * Explicar por qué esta página y aquélla se tocan.

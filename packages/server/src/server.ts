@@ -1586,6 +1586,62 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         return;
       }
 
+      /*
+       * La historia de un bloque: todo lo que dijo, y cuándo.
+       *
+       * Sale del registro, doblando su propia historia desde que nació. No hay
+       * nada que guardar para esto —ya estaba guardado— y aun así no había forma
+       * de mirarlo sin abrir la base de datos. Un corpus que promete que nada se
+       * pierde tiene que poder enseñarlo, o la promesa hay que creérsela.
+       */
+      if (path.startsWith('/blocks/') && path.endsWith('/history')) {
+        const id = decodeURIComponent(path.slice('/blocks/'.length, -'/history'.length));
+        const log = graph.operations();
+        const said: {
+          sequence: number;
+          at: number;
+          by: string;
+          channel: string;
+          what: string;
+          content: string | null;
+        }[] = [];
+        for (const one of log) {
+          const change = one.submission.change;
+          const mine =
+            (change.kind === 'create_block' && one.subjectId === id) ||
+            ((change.kind === 'edit_block' ||
+              change.kind === 'move_block' ||
+              change.kind === 'remove_block') &&
+              change.block === id);
+          if (!mine) continue;
+          said.push({
+            sequence: one.sequence,
+            at: one.appliedAt,
+            by: graph.participant(one.submission.submittedBy)?.name ?? one.submission.submittedBy,
+            channel: one.submission.channel,
+            what:
+              change.kind === 'create_block'
+                ? 'nació'
+                : change.kind === 'edit_block'
+                  ? 'se escribió'
+                  : change.kind === 'move_block'
+                    ? 'se mudó'
+                    : 'se borró',
+            content:
+              change.kind === 'create_block' || change.kind === 'edit_block'
+                ? change.content
+                : null,
+          });
+        }
+        send(response, 200, {
+          block: id,
+          alive: graph.block(id) !== undefined,
+          now: graph.block(id)?.content ?? null,
+          states: said,
+        });
+        return;
+      }
+
       if (path === '/services') {
         const brought = broughtFrom('zotero');
         send(
