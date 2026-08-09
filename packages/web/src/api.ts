@@ -170,6 +170,12 @@ export interface PropertyDeclared {
   role: string | null;
   values: string[];
   says: string | null;
+  /**
+   * Cuántas veces la usa el corpus. Declarar no es usar: de las declaradas aquí,
+   * la mitad no aparece en ninguna página, y ofrecerlas todas con el mismo peso
+   * es lo que volvía inservible el menú de `+ propiedad`.
+   */
+  uses: number;
 }
 
 /** Una clase de cosa, con qué propiedades la constituyen. */

@@ -1296,6 +1296,19 @@ input {
   flex-direction: column;
 }
 
+/*
+ * La misma lista, colgada de un campo de una línea.
+ *
+ * El ancho de arriba está medido para el editor de un bloque, que ocupa la
+ * columna entera; sobre el nombre de una propiedad, treinta rem son cuatro veces
+ * su ancla y la lista se lee como si fuera de otra cosa. Lo único que cambia es
+ * cuánto mide: lo que hay dentro y cómo se recorre son los mismos.
+ */
+.complete.narrow {
+  min-width: 16rem;
+  max-width: min(22rem, 90vw);
+}
+
 .complete-item {
   display: flex;
   gap: 0.6rem;

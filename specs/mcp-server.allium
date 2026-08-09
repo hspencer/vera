@@ -1,0 +1,354 @@
+-- allium: 3
+-- mcp-server.allium
+
+-- Scope: La puerta por la que una inteligencia artificial entra a Vera — qué
+--   puede descubrir, leer y escribir, con qué identidad, y qué queda registrado
+--   de lo que se llevó
+-- Includes: Qué es MCP para Vera y qué no, de dónde sale la identidad de una
+--   conexión, qué distingue un alcance de una concesión, el registro de
+--   exposición, la idempotencia y las precondiciones de escritura, y las etapas
+--   en que esto se construye
+-- Excludes:
+--   - Las credenciales y la autoría por bloque, que ya se gobiernan
+--     (ver agent-participation.allium)
+--   - La identidad humana y el cierre de la vía anónima
+--     (ver identity-access.allium)
+--   - Las conexiones que Vera abre hacia fuera, que van al revés
+--     (ver service-connections.allium)
+--   - La única puerta de escritura y sus invariantes
+--     (ver change-application.allium)
+--   - El lenguaje de consulta (ver query-language.allium)
+--   - El modelo que conversa: MCP no lo aporta ni lo nombra
+-- Dependencies: Participant, Operation y ContributionChannel los gobierna
+--   core.allium; la credencial y su alcance, agent-participation.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- MCP es una frontera, no una segunda memoria.
+--
+-- Un cliente compatible —Claude, ChatGPT, Codex, OpenClaw, el que venga— consulta
+-- y modifica Vera por un contrato abierto, y ninguno de ellos se vuelve dueño de
+-- la memoria. Eso exige que la puerta no tenga camino propio: no toca SQLite, no
+-- inventa identidad, no guarda una copia del corpus del otro lado, y toda
+-- escritura termina donde termina cualquier otra.
+--
+-- El servidor es determinista. No necesita un modelo para descubrir, leer,
+-- autorizar ni escribir; el modelo lo pone quien llama. Es lo que hace que
+-- cambiar de proveedor no cambie lo que Vera contesta, y lo que permite que un
+-- día no haya proveedor y Vera siga entera.
+contract MCPIsADoorAndNotASecondMemory {
+    serve: (connection: Connection) -> Session
+
+    @invariant EveryWriteGoesThroughTheOneDoor
+        -- Ninguna herramienta escribe la base. Un cambio pedido por MCP se
+        -- traduce a una operación y entra por donde entra todo lo demás, con su
+        -- secuencia, su autoría y su canal. Una segunda puerta sería una segunda
+        -- versión de la verdad.
+
+    @invariant TheIdentityComesFromTheCredential
+        -- Quién es una conexión lo dice su credencial y nada más: ni el nombre
+        -- del cliente, ni el modelo que dice usar, ni un parámetro, ni una
+        -- cabecera sin verificar. Es la misma regla que ya rige en
+        -- @invariant IdentityComesFromTheCredential, dicha para una puerta nueva.
+
+    @invariant TheServerNeedsNoModel
+        -- Descubrir, buscar, leer, autorizar y escribir son deterministas. Un
+        -- servidor que necesitara un modelo para decidir qué entregar tendría
+        -- criterio propio sobre la memoria de alguien, y ése es exactamente el
+        -- poder que esta frontera existe para no ceder.
+
+    @invariant DiscoveringANameIsNotPermissionToUseIt
+        -- Que un catálogo nombre una herramienta o un recurso no concede nada.
+        -- El permiso se comprueba al usarlo, contra la concesión de esa conexión,
+        -- y un cliente nunca debe poder inferir autoridad de haber leído una
+        -- lista.
+
+    @invariant TheCorpusIsDataAndNotOrders
+        -- Lo que está escrito en el grafo es contenido, no instrucciones para
+        -- quien lo lee. Una frase que diga «ignora lo anterior» es una frase. Sólo
+        -- una página rectora explícitamente autorizada aporta instrucciones, y
+        -- viaja identificada como tal. Sin esta regla, cualquiera que consiga
+        -- escribir un bloque gobierna al agente que lo lea.
+}
+
+-- Un alcance no es una concesión.
+--
+-- Hoy una credencial dice `read`, `write` o `discard`, y eso alcanza para un
+-- agente que ya vive dentro de casa. No alcanza para una conexión con un
+-- proveedor de fuera: leer todo el corpus y leer un proyecto son la misma palabra
+-- y no son la misma cosa.
+--
+-- La concesión acota además qué páginas, qué visibilidades, qué herramientas,
+-- por cuánto tiempo y con qué presupuesto. Y empieza estrecha: se pide elevación
+-- al intentar algo que no estaba concedido, no se otorga de antemano por si acaso.
+contract AGrantIsNarrowerThanAScope {
+    resolve: (connection: Connection) -> Grant
+
+    @invariant LeastPrivilegeIsWhereItStarts
+        -- Una conexión nace con lectura acotada. Descartar, publicar, administrar
+        -- participantes y emitir credenciales no vienen dentro de `write` nunca,
+        -- ni por comodidad ni por parecerse.
+
+    @invariant WhatIsForbiddenIsNotEvenVisible
+        -- Una conexión no descubre títulos, extractos ni conteos de lo que no
+        -- puede leer. Un error no distingue entre «no existe» y «no te toca»:
+        -- distinguirlos convierte cualquier búsqueda en un censo del corpus.
+
+    @invariant ConsentNamesWhatItAllows
+        -- Cuando algo pide aprobación, la respuesta es una petición de
+        -- consentimiento o una propuesta que queda escrita, nunca una mutación
+        -- optimista seguida de una disculpa. El consentimiento nombra cliente,
+        -- acción, recursos, consecuencias y vigencia.
+
+    @invariant RevokingStopsTheFutureAndNotThePast
+        -- Retirar una credencial impide cambios nuevos y no borra ni la obra ni
+        -- su procedencia. Lo que se escribió se escribió, y sigue diciendo quién
+        -- lo escribió.
+}
+
+-- Lo que salió de casa queda anotado.
+--
+-- El registro de operaciones cuenta lo que se escribió, y eso bastaba mientras
+-- todo el que entraba escribía. Una inteligencia artificial hace algo que el log
+-- no ve: recibe. Se lleva páginas, extractos y contexto sin modificar una coma, y
+-- de eso hoy no queda rastro.
+--
+-- Sin este registro no se puede contestar la única pregunta que importa cuando
+-- alguien pregunta qué sabe un proveedor: qué memoria salió, hacia qué cliente,
+-- bajo qué concesión y cuándo. Es la contrapartida de la auditoría de escritura,
+-- y sin ella la frontera es una promesa.
+contract WhatWasReadIsRecorded {
+    record: (call: Call) -> Exposure
+
+    @invariant ItRecordsWhatWasDeliveredAndNotWhatWasAsked
+        -- Se anotan las páginas y los bloques que efectivamente viajaron, no la
+        -- consulta que los pidió. Una búsqueda que devolvió doce extractos expuso
+        -- doce cosas, y el registro tiene que poder nombrarlas.
+
+    @invariant EveryCallLeavesItsTrace
+        -- Hora, participante, credencial, cliente declarado, versión del
+        -- protocolo, método, herramienta o recurso, resultado, latencia y
+        -- volumen. Una escritura enlaza además las operaciones que produjo, para
+        -- poder ir de lo que se leyó a lo que se cambió.
+
+    @invariant TheTranscriptIsOptionalAndTheTraceIsNot
+        -- Guardar el texto completo de lo que se pidió y lo que se contestó es
+        -- opcional y tiene política de retención. Copiarlo siempre multiplicaría
+        -- lo sensible: se acabaría con una segunda copia del corpus, hecha sin
+        -- decidirlo, dentro del registro que existía para vigilarlo.
+
+    @invariant TheOwnerCanReadTheirOwnExposure
+        -- Quien es dueño del grafo puede mirar y filtrar por conexión,
+        -- participante, proyecto, recurso y período. Un registro que sólo el
+        -- programa consulta no es transparencia.
+}
+
+-- Una escritura se puede repetir sin repetirse.
+--
+-- Entre un agente y Vera hay una red, y una red pierde respuestas. Reintentar
+-- tiene que ser seguro o el agente elegirá entre duplicar y perder, que son las
+-- dos formas de romper una memoria.
+contract AWriteCanBeRepeatedWithoutRepeating {
+    apply: (proposal: Proposal) -> Applied
+
+    @invariant TheSameOriginIsTheSameWrite
+        -- Cada cambio lleva un origen estable. Reenviarlo devuelve lo que ya
+        -- pasó y no vuelve a pasar. Es lo que ya promete
+        -- @invariant OriginIdentityIsTheIdempotencyKey, y aquí es lo que permite
+        -- que un timeout no sea una decisión.
+
+    @invariant EditingNamesWhatItSaw
+        -- Modificar exige decir contra qué estado se está modificando. Si otro
+        -- lo cambió mientras tanto, Vera devuelve conflicto con el estado actual
+        -- y no mezcla por su cuenta. Un agente que sobrescribe lo que no leyó no
+        -- está editando: está pisando.
+
+    @invariant ABatchDoesNotPretendToBeAtomic
+        -- Si el núcleo no ofrece una operación compuesta, un lote no finge que
+        -- la hay: la respuesta dice qué se aplicó, qué no, y cómo seguir sin
+        -- duplicar. Fingir atomicidad es la forma de perder la mitad de un cambio
+        -- sin enterarse.
+
+    @invariant ARefusalKeepsItsReason
+        -- Un rechazo del dominio llega como rechazo, con su código y su motivo
+        -- legible, y no se convierte en éxito parcial ni en prosa ambigua. Quien
+        -- llama tiene que poder distinguir «no puedes» de «eso no se puede».
+}
+
+------------------------------------------------------------
+-- Entities and Values
+------------------------------------------------------------
+
+-- Una conexión: un cliente, una credencial, una identidad y un límite.
+entity Connection {
+    graph: core/Graph
+    -- Cómo se llama esto en la interfaz de quien lo autorizó. Un nombre
+    -- reconocible, no un identificador: quien revoca tiene que saber qué revoca.
+    name: String
+    -- Qué cliente dice ser. Se registra y no se cree: la identidad viene de la
+    -- credencial.
+    client: String
+    participant: core/Participant
+    grant: Grant
+    created_at: Timestamp
+    revoked_at: Timestamp?
+}
+
+-- Hasta dónde llega una conexión. Más estrecho que un alcance.
+value Grant {
+    -- Qué puede hacer, por familias: descubrir, buscar, leer, componer,
+    -- proponer, escribir, descartar.
+    abilities: List<String>
+    -- Y sobre qué. Vacío quiere decir «nada», nunca «todo».
+    pages: List<String>
+    visibilities: List<String>
+    tools: List<String>
+    expires_at: Timestamp?
+}
+
+-- Una llamada, tal como queda anotada.
+value Call {
+    connection: Connection
+    at: Timestamp
+    -- El método del protocolo y el nombre de lo que se pidió.
+    method: String
+    subject: String
+    outcome: String
+    -- Lo que la respuesta ocupó, para poder ver de un vistazo cuánta memoria
+    -- salió por ahí.
+    volume: Integer
+}
+
+-- Y lo que esa llamada entregó de verdad.
+value Exposure {
+    call: Call
+    -- Las direcciones estables de lo que viajó. No la consulta: lo entregado.
+    delivered: List<String>
+    -- Las operaciones que resultaron, cuando la llamada escribió.
+    wrote: List<String>
+}
+
+value Proposal {
+    connection: Connection
+    origin: String
+    -- Contra qué estado se escribe. Sin esto no hay edición segura.
+    precondition: String?
+    purpose: String?
+}
+
+value Applied {
+    proposal: Proposal
+    sequence: Integer
+    subject: String
+    participant: core/Participant
+    channel: core/ContributionChannel
+}
+
+value Session {
+    connection: Connection
+    -- La versión del protocolo que esta sesión habla. Es parte del contrato y de
+    -- la matriz de pruebas, no un detalle de implementación.
+    protocol: String
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule ReadingIsRecordedBeforeItIsReturned {
+    when: ReadThroughMCP(participant, connection, subject)
+
+    let exposure = WhatWasReadIsRecorded.record(subject)
+
+    requires: exists exposure
+
+    ensures: recorded(exposure)
+
+    @invariant NoDeliveryWithoutItsRecord
+        -- Si no se pudo anotar lo que se va a entregar, no se entrega. Un
+        -- registro que se pierde cuando falla es un registro que no está cuando
+        -- hace falta, que es siempre después de algo.
+}
+
+rule WritingThroughMCPIsWritingLikeAnyoneElse {
+    when: WriteThroughMCP(participant, connection, proposal)
+
+    let applied = AWriteCanBeRepeatedWithoutRepeating.apply(proposal)
+
+    requires: exists applied
+
+    ensures: written(applied)
+
+    @invariant TheChannelSaysWhatItWas
+        -- Lo escrito por un agente entra por `agent_generation` y queda dibujado
+        -- como lo que es. No hay forma de que una máquina presente su texto como
+        -- escritura humana: el canal lo pone el servidor a partir de la
+        -- credencial, y no lo declara quien llama.
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface MemoryOverMCP {
+    facing client: core/Participant
+    context connection: Connection
+
+    exposes:
+        Grant
+        Exposure
+
+    contracts:
+        fulfils MCPIsADoorAndNotASecondMemory
+        fulfils AGrantIsNarrowerThanAScope
+        fulfils WhatWasReadIsRecorded
+        fulfils AWriteCanBeRepeatedWithoutRepeating
+
+    provides:
+        ReadThroughMCP(participant, connection, subject)
+        WriteThroughMCP(participant, connection, proposal)
+
+    @guarantee ContextIsComposedAndNotDumped
+        -- Lo que sale es el contexto mínimo pertinente, y dice qué incluyó, qué
+        -- descartó y por qué. Entregar cuarenta mil bloques sería caro, indiscreto
+        -- y torpe; y sobre todo sería renunciar a la selección, que es la parte
+        -- que le toca a quien es dueño de la memoria.
+
+    @guarantee ATruncatedAnswerSaysSo
+        -- Una respuesta recortada se declara recortada, con su cursor y su
+        -- motivo. Nunca se corta una página fingiendo que se leyó entera: quien
+        -- lea después va a razonar sobre lo que cree tener.
+
+    @guarantee ToolsDescribeTheirEffects
+        -- La descripción de cada herramienta nombra qué hace, qué límites tiene
+        -- y qué riesgo corre. Ampliar la autoridad de una herramienta exige
+        -- versión nueva: un nombre familiar no puede ganar poder en silencio.
+
+    @guarantee TheDoorIsPreferablyLocal
+        -- El transporte de casa es un proceso que el cliente arranca, sin puerto
+        -- abierto. Publicar la puerta en una red es una decisión aparte, con su
+        -- propio endurecimiento, y no un ajuste de configuración.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- Las de Herbert, tal como quedaron escritas en el corpus. Ver
+-- «Vera — como memoria portable para inteligencias».
+open question "¿Cuál es la unidad de concesión: página, proyecto, espacio de nombres, consulta guardada, o una combinación?"
+
+open question "¿Cómo se representa una propuesta dentro del grafo, si una propuesta no es todavía contenido y tampoco es una operación aplicada?"
+
+open question "¿Qué precondición de revisión expone el núcleo para editar: la secuencia, una revisión propia del bloque, o el hash de lo que se leyó?"
+
+open question "¿Qué lecturas se conservan con detalle, cuáles sólo como huella, y durante cuánto tiempo?"
+
+-- Y una que aparece al escribir esto: hoy las rutas de lectura de Vera no exigen
+-- alcance `read`, y sin credencial la escritura local se asume del dueño. Las dos
+-- cosas son ciertas sólo detrás de localhost.
+open question "¿Se cierra primero la autorización de lectura en la API —y entonces MCP hereda una frontera que ya existe— o se cierra en MCP y la API queda con una puerta más ancha que la que se está construyendo?"

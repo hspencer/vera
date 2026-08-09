@@ -8,7 +8,9 @@
 
 // Subir este número tira el caché anterior entero al activarse. Hace falta
 // cuando lo guardado deja de ser válido, y no sólo cuando cambia esta lista.
-const SHELL = 'vera-shell-v4';
+// v5 tira lo guardado por v4, que incluía respuestas de `/ontology` y de las
+// demás lecturas que la regla de abajo dejaba caer en el caché por descuido.
+const SHELL = 'vera-shell-v5';
 const ASSETS = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -39,16 +41,6 @@ self.addEventListener('fetch', (event) => {
 
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
 
-  const isData =
-    url.pathname.startsWith('/operations') ||
-    url.pathname.startsWith('/pages') ||
-    url.pathname.startsWith('/graph') ||
-    url.pathname.startsWith('/search') ||
-    url.pathname.startsWith('/ops') ||
-    url.pathname.startsWith('/health');
-
-  if (isData) return;
-
   // `?fresh` es la aplicación preguntando qué versión sirve el servidor ahora
   // mismo. Contestarla desde el caché sería contestarse a sí misma: diría
   // siempre que la versión en curso es la vigente, que es justo lo que la
@@ -78,10 +70,39 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Lo compilado lleva huella en la ruta: `/build/index-BMdgMbJP.css` no puede
-  // cambiar de contenido sin cambiar de nombre, así que una copia guardada
-  // nunca es una versión equivocada y se sirve sin preguntar.
-  if (url.pathname.startsWith('/build/')) {
+  /*
+   * De aquí abajo se cachea, y por eso sólo pasa lo que es un archivo.
+   *
+   * Era al revés: una lista de rutas que había que dejar escapar a la red
+   * —`/operations`, `/pages`, `/graph`, `/search`, `/ops`, `/health`— y todo lo
+   * demás caía en el caché. Una lista así se queda corta el día que aparece una
+   * lectura nueva, y no avisa: se sirve la respuesta de la última vez y la
+   * aplicación dibuja datos viejos como si fueran de ahora.
+   *
+   * Pasó con `/ontology`, que es la lectura que más cambia —la ontología se
+   * edita como cualquier otra página— y quedó guardada: poner una propiedad
+   * ofrecía el vocabulario de la sesión anterior, y el propio comentario de
+   * `api.ontology` decía que eso era justamente lo que no debía ocurrir.
+   * `/services`, `/special-pages`, `/workspace` y las historias de bloque
+   * estaban en el mismo caso.
+   *
+   * Invertido no hay lista que mantener: un archivo se reconoce por llevar
+   * extensión y una lectura del grafo no la lleva. Lo que el servidor añada
+   * mañana va a la red por no llamarse `.svg`, que es la respuesta correcta por
+   * omisión. Las dos excepciones van arriba y a propósito: la navegación,
+   * porque `/p/2026-08-09` tampoco tiene extensión y su armazón sí se guarda, y
+   * lo direccionado por contenido, porque un hash ya dice que no va a cambiar.
+   */
+  /*
+   * Lo que lleva su huella en la ruta se sirve del caché sin preguntar.
+   *
+   * `/build/index-BMdgMbJP.css` no puede cambiar de contenido sin cambiar de
+   * nombre, y `/media/<hash>` tampoco: una copia guardada nunca es una versión
+   * equivocada. Va antes que la comprobación de abajo porque una grabación se
+   * pide por su hash y sin extensión, y es justamente lo que más conviene tener
+   * guardado: un audio de dos minutos que ya se descargó una vez.
+   */
+  if (url.pathname.startsWith('/build/') || url.pathname.startsWith('/media/')) {
     event.respondWith(
       caches.match(request).then(
         (hit) => hit ?? fetch(request).then((response) => keep(request, response)),
@@ -89,6 +110,8 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
+
+  if (!/\.[a-z0-9]{2,8}$/i.test(url.pathname)) return;
 
   // El resto —iconos, fuentes, el manifiesto, los SVG de `public/`— conserva su
   // nombre entre versiones. Servirlo del caché sin más lo congela para siempre:

@@ -1535,8 +1535,78 @@ export function createVeraServer(options: ServerOptions): VeraServer {
        * reiniciar. Ver specs/controlled-ontology.allium.
        */
       if (path === '/ontology') {
+        /*
+         * Cuántas veces usa el corpus cada clave, declarada o no.
+         *
+         * Se cuenta una vez y sirve para las dos listas. Que una propiedad esté
+         * declarada no dice que se use —de las treinta y tres de este corpus,
+         * diecisiete no aparecen ni una vez— y no decirlo dejaba a quien pone
+         * una propiedad eligiendo entre nombres que pesan igual en la pantalla y
+         * no pesan igual en la memoria.
+         *
+         * Sin mirar las páginas que gobiernan: `campo::`, `papel::`,
+         * `propiedades::` son la gramática con que se declara, no propiedades
+         * del corpus, y contarlas sería pedirle a la ontología que se declare a
+         * sí misma para siempre.
+         *
+         * Se reconocen por llevar `special-kind` y no por una lista de clases
+         * escrita aquí. @invariant SpecialityIsDeclaredNotGuessed: la lista
+         * enumeraba cinco clases y `governing` devuelve la primera de cada una,
+         * así que la página de un servicio —y la segunda de cualquier clase que
+         * llegue a tener dos— quedaba fuera, y su `special-kind::` y su
+         * `servicio::` se contaban como propiedades del corpus.
+         */
+        const usesByKey = (): Map<string, number> => {
+          const counted = new Map<string, number>();
+          const governed = new Set(
+            graph
+              .pages()
+              .filter((page) =>
+                graph.propertiesOf(page.id).some((property) => property.key === SPECIAL_KIND),
+              )
+              .map((page) => page.id),
+          );
+          const subjects = [
+            ...graph.pages().map((one) => one.id),
+            ...graph
+              .allBlocks()
+              .filter((one) => !governed.has(one.page))
+              .map((one) => one.stableId),
+          ].filter((one) => !governed.has(one));
+          /*
+           * Tal como está escrita, sin bajarla a minúsculas.
+           *
+           * `Estado` y `estado` conviven en este corpus, y unirlas aquí
+           * escondería justamente lo que hay que ver: dos formas de la misma
+           * palabra es una decisión que alguien puede tomar, y no la puede tomar
+           * quien no las ve separadas.
+           */
+          for (const subject of subjects) {
+            for (const property of graph.propertiesOf(subject)) {
+              const key = property.key.trim();
+              if (key === '') continue;
+              counted.set(key, (counted.get(key) ?? 0) + 1);
+            }
+          }
+          return counted;
+        };
+
+        const counted = usesByKey();
+        const declaredNow = declaredProperties();
+        const known = new Set(declaredNow.map((one) => one.name.toLowerCase()));
+
+        // Lo declarado sí suma sus variantes: una propiedad declarada es una
+        // sola, y cuántas veces se usó es cuántas veces se usó, se escribiera
+        // con mayúscula o sin ella.
+        const usesOf = (name: string): number => {
+          const wanted = name.trim().toLowerCase();
+          let total = 0;
+          for (const [key, uses] of counted) if (key.toLowerCase() === wanted) total += uses;
+          return total;
+        };
+
         send(response, 200, {
-          properties: declaredProperties(),
+          properties: declaredNow.map((one) => ({ ...one, uses: usesOf(one.name) })),
           objects: declaredObjects(),
           names: propertyNames(),
           fields: FIELD_KINDS,
@@ -1547,55 +1617,18 @@ export function createVeraServer(options: ServerOptions): VeraServer {
            * pedir permiso, y declarar es una decisión que se toma después. Está
            * aquí para que esa decisión se pueda tomar mirando, en vez de tener
            * que acordarse de qué se escribió alguna vez.
+           *
+           * Van todas y no las sesenta primeras. Se recortaban, y el recorte se
+           * notaba justo donde más duele: al poner una propiedad, donde lo que
+           * uno busca suele ser precisamente una de las que escribió pocas veces
+           * y no recuerda cómo deletreó. El tope que queda es un seguro contra
+           * un corpus enfermo, no un criterio.
            */
-          undeclared: (() => {
-            const known = new Set(declaredProperties().map((one) => one.name.toLowerCase()));
-            const counted = new Map<string, number>();
-            /*
-             * Sin mirar las páginas que gobiernan.
-             *
-             * `campo::`, `papel::`, `propiedades::` son la gramática con que se
-             * declara, no propiedades del corpus, y contarlas aquí sería
-             * pedirle a la ontología que se declare a sí misma para siempre.
-             */
-            /*
-             * Cualquier página que declare gobernar, y no una lista de clases
-             * escrita aquí.
-             *
-             * @invariant SpecialityIsDeclaredNotGuessed. La lista enumeraba
-             * cinco clases y `governing` devuelve la primera de cada una, así
-             * que la página de un servicio —y la segunda de cualquier clase que
-             * llegue a tener dos— quedaba fuera: su `special-kind::` y su
-             * `servicio::` se contaban como propiedades del corpus, cuando son
-             * la gramática con que esa página declara lo que declara.
-             */
-            const governed = new Set(
-              graph
-                .pages()
-                .filter((page) =>
-                  graph.propertiesOf(page.id).some((property) => property.key === SPECIAL_KIND),
-                )
-                .map((page) => page.id),
-            );
-            const subjects = [
-              ...graph.pages().map((one) => one.id),
-              ...graph
-                .allBlocks()
-                .filter((one) => !governed.has(one.page))
-                .map((one) => one.stableId),
-            ].filter((one) => !governed.has(one));
-            for (const subject of subjects) {
-              for (const property of graph.propertiesOf(subject)) {
-                const key = property.key.trim();
-                if (key === '' || known.has(key.toLowerCase())) continue;
-                counted.set(key, (counted.get(key) ?? 0) + 1);
-              }
-            }
-            return [...counted]
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 60)
-              .map(([key, uses]) => ({ key, uses }));
-          })(),
+          undeclared: [...counted]
+            .filter(([key]) => !known.has(key.toLowerCase()))
+            .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es'))
+            .slice(0, 500)
+            .map(([key, uses]) => ({ key, uses })),
         });
         return;
       }

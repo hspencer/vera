@@ -18,6 +18,7 @@ import {
   looksLikeQuery,
   readDrawing,
   renderMarkdown,
+  titleKey,
   type RenderOptions,
 } from '@vera/core';
 import { api, type BlockView, type Change, type CrossingRow, type PageView } from './api.ts';
@@ -167,6 +168,49 @@ function bindDismissal(): void {
   });
 }
 
+/**
+ * Deja algo flotante junto a su ancla, dentro de la ventana.
+ *
+ * Un desplegable cabe en la pantalla o no sirve: el de un control pegado al
+ * borde derecho salía fuera y sus opciones quedaban inalcanzables, y el de un
+ * bloque al pie de la página se abría por debajo del fondo. Hay que medirlo
+ * antes de colocarlo, y para medirlo hay que haberlo puesto en el documento: va
+ * invisible primero y se sitúa después, que es cosa de quien llama.
+ *
+ * Estaba escrito tres veces con las mismas cuentas y tres constantes iguales.
+ */
+function placeNear(
+  floating: HTMLElement,
+  anchor: HTMLElement,
+  options: { gap: number; alignRight: boolean },
+): void {
+  const at = anchor.getBoundingClientRect();
+  const box = floating.getBoundingClientRect();
+  const margin = 8;
+
+  // Se alinea por la izquierda del ancla; si no cabe y se permite, por su
+  // derecha; y si tampoco, se pega al borde. Nunca se sale.
+  let left = at.left;
+  if (options.alignRight && left + box.width > window.innerWidth - margin) {
+    left = at.right - box.width;
+  }
+  left = Math.max(margin, Math.min(left, window.innerWidth - box.width - margin));
+
+  // Abajo del ancla, salvo que no quepa: entonces encima, que es donde queda el
+  // hueco.
+  let top = at.bottom + options.gap;
+  if (
+    top + box.height > window.innerHeight - margin &&
+    at.top - box.height - options.gap > margin
+  ) {
+    top = at.top - box.height - options.gap;
+  }
+  top = Math.max(margin, Math.min(top, window.innerHeight - box.height - margin));
+
+  floating.style.left = `${Math.round(left + window.scrollX)}px`;
+  floating.style.top = `${Math.round(top + window.scrollY)}px`;
+}
+
 interface MenuAction {
   label: string;
   /** Por qué no se puede, cuando no se puede. La acción se muestra igual. */
@@ -199,38 +243,10 @@ function openBlockMenu(anchor: HTMLElement, actions: MenuAction[]): void {
     menu.append(item);
   }
 
-  /*
-   * Un desplegable cabe en la ventana o no sirve.
-   *
-   * Se dibujaba siempre hacia abajo y hacia la derecha desde su ancla, así que
-   * el de un control pegado al borde derecho —el menú de la página, sin ir más
-   * lejos— salía de la pantalla y sus opciones quedaban inalcanzables. Hay que
-   * medirlo antes de colocarlo, y para medirlo hay que haberlo puesto en el
-   * documento: va invisible primero y se sitúa después.
-   */
+  // Se mide puesto y escondido, y se coloca después. Ver `placeNear`.
   menu.style.visibility = 'hidden';
   document.body.append(menu);
-
-  const at = anchor.getBoundingClientRect();
-  const box = menu.getBoundingClientRect();
-  const margin = 8;
-
-  // Se alinea por la izquierda del ancla; si no cabe, por su derecha; y si
-  // tampoco, se pega al borde. Nunca se sale.
-  let left = at.left;
-  if (left + box.width > window.innerWidth - margin) left = at.right - box.width;
-  left = Math.max(margin, Math.min(left, window.innerWidth - box.width - margin));
-
-  // Abajo del ancla, salvo que no quepa: entonces encima, que es donde queda el
-  // hueco. Un menú que se sale por abajo es igual de inservible.
-  let top = at.bottom + 4;
-  if (top + box.height > window.innerHeight - margin && at.top - box.height - 4 > margin) {
-    top = at.top - box.height - 4;
-  }
-  top = Math.max(margin, Math.min(top, window.innerHeight - box.height - margin));
-
-  menu.style.left = `${Math.round(left + window.scrollX)}px`;
-  menu.style.top = `${Math.round(top + window.scrollY)}px`;
+  placeNear(menu, anchor, { gap: 4, alignRight: true });
   menu.style.visibility = '';
 
   openMenu = menu;
@@ -542,6 +558,244 @@ function editInPlace(
       host.innerHTML = held;
     }
   });
+}
+
+/** Una respuesta que se ofrece mientras se escribe. */
+interface Choice {
+  value: string;
+  /** Lo que se lee en gris al lado: por qué está ahí, o qué se sabe de ella. */
+  hint?: string;
+  /**
+   * Se ofrece antes que todo lo demás, y sin haber escrito nada.
+   *
+   * Es la única sugerencia con fundamento cuando el campo está vacío: lo que a
+   * esta clase de cosa le falta. El resto es una lista de lo que existe, y una
+   * lista de lo que existe no es una sugerencia.
+   */
+  first?: boolean;
+}
+
+/** Cuántas se enseñan de una vez sin que la lista deje de leerse. */
+const SUGGESTED_AT_MOST = 8;
+
+/**
+ * Un campo de una línea que ofrece mientras se escribe.
+ *
+ * `editInPlace` con una lista debajo, y son dos cosas distintas por una razón:
+ * un menú obliga a reconocer un nombre entre los que le enseñan, y un campo deja
+ * escribir el que uno ya tiene en la cabeza. Con treinta y tres propiedades
+ * declaradas y ochenta y seis más que el corpus usa sin declarar, reconocer
+ * dejó de ser viable hace tiempo: el menú era a la vez demasiado largo para
+ * leerlo y ciego a casi todo lo escrito.
+ *
+ * Lo que se escriba vale aunque no esté en la lista. @guarantee
+ * AVocabularyGrowsAtThePointOfUse: un vocabulario que no crece donde se usa deja
+ * de crecer, y con él deja de etiquetarse.
+ *
+ * Las opciones pueden llegar después de abrirse el campo —vienen del servidor— y
+ * por eso se devuelve `offer`. Abrir un campo no puede esperar a una petición:
+ * quien pulsó ya sabe lo que va a escribir.
+ */
+function completeInPlace(
+  host: HTMLElement,
+  label: string,
+  commit: (next: string) => Promise<boolean>,
+): { offer(choices: readonly Choice[]): void } {
+  const field = document.createElement('input');
+  field.type = 'text';
+  field.className = 'inline-edit';
+  field.setAttribute('aria-label', label);
+  field.setAttribute('role', 'combobox');
+  field.setAttribute('aria-expanded', 'false');
+  field.setAttribute('autocomplete', 'off');
+
+  const held = host.innerHTML;
+  host.innerHTML = '';
+  host.append(field);
+  field.focus();
+
+  let choices: readonly Choice[] = [];
+  let shown: Choice[] = [];
+  let highlighted = -1;
+  let list: HTMLElement | null = null;
+  let settled = false;
+
+  const closeList = (): void => {
+    list?.remove();
+    list = null;
+    shown = [];
+    highlighted = -1;
+    field.setAttribute('aria-expanded', 'false');
+  };
+
+  /*
+   * Qué se ofrece para lo que se lleva escrito.
+   *
+   * Sin nada escrito, sólo lo que esta clase de cosa echa en falta, y detrás lo
+   * más usado hasta llenar la lista. Escribiendo, se busca en todo: primero lo
+   * que falta, luego lo que empieza por lo tecleado y luego lo que lo lleva
+   * dentro. El orden dentro de cada tramo lo puso quien llama, que es quien sabe
+   * cuánto se usa cada una.
+   */
+  const matching = (): Choice[] => {
+    const query = titleKey(field.value);
+    const missing = choices.filter((one) => one.first === true);
+    if (query === '') {
+      const rest = choices.filter((one) => one.first !== true);
+      return [...missing, ...rest].slice(0, SUGGESTED_AT_MOST);
+    }
+    const starts: Choice[] = [];
+    const holds: Choice[] = [];
+    const first: Choice[] = [];
+    for (const one of choices) {
+      const key = titleKey(one.value);
+      if (!key.includes(query)) continue;
+      if (one.first === true) first.push(one);
+      else if (key.startsWith(query)) starts.push(one);
+      else holds.push(one);
+    }
+    return [...first, ...starts, ...holds].slice(0, SUGGESTED_AT_MOST);
+  };
+
+  const draw = (): void => {
+    shown = matching();
+    /*
+     * Lo ya escrito no se ofrece a sí mismo.
+     *
+     * Una lista de un solo renglón que dice exactamente lo que hay en el campo
+     * no ofrece nada: sólo tapa lo que está debajo y hace dudar de si hay que
+     * pulsarla para que valga.
+     */
+    if (shown.length === 1 && titleKey(shown[0]?.value ?? '') === titleKey(field.value)) {
+      shown = [];
+    }
+    if (shown.length === 0) {
+      closeList();
+      return;
+    }
+    if (highlighted >= shown.length) highlighted = shown.length - 1;
+
+    if (list === null) {
+      list = document.createElement('div');
+      list.className = 'complete narrow';
+      list.setAttribute('role', 'listbox');
+      document.body.append(list);
+      field.setAttribute('aria-expanded', 'true');
+    }
+    list.innerHTML = '';
+    for (const [at, choice] of shown.entries()) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = at === highlighted ? 'complete-item selected' : 'complete-item';
+      item.setAttribute('role', 'option');
+      const name = document.createElement('span');
+      name.textContent = choice.value;
+      item.append(name);
+      if (choice.hint !== undefined) {
+        const hint = document.createElement('span');
+        hint.className = 'complete-hint';
+        hint.textContent = choice.hint;
+        item.append(hint);
+      }
+      // `mousedown` y no `click`: el clic llegaría después del blur, que ya
+      // habría cerrado el campo y guardado lo que hubiera escrito.
+      item.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+        finish(choice.value);
+      });
+      list.append(item);
+    }
+    placeNear(list, field, { gap: 2, alignRight: false });
+  };
+
+  function finish(next: string): void {
+    if (settled) return;
+    settled = true;
+    closeList();
+    const said = next.trim();
+    if (said === '') {
+      host.innerHTML = held;
+      return;
+    }
+    void commit(said).then((applied) => {
+      // Aplicar rehace la página entera, así que sólo hay que restituir esto
+      // cuando el cambio no llegó a ocurrir.
+      if (!applied) host.innerHTML = held;
+    });
+  }
+
+  const cancel = (): void => {
+    if (settled) return;
+    settled = true;
+    closeList();
+    host.innerHTML = held;
+  };
+
+  field.addEventListener('input', () => {
+    // Escribir deshace la elección: lo resaltado era una respuesta a otra
+    // pregunta. Enter con nada resaltado vale lo escrito, que es lo que quien
+    // teclea un nombre nuevo espera que pase.
+    highlighted = -1;
+    draw();
+  });
+
+  field.addEventListener('blur', () => finish(field.value));
+
+  field.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (shown.length === 0) {
+        if (event.key === 'ArrowDown') draw();
+        return;
+      }
+      event.preventDefault();
+      /*
+       * Las flechas pasan por «ninguna».
+       *
+       * Los estados son las opciones más una: la de no haber elegido, que es
+       * donde vale lo escrito. Sin ella, bajar desde el último saltaría al
+       * primero y no habría forma de volver a lo tecleado sin borrar una letra
+       * —justo lo que hace quien escribe un nombre que todavía no existe.
+       */
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      const states = shown.length + 1;
+      highlighted = ((highlighted + 1 + step + states) % states) - 1;
+      draw();
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      finish(shown[highlighted]?.value ?? field.value);
+      return;
+    }
+    if (event.key === 'Tab' && highlighted >= 0) {
+      // Completar sin cerrar: se rellena el campo y se sigue.
+      event.preventDefault();
+      field.value = shown[highlighted]?.value ?? field.value;
+      highlighted = -1;
+      draw();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      // La lista primero y el campo después: con la lista abierta, Escape es lo
+      // que se pulsa para dejar de verla, no para renunciar a lo escrito.
+      if (list !== null) {
+        closeList();
+        return;
+      }
+      cancel();
+    }
+  });
+
+  return {
+    offer(next: readonly Choice[]): void {
+      if (settled) return;
+      choices = next;
+      // Sólo se abre sola si nadie ha escrito todavía: la lista llega tarde y no
+      // puede tapar lo que se esté tecleando en ese momento.
+      if (document.activeElement === field) draw();
+    },
+  };
 }
 
 /** Envía un cambio sin recargar. Devuelve si se aplicó. */
@@ -2101,13 +2355,24 @@ export function renderOutliner(
    * llena antes de dejar escribir obligaría a saber el final antes de empezar.
    * @guarantee TheShapeIsSaidAndNeverEnforced.
    */
-  const writeProperty = (name: string): void => {
+  /*
+   * Se abre el campo ya, y las opciones llegan cuando llegan.
+   *
+   * Antes se pedía la ontología primero y el menú salía al contestar el
+   * servidor: entre pulsar y poder hacer algo había una petición, y quien pulsa
+   * `+ propiedad` normalmente ya sabe qué va a escribir. Ahora el campo está
+   * enfocado en el mismo gesto, escribir funciona desde el primer instante y la
+   * lista aparece debajo cuando el servidor conteste. Si no contesta —o no hay
+   * servidor— se escribe igual, que es lo que siempre se pudo hacer.
+   */
+  add.addEventListener('click', () => {
     const key = document.createElement('dt');
     key.className = 'property-key';
     const value = document.createElement('dd');
     value.className = 'property-value';
     value.textContent = '';
     properties.append(key, value);
+
     const put = async (next: string): Promise<boolean> => {
       const said = next.trim();
       if (said === '') {
@@ -2122,32 +2387,78 @@ export function renderOutliner(
         callbacks,
       );
     };
-    if (name === '') editInPlace(key, '', 'nombre de la propiedad nueva', put);
-    else void put(name);
-  };
 
-  add.addEventListener('click', () => {
-    void api.ontology().then((said) => {
-      const names = corpusNames();
-      const kind = page.properties.find((one) => one.key === names.kind)?.value.trim() ?? '';
-      const object = said.objects.find(
-        (one) => one.name.toLowerCase() === kind.toLowerCase(),
-      );
-      const here = new Set(page.properties.map((one) => one.key.trim().toLowerCase()));
-      const missing = (object?.properties ?? []).filter((one) => !here.has(one.toLowerCase()));
-      const others = said.properties
-        .map((one) => one.name)
-        .filter((one) => !here.has(one.toLowerCase()) && !missing.includes(one));
-      const label = (one: string): string => {
-        const held = said.properties.find((p) => p.name === one);
-        return held?.field === null || held === undefined ? one : `${one} · ${held.field}`;
-      };
-      openBlockMenu(add, [
-        ...missing.map((one) => ({ label: label(one), run: () => writeProperty(one) })),
-        ...others.map((one) => ({ label: label(one), run: () => writeProperty(one) })),
-        { label: 'escribir otra…', run: () => writeProperty('') },
-      ]);
-    }).catch(() => writeProperty(''));
+    const field = completeInPlace(key, 'nombre de la propiedad nueva', put);
+
+    void api
+      .ontology()
+      .then((said) => {
+        const names = corpusNames();
+        const kind = page.properties.find((one) => one.key === names.kind)?.value.trim() ?? '';
+        const object = said.objects.find((one) => one.name.toLowerCase() === kind.toLowerCase());
+        const here = new Set(page.properties.map((one) => one.key.trim().toLowerCase()));
+
+        /*
+         * Primero lo que a esta clase de cosa le falta.
+         *
+         * La ontología declara qué propiedades constituyen a un «Proyecto» o a
+         * una «Persona» —ver [[Objetos]]— y aquí eso sirve para algo. No se
+         * exige nada: casi nada de lo que uno escribe nace completo, y una
+         * memoria que pidiera la ficha llena antes de dejar escribir obligaría a
+         * saber el final antes de empezar. @guarantee
+         * TheShapeIsSaidAndNeverEnforced.
+         */
+        const missing: Choice[] = (object?.properties ?? [])
+          .filter((one) => !here.has(one.toLowerCase()))
+          .map((one) => ({ value: one, hint: `le falta a ${object?.name ?? kind}`, first: true }));
+        const asked = new Set(missing.map((one) => one.value.toLowerCase()));
+
+        /*
+         * Y detrás, todo lo demás por cuánto se usa: lo declarado y lo que el
+         * corpus escribe sin declarar, en la misma lista.
+         *
+         * Estaban separados y sólo se ofrecían las declaradas, con lo que el
+         * menú era a la vez demasiado largo y ciego: de las treinta y tres
+         * declaradas aquí, diecisiete no se usan en ninguna página, mientras que
+         * ochenta y seis claves que el corpus sí usa no se ofrecían nunca. Se
+         * buscaba una propiedad escrita hace meses y no aparecía.
+         *
+         * Cada una dice de dónde viene. Que `bibliografia` salga con una sola
+         * página al lado de `bibliografía` con treinta es lo que permite darse
+         * cuenta en el momento de elegir, que es cuando se puede hacer algo.
+         */
+        const said_ = (uses: number): string => (uses === 1 ? '1 página' : `${uses} páginas`);
+        // El uso viaja aparte del renglón: ordena la lista y no se dibuja como
+        // tal, porque en la pantalla ya está dentro de la aclaración.
+        type Ranked = Choice & { uses: number };
+        const declared: Ranked[] = said.properties
+          .filter((one) => !here.has(one.name.toLowerCase()) && !asked.has(one.name.toLowerCase()))
+          .map((one) => ({
+            value: one.name,
+            hint:
+              one.uses === 0
+                ? `${one.field ?? 'declarada'} · sin usar todavía`
+                : `${one.field ?? 'declarada'} · ${said_(one.uses)}`,
+            uses: one.uses,
+          }));
+        const undeclared: Ranked[] = said.undeclared
+          .filter((one) => !here.has(one.key.toLowerCase()) && !asked.has(one.key.toLowerCase()))
+          .map((one) => ({
+            value: one.key,
+            hint: `sin declarar · ${said_(one.uses)}`,
+            uses: one.uses,
+          }));
+
+        const rest = [...declared, ...undeclared].sort(
+          (a, b) => b.uses - a.uses || a.value.localeCompare(b.value, 'es'),
+        );
+
+        field.offer([...missing, ...rest]);
+      })
+      .catch(() => {
+        // Sin ontología se escribe a ciegas, que es exactamente lo que se hacía
+        // antes de que hubiera ninguna. El campo ya está abierto.
+      });
   });
 
 
@@ -3922,19 +4233,7 @@ function startEditing(
 
     // Cabe en la ventana o no sirve, igual que el menú de un bloque: el editor
     // puede estar pegado al borde derecho o al pie, y la lista se salía.
-    const at = editor.getBoundingClientRect();
-    const box = list.getBoundingClientRect();
-    const margin = 8;
-
-    const left = Math.max(margin, Math.min(at.left, window.innerWidth - box.width - margin));
-    let top = at.bottom + 2;
-    if (top + box.height > window.innerHeight - margin && at.top - box.height - 2 > margin) {
-      top = at.top - box.height - 2;
-    }
-    top = Math.max(margin, Math.min(top, window.innerHeight - box.height - margin));
-
-    list.style.left = `${Math.round(left + window.scrollX)}px`;
-    list.style.top = `${Math.round(top + window.scrollY)}px`;
+    placeNear(list, editor, { gap: 2, alignRight: false });
   };
 
   const accept = (at: number): void => {
