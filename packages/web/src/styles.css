@@ -958,9 +958,32 @@ input {
  * hace sin proponérselo.
  */
 .block {
+  /*
+   * Las dos columnas de la izquierda y el hueco entre ellas, dichos una vez.
+   *
+   * El chevron y la viñeta miden lo mismo y siempre están, aunque estén vacíos,
+   * para que las viñetas queden en columna hagan lo que hagan sus vecinas. Lo
+   * que quiera alinearse con el texto —y no con el borde de la fila— tiene que
+   * poder sumar esas dos columnas sin volver a medirlas a ojo.
+   */
+  --rail: 1.4rem;
+  --rail-gap: 0.5rem;
   display: flex;
-  gap: 0.5rem;
+  gap: var(--rail-gap);
   align-items: baseline;
+}
+
+/*
+ * Lo que se despliega bajo un bloque ocupa su propia línea.
+ *
+ * La fila es flex, así que un panel añadido a ella se coloca como una columna
+ * más: la historia de un bloque salía a la derecha del texto, estrujada al ancho
+ * de una letra y altísima. Con la fila envolviendo y el panel ocupando el ancho
+ * entero, cae debajo; y se sangra lo que miden el chevron y la viñeta, para que
+ * empiece donde empieza el texto y no donde empieza la fila.
+ */
+.block:has(> .history) {
+  flex-wrap: wrap;
 }
 
 /* El control de plegado. Está siempre en la columna —vacío en las hojas— para
@@ -991,7 +1014,7 @@ input {
   position: relative;
   flex: none;
   align-self: flex-start;
-  width: 1.4rem;
+  width: var(--rail, 1.4rem);
   height: 1.55rem;
   font-size: 1.05rem;
   color: var(--text-dim);
@@ -1198,7 +1221,7 @@ input {
   border: none;
   padding: 0;
   align-self: flex-start;
-  width: 1.4rem;
+  width: var(--rail, 1.4rem);
   /* La misma razón que en `.fold`: la fila la mide su texto, no sus marcas. */
   height: 1.55rem;
   line-height: 1;
@@ -3845,7 +3868,16 @@ code {
 /* --- La historia de un bloque ------------------------------------------- */
 
 .history {
-  margin: 0.5rem 0 0.75rem;
+  /*
+   * Ocupa su propia línea dentro de la fila, que es flex.
+   *
+   * Sin esto se colocaba como una columna más, a la derecha del texto: estrujada
+   * al ancho de una letra y altísima. La sangría iguala lo que miden el chevron
+   * y la viñeta —ver `--rail` en `.block`— para que empiece donde empieza el
+   * texto y no donde empieza la fila.
+   */
+  flex-basis: 100%;
+  margin: 0.5rem 0 0.75rem calc(2 * (var(--rail, 1.4rem) + var(--rail-gap, 0.5rem)));
   padding: 0.5rem 0.6rem;
   border-left: 2px solid var(--rule);
   font-size: 0.8rem;
