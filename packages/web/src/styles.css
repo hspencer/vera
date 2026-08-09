@@ -1980,7 +1980,21 @@ code {
    * depende del aparato y de quién lo sostiene.
    */
   html {
-    font-size: calc(100% * var(--phone-scale, 1.35));
+    font-size: calc(100% * var(--phone-scale, 1.45));
+  }
+
+  /*
+   * Y la sangría del esquema, más corta.
+   *
+   * Todo está medido en `rem`, así que `--phone-scale` agranda también la
+   * sangría: un nivel cuesta aquí casi el doble de píxeles que en un escritorio
+   * y cuatro niveles se comen media columna de un teléfono. El texto sí tiene
+   * que crecer —se lee de cerca y en movimiento—; el escalón no, porque lo que
+   * dice ya lo dicen la viñeta y su línea. Se encoge en la hoja y no en el token
+   * para que el número que se ajusta desde dentro de Vera siga siendo uno solo.
+   */
+  .blocks {
+    --indent-scale: 0.8;
   }
 
   /*
@@ -3743,6 +3757,26 @@ code {
   color: var(--text-dim);
 }
 
+
+/*
+ * El resultado señalado con las flechas.
+ *
+ * Hace falta desde que la lista tiene dos clases de cosa —páginas y bloques— y
+ * Enter abre la primera: sin marca, no se sabe cuál va a abrirse.
+ */
+.hit.picked {
+  background: var(--bg-raised);
+  outline: 1px solid var(--link);
+  outline-offset: -1px;
+}
+
+/* Lo que separa las páginas que se llaman así de los bloques que lo dicen. */
+.hit-said {
+  padding: 0.35rem 0.75rem 0.15rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
 
 /* --- La historia de un bloque ------------------------------------------- */
 

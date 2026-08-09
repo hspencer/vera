@@ -2175,7 +2175,9 @@ export function renderOutliner(
   const drawBlock = (node: Node, depth: number): void => {
     const row = document.createElement('div');
     row.className = 'block';
-    row.style.paddingLeft = `${depth * 1.25}rem`;
+    // La sangría sale de un token, y la hoja la encoge en pantallas estrechas.
+    // Ver `--indent` en tokens.ts y `--indent-scale` en styles.css.
+    row.style.paddingLeft = `calc(var(--indent, 1.25rem) * var(--indent-scale, 1) * ${depth})`;
     row.dataset['id'] = node.block.stableId;
 
     // @invariant OnlyParentsFold: el control sólo aparece donde hay algo que

@@ -20,6 +20,7 @@ import { parseRoute, routeTo } from './router.ts';
 import { voice } from './voice.ts';
 import { brandMark, icon, type IconName } from './icons.ts';
 import { is } from './bindings.ts';
+import { suggestTitles } from '@vera/core';
 import { createPage } from './pages.ts';
 import { forgetPositions, renderGraph, selectNode } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D, forgetCamera, selectNode3D } from './graph/render3d.ts';
@@ -933,31 +934,100 @@ function wireSearch(): void {
     results.hidden = true;
   };
 
+  /*
+   * Lo señalado ahora mismo, para poder abrirlo con Enter.
+   *
+   * Sin esto, en un teléfono hay que apuntar con el dedo a un renglón de una
+   * lista que acaba de aparecer, y en un teclado no hay forma de llegar al
+   * primer resultado sin soltar las manos.
+   */
+  const pick = (delta: number): void => {
+    const items = [...results.querySelectorAll<HTMLElement>('.hit')];
+    if (items.length === 0) return;
+    const at = items.findIndex((one) => one.classList.contains('picked'));
+    const next = at === -1 ? (delta > 0 ? 0 : items.length - 1) : (at + delta + items.length) % items.length;
+    items.forEach((one) => one.classList.remove('picked'));
+    items[next]?.classList.add('picked');
+    items[next]?.scrollIntoView({ block: 'nearest' });
+  };
+
+  const row = (className: string): HTMLButtonElement => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = className;
+    return item;
+  };
+
+  /*
+   * Autocompletar va delante de buscar.
+   *
+   * Son dos preguntas distintas y sólo una se puede contestar al instante: «¿qué
+   * página se llama así?» se responde con el índice de títulos que la sesión ya
+   * lleva en memoria, sin pedirle nada a nadie; «¿dónde se dice esto?» hay que
+   * ir a buscarla. Antes sólo existía la segunda, así que escribir el nombre de
+   * una página no ofrecía la página: ofrecía los bloques donde se la nombra, y
+   * llegar a ella pedía reconocerla en un extracto.
+   */
+  const suggest = (text: string): void => {
+    const titles = suggestTitles(text, pages);
+    results.querySelectorAll('.hit-title').forEach((one) => one.remove());
+    if (titles.length === 0) return;
+    const before = results.firstChild;
+    for (const page of titles) {
+      const item = row('hit hit-title');
+      const where = document.createElement('span');
+      where.className = 'hit-page';
+      where.textContent = page.title;
+      const what = document.createElement('span');
+      what.className = 'hit-excerpt';
+      what.textContent = isDay(page.title) ? 'un día de la bitácora' : 'página';
+      item.append(where, what);
+      item.addEventListener('click', () => {
+        close();
+        input.value = '';
+        void openPage(page.id, null, { gesture: 'searched' });
+      });
+      results.insertBefore(item, before);
+    }
+    results.hidden = false;
+  };
+
   input.addEventListener('input', () => {
+    const text = input.value.trim();
+    if (text === '') {
+      window.clearTimeout(searchTimer);
+      close();
+      return;
+    }
+
+    // Los títulos, ya: no esperan a nada. Lo de dentro del corpus, en cuanto
+    // llegue, y debajo.
+    results.innerHTML = '';
+    suggest(text);
+
     window.clearTimeout(searchTimer);
     searchTimer = window.setTimeout(async () => {
-      const text = input.value.trim();
-      if (text === '') {
-        close();
-        return;
-      }
-
       const turn = ++searchTurn;
       let hits;
       try {
         hits = await api.search(text);
       } catch {
-        close();
         return;
       }
-      if (turn !== searchTurn) return;
+      if (turn !== searchTurn || input.value.trim() !== text) return;
 
-      results.innerHTML = '';
-      results.hidden = hits.length === 0;
-      for (const hit of hits.slice(0, 30)) {
-        const item = document.createElement('button');
-        item.className = 'hit';
+      // Se quitan los de la búsqueda anterior y se dejan los títulos, que ya
+      // están puestos y no dependen de esta respuesta.
+      results.querySelectorAll('.hit-block, .hit-said').forEach((one) => one.remove());
+      if (hits.length === 0) return;
 
+      const said = document.createElement('div');
+      said.className = 'hit-said';
+      said.textContent = 'y lo dicen estos bloques';
+      results.append(said);
+
+      for (const hit of hits.slice(0, 24)) {
+        const item = row('hit hit-block');
         // Texto del corpus, puesto como texto. Hay bloques con SVG y HTML
         // dentro: interpretarlos aquí sería dejar que el contenido dicte la
         // interfaz.
@@ -977,16 +1047,33 @@ function wireSearch(): void {
         });
         results.append(item);
       }
+      results.hidden = false;
     }, 120);
   });
 
-  // Los resultados tapan el grafo: se cierran con Escape y al tocar fuera.
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       input.value = '';
       close();
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      pick(event.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
+    if (event.key === 'Enter') {
+      // Sin nada señalado, el primero: escribir el nombre de una página y pulsar
+      // Enter tiene que llevar a esa página.
+      const chosen =
+        results.querySelector<HTMLElement>('.hit.picked') ??
+        results.querySelector<HTMLElement>('.hit');
+      if (chosen === null) return;
+      event.preventDefault();
+      chosen.click();
     }
   });
+
   document.addEventListener('pointerdown', (event) => {
     // El campo y su lista son dos elementos, no uno: la lista cuelga de la barra
     // para poder ocupar su ancho. Preguntar sólo por el campo dejaba «fuera» a

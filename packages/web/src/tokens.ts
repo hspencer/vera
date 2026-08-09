@@ -78,7 +78,7 @@ export const DEFAULT_TOKENS: DesignToken[] = [
   // @guarantee EditableDesignSystem existe para poder ajustar sin recompilar.
   // Multiplica el tamaño de base, así que arrastra todo lo medido en `rem` — la
   // interfaz y el texto a la vez, que es como debe crecer.
-  { name: '--phone-scale', light: '1.35', dark: '1.35' },
+  { name: '--phone-scale', light: '1.45', dark: '1.45' },
   // La interlínea: cada cuánto cae una línea de texto.
   //
   // Es la retícula de base de toda la aplicación. De ella salen el ritmo de la
@@ -98,6 +98,14 @@ export const DEFAULT_TOKENS: DesignToken[] = [
   // llegaban al borde. No lo cumplen las tablas, las imágenes, los diagramas ni
   // el código, que necesitan el ancho que necesitan y no son prosa.
   { name: '--content-width', light: '45em', dark: '45em' },
+  // Cuánto se mete hacia dentro cada nivel del esquema.
+  //
+  // Un token porque la talla cómoda depende de la pantalla: en un teléfono, todo
+  // está medido en `rem` y `--phone-scale` lo agranda, así que un nivel cuesta
+  // ahí casi el doble de píxeles que en un escritorio y cuatro niveles se comen
+  // media columna. La hoja lo encoge sola en pantallas estrechas —ver
+  // `--indent-scale` en styles.css—; este número es el de partida.
+  { name: '--indent', light: '1.25rem', dark: '1.25rem' },
   // La reserva del sistema no sobra: el subconjunto latino que Vera sirve no
   // cubre el griego ni el árabe que el corpus también trae, y es mejor que se
   // lean en otra letra a que no se lean.
@@ -129,6 +137,24 @@ export type GraphViewMode = 'graph_2d' | 'graph_3d';
  * También descarta los que ya no existen: un token retirado del código deja de
  * arrastrarse en el navegador de quien lo tuviera guardado.
  */
+/*
+ * Valores que fueron el defecto y dejaron de serlo.
+ *
+ * Un token guardado gana siempre al del código —es de quien lo ajustó— pero
+ * quien nunca tocó uno lleva guardado el defecto de entonces, y entonces cambiar
+ * el defecto no le llega nunca. Aquí se distingue lo elegido de lo heredado: si
+ * lo guardado es exactamente el defecto viejo, nadie lo eligió, y pasa a regir el
+ * nuevo. Un valor distinto de los dos sí lo eligió alguien y no se toca.
+ *
+ * La lista crece cuando un defecto cambia y encoge cuando ya no queda nadie con
+ * el viejo. No es un mecanismo de migración: es una forma de decir «esto no lo
+ * decidiste tú».
+ */
+const OUTGROWN: Record<string, string[]> = {
+  // La talla en un teléfono se quedó corta al agrandar también la del texto.
+  '--phone-scale': ['1.35'],
+};
+
 export function loadTokens(): DesignToken[] {
   const held = localStorage.getItem(TOKENS_KEY);
   if (held === null) return structuredClone(DEFAULT_TOKENS);
@@ -138,13 +164,15 @@ export function loadTokens(): DesignToken[] {
     const byName = new Map(saved.filter((t) => typeof t?.name === 'string').map((t) => [t.name, t]));
     return DEFAULT_TOKENS.map((token) => {
       const mine = byName.get(token.name);
-      return mine === undefined
-        ? { ...token }
-        : {
-            name: token.name,
-            light: typeof mine.light === 'string' ? mine.light : token.light,
-            dark: typeof mine.dark === 'string' ? mine.dark : token.dark,
-          };
+      if (mine === undefined) return { ...token };
+      const outgrown = OUTGROWN[token.name] ?? [];
+      const kept = (said: unknown, fallback: string): string =>
+        typeof said === 'string' && !outgrown.includes(said.trim()) ? said : fallback;
+      return {
+        name: token.name,
+        light: kept(mine.light, token.light),
+        dark: kept(mine.dark, token.dark),
+      };
     });
   } catch {
     return structuredClone(DEFAULT_TOKENS);

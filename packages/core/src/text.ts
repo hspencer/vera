@@ -134,3 +134,43 @@ export function excerpt(source: string, needle: string, width = 80): string {
   const slice = source.slice(from, from + width);
   return (from > 0 ? '…' : '') + slice + (from + width < source.length ? '…' : '');
 }
+
+
+/**
+ * Los títulos que encajan con lo que se lleva escrito, ordenados por cómo encajan.
+ *
+ * Autocompletar no es buscar. Buscar mira dentro del corpus y tarda lo que tarde;
+ * esto contesta con lo que ya está en memoria mientras se teclea, y por eso puede
+ * ir delante de cada pulsación. Lo que ofrece son páginas, que es lo que uno
+ * suele querer cuando escribe tres letras en un buscador: ir a algo que ya sabe
+ * que existe.
+ *
+ * Tres grados de encaje, y en ese orden: el título empieza por lo escrito, una de
+ * sus palabras empieza por lo escrito, o lo escrito aparece en cualquier parte.
+ * Un empate lo decide el orden en que vengan —quien llama los trae ordenados por
+ * conectividad, que es una medida de qué tan central es una página en el corpus—
+ * y por eso el orden de entrada se conserva.
+ */
+export function suggestTitles<T extends { title: string }>(
+  query: string,
+  pages: readonly T[],
+  most = 6,
+): T[] {
+  const needle = titleKey(query);
+  if (needle === '') return [];
+
+  const graded: { page: T; grade: number; at: number }[] = [];
+  pages.forEach((page, at) => {
+    const key = titleKey(page.title);
+    if (key === needle) graded.push({ page, grade: 0, at });
+    else if (key.startsWith(needle)) graded.push({ page, grade: 1, at });
+    else if (key.split(/[\s—–:·,()/]+/).some((word) => word.startsWith(needle))) {
+      graded.push({ page, grade: 2, at });
+    } else if (key.includes(needle)) graded.push({ page, grade: 3, at });
+  });
+
+  return graded
+    .sort((a, b) => a.grade - b.grade || a.at - b.at)
+    .slice(0, most)
+    .map((one) => one.page);
+}

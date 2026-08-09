@@ -93,6 +93,7 @@ export type { Crossing, CrossingSense, RelationTerm } from './relations.ts';
 export type { QuerySource, QueryUnreadable, QueryView } from './query-source.ts';
 
 export {
+  suggestTitles,
   calendarDay,
   excerpt,
   isDateTitle,
