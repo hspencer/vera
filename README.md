@@ -69,8 +69,8 @@ Al momento de escribir esta versión:
 | Especificaciones Allium | 29 (`allium check`: 0 errores, 9 avisos) |
 | Pruebas | 845, en 174 bloques, todas en verde |
 | Specs sostenidas enteramente por implementación | 14 |
-| Specs implementadas en parte | 11 |
-| Specs sin implementación | 4 |
+| Specs implementadas en parte | 12 |
+| Specs sin implementación | 3 |
 
 El detalle spec por spec está en [Especificaciones](#especificaciones).
 
@@ -180,9 +180,10 @@ Etapa M1 de seis: **sólo lectura**, siete herramientas, ninguna escribe.
   por argumentos de proceso: se pasa por `VERA_TOKEN_FILE`, y en su defecto por
   `VERA_TOKEN`.
 - **Un alcance no es una concesión.** Hoy una credencial declara `read`, `write`
-  o `discard`. La spec ya define una concesión más estrecha —qué páginas, qué
-  visibilidades, qué herramientas, por cuánto tiempo— que empieza mínima y se
-  eleva al pedirlo, no de antemano.
+  o `discard`, y puede además llevar un cerco que acota a qué páginas alcanza lo
+  que escribe. La spec define una concesión más estrecha todavía —qué
+  visibilidades, qué herramientas, por cuánto tiempo, con qué presupuesto— que
+  empieza mínima y se eleva al pedirlo, no de antemano; eso sigue sin construir.
 - **Lo que salió de casa queda anotado.** Cada llamada escribe una fila en el
   registro de exposición: quién, con qué credencial, qué cliente dijo ser, qué se
   entregó y cuánto medía. Se consulta en `GET /exposures`, y al revés —quién ha
@@ -239,13 +240,18 @@ de escribirse como prosa que el día de la primera mudanza mentiría con confian
 
 ### Lo que falta
 
-- **Escritura.** Es M3 y M4, y hay dos caminos escritos. Uno es la propuesta
-  revisada: el agente propone y una persona acepta. El otro es la
-  **escritura cercada** ([`confined-writing.allium`](specs/confined-writing.allium)):
-  una credencial escribe sin revisión previa a cambio de no poder salir de un
-  cerco —páginas que ella misma creó, de una clase concedida—, de modo que el
-  conflicto con lo que una persona escribió en medio no se resuelve porque no
-  llega a existir. La spec está escrita y la implementación, en curso.
+- **Escritura por MCP.** Es M3 y M4. Hay dos caminos escritos y sólo uno
+  construido. El que falta es la propuesta revisada: el agente propone y una
+  persona acepta. El que ya existe es la **escritura cercada**
+  ([`confined-writing.allium`](specs/confined-writing.allium)): una credencial
+  escribe sin revisión previa a cambio de no poder salir de un cerco —páginas que
+  ella misma creó, de una clase concedida—, de modo que el conflicto con lo que
+  una persona escribió en medio no se resuelve porque no llega a existir. El
+  cerco se comprueba en `POST /operations`, que es la única puerta de escritura, y
+  no en la herramienta MCP: el mismo secreto entra por ahí sin pasar por ninguna
+  herramienta, y un límite que sólo comprueba la herramienta es una sugerencia
+  dirigida a quien ya decidió obedecerla. Falta que las herramientas MCP lo
+  ofrezcan.
 - **Acceso remoto.** Los clientes web no pueden conectarse por aquí: necesitan un
   servidor MCP remoto con OAuth, que es M5 y M6. No empieza mientras exista un
   camino anónimo que escribe como quien posee el grafo. Ver
@@ -351,11 +357,15 @@ Implementadas en parte, con lo que falta declarado en la propia spec:
   reparto de páginas largas y el arreglo de forma están; ordenar los bloques por
   la lógica del material y explotar una página en varias siguen abiertos.
 
+- [`confined-writing.allium`](specs/confined-writing.allium) — el cerco que
+  permite a una credencial escribir sin revisión previa a cambio de no salir de
+  las páginas que ella misma plantó. El cerco se concede, se comprueba en la
+  única puerta de escritura y se retira; marcar sustituye a borrar. Falta que una
+  página diga dónde se lee que nació cercada, y que lo plantado se cuente junto a
+  la concesión.
+
 Sin implementación:
 
-- [`confined-writing.allium`](specs/confined-writing.allium) — el cerco que
-  permite a una credencial escribir sin revisión previa sin poder salir de las
-  páginas que ella misma plantó. Spec escrita, implementación en curso.
 - [`librarian-round.allium`](specs/librarian-round.allium) — la ronda diaria de
   un agente sobre el vocabulario: qué mira, qué propone, cómo lo conversa y qué
   aprende de la respuesta.
