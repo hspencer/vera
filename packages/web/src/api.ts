@@ -780,6 +780,14 @@ export interface MCPConnect {
   /** Y desde otro equipo, cuando alguien lo declaró. Nulo si no se sabe. */
   reachableAt: string | null;
   node: string;
+  /**
+   * Con qué se entra a este equipo desde otro para lanzar la puerta aquí.
+   *
+   * Es lo que permite dictar la configuración de un cliente que corre en otra
+   * máquina sin pedirle que mantenga una copia del repositorio: abre una tubería
+   * por ssh y el proceso nace al lado de Vera.
+   */
+  login: string;
   /** Si la puerta está donde se dice que está. */
   present: boolean;
 }

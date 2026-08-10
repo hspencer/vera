@@ -8,6 +8,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
+import { hostname, userInfo } from 'node:os';
 
 import {
   TESTIMONY_KEY,
@@ -2234,6 +2235,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           port: options.port ?? 4173,
           execPath: process.execPath,
           nodeVersion: process.version,
+          user: userInfo().username,
+          host: hostname(),
           reachableAt: options.reachableAt ?? null,
         });
         /*

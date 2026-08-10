@@ -110,6 +110,43 @@ function reading(seen: SeenClient | null): string {
  * puerto dentro mentiría con toda confianza el día que se mueva cualquiera de
  * los dos.
  */
+/**
+ * La configuración de un cliente que corre en otro equipo, dictada entera.
+ *
+ * El cliente lanza `ssh` y la puerta corre aquí, al lado de Vera: no hay una
+ * segunda copia del repositorio que mantener al día en cada equipo desde el que
+ * se lea, y `VERA_URL` no aparece porque el loopback por omisión ya es el
+ * correcto cuando el proceso nace en esta máquina.
+ *
+ * La línea remota es la misma que se lanzaría aquí, con el nombre del cliente
+ * delante: un shell remoto recibe una orden y no un arreglo de argumentos. Se
+ * arma de `command` y `args` en vez de volver a escribir las banderas, para que
+ * cambiar cómo arranca la puerta cambie las dos formas a la vez.
+ *
+ * `/usr/bin/ssh` es lo único de aquí que no es un hecho de este despliegue: es
+ * la ruta en el otro equipo, y es la misma en macOS y en Linux.
+ */
+export function remoteLaunch(connect: MCPConnect, client: string): string {
+  return JSON.stringify(
+    {
+      mcpServers: {
+        vera: {
+          command: '/usr/bin/ssh',
+          args: [
+            '-q',
+            '-o',
+            'BatchMode=yes',
+            connect.login,
+            `VERA_CLIENT=${client} ${connect.command} ${connect.args.join(' ')}`,
+          ],
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
+
 function connectPanel(connect: MCPConnect, host: HTMLElement): void {
   const heading = document.createElement('h3');
   heading.className = 'governing-title';
@@ -128,9 +165,73 @@ function connectPanel(connect: MCPConnect, host: HTMLElement): void {
       'dice.';
   host.append(note);
 
+  /*
+   * El nombre del cliente, una sola vez y arriba del todo.
+   *
+   * De todo lo que hay en este panel es lo único que es una decisión: los demás
+   * valores son hechos de este despliegue. Y es la decisión que gobierna las dos
+   * formas de conectarse, así que estaba mal dentro de la lista de una de ellas.
+   * Es cómo va a aparecer esa IA en la tabla de abajo y en el registro de
+   * exposición; sin él caen todas juntas en «sin declarar».
+   */
+  const decided = document.createElement('p');
+  decided.className = 'connect-decision';
+  const label = document.createElement('label');
+  label.textContent = 'Cómo se declara este cliente';
+  const field = document.createElement('input');
+  field.type = 'text';
+  field.className = 'connect-client';
+  field.value = 'claude-desktop';
+  field.setAttribute('aria-label', 'cómo se va a llamar esta conexión');
+  field.placeholder = 'nombre de la conexión';
+  label.append(field);
+  decided.append(label);
+  host.append(decided);
+
+  /*
+   * Dónde corre el cliente, que decide qué hay que pegar.
+   *
+   * Los dos casos no se diferencian en un valor sino en la forma entera: en este
+   * equipo se dicta un comando con sus argumentos, y en otro equipo se dicta una
+   * orden que abre una tubería hasta aquí. Ofrecer sólo el primero y explicar el
+   * segundo en prosa —que es lo que había— deja a quien está en el portátil
+   * traduciendo a mano una configuración que nadie comprobó.
+   */
+  const chooser = document.createElement('fieldset');
+  chooser.className = 'connect-where';
+  const legend = document.createElement('legend');
+  legend.textContent = 'Dónde corre el cliente';
+  chooser.append(legend);
+
+  const here = document.createElement('div');
+  const there = document.createElement('div');
+
+  const option = (value: string, text: string, first: boolean): HTMLInputElement => {
+    const wrap = document.createElement('label');
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'connect-where';
+    radio.value = value;
+    radio.checked = first;
+    const said = document.createElement('span');
+    said.textContent = text;
+    wrap.append(radio, said);
+    chooser.append(wrap);
+    return radio;
+  };
+
+  const onHere = option('here', 'este equipo', true);
+  option('there', 'otro equipo', false);
+  const settleWhere = (): void => {
+    here.hidden = !onHere.checked;
+    there.hidden = onHere.checked;
+  };
+  chooser.addEventListener('change', settleWhere);
+  host.append(chooser, here, there);
+
   const list = document.createElement('dl');
   list.className = 'connect';
-  host.append(list);
+  here.append(list);
 
   /*
    * Un renglón por campo del formulario, con su valor copiable.
@@ -181,21 +282,9 @@ function connectPanel(connect: MCPConnect, host: HTMLElement): void {
   row('Argumentos', connect.args.join(' '));
   row('Directorio de trabajo', connect.cwd);
 
-  /*
-   * El nombre del cliente se escribe, porque es lo único de aquí que es una
-   * decisión: es cómo va a aparecer esa IA en la tabla de abajo y en el registro
-   * de exposición. Sin él caen todas juntas en «sin declarar».
-   */
   const named = document.createElement('dt');
   named.textContent = 'Variables de entorno';
   const values = document.createElement('dd');
-
-  const field = document.createElement('input');
-  field.type = 'text';
-  field.className = 'connect-client';
-  field.value = 'chatgpt';
-  field.setAttribute('aria-label', 'cómo se va a llamar esta conexión');
-  field.placeholder = 'nombre de la conexión';
 
   const env = document.createElement('code');
   env.className = 'connect-value';
@@ -205,12 +294,6 @@ function connectPanel(connect: MCPConnect, host: HTMLElement): void {
   copyEnv.className = 'connect-copy';
   copyEnv.textContent = 'copiar';
 
-  const settle = (): void => {
-    const client = field.value.trim() === '' ? 'vera-mcp' : field.value.trim();
-    env.textContent = `VERA_URL=${connect.url}\nVERA_CLIENT=${client}`;
-  };
-  settle();
-  field.addEventListener('input', settle);
   copyEnv.addEventListener('click', () => {
     void navigator.clipboard?.writeText(env.textContent ?? '').then(() => {
       copyEnv.textContent = 'copiado';
@@ -218,33 +301,82 @@ function connectPanel(connect: MCPConnect, host: HTMLElement): void {
     });
   });
 
-  const says = document.createElement('span');
-  says.className = 'connect-says';
-  says.textContent = 'el nombre es lo único que decides: es cómo aparece abajo y en el registro';
-  values.append(env, copyEnv, field, says);
+  values.append(env, copyEnv);
   list.append(named, values);
 
   /*
-   * Y la advertencia que evita la tarde perdida.
+   * Y para el otro equipo, la configuración entera y no un valor que cambiar.
    *
-   * `127.0.0.1` sólo vale si la IA corre en este mismo equipo. Desde el portátil
-   * o el teléfono, esa dirección apunta a su propia máquina, donde no hay
-   * ninguna Vera, y el error que se ve es «no se pudo conectar», que no dice
-   * cuál de las dos cosas falló.
+   * Antes esto era un párrafo que decía «cambia VERA_URL por tal cosa», y era
+   * cierto y no alcanzaba: en el otro equipo el comando, los argumentos y el
+   * directorio de trabajo también son otros, porque nombran rutas de aquí. Quien
+   * lo leía se llevaba una configuración que sólo estaba corregida en un tercio.
+   *
+   * Lo que se dicta es el arranque por tubería: el cliente lanza `ssh` y la
+   * puerta corre aquí, al lado de Vera. Así no hay una segunda copia del
+   * repositorio que mantener al día en cada equipo desde el que se lea, y
+   * `VERA_URL` no aparece porque el loopback por omisión ya es el correcto.
+   *
+   * La otra manera —el repositorio también allí, apuntando a la dirección
+   * alcanzable— sigue existiendo y se dice debajo, sin dictarla: sus rutas son
+   * del otro equipo y este proceso no las conoce. Dictar lo que no se sabe es
+   * exactamente lo que esta página existe para no hacer.
    */
-  const elsewhere = document.createElement('p');
-  elsewhere.className = 'governing-note';
-  elsewhere.textContent =
+  const remote = document.createElement('pre');
+  remote.className = 'connect-json';
+  const remoteCode = document.createElement('code');
+  remote.append(remoteCode);
+
+  const copyRemote = document.createElement('button');
+  copyRemote.type = 'button';
+  copyRemote.className = 'connect-copy';
+  copyRemote.textContent = 'copiar';
+  copyRemote.addEventListener('click', () => {
+    void navigator.clipboard?.writeText(remoteCode.textContent ?? '').then(() => {
+      copyRemote.textContent = 'copiado';
+      window.setTimeout(() => (copyRemote.textContent = 'copiar'), 1500);
+    });
+  });
+
+  /** Los dos bloques copiables se rehacen con el nombre del cliente. */
+  const settle = (): void => {
+    const client = field.value.trim() === '' ? 'vera-mcp' : field.value.trim();
+    env.textContent = `VERA_URL=${connect.url}\nVERA_CLIENT=${client}`;
+    remoteCode.textContent = remoteLaunch(connect, client);
+  };
+  settle();
+  field.addEventListener('input', settle);
+
+  const remoteSays = document.createElement('p');
+  remoteSays.className = 'governing-note';
+  remoteSays.textContent =
+    `El cliente abre una tubería hasta ${connect.login} y la puerta corre aquí, así que ` +
+    'no hay nada que instalar ni que mantener al día en el otro equipo. Para que funcione ' +
+    'tiene que poder entrar por ssh sin escribir una contraseña: `BatchMode=yes` hace que ' +
+    'falle en vez de quedarse esperando delante de una app que no tiene dónde preguntarla. ' +
+    'Eso es lo único de aquí que este equipo no puede comprobar, porque se comprueba desde ' +
+    'el otro.';
+  there.append(remote, copyRemote, remoteSays);
+
+  const sshPath = document.createElement('p');
+  sshPath.className = 'governing-note';
+  sshPath.textContent =
+    'La ruta de ssh es la del otro equipo y no la de éste, así que es el único valor de ' +
+    'este panel que no es un hecho de este despliegue. `/usr/bin/ssh` es donde vive en ' +
+    'macOS y en Linux; en Windows hay que cambiarla.';
+  there.append(sshPath);
+
+  const other = document.createElement('p');
+  other.className = 'governing-note';
+  other.textContent =
     connect.reachableAt === null
-      ? 'Si la IA corre en otro equipo, VERA_URL no puede ser 127.0.0.1: ahí no hay ' +
-        'ninguna Vera. Hay que poner la dirección por la que se alcanza este equipo, y ' +
-        'este despliegue no la tiene declarada (VERA_REACHABLE_AT en .env). Además el ' +
-        'repositorio y node tienen que existir también en ese equipo, porque el proceso ' +
-        'corre allí.'
-      : `Si la IA corre en otro equipo, cambia VERA_URL por ${connect.reachableAt}, que es ` +
-        'por donde se alcanza esta Vera desde la tailnet. El repositorio y node tienen ' +
-        'que existir también en ese equipo: el proceso corre allí, no aquí.';
-  host.append(elsewhere);
+      ? 'La otra manera es tener el repositorio y node también en ese equipo y apuntar ' +
+        'VERA_URL a la dirección por la que se alcanza éste. Este despliegue no la tiene ' +
+        'declarada (VERA_REACHABLE_AT en .env), así que no se puede dictar.'
+      : `La otra manera es tener el repositorio y node también en ese equipo, con las rutas ` +
+        `de allí, y VERA_URL=${connect.reachableAt}, que es por donde se alcanza esta Vera ` +
+        'desde la tailnet. Se mantienen dos copias del código a cambio de no depender de ssh.';
+  there.append(other);
 
   const http = document.createElement('p');
   http.className = 'governing-note';
@@ -253,6 +385,8 @@ function connectPanel(connect: MCPConnect, host: HTMLElement): void {
     'no existe: la puerta sólo habla por stdio. Es lo que hace falta para una IA que ' +
     'corra en el navegador, y es M5.';
   host.append(http);
+
+  settleWhere();
 }
 
 export async function renderMCP(

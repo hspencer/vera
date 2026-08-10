@@ -4989,6 +4989,86 @@ code {
   flex-basis: 100%;
 }
 
+/*
+ * La decisión, arriba y sola: cómo se declara el cliente.
+ *
+ * Va antes de todo lo demás porque gobierna las dos formas de conectarse, y
+ * porque separarla de los valores calculados es lo que hace legible el panel: lo
+ * de abajo son hechos de este despliegue y esto es lo único que alguien elige.
+ */
+.connect-decision {
+  margin: 0 0 0.8rem;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+}
+
+.connect-decision label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+
+/*
+ * Dónde corre el cliente, que no es un valor sino dos formas enteras.
+ *
+ * Sin marco ni fondo: es una pregunta de dos respuestas, y un recuadro la
+ * convertiría en un panel dentro de un panel. La línea de arriba basta para
+ * decir que lo de abajo depende de esto.
+ */
+.connect-where {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 0 0 0.9rem;
+  padding: 0.6rem 0 0;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+}
+
+.connect-where legend {
+  padding: 0;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+}
+
+.connect-where label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+
+.connect-where input {
+  accent-color: var(--accent);
+}
+
+/*
+ * La configuración entera, para pegar de una vez.
+ *
+ * Aquí no se dicta campo a campo como en el otro caso: lo que el formulario de
+ * un cliente pide en esta forma es un JSON, y partirlo en renglones obligaría a
+ * volver a armarlo a mano. Con sus saltos y su barra de desplazamiento, porque
+ * una ruta absoluta dentro de un arreglo no cabe en la columna y envolverla
+ * cambia lo que se copia.
+ */
+.connect-json {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: color-mix(in srgb, var(--rule) 30%, transparent);
+  border-radius: 3px;
+  padding: 0.6rem 0.7rem;
+  margin: 0 0 0.5rem;
+  overflow-x: auto;
+}
+
 
 /* ---------------------------------------------------------------------------
  * El recorrido

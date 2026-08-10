@@ -37,6 +37,19 @@ export interface MCPConnect {
   reachableAt: string | null;
   node: string;
   /**
+   * Con qué se entra a este equipo desde otro para lanzar la puerta aquí.
+   *
+   * Un cliente MCP que corre en otro equipo tiene dos maneras de llegar: tener el
+   * repositorio también allí y apuntar `VERA_URL` a la dirección alcanzable, o
+   * lanzar el proceso aquí por una tubería, que es lo que hace `ssh`. La segunda
+   * no obliga a mantener una segunda copia del código al día, y el proceso nace
+   * al lado de Vera, así que el loopback por omisión ya es el correcto.
+   *
+   * Es un hecho de este despliegue como los demás —quién corre el servidor y cómo
+   * se llama la máquina—, no una decisión que alguien deba escribir.
+   */
+  login: string;
+  /**
    * Si la puerta está donde se dice que está.
    *
    * Un panel que dicta una ruta sin comprobarla manda a alguien a pelearse con
@@ -57,6 +70,9 @@ export function mcpConnect(options: {
   port: number;
   execPath: string;
   nodeVersion: string;
+  /** Quién corre el servidor y en qué máquina, para el arranque desde otro equipo. */
+  user: string;
+  host: string;
   reachableAt?: string | null;
   exists?: (path: string) => boolean;
 }): MCPConnect {
@@ -79,6 +95,7 @@ export function mcpConnect(options: {
     url: `http://127.0.0.1:${options.port}`,
     reachableAt: options.reachableAt ?? null,
     node: options.nodeVersion,
+    login: `${options.user}@${options.host}`,
     present: exists(door),
   };
 }
