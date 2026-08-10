@@ -5050,20 +5050,23 @@ code {
    corriente sobre el rastro es volver, y promover es el que se hace de vez en
    cuando. */
 .trail-keep {
-  font-family: var(--font-ui);
-  font-size: 0.72rem;
-  padding: 0.1rem 0.5rem;
-  border: 1px solid var(--accent);
-  border-radius: 0.3ex;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem;
+  border: none;
   background: none;
-  color: var(--accent);
+  color: var(--text-dim);
   cursor: pointer;
-  white-space: nowrap;
+}
+
+.trail-keep .icon {
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
 .trail-keep:hover {
-  background: var(--accent);
-  color: var(--bg);
+  color: var(--accent);
 }
 
 .thread-stop {
@@ -5072,4 +5075,70 @@ code {
   font-variant-numeric: tabular-nums;
   fill: var(--accent);
   pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+ * Conectar una IA nueva.
+ *
+ * Cuatro campos en una línea y un botón: conectar un servicio es un gesto, y un
+ * formulario apilado lo haría parecer un trámite. Lo que nace de ahí —el secreto
+ * dentro del bloque que hay que pegar— va debajo y a plena vista, porque se
+ * enseña una sola vez.
+ * -------------------------------------------------------------------------- */
+
+.connect-new {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 1rem;
+  margin: 0 0 1rem;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+}
+
+.connect-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.connect-field > span {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+
+.connect-field input,
+.connect-field select {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.15rem 0.35rem;
+  min-width: 10rem;
+}
+
+.connect-field input:focus,
+.connect-field select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* Lo que nace: el aviso, el bloque para pegar y el botón de copiar. */
+.connect-born:not(:empty) {
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0.7rem 0.9rem;
+  margin: 0 0 1.4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.connect-born .governing-note {
+  margin: 0;
+  color: var(--text);
 }

@@ -110,6 +110,9 @@ let heldTransform: d3.ZoomTransform | null = null;
 export function forgetPositions(): void {
   positions.clear();
   heldTransform = null;
+  // Y el encuadre del recorrido: si las posiciones son otras, el que había ya no
+  // encuadraba nada.
+  framed = null;
 }
 
 /** Señala un nodo desde fuera, para que abrir una página lo marque en el mapa. */
@@ -121,6 +124,8 @@ export function selectNode(id: string | null): void {
 let selected: string | null = null;
 /** El último que se llevó al centro, para no volver a hacerlo en cada repintado. */
 let centred: string | null = null;
+/** Y el último recorrido que se encuadró, por la misma razón. */
+let framed: string | null = null;
 
 export function renderGraph(
   container: HTMLElement,
@@ -620,9 +625,16 @@ export function renderGraph(
             ? "none"
             : null,
         );
+      // El número va encima del nombre y midiéndolo: con un desplazamiento fijo,
+      // en cuanto el encuadre acerca las paradas el número cae dentro del nombre
+      // y no se lee ninguno de los dos.
       stopMark
         .attr("x", (one) => at.get(one.page ?? "")?.x ?? 0)
-        .attr("y", (one) => (at.get(one.page ?? "")?.y ?? 0) - 12);
+        .attr("y", (one) => {
+          const node = at.get(one.page ?? "");
+          const box = dims.get(one.page ?? "") ?? { w: 0, h: 0 };
+          return (node?.y ?? 0) - box.h / 2 - 4;
+        });
     }
   };
 
@@ -794,6 +806,9 @@ export function renderGraph(
    * el mapa es de quien lo mira.
    */
   if (selected !== null) centred = selected;
+  // Y el recorrido queda encuadrado una vez: a partir de ahí el mapa es de quien
+  // lo mira, y reencuadrar en cada guardado le quitaría el mapa de las manos.
+  if (thread !== null) framed = thread.page;
 
   // Y otra vez cuando la tipografía haya llegado: las cajas se miden con la
   // letra que hay en pantalla, y `font-display: swap` enseña la de reserva

@@ -102,6 +102,8 @@ const positions = new Map<string, Point>();
 
 /** Desde dónde se estaba mirando. */
 let heldOrbit: Orbit | null = null;
+/** El último recorrido que se encuadró, para no reencuadrar en cada repintado. */
+let framed: string | null = null;
 
 /**
  * De qué grafo es esa órbita.
@@ -148,6 +150,7 @@ function looksLikeTrackpad(event: WheelEvent): boolean {
 /** Olvida la cámara y lo colocado. Para cuando el grafo cambia de veras. */
 export function forgetCamera(): void {
   heldOrbit = null;
+  framed = null;
   heldFor = null;
   positions.clear();
 }
@@ -564,7 +567,14 @@ export function renderGraph3D(
    */
   const thread = settings.thread ?? null;
   const threads: { line: SVGLineElement; a: Point; b: Point }[] = [];
-  const stopMarks: { text: SVGTextElement; at: Point }[] = [];
+  /*
+   * El número va sobre el nombre y no sobre el punto donde está.
+   *
+   * Con un desplazamiento fijo, en cuanto el encuadre acerca las paradas el
+   * número queda dentro del nombre y no se lee ninguno de los dos. Se guarda el
+   * nodo dibujado, que en cada cuadro sabe cuánto mide en pantalla.
+   */
+  const stopMarks: { text: SVGTextElement; of: string }[] = [];
 
   if (thread !== null) {
     thread.kinds.forEach((kind, at) => {
@@ -579,14 +589,13 @@ export function renderGraph3D(
       threads.push({ line, a, b });
     });
     for (const stop of thread.stops) {
-      const at = stop.page == null ? undefined : byId.get(stop.page);
-      if (at === undefined) continue;
+      if (stop.page == null || byId.get(stop.page) === undefined) continue;
       const text = document.createElementNS(SVG_NS, "text");
       text.setAttribute("class", "thread-stop");
       text.setAttribute("text-anchor", "middle");
       text.textContent = String(stop.ordinal);
       threadLayer.append(text);
-      stopMarks.push({ text, at });
+      stopMarks.push({ text, of: stop.page });
     }
   }
 
@@ -656,6 +665,51 @@ export function renderGraph3D(
   };
 
   /**
+   * La caja de un recorrido: sólo sus paradas, y no el vecindario entero.
+   *
+   * @guarantee TheWholeShapeAtOnce. Un hilo con la primera parada fuera de
+   * cuadro no enseña una forma, enseña un trozo, y la forma del argumento —un
+   * tramo recto, un rodeo que vuelve, una estrella desde un solo sitio— es lo
+   * que hace que un recorrido se recuerde: por su dibujo, como se recuerda una
+   * región del mapa.
+   */
+  const threadBox = (): { box: Box; centre: Point } | null => {
+    if (thread === null) return null;
+    const wanted = new Set(thread.stops.map((one) => one.page).filter((one) => one !== null));
+    let any = false;
+    const min = { x: Infinity, y: Infinity, z: Infinity };
+    const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+    for (const d of drawn) {
+      if (!wanted.has(d.node.id)) continue;
+      const { x, y, z } = d.node as GraphNode & Partial<Point>;
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+      min.x = Math.min(min.x, (x as number) - d.halfWidth);
+      max.x = Math.max(max.x, (x as number) + d.halfWidth);
+      min.y = Math.min(min.y, (y as number) - d.halfHeight);
+      max.y = Math.max(max.y, (y as number) + d.halfHeight);
+      min.z = Math.min(min.z, z as number);
+      max.z = Math.max(max.z, z as number);
+      any = true;
+    }
+    if (!any) return null;
+    /*
+     * Se gira en torno al medio del recorrido y no a la página abierta.
+     *
+     * La página abierta es la del recorrido, y es justo la que no se dibuja: un
+     * argumento no está al lado de sus premisas sino entre ellas, así que girar
+     * en torno a ella sería girar en torno a un sitio vacío.
+     */
+    return {
+      box: { min, max },
+      centre: {
+        x: (min.x + max.x) / 2,
+        y: (min.y + max.y) / 2,
+        z: (min.z + max.z) / 2,
+      },
+    };
+  };
+
+  /**
    * La página que se está leyendo, que es en torno a lo que gira el mapa.
    *
    * El servidor marca como `central` el centro del vecindario, que es la página
@@ -681,6 +735,21 @@ export function renderGraph3D(
    * @guarantee TheMapArrivesFramed
    */
   const fit = (): void => {
+    /*
+     * Un recorrido recién abierto se encuadra aunque alguien haya movido la
+     * cámara antes, y una sola vez. Abrir un argumento es pedir verlo entero; si
+     * el encuadre no llegara, el hilo estaría dibujado en una esquina y lo que
+     * se prometió —la forma— no se vería.
+     */
+    if (thread !== null && thread.page !== framed) {
+      const mine = threadBox();
+      if (mine !== null) {
+        orbit = frameAround(mine.box, mine.centre, lensNow(), orbit.azimuth, orbit.elevation);
+        framed = thread.page;
+        moved = true;
+        return;
+      }
+    }
     if (moved) return;
     const box = graphBox();
     if (box === null) return;
@@ -894,6 +963,10 @@ export function renderGraph3D(
       d.sh = d.lines.length * LINE_EM * px;
     }
 
+    /** Los nodos dibujados por su identidad, para poner cada número sobre el suyo. */
+    const shown = new Map<string, Drawn>();
+    for (const d of drawn) shown.set(d.node.id, d);
+
     for (const one of threads) {
       const a = project(one.a, orbit, lens);
       const b = project(one.b, orbit, lens);
@@ -903,9 +976,12 @@ export function renderGraph3D(
       one.line.setAttribute("y2", b.y.toFixed(1));
     }
     for (const one of stopMarks) {
-      const at = project(one.at, orbit, lens);
-      one.text.setAttribute("x", at.x.toFixed(1));
-      one.text.setAttribute("y", (at.y - 12).toFixed(1));
+      const d = shown.get(one.of);
+      if (d === undefined) continue;
+      one.text.setAttribute("x", d.sx.toFixed(1));
+      // Justo encima del nombre, midiéndolo: un número dentro del nombre no se
+      // lee, y el nombre con un número encima deja de leerse también.
+      one.text.setAttribute("y", (d.sy - d.sh / 2 - 4).toFixed(1));
     }
 
     for (const e of edges) {

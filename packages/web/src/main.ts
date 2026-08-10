@@ -1001,8 +1001,12 @@ function drawTrail(): void {
     const keep = document.createElement('button');
     keep.type = 'button';
     keep.className = 'trail-keep';
-    keep.textContent = 'guardar como recorrido';
-    keep.title = 'lo andado se convierte en una página con sus paradas y sus huecos';
+    // El icono y no la palabra: la fila del rastro son nombres de páginas, y un
+    // botón con texto ahí dentro compite con ellos por lo mismo que uno viene a
+    // leer. Lo que dice la palabra va en el título, donde no estorba.
+    keep.innerHTML = icon('edit');
+    keep.title = 'guardar como recorrido: lo andado se convierte en una página con sus paradas y sus huecos';
+    keep.setAttribute('aria-label', 'guardar como recorrido');
     keep.addEventListener('click', () => void promoteTrace(null));
     trail.append(keep);
   }
