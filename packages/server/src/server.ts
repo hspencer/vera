@@ -64,6 +64,7 @@ import {
 } from '@vera/store';
 import { HASH, objectPath, putObject } from '@vera/store/objects';
 import { forgetSecret, saveSecret, secretsOf, useSecret } from '@vera/store/secrets';
+import { exposuresOf, recordExposure, whoRead } from '@vera/store/exposures';
 import { parseDocument } from '@vera/importer/document';
 import {
   SCOPES,
@@ -432,6 +433,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     return graph
       .blocksOf(page.id)
       .map((block) => ({
+        // Se nombra el bloque para que lo declarado se pueda corregir donde se
+        // lee. Ver `DeclaredBlock.block`.
+        block: block.stableId,
         content: block.content,
         properties: graph
           .propertiesOf(block.stableId)
@@ -646,9 +650,81 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     return true;
   };
 
+  /**
+   * Quién está leyendo.
+   *
+   * Igual que al escribir: sale de la credencial y no de lo que diga quien
+   * pide. Sin credencial es el dueño, que es lo que hoy es cierto —la
+   * aplicación corre en localhost— y se anota como lo que es, sin credencial,
+   * en vez de disimular la ausencia.
+   */
+  const reader = (header: string | undefined): {
+    participant: ParticipantId;
+    credential: string | null;
+  } => {
+    const secret = bearerOf(header);
+    if (secret === null) return { participant: owner.id, credential: null };
+    const resolved = resolveSecret(store, secret);
+    if (!resolved.ok) return { participant: owner.id, credential: null };
+    return { participant: resolved.credential.participant, credential: resolved.credential.id };
+  };
+
+  /** Qué cliente dice ser. Se registra y no se cree. */
+  const clientOf = (request: IncomingMessage): string | null => {
+    const said =
+      request.headers['mcp-name'] ??
+      request.headers['x-vera-client'] ??
+      request.headers['user-agent'];
+    const one = Array.isArray(said) ? said[0] : said;
+    return one === undefined ? null : one.slice(0, 200);
+  };
+
   const handle = (request: IncomingMessage, response: ServerResponse): void => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     const path = url.pathname;
+
+    /*
+     * Anotar que algo salió.
+     *
+     * @invariant NoDeliveryWithoutItsRecord: se anota antes de escribir en el
+     * cable. Al revés, un proceso que se cae entre responder y anotar convierte
+     * una lectura en una lectura invisible, que es justo lo que este registro
+     * existe para que no pase.
+     */
+    const note = (
+      surface: string,
+      subject: string,
+      volume: number,
+      delivered: readonly string[] = [],
+      outcome = 'served',
+    ): void => {
+      const who = reader(request.headers.authorization);
+      recordExposure(store, {
+        participant: who.participant,
+        credential: who.credential,
+        client: clientOf(request),
+        surface,
+        subject,
+        delivered,
+        outcome,
+        volume,
+        at: Date.now(),
+      });
+    };
+
+    /** Entregar memoria: se anota lo que sale, y después sale. */
+    const deliver = (
+      payload: unknown,
+      about: { surface: string; subject: string; delivered?: readonly string[] },
+    ): void => {
+      const body = JSON.stringify(payload);
+      note(about.surface, about.subject, body.length, about.delivered ?? []);
+      response.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+        'content-length': Buffer.byteLength(body),
+      });
+      response.end(body);
+    };
 
     if (request.method === 'POST' && path === '/operations') {
       const chunks: Buffer[] = [];
@@ -1680,12 +1756,17 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 : null,
           });
         }
-        send(response, 200, {
-          block: id,
-          alive: graph.block(id) !== undefined,
-          now: graph.block(id)?.content ?? null,
-          states: said,
-        });
+        // La historia de un bloque es todo lo que ese bloque dijo alguna vez,
+        // incluido lo que se borró: se lleva más que leerlo.
+        deliver(
+          {
+            block: id,
+            alive: graph.block(id) !== undefined,
+            now: graph.block(id)?.content ?? null,
+            states: said,
+          },
+          { surface: 'GET /blocks/:id/history', subject: id, delivered: [id] },
+        );
         return;
       }
 
@@ -2476,6 +2557,13 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           return;
         }
 
+        // El papel y el PDF son la página entera, compuesta para irse de aquí.
+        // El PDF de verdad se compone pidiéndose el papel a sí mismo por el
+        // bucle local, así que ese viaje interno queda anotado también: es la
+        // única lectura del registro que no sale a ninguna parte, y verla
+        // repetida es la señal de que alguien está bajando páginas en papel.
+        note(asPdf ? 'GET /pages/:id/pdf' : 'GET /pages/:id/paper', page.id, 0, [page.id]);
+
         if (!asPdf) {
           const html = paperHtml({
             title: page.title,
@@ -2540,6 +2628,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         }
         const { text } = renderPage(graph, page);
         const body = Buffer.from(text, 'utf8');
+        // Esto es la página entera en texto plano, lista para pegarse en otra
+        // parte: la forma más completa en que el corpus sale de casa.
+        note('GET /pages/:id/markdown', page.id, text.length, [page.id]);
         response.writeHead(200, {
           'content-type': 'text/markdown; charset=utf-8',
           'content-length': body.byteLength,
@@ -2558,7 +2649,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           send(response, 404, { error: 'no such page' });
           return;
         }
-        send(response, 200, {
+        deliver({
           id: page.id,
           title: page.title,
           visibility: page.visibility,
@@ -2730,6 +2821,12 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             }
             return [...seen.values()];
           })(),
+        }, {
+          surface: 'GET /pages/:id',
+          subject: page.id,
+          // Abrir una página se lleva la página entera y sus bloques: eso es lo
+          // que se anota, y no sólo el título por el que se pidió.
+          delivered: [page.id, ...graph.blocksOf(page.id).map((block) => block.stableId)],
         });
         return;
       }
@@ -2764,8 +2861,18 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       }
 
       if (path === '/search') {
-        const outcome = graph.search({ text: url.searchParams.get('q') ?? '', participant });
-        send(response, 200, outcome.hits);
+        const asked = url.searchParams.get('q') ?? '';
+        const outcome = graph.search({ text: asked, participant });
+        /*
+         * Una búsqueda que devolvió doce extractos expuso doce cosas, y el
+         * registro tiene que poder nombrarlas: buscar es la manera barata de
+         * llevarse el corpus a trozos sin abrir una sola página.
+         */
+        deliver(outcome.hits, {
+          surface: 'GET /search',
+          subject: asked,
+          delivered: outcome.hits.map((hit) => hit.block ?? hit.page),
+        });
         return;
       }
 
@@ -2773,6 +2880,14 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         const centre = decodeURIComponent(path.slice('/graph/'.length));
         const depth = Number(url.searchParams.get('depth') ?? '2');
         const hood = graph.neighbourhood({ centre, depth, participant });
+        // El vecindario entrega títulos y aristas de páginas que nadie pidió por
+        // su nombre: pedir profundidad 4 desde una página es llevarse el mapa.
+        note(
+          'GET /graph/:centre',
+          `${centre} · profundidad ${depth}`,
+          0,
+          hood.nodes.map((node) => node.page),
+        );
         // La forma que ya consumen renderGraph y renderGraph3D de constel.
         send(response, 200, {
           nodes: hood.nodes.map((node) => ({
@@ -2804,6 +2919,39 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               channel: op.submission.channel,
             })),
         );
+        return;
+      }
+
+      /*
+       * El registro de exposición, para poder mirarlo.
+       *
+       * Un registro que no se puede leer no vigila nada. Dos preguntas: qué se
+       * ha llevado alguien —`?participant=`— y quién se ha llevado esto
+       * —`?subject=`—, que es la que uno se hace al encontrar una página que no
+       * debería haber salido de casa.
+       *
+       * Mirar el registro no se anota a sí mismo: haría crecer el registro cada
+       * vez que se abre y el registro dejaría de ser sobre el corpus.
+       */
+      if (path === '/exposures') {
+        const subject = url.searchParams.get('subject');
+        const who = url.searchParams.get('participant');
+        const most = Number(url.searchParams.get('most') ?? '100');
+        const found =
+          subject !== null
+            ? whoRead(store, subject, most)
+            : exposuresOf(store, {
+                participant: who ?? undefined,
+                since: Number(url.searchParams.get('since') ?? '0'),
+                most,
+              });
+        send(response, 200, {
+          count: found.length,
+          exposures: found.map((one) => ({
+            ...one,
+            name: graph.participant(one.participant)?.name ?? one.participant,
+          })),
+        });
         return;
       }
 

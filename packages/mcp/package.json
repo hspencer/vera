@@ -1,0 +1,19 @@
+{
+  "name": "@vera/mcp",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "La puerta MCP de Vera: una memoria que otras inteligencias pueden leer",
+  "exports": {
+    ".": "./src/main.ts",
+    "./tools": "./src/tools.ts",
+    "./client": "./src/client.ts"
+  },
+  "bin": {
+    "vera-mcp": "./src/main.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@vera/server": "*"
+  }
+}

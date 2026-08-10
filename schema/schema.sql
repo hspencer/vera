@@ -477,3 +477,60 @@ CREATE TABLE IF NOT EXISTS service_secrets (
     last_used_at  INTEGER,
     PRIMARY KEY (graph_id, page_id, name)
 ) STRICT;
+
+
+-- ---------------------------------------------------------------------------
+-- Registro de exposición: qué memoria salió, hacia dónde y bajo qué concesión
+-- ---------------------------------------------------------------------------
+
+-- El log de operaciones cuenta lo que se escribió, y eso bastaba mientras todo
+-- el que entraba escribía. Una inteligencia artificial hace algo que el log no
+-- ve: recibe. Se lleva páginas, extractos y contexto sin modificar una coma, y
+-- de eso no quedaba rastro.
+--
+-- Vive en la API y no en el adaptador MCP, y la diferencia es la que decide si
+-- esto sirve: en MCP, el mayor lector del corpus —un agente que entra por HTTP
+-- directo— quedaría fuera del registro y el registro sería decorativo. Aquí lo
+-- hereda toda puerta.
+--
+-- Se anota lo entregado y no lo consultado: una búsqueda que devolvió doce
+-- extractos expuso doce cosas, y el registro tiene que poder nombrarlas. El
+-- texto completo de la respuesta no se guarda: copiarlo siempre dejaría una
+-- segunda copia del corpus dentro del registro que existía para vigilarlo.
+--
+-- Ver specs/mcp-server.allium, contrato WhatWasReadIsRecorded.
+CREATE TABLE IF NOT EXISTS exposures (
+    id              TEXT PRIMARY KEY,
+    graph_id        TEXT NOT NULL REFERENCES graphs (id),
+    -- Quién se lo llevó. Sale de la credencial, nunca de lo que diga quien pide.
+    participant_id  TEXT NOT NULL REFERENCES participants (id),
+    -- Con qué credencial, para poder revocar sabiendo qué se revoca. Nulo cuando
+    -- la lectura entró sin credencial, que es hoy el caso del cliente web: no se
+    -- oculta esa ausencia, se registra como lo que es.
+    credential_id   TEXT REFERENCES access_tokens (id),
+    -- Qué cliente dijo ser. Se registra y no se cree.
+    client          TEXT,
+    -- Por dónde entró y qué pidió.
+    surface         TEXT NOT NULL,
+    subject         TEXT NOT NULL,
+    outcome         TEXT NOT NULL,
+    -- Cuánto viajó, en caracteres. Un número tosco a propósito: sirve para ver
+    -- de un vistazo cuánta memoria salió por ahí, no para facturar.
+    volume          INTEGER NOT NULL,
+    at              INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS exposures_by_participant ON exposures (participant_id, at);
+CREATE INDEX IF NOT EXISTS exposures_by_time ON exposures (at);
+
+-- Y qué se entregó exactamente en esa llamada: las direcciones estables de las
+-- páginas y los bloques que viajaron. Una tabla aparte porque una sola búsqueda
+-- expone muchas cosas, y porque preguntar «quién ha leído esta página» tiene que
+-- ser una consulta y no una lectura de todo el registro.
+CREATE TABLE IF NOT EXISTS exposed_subjects (
+    exposure_id  TEXT NOT NULL REFERENCES exposures (id) ON DELETE CASCADE,
+    subject_id   TEXT NOT NULL,
+    PRIMARY KEY (exposure_id, subject_id)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS exposed_by_subject ON exposed_subjects (subject_id);

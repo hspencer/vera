@@ -233,11 +233,46 @@ const addDrawnChannel: Migration = {
   },
 };
 
+/**
+ * 5 — el registro de exposición.
+ *
+ * El log dice lo que se escribió; nada decía lo que se leyó. Ver
+ * specs/mcp-server.allium y las tablas en schema.sql, que son esta misma forma
+ * dicha en el sitio de destino.
+ */
+const addExposureLog: Migration = {
+  version: 5,
+  name: 'registro de exposición',
+  apply(db) {
+    db.exec(`CREATE TABLE IF NOT EXISTS exposures (
+      id              TEXT PRIMARY KEY,
+      graph_id        TEXT NOT NULL REFERENCES graphs (id),
+      participant_id  TEXT NOT NULL REFERENCES participants (id),
+      credential_id   TEXT REFERENCES access_tokens (id),
+      client          TEXT,
+      surface         TEXT NOT NULL,
+      subject         TEXT NOT NULL,
+      outcome         TEXT NOT NULL,
+      volume          INTEGER NOT NULL,
+      at              INTEGER NOT NULL
+    ) STRICT`);
+    db.exec('CREATE INDEX IF NOT EXISTS exposures_by_participant ON exposures (participant_id, at)');
+    db.exec('CREATE INDEX IF NOT EXISTS exposures_by_time ON exposures (at)');
+    db.exec(`CREATE TABLE IF NOT EXISTS exposed_subjects (
+      exposure_id  TEXT NOT NULL REFERENCES exposures (id) ON DELETE CASCADE,
+      subject_id   TEXT NOT NULL,
+      PRIMARY KEY (exposure_id, subject_id)
+    ) STRICT`);
+    db.exec('CREATE INDEX IF NOT EXISTS exposed_by_subject ON exposed_subjects (subject_id)');
+  },
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   addWalkedChannel,
   addPageOriginCreatedAt,
   addServiceSecrets,
   addDrawnChannel,
+  addExposureLog,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

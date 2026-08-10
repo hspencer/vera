@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "vera": {
+      "command": "node",
+      "args": [
+        "--experimental-strip-types",
+        "--no-warnings",
+        "packages/mcp/src/main.ts"
+      ],
+      "env": {
+        "VERA_URL": "http://127.0.0.1:4173",
+        "VERA_CLIENT": "claude-code"
+      }
+    }
+  }
+}

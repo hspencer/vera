@@ -93,6 +93,19 @@ contract AGrantIsNarrowerThanAScope {
         -- participantes y emitir credenciales no vienen dentro de `write` nunca,
         -- ni por comodidad ni por parecerse.
 
+    @invariant TheHouseAgentIsAnExceptionAndItIsWritten
+        -- Cotito, el bibliotecario, tiene hoy permiso para todo, incluido
+        -- descartar. Es una decisión del dueño y no un descuido: escribe en el
+        -- corpus a diario y la salvaguarda que se eligió es la autoría por
+        -- bloque, no la restricción del alcance.
+        --
+        -- Queda escrita aquí porque una excepción que la especificación no
+        -- nombra es una excepción que nadie recuerda haber tomado, y porque el
+        -- riesgo real no es Cotito: es que «Cotito» nombra una plaza y no una
+        -- entidad conocida —OpenClaw puede cambiar de modelo o de proveedor sin
+        -- que Vera se entere—. Se revisa cuando exista el registro de
+        -- exposición con historia suficiente para ver qué se lleva.
+
     @invariant WhatIsForbiddenIsNotEvenVisible
         -- Una conexión no descubre títulos, extractos ni conteos de lo que no
         -- puede leer. Un error no distingue entre «no existe» y «no te toca»:
@@ -351,4 +364,10 @@ open question "¿Qué lecturas se conservan con detalle, cuáles sólo como huel
 -- Y una que aparece al escribir esto: hoy las rutas de lectura de Vera no exigen
 -- alcance `read`, y sin credencial la escritura local se asume del dueño. Las dos
 -- cosas son ciertas sólo detrás de localhost.
+--
+-- Contestada a medias al implementar M1: el registro de exposición se construyó
+-- en la API y no en el adaptador MCP, porque puesto en MCP el mayor lector del
+-- corpus —un agente que entra por HTTP directo— quedaría fuera del registro. La
+-- otra mitad sigue abierta: anotar quién leyó no es lo mismo que exigir alcance
+-- para leer, y eso todavía no se exige en ninguna puerta.
 open question "¿Se cierra primero la autorización de lectura en la API —y entonces MCP hereda una frontera que ya existe— o se cierra en MCP y la API queda con una puerta más ancha que la que se está construyendo?"
