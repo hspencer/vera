@@ -3,6 +3,7 @@
 // Toda escritura pasa por submitOperation, igual que en el servidor y en el
 // dominio: el cliente no tiene ninguna vía propia para cambiar el grafo.
 
+import type { Trail } from '@vera/core';
 import type { GraphData } from './graph/types.ts';
 import type { Recording } from './voice.ts';
 
@@ -42,6 +43,13 @@ export interface BlockRefView {
 export interface PageView {
   id: string;
   title: string;
+  /**
+   * La página leída como recorrido, cuando dice que su orden es un argumento.
+   *
+   * Viaja con la página porque leer un recorrido es leer su página. Nulo en las
+   * demás, que son casi todas. Ver packages/core/src/trail.ts.
+   */
+  trail?: Trail | null;
   visibility: 'private' | 'public';
   createdAt: number;
   originCreatedAt: number | null;
@@ -357,9 +365,24 @@ function originId(): string {
   return `web:${crypto.randomUUID()}`;
 }
 
-async function json<T>(path: string): Promise<T> {
-  const response = await fetch(path);
-  if (!response.ok) throw new Error(`${response.status} en ${path}`);
+async function json<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(
+    path,
+    init === undefined
+      ? undefined
+      : { headers: { 'content-type': 'application/json' }, ...init },
+  );
+  /*
+   * Un error del servidor viaja con su explicación, y la explicación importa.
+   *
+   * Una negativa de cerco dice qué cerco es y qué quedaba fuera —@guarantee
+   * RefusalsSayWhy—, y perderla para dejar sólo «403 en /agents/…» obligaría a
+   * abrir la consola de red para saber qué pasó.
+   */
+  if (!response.ok) {
+    const said = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(said?.error ?? `${response.status} en ${path}`);
+  }
   return (await response.json()) as T;
 }
 
@@ -405,6 +428,42 @@ export const api = {
    * lo que hay que ver: dónde lo decidido y lo que pasa no coinciden.
    */
   mcp: () => json<MCPView>('/mcp'),
+
+  /*
+   * Las credenciales, sin secretos: @guarantee TheSecretIsShownOnce.
+   *
+   * El secreto sólo viaja en la respuesta de `issueCredential`, la única vez que
+   * existe fuera de su resumen. Si se pierde, se emite otra y se retira ésta; no
+   * hay forma de volver a leerlo y es a propósito.
+   */
+  credentials: () => json<CredentialView[]>('/agents/credentials'),
+
+  issueCredential: (said: {
+    participant: string;
+    scopes: string[];
+    label: string;
+  }): Promise<(CredentialView & { secret: string }) | { error: string }> =>
+    json('/agents/credentials', { method: 'POST', body: JSON.stringify(said) }),
+
+  revokeCredential: (id: string) =>
+    json<CredentialView>(`/agents/credentials/${encodeURIComponent(id)}/revoke`, {
+      method: 'POST',
+    }),
+
+  /** Cercar una credencial: qué clase puede plantar y con qué se marca lo suyo. */
+  confine: (id: string, said: { kind: string; source: string | null }) =>
+    json(`/agents/credentials/${encodeURIComponent(id)}/confinement`, {
+      method: 'POST',
+      body: JSON.stringify(said),
+    }),
+
+  /** Y quitarle el cerco, que es ampliarle el permiso y no retirárselo. */
+  unconfine: (id: string) =>
+    json(`/agents/credentials/${encodeURIComponent(id)}/confinement`, { method: 'DELETE' }),
+
+  /** Admitir un agente al grafo, para poder emitirle una credencial. */
+  admitAgent: (said: { id: string; name: string }) =>
+    json('/agents', { method: 'POST', body: JSON.stringify(said) }),
 
   /**
    * La clave entera, cuando su dueño pulsa el ojo.
@@ -608,7 +667,15 @@ export const api = {
    * pantalla llega con denominación de origen humana, como una grabación, y el
    * bloque lo conserva. Ver specs/hand-drawing.allium.
    */
-  async submit(change: Change, channel: 'typed_text' | 'drawn' = 'typed_text'): Promise<SubmitResult> {
+  async submit(
+    change: Change,
+    /*
+     * `walked` es la otra excepción: lo que Vera transcribe de por dónde se
+     * pasó al promover un rastro. No lo tecleó nadie y no lo generó un modelo;
+     * ocurrió. Ver promote.ts y specs/trail.allium.
+     */
+    channel: 'typed_text' | 'drawn' | 'walked' = 'typed_text',
+  ): Promise<SubmitResult> {
     const response = await fetch('/operations', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -679,10 +746,70 @@ export interface MCPConnection {
   seen: SeenClient | null;
 }
 
+/**
+ * Con qué datos se enchufa una IA a esta instancia.
+ *
+ * No son decisiones: son hechos de este despliegue, calculados por el servidor.
+ * Ver packages/server/src/mcp-connect.ts.
+ */
+export interface MCPConnect {
+  transport: 'stdio';
+  command: string;
+  args: string[];
+  cwd: string;
+  url: string;
+  /** Y desde otro equipo, cuando alguien lo declaró. Nulo si no se sabe. */
+  reachableAt: string | null;
+  node: string;
+  /** Si la puerta está donde se dice que está. */
+  present: boolean;
+}
+
+/** Una credencial, sin su secreto, con el cerco que lleve. */
+export interface CredentialView {
+  id: string;
+  participant: string;
+  scopes: string[];
+  status: 'active' | 'revoked';
+  label: string;
+  issuedAt: number;
+  expiresAt: number | null;
+  revokedAt: number | null;
+  lastUsedAt: number | null;
+  /** Qué clase puede plantar y con qué se marca. Nulo cuando escribe sin cerco. */
+  confinement: {
+    token: string;
+    kind: string;
+    source: string | null;
+    grantedBy: string;
+    grantedAt: number;
+  } | null;
+}
+
+/**
+ * Una página que alguien pidió que se fuera.
+ *
+ * Una credencial cercada no borra —dejaría una ausencia, y una ausencia no se
+ * revisa—, así que lo que puede hacer con una página suya que ya no sirve es
+ * decirlo con su motivo. Ver specs/confined-writing.allium.
+ */
+export interface DiscardRequest {
+  page: string;
+  title: string;
+  reason: string;
+  by: string | null;
+  byName: string | null;
+  at: number | null;
+}
+
 export interface MCPView {
   id: string | null;
   title?: string;
   stage?: string | null;
   connections: MCPConnection[];
   undeclared: SeenClient[];
+  connect?: MCPConnect;
+  marked?: DiscardRequest[];
+  /** Con qué palabra se marca en este corpus. La declara la ontología. */
+  markKey?: string;
 }

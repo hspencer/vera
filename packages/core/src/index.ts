@@ -60,6 +60,7 @@ export type {
   FieldKind,
   ObjectDeclaration,
   PropertyDeclaration,
+  PropertySubject,
 } from './ontology.ts';
 
 /*
@@ -161,3 +162,17 @@ export type {
   UnportedQuery,
   Visibility,
 } from './types.ts';
+
+export {
+  TESTIMONY_KEY,
+  TRAIL_KIND,
+  isTrail,
+  readTrail,
+  readingOrder,
+  type CrossingKind,
+  type Trail,
+  type TrailBlock,
+  type TrailCrossing,
+  type TrailNode,
+  type TrailReading,
+} from './trail.ts';

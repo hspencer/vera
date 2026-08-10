@@ -39,6 +39,8 @@ import { is } from './bindings.ts';
 import { icon } from './icons.ts';
 import { isMCPPage, renderMCP } from './mcp-page.ts';
 import { isServicePage, pickBibliography, renderService } from './service-page.ts';
+import { TRAIL_KIND } from '@vera/core';
+import { renderTrailBand, trailMarks, type TrailMark } from './trail-page.ts';
 import { createPage } from './pages.ts';
 import { createSession, type SaveIntent } from './session.ts';
 import {
@@ -2300,6 +2302,39 @@ export function renderOutliner(
         run: () => void callbacks.onUndo?.('rehacer'),
       },
       {
+        /*
+         * Declarar que el orden de esta página es un argumento, o retirarlo.
+         *
+         * No hay acto de creación de recorridos: hay una propiedad, y la escribe
+         * quien escribe cualquier propiedad. Poner la propiedad no reordena
+         * nada, no crea bloques y no cambia el mapa de nadie; lo único que
+         * cambia es que a partir de ahí el orden se puede leer como ruta, porque
+         * alguien ha dicho que era a propósito.
+         * @invariant DeclaringNoticesAndDoesNotCreate.
+         *
+         * Y retirarlo deja el texto. Un argumento que uno ya no sostiene sigue
+         * siendo una página que dice lo que decía; lo único que se retira es la
+         * afirmación de que su orden hay que leerlo como ruta. Tiene que ser
+         * barato o nadie lo retiraría nunca.
+         * @invariant RetiringDestroysNothing.
+         */
+        label: trail === null ? 'Leer su orden como un recorrido' : 'Dejar de leerlo como recorrido',
+        run: () => {
+          void submitQuietly(
+            trail === null
+              ? {
+                  kind: 'set_property',
+                  page: page.id,
+                  propertyKey: corpusNames().kind,
+                  propertyValue: TRAIL_KIND,
+                }
+              : { kind: 'remove_property', page: page.id, propertyKey: corpusNames().kind },
+          ).then((applied) => {
+            if (applied) callbacks.onReload(null);
+          });
+        },
+      },
+      {
         // Deliberado y sobre esta página, nunca de oficio: resolver un enlace es
         // preguntarle al servidor que lo tiene, y eso le dice que aquí alguien
         // está leyendo sobre esto.
@@ -2353,6 +2388,19 @@ export function renderOutliner(
     });
   }
 
+  /*
+   * Y si la página dice que su orden es un argumento, su cinta va aquí.
+   *
+   * Encima del texto y no en su lugar: el recorrido se compone escribiendo, así
+   * que el texto tiene que seguir siendo el texto. Ver trail-page.ts.
+   */
+  const trail = page.trail ?? null;
+  const marks: Map<string, TrailMark> = trail === null ? new Map() : trailMarks(trail);
+  if (trail !== null) {
+    container.classList.add('is-trail');
+    header.after(renderTrailBand(trail));
+  }
+
   const list = document.createElement('div');
   list.className = 'blocks';
   container.append(list);
@@ -2377,11 +2425,13 @@ export function renderOutliner(
    */
   if (isMCPPage(page.properties)) {
     list.hidden = true;
-    void renderMCP((change) =>
-      submitQuietly(change).then((applied) => {
-        if (applied) callbacks.onReload(null);
-        return applied;
-      }),
+    void renderMCP(
+      (change) =>
+        submitQuietly(change).then((applied) => {
+          if (applied) callbacks.onReload(null);
+          return applied;
+        }),
+      toast,
     ).then((made) => {
       list.hidden = false;
       if (made === null) return;
@@ -2459,14 +2509,48 @@ export function renderOutliner(
       generated ? 'generated' : '',
     ].filter((part) => part !== '').join(' ');
 
+    /*
+     * En un recorrido, la viñeta de una parada es su número.
+     *
+     * Es lo que un recorrido tiene y una página no: sus referencias están en un
+     * orden y ese orden es lo que se afirma. El número no se renumera cuando un
+     * puente se corta —el argumento sigue teniendo siete paradas aunque la cuarta
+     * ya no exista— y por eso se tacha en vez de desaparecer.
+     * @invariant ABrokenBridgeIsDrawnBroken.
+     */
+    const mark = marks.get(node.block.stableId);
+    if (mark !== undefined) {
+      if (mark.ordinal !== null) {
+        row.classList.add('trail-stop');
+        bullet.dataset['ordinal'] = String(mark.ordinal);
+        if (mark.broken) row.classList.add('trail-broken');
+      }
+      /*
+       * Y la costura hasta aquí: continua por donde el corpus ya iba,
+       * discontinua por donde sólo va este argumento. Es la aportación con
+       * forma, y se lee sin contar nada.
+       */
+      if (mark.arriving !== null) {
+        row.classList.add(mark.arriving === 'by_path' ? 'trail-seam' : 'trail-stitch');
+        if (mark.connective) row.classList.add('trail-connective');
+        if (mark.silent) row.classList.add('trail-silent');
+      }
+    }
+
     // Un bloque puede llevar las dos marcas y no se contradicen: dictado por
     // Herbert y reescrito después por un agente. Una dice de dónde vinieron las
     // palabras y la otra de quién son ahora.
     const said: string[] = [node.block.stableId];
     if (origin !== undefined) said.push(`dicho en voz: ${origin}`);
     if (generated) said.push(`escrito por ${hand.participant}`);
+    if (mark?.ordinal !== null && mark?.ordinal !== undefined) {
+      said.push(mark.broken ? `parada ${mark.ordinal}, ya no lleva a ninguna parte` : `parada ${mark.ordinal}`);
+    }
+    if (mark?.arriving === 'across_open_ground') said.push('se llega a campo través');
+    if (mark?.arriving === 'by_path') said.push('se llega por un camino que ya existía');
     bullet.title = said.join(' · ');
-    bullet.textContent = '•';
+    // El punto lo dibuja la hoja de estilo y no un carácter: llena si lo escribió
+    // una mano y hueca si una máquina, del mismo tamaño las dos. Ver `.bullet`.
     bullet.setAttribute('aria-haspopup', 'menu');
     bullet.setAttribute('aria-label', 'acciones del bloque');
 
@@ -2947,7 +3031,6 @@ export function renderOutliner(
 
     const mark = document.createElement('span');
     mark.className = 'bullet phantom';
-    mark.textContent = '•';
     mark.setAttribute('aria-hidden', 'true');
 
     const body = document.createElement('div');

@@ -15,6 +15,7 @@ import {
 } from './outliner.ts';
 import { onRecording } from './audio-block.ts';
 import { isDay, today } from './autocomplete.ts';
+import { GOVERNING_KINDS } from './governing-table.ts';
 import { renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
 import { voice } from './voice.ts';
@@ -22,7 +23,7 @@ import { brandMark, icon, type IconName } from './icons.ts';
 import { is } from './bindings.ts';
 import { suggestTitles } from '@vera/core';
 import { createPage } from './pages.ts';
-import { forgetPositions, renderGraph, selectNode } from './graph/render.ts';
+import { forgetPositions, renderGraph, selectNode, type ThreadSettings } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D, forgetCamera, selectNode3D } from './graph/render3d.ts';
 import {
   applyTokens,
@@ -35,6 +36,12 @@ import {
   type WorkspaceLayout,
 } from './tokens.ts';
 import { pagesOf, walked, type NavigationGesture, type TraceStep } from './trace.ts';
+import {
+  TESTIMONY_KEY,
+  blocksFor,
+  provisionalTitle,
+  seedTrail,
+} from './promote.ts';
 
 const PHONE = 640;
 
@@ -153,18 +160,10 @@ function drawMemory(host: HTMLElement): void {
   // parte, mientras el renglón de «Ontología» seguía diciendo que gobernaba los
   // tipos y las propiedades, que se habían mudado a esas dos páginas.
   //
-  // Lo que queda escrito aquí es sólo el nombre legible de cada clase. Una que
-  // este cliente no conozca se dibuja igual, con su clave a la vista: el corpus
-  // puede declarar algo que esta versión todavía no sabe nombrar, y esconderlo
-  // sería volver a tener la lista privada que el invariante prohíbe.
-  const KNOWN: { key: string; label: string; what: string }[] = [
-    { key: 'ontology', label: 'Ontología', what: 'con qué vocabulario se clasifica' },
-    { key: 'properties', label: 'Propiedades', what: 'cada propiedad y qué clase de campo es' },
-    { key: 'objects', label: 'Objetos', what: 'cada clase de cosa y qué propiedades la constituyen' },
-    { key: 'instructions', label: 'Instrucciones', what: 'lo que el bibliotecario tiene dicho' },
-    { key: 'presentation', label: 'Presentación', what: 'los tokens de diseño' },
-    { key: 'service', label: 'Servicio', what: 'con qué servicio de fuera habla el corpus' },
-  ];
+  // Los nombres legibles de cada clase salen de `GOVERNING_KINDS`, que es de
+  // donde los toma también la cabecera de esas páginas. Escritos dos veces
+  // acabarían diciendo dos cosas.
+  const KNOWN = GOVERNING_KINDS;
 
   const heading = document.createElement('h3');
   heading.className = 'settings-group';
@@ -465,6 +464,14 @@ async function openPage(
   // La identidad manda a partir de aquí: la URL pudo nombrarla por su título.
   workspace.activePage = page.id;
   id = page.id;
+  openTrail =
+    page.trail == null || page.trail.route.length < 2
+      ? null
+      : {
+          page: page.id,
+          stops: page.trail.route.map((one) => ({ page: one.page, ordinal: one.ordinal })),
+          kinds: page.trail.crossings.map((one) => one.kind),
+        };
   nameWindow(page.title);
 
   // La dirección sigue a la página, salvo cuando es la dirección la que trajo
@@ -843,6 +850,17 @@ async function openTitle(title: string, gesture: NavigationGesture): Promise<voi
  * mover el alcance, abrir otra página. Sin turno, la respuesta que llegue última
  * dibuja, aunque sea la de la pregunta vieja.
  */
+/*
+ * El recorrido que está abierto, para que el mapa dibuje su hilo.
+ *
+ * Vive aquí y no en el workspace porque no es estado del taller que haya que
+ * conservar: es lo que la página abierta resultó ser, y cambia con ella. Se pone
+ * al abrir la página y se quita al abrir cualquier otra — cerrado, un recorrido
+ * vuelve a ser una página como las demás, con su nodo y sus enlaces, y así es
+ * como se le encuentra sin saber que existía.
+ */
+let openTrail: ThreadSettings | null = null;
+
 let graphTurn = 0;
 
 async function drawGraph(): Promise<void> {
@@ -898,6 +916,8 @@ async function drawGraph(): Promise<void> {
     // menos. En 2D los nombres no se traslapan: dos nombres uno encima de otro
     // no son ninguno de los dos.
     nodeStyle: 'title' as const,
+    // Si lo abierto es un recorrido, su hilo. Ver ThreadSettings en render.ts.
+    thread: openTrail,
     fontFamily:
       getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim() ||
       'system-ui, sans-serif',
@@ -954,8 +974,103 @@ function drawTrail(): void {
     pill.className = id === workspace.activePage ? 'trail-pill here' : 'trail-pill';
     pill.textContent = page?.title ?? id;
     pill.addEventListener('click', () => void openPage(id));
+    /*
+     * Y desde cualquier parada, guardar el tramo que va de ahí hasta aquí.
+     *
+     * Con el botón secundario y no con uno propio: el rastro es para volver, y
+     * un botón por paso al lado de cada nombre convertiría la fila en una
+     * botonera. Quien quiera promover lo hace pulsando donde quiere empezar.
+     */
+    pill.title = `volver a ${page?.title ?? id} · con el botón derecho, guardar el recorrido desde aquí`;
+    pill.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      void promoteTrace(id);
+    });
     trail.append(pill);
   }
+
+  /*
+   * Guardar lo andado.
+   *
+   * Uno solo y al final de la fila: el gesto corriente sobre el rastro es
+   * volver, y promover es el que se hace de vez en cuando. Guarda el rastro
+   * entero; para empezar más tarde se pulsa con el botón derecho en la parada
+   * por donde se quiere empezar.
+   */
+  if (workspace.trace.length >= 2) {
+    const keep = document.createElement('button');
+    keep.type = 'button';
+    keep.className = 'trail-keep';
+    keep.textContent = 'guardar como recorrido';
+    keep.title = 'lo andado se convierte en una página con sus paradas y sus huecos';
+    keep.addEventListener('click', () => void promoteTrace(null));
+    trail.append(keep);
+  }
+}
+
+/**
+ * Convierte lo andado en un recorrido, desde una parada o desde el principio.
+ *
+ * Guardar un tramo no vacía el rastro ni lo marca: se sigue andando y se sigue
+ * acumulando, y el mismo tramo se puede guardar dos veces si a alguien le da por
+ * contar dos cosas distintas con el mismo paseo.
+ * @invariant TheTraceItselfIsNotConsumed.
+ */
+async function promoteTrace(from: string | null): Promise<void> {
+  const at = from === null ? 0 : workspace.trace.findIndex((step) => step.page === from);
+  const trace = workspace.trace.slice(at < 0 ? 0 : at);
+  if (trace.length === 0) {
+    notice('No hay nada andado que guardar.');
+    return;
+  }
+
+  const titleOf = (id: string): string =>
+    pages.find((one) => one.id === id)?.title ?? id;
+  const title = provisionalTitle(new Date(), (name) =>
+    pages.some((one) => one.title.trim().toLowerCase() === name.trim().toLowerCase()),
+  );
+
+  const seed = seedTrail(trace, { title });
+  const born = await api.submit(seed.page as never);
+  if (born.status !== 'applied') {
+    notice(`No se pudo crear el recorrido: ${born.status === 'rejected' ? born.reason : 'error'}.`);
+    return;
+  }
+  const page = born.subjectId;
+
+  const write = async (change: unknown, channel: 'typed_text' | 'walked' = 'typed_text') =>
+    api.submit(change as never, channel);
+
+  for (const change of seed.properties(page)) await write(change);
+
+  let position = 0;
+  for (const one of blocksFor(trace, titleOf)) {
+    position += 1;
+    const block = await write({
+      kind: 'create_block',
+      page,
+      parent: null,
+      position,
+      content: one.content,
+    });
+    // El testimonio entra por el canal `walked`: no lo tecleó nadie, lo transcribe
+    // Vera de lo que ocurrió. @invariant ChannelFollowsParticipantKind.
+    if (block.status === 'applied' && one.testimony !== null) {
+      await write(
+        {
+          kind: 'set_property',
+          block: block.subjectId,
+          propertyKey: TESTIMONY_KEY,
+          propertyValue: one.testimony,
+        },
+        'walked',
+      );
+    }
+  }
+
+  await loadPages();
+  await openPage(page, null, { gesture: 'opened_directly' });
+  notice('Guardado. Falta lo que hay entre una parada y la siguiente: eso es el argumento.');
 }
 
 async function refreshGraph(): Promise<void> {

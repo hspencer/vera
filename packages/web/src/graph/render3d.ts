@@ -28,6 +28,7 @@ import * as d3 from "d3";
 import { forceCenter, forceLink, forceManyBody, forceSimulation } from "d3-force-3d";
 import type { GraphData, GraphNode } from "./types.ts";
 import type { RenderSettings } from "./render";
+import { icon } from "../icons.ts";
 import {
   clampElevation,
   frameAround,
@@ -62,11 +63,18 @@ const WORLD_FONT_CENTRAL = 5.5;
  * Y cuánto se le deja medir en pantalla, pase lo que pase con la cámara.
  *
  * La perspectiva es correcta pero no es negociable con la legibilidad: por
- * debajo de ocho píxeles un nombre es una mancha, y por encima de veintidós tapa
- * a sus vecinos. Se acota en pantalla y no en el mundo, que es donde importa.
+ * debajo del suelo un nombre es una mancha, y por encima del techo tapa a sus
+ * vecinos. Se acota en pantalla y no en el mundo, que es donde importa.
+ *
+ * El par era 8 y 22, calibrado a ojo y corto: con el mapa lleno, casi todos los
+ * nombres caían en el suelo y el mapa se leía como una mancha gris de la que
+ * había que acercarse para sacar cualquier palabra. Calibrado a 1.25 del
+ * anterior —diez y veintisiete y medio—, que es un cuarto más de cuerpo sin
+ * tocar la proporción entre uno y otro: el rango sigue siendo el mismo rango,
+ * sólo que más grande.
  */
-const SCREEN_FONT_MIN = 8;
-const SCREEN_FONT_MAX = 22;
+const SCREEN_FONT_MIN = 10;
+const SCREEN_FONT_MAX = 27.5;
 
 /** Un nombre se parte antes de atravesar el mapa. Igual que en dos dimensiones. */
 const MAX_LABEL_CHARS = 24;
@@ -196,6 +204,8 @@ type Drawn = {
   fontWorld: number;
   group: SVGGElement;
   texts: SVGTextElement[];
+  /** La flecha que abre, al final del nombre. Null si el nodo no lleva nombre. */
+  open: SVGGElement | null;
   /** Profundidad de la última proyección, para ordenar por lejanía. */
   depth: number;
   /** Dónde y de qué tamaño quedó en pantalla, para poder saber a qué se apunta. */
@@ -243,6 +253,10 @@ export function renderGraph3D(
     linkStroke: cssVar("--link-stroke", dark ? "#333842" : "#d5d7d2"),
     accent: cssVar("--accent", dark ? "#4a9ade" : "#045591"),
     visited: cssVar("--warm", "#ef7a1c"),
+    // Las dos direcciones, como en 2D y como en el pie de la página: el código
+    // de color de un enlace no puede cambiar según desde qué vista se mire.
+    linkIn: cssVar("--link-in", dark ? "#6fa8d0" : "#045591"),
+    linkOut: cssVar("--link-out", dark ? "#ee895d" : "#a84a0b"),
   };
 
   /**
@@ -374,6 +388,16 @@ export function renderGraph3D(
   edgeLayer.setAttribute("fill", "none");
   if (!showEdges) edgeLayer.style.display = "none";
 
+  /*
+   * El hilo del recorrido abierto, entre las aristas y los nombres.
+   *
+   * Debajo de los nombres para no taparlos y encima de las aristas porque es lo
+   * que se viene a ver. En tres dimensiones el hilo se proyecta como todo lo
+   * demás: son los mismos puntos, mirados desde donde esté la cámara.
+   */
+  const threadLayer = document.createElementNS(SVG_NS, "g");
+  threadLayer.setAttribute("class", "thread-layer");
+
   const nodeLayer = document.createElementNS(SVG_NS, "g");
   nodeLayer.setAttribute("class", "map3d-nodes");
   nodeLayer.setAttribute("font-family", fontFamily);
@@ -394,7 +418,7 @@ export function renderGraph3D(
    */
   nodeLayer.setAttribute("pointer-events", "none");
 
-  svg.append(edgeLayer, nodeLayer);
+  svg.append(edgeLayer, threadLayer, nodeLayer);
   container.append(svg);
 
   // ---------------------------------------------------------------------
@@ -409,6 +433,16 @@ export function renderGraph3D(
 
     const group = document.createElementNS(SVG_NS, "g");
     group.setAttribute("class", "map3d-node");
+    /*
+     * La página del recorrido abierto deja de dibujarse como nodo.
+     *
+     * Sigue en la simulación —sus enlaces son los que mantienen a sus paradas
+     * juntas— y sólo se deja de pintar: un argumento no está *al lado* de sus
+     * premisas sino *entre* ellas. @guarantee TheTrailsNodeBecomesTheThread.
+     */
+    if (settings.thread != null && node.id === settings.thread.page) {
+      group.setAttribute("display", "none");
+    }
     group.dataset["id"] = node.id;
     group.style.cursor = "pointer";
 
@@ -420,6 +454,62 @@ export function renderGraph3D(
       group.append(text);
       return text;
     });
+
+    /*
+     * La flecha que abre, como un carácter más al final del nombre.
+     *
+     * Existe desde el principio y se enseña sólo al señalar: crearla en ese
+     * momento obligaría a tocar el DOM en mitad de un gesto, que es justo lo que
+     * este dibujo evita en todas partes. Escondida no cuesta nada.
+     */
+    const open = lines.length > 0 ? document.createElementNS(SVG_NS, "g") : null;
+    if (open !== null) {
+      open.setAttribute("class", "map3d-open");
+      open.setAttribute("display", "none");
+      /*
+       * La única excepción a la capa sorda de arriba, y por la razón que la hizo
+       * sorda: lo que estorbaba era que ochenta rectángulos transparentes se
+       * taparan unos a otros y el de delante se quedara con los clics de los de
+       * detrás. Aquí no hay ochenta: hay uno, el del nombre señalado, y los
+       * demás están en `display:none`, que no recibe nada. Con un solo blanco en
+       * pie el navegador acierta mejor que ninguna cuenta.
+       */
+      open.setAttribute("pointer-events", "auto");
+      open.innerHTML = icon("arrow-up-right");
+      const glyph = open.firstElementChild;
+      if (glyph !== null) {
+        glyph.setAttribute("class", "map3d-open-arrow");
+        glyph.setAttribute("stroke", colors.accent);
+      }
+
+      /*
+       * El marco, encendido sólo con el puntero sobre la flecha misma.
+       *
+       * Señalar el nombre enciende la flecha; señalar la flecha tiene que decir
+       * otra cosa, porque es otro gesto con otra consecuencia —el nombre sólo
+       * selecciona, la flecha abre—. Sin esto, entre estar a punto de
+       * seleccionar y estar a punto de irse de la página no había ninguna
+       * diferencia visible, y la única forma de saber cuál de las dos iba a
+       * pasar era pulsar.
+       */
+      const frame = document.createElementNS(SVG_NS, "rect");
+      frame.setAttribute("class", "map3d-open-frame");
+      frame.setAttribute("fill", "none");
+      frame.setAttribute("stroke", colors.accent);
+      frame.setAttribute("opacity", "0");
+      frame.style.transition = "opacity 0.12s";
+      open.insertBefore(frame, open.firstChild);
+
+      // El blanco al que se apunta: el trazo es una línea de dos píxeles, y
+      // pedir puntería sobre una línea es pedir que no se use.
+      const target = document.createElementNS(SVG_NS, "rect");
+      target.setAttribute("fill", "transparent");
+      open.append(target);
+
+      open.addEventListener("mouseenter", () => frame.setAttribute("opacity", "1"));
+      open.addEventListener("mouseleave", () => frame.setAttribute("opacity", "0"));
+      group.append(open);
+    }
 
     // El halo de las páginas por las que se acaba de pasar. Va detrás del texto
     // y con el mismo texto, engordado: en SVG un contorno es un `stroke` bajo el
@@ -439,6 +529,7 @@ export function renderGraph3D(
       fontWorld,
       group,
       texts,
+      open,
       depth: 0,
       sx: 0,
       sy: 0,
@@ -462,6 +553,41 @@ export function renderGraph3D(
     if (!neighbours.has(l.target)) neighbours.set(l.target, new Set());
     (neighbours.get(l.source) as Set<string>).add(l.target);
     (neighbours.get(l.target) as Set<string>).add(l.source);
+  }
+
+  /*
+   * Los tramos del recorrido, si hay uno abierto.
+   *
+   * Un tramo cuyo extremo no está en este vecindario no se puede dibujar: no hay
+   * adónde. Se deja fuera en vez de dibujarlo hacia el vacío, y el número que
+   * falta en la cadena dice que faltaba.
+   */
+  const thread = settings.thread ?? null;
+  const threads: { line: SVGLineElement; a: Point; b: Point }[] = [];
+  const stopMarks: { text: SVGTextElement; at: Point }[] = [];
+
+  if (thread !== null) {
+    thread.kinds.forEach((kind, at) => {
+      const from = thread.stops[at]?.page;
+      const to = thread.stops[at + 1]?.page;
+      const a = from == null ? undefined : byId.get(from);
+      const b = to == null ? undefined : byId.get(to);
+      if (a === undefined || b === undefined) return;
+      const line = document.createElementNS(SVG_NS, "line");
+      line.setAttribute("class", kind === "by_path" ? "thread" : "thread open-ground");
+      threadLayer.append(line);
+      threads.push({ line, a, b });
+    });
+    for (const stop of thread.stops) {
+      const at = stop.page == null ? undefined : byId.get(stop.page);
+      if (at === undefined) continue;
+      const text = document.createElementNS(SVG_NS, "text");
+      text.setAttribute("class", "thread-stop");
+      text.setAttribute("text-anchor", "middle");
+      text.textContent = String(stop.ordinal);
+      threadLayer.append(text);
+      stopMarks.push({ text, at });
+    }
   }
 
   const edges = links.map((l) => {
@@ -687,12 +813,99 @@ export function renderGraph3D(
         text.setAttribute("y", (row * px * LINE_EM).toFixed(1));
       }
 
+      /*
+       * Y la flecha, pegada al final de la última línea del nombre.
+       *
+       * Sólo la del nombre señalado: cincuenta flechas quietas serían ruido, y
+       * lo que se está preguntando al señalar es por una página, no por todas.
+       * Va al final de la última línea y no al borde de la caja porque la última
+       * puede ser la más corta, y una flecha flotando lejos del texto no se lee
+       * como parte de él.
+       *
+       * Del alto de media versal y pegada al nombre, como en dos dimensiones.
+       * Feather dibuja esta flecha entre 7 y 17 de un lienzo de 24, y con el
+       * trazo y sus remates la tinta llega a doce de veinticuatro: lo que se ve
+       * es la mitad del lienzo. Es un diacrítico y no una segunda palabra —lo
+       * que dice lo dice igual pequeña, y grande compite con el nombre.
+       */
+      if (d.open !== null) {
+        if (hovered === d.node.id) {
+          const last = d.lines[d.lines.length - 1] ?? '';
+          const width = last.length * CHAR_EM * px;
+          const baseline = ((d.lines.length - 1) / 2) * px * LINE_EM;
+          const glyph = px * 0.35;
+          const canvas = glyph * 2.4;
+          /** Media tinta: el trazo llega a seis de los veinticuatro del lienzo. */
+          const ink = canvas / 4;
+          // El aire hasta la flecha y el que el marco deja alrededor de ella.
+          // Van juntos: el borde izquierdo del marco cae en `gap - pad` desde el
+          // final del nombre, así que holgar el marco se come la separación y
+          // termina pisando la última letra. Los mismos que en dos dimensiones.
+          const gap = px * 0.32;
+          const pad = px * 0.18;
+          const cx = width / 2 + ink + gap;
+          // A media altura de la letra y no de la flecha: lo que la alinea con
+          // el nombre es el ojo de las minúsculas, no su propio tamaño.
+          const cy = baseline - px * 0.3;
+          const art = d.open.querySelector(".map3d-open-arrow");
+          if (art !== null) {
+            art.setAttribute("x", (cx - canvas / 2).toFixed(1));
+            art.setAttribute("y", (cy - canvas / 2).toFixed(1));
+            art.setAttribute("width", canvas.toFixed(1));
+            art.setAttribute("height", canvas.toFixed(1));
+          }
+          const frame = d.open.querySelector(".map3d-open-frame");
+          if (frame !== null) {
+            const side = ink * 2 + pad * 2;
+            frame.setAttribute("x", (cx - side / 2).toFixed(1));
+            frame.setAttribute("y", (cy - side / 2).toFixed(1));
+            frame.setAttribute("width", side.toFixed(1));
+            frame.setAttribute("height", side.toFixed(1));
+            frame.setAttribute("rx", (side * 0.22).toFixed(1));
+            frame.setAttribute("stroke-width", Math.max(px * 0.06, 0.6).toFixed(2));
+          }
+          const target = d.open.lastElementChild;
+          if (target !== null) {
+            // Nunca menor que un dedo torpe. Un nombre lejano se dibuja a ocho
+            // píxeles y su flecha mide once: se ve, y aun así no se acierta.
+            // Debajo de ese suelo el blanco deja de encoger aunque el dibujo
+            // siga haciéndolo.
+            const reach = Math.max(canvas * 0.8, 16);
+            target.setAttribute("x", (cx - reach / 2).toFixed(1));
+            target.setAttribute("y", (cy - reach / 2).toFixed(1));
+            target.setAttribute("width", reach.toFixed(1));
+            target.setAttribute("height", reach.toFixed(1));
+          }
+          d.open.removeAttribute("display");
+        } else if (!d.open.hasAttribute("display")) {
+          d.open.setAttribute("display", "none");
+          // Y su marco con ella: si el puntero salta de un nombre a otro de un
+          // tirón, el `mouseleave` de la flecha puede no llegar, y el marco se
+          // quedaría encendido en un nodo que ya nadie está señalando.
+          d.open.querySelector(".map3d-open-frame")?.setAttribute("opacity", "0");
+        }
+      }
+
       // Dónde quedó el nombre en pantalla. No se dibuja nada con esto: sirve
       // para saber a qué se está apuntando cuando alguien pulsa.
       d.sx = at.x;
       d.sy = at.y;
       d.sw = d.longest * CHAR_EM * px;
       d.sh = d.lines.length * LINE_EM * px;
+    }
+
+    for (const one of threads) {
+      const a = project(one.a, orbit, lens);
+      const b = project(one.b, orbit, lens);
+      one.line.setAttribute("x1", a.x.toFixed(1));
+      one.line.setAttribute("y1", a.y.toFixed(1));
+      one.line.setAttribute("x2", b.x.toFixed(1));
+      one.line.setAttribute("y2", b.y.toFixed(1));
+    }
+    for (const one of stopMarks) {
+      const at = project(one.at, orbit, lens);
+      one.text.setAttribute("x", at.x.toFixed(1));
+      one.text.setAttribute("y", (at.y - 12).toFixed(1));
     }
 
     for (const e of edges) {
@@ -710,10 +923,12 @@ export function renderGraph3D(
         continue;
       }
       // Una arista se lee si se ve entera y sola. Las que tocan al nombre bajo
-      // el puntero van al color de acento; las demas se apagan hasta insinuarse.
+      // el puntero se encienden con el color de su dirección —lo que esta
+      // página nombra y lo que la nombra a ella son dos hechos distintos— y las
+      // demás se apagan hasta insinuarse.
       const mine = e.a === hovered || e.b === hovered;
       e.line.setAttribute("opacity", mine ? "0.8" : "0.1");
-      if (mine) e.line.setAttribute("stroke", colors.accent);
+      if (mine) e.line.setAttribute("stroke", e.a === hovered ? colors.linkOut : colors.linkIn);
       else e.line.removeAttribute("stroke");
     }
   };
@@ -1100,6 +1315,26 @@ export function renderGraph3D(
     moved = true;
     glideTo({ x: n.x ?? 0, y: n.y ?? 0, z: n.z ?? 0 });
   };
+
+  /*
+   * Pulsar la flecha abre, y de una sola vez.
+   *
+   * El doble clic sigue estando y sigue valiendo sobre el nombre entero; lo que
+   * faltaba era que algo dijera que el nodo se puede abrir y con qué gesto. Va
+   * en el elemento y no en la geometría como el resto de los aciertos de este
+   * dibujo, porque aquí el blanco es un rectángulo que ya está en el DOM: el
+   * navegador acierta mejor que una cuenta, y `stopPropagation` impide que el
+   * mismo clic llegue además al lienzo, donde sólo señalaría.
+   */
+  for (const d of drawn) {
+    d.open?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      selected = d.node.id;
+      orbitAround(d);
+      onClickPage(d.node.name);
+    });
+  }
 
   const onClick = (event: MouseEvent): void => {
     const d = pick(event.clientX, event.clientY);

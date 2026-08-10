@@ -10,7 +10,11 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 
 import {
+  TESTIMONY_KEY,
   VeraGraph,
+  isTrail,
+  readTrail,
+  type Trail,
   answersIn,
   checkInvariants,
   FIELD_KINDS,
@@ -91,6 +95,15 @@ import { LOCAL_MODEL, LOCAL_MODEL_NAME, promptFor, readAnswer } from './answer.t
 import { mentionsOf } from './mentions.ts';
 import { paperHtml, toPdf } from './paper.ts';
 import { mcpPage } from './mcp-page.ts';
+import { mcpConnect } from './mcp-connect.ts';
+import {
+  confinementOf,
+  confinements,
+  discardRequests,
+  fenceRefusal,
+  grantConfinement,
+  withdrawConfinement,
+} from './confinement.ts';
 import {
   BIBLIOGRAPHY_NAMES,
   blocksFor,
@@ -166,6 +179,22 @@ export interface ServerOptions {
   /** Almacén de objetos direccionado por hash, donde viven los binarios. */
   objectsRoot?: string;
   owner?: { id: ParticipantId; name: string };
+  /**
+   * En qué puerto quedó escuchando, para poder decirlo.
+   *
+   * El servidor no lo necesitaba: lo abre `listen` y quien maneja una petición
+   * nunca se lo pregunta. Hace falta para la página de la puerta, que tiene que
+   * dictar el `VERA_URL` que va en el formulario de cada IA, y ese valor no se
+   * puede adivinar desde dentro de un manejador.
+   */
+  port?: number;
+  /**
+   * Por dónde se alcanza esta Vera desde otro equipo, si alguien lo declaró.
+   *
+   * Vera escucha en loopback y quien la publica elige el frente. Esa dirección
+   * la sabe quien la configuró; el proceso que corre detrás no.
+   */
+  reachableAt?: string;
 }
 
 export interface VeraServer {
@@ -583,6 +612,52 @@ export function createVeraServer(options: ServerOptions): VeraServer {
    * proyección Markdown— y aquí viaja a qué apunta. Lo necesitan la vista de la
    * página y el papel del que sale un PDF.
    */
+  /**
+   * La página leída como recorrido, si dice serlo.
+   *
+   * Nada de esto se guarda: los nodos son las referencias que el texto lleva, las
+   * conectivas son lo que queda del texto al quitarlas y los cruces son los pares
+   * de nodos consecutivos. Se calcula al mirar, y por eso un cruce a campo través
+   * puede contestar distinto mañana sin que el recorrido se toque.
+   *
+   * Ver packages/core/src/trail.ts y specs/trail.allium.
+   */
+  const trailOf = (pageId: string): Trail | null => {
+    const names = propertyNames();
+    if (!isTrail(graph.propertiesOf(pageId), names)) return null;
+    const intent = graph
+      .propertiesOf(pageId)
+      .find((one) => one.key.trim().toLowerCase() === 'propósito');
+    return readTrail({
+      page: pageId,
+      intent: intent?.value.trim() ?? null,
+      blocks: graph.blocksOf(pageId).map((block) => ({
+        stableId: block.stableId,
+        parent: block.parent,
+        position: block.position,
+        content: block.content,
+        testimony:
+          graph
+            .propertiesOf(block.stableId)
+            .find((one) => one.key.trim().toLowerCase() === TESTIMONY_KEY)
+            ?.value ?? null,
+      })),
+      resolve: (title) => graph.pageTitled(title)?.id ?? null,
+      /*
+       * Sin contar los enlaces que salen del propio recorrido. Un recorrido
+       * enlaza a todas sus paradas —es lo que lo hace encontrable desde cada
+       * una— y contarlos haría que todo cruce fuera por camino por construcción.
+       */
+      linked: (a, b) =>
+        graph
+          .backlinks(b)
+          .some((link) => link.sourcePage === a && link.sourcePage !== pageId) ||
+        graph
+          .backlinks(a)
+          .some((link) => link.sourcePage === b && link.sourcePage !== pageId),
+    });
+  };
+
   const assetsOf = (pageId: string): { path: string; url: string; mediaType: string }[] => {
     const text = graph
       .blocksOf(pageId)
@@ -667,15 +742,35 @@ export function createVeraServer(options: ServerOptions): VeraServer {
    * aplicación corre en localhost— y se anota como lo que es, sin credencial,
    * en vez de disimular la ausencia.
    */
-  const reader = (header: string | undefined): {
-    participant: ParticipantId;
-    credential: string | null;
-  } => {
+  const reader = (
+    header: string | undefined,
+  ):
+    | { ok: true; participant: ParticipantId; credential: string | null }
+    | { ok: false; detail: string } => {
     const secret = bearerOf(header);
-    if (secret === null) return { participant: owner.id, credential: null };
+    if (secret === null) return { ok: true, participant: owner.id, credential: null };
     const resolved = resolveSecret(store, secret);
-    if (!resolved.ok) return { participant: owner.id, credential: null };
-    return { participant: resolved.credential.participant, credential: resolved.credential.id };
+    /*
+     * Una credencial que no resuelve se rechaza. No asciende.
+     *
+     * Antes caía al dueño, igual que la ausencia de credencial, y las dos cosas
+     * no son la misma. No traer ninguna es lo que hoy es cierto en casa —la
+     * aplicación corre en localhost y las personas todavía no se autentican—, y
+     * se registra como lo que es. Traer una que está revocada, vencida o
+     * inventada es otra cosa: es alguien presentando una llave que ya no abre, y
+     * dársela por buena convertía la revocación en una operación sin efecto —el
+     * cliente revocado seguía leyendo, ahora con el nombre del dueño encima— y
+     * ensuciaba el único registro que promete decir quién leyó qué.
+     *
+     * Escribir ya lo hacía bien: `authorise` devuelve 401 desde el primer día.
+     * Esto es leer poniéndose al día con escribir.
+     */
+    if (!resolved.ok) return { ok: false, detail: resolved.detail };
+    return {
+      ok: true,
+      participant: resolved.credential.participant,
+      credential: resolved.credential.id,
+    };
   };
 
   /** Qué cliente dice ser. Se registra y no se cree. */
@@ -693,6 +788,31 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     const path = url.pathname;
 
     /*
+     * Quién lee, resuelto una vez y antes de nada.
+     *
+     * Antes que el enrutado, para que valga en todas las superficies y no en las
+     * que alguien se acuerde de comprobar: una credencial muerta no debe abrir ni
+     * una página, ni el índice, ni la ontología.
+     *
+     * Y una sola vez por petición, porque `resolveSecret` marca la credencial
+     * como usada: resolverla dos veces contaría dos usos donde hubo uno.
+     */
+    const who = reader(request.headers.authorization);
+    if (!who.ok) {
+      /*
+       * No se anota en el registro de exposición, y no por descuido.
+       *
+       * Ese registro dice qué memoria salió y hacia quién, y aquí no salió nada.
+       * Anotarlo exigiría además ponerle un participante —la columna no admite
+       * vacío— y el único a mano sería el dueño, que es exactamente la mentira
+       * que este arreglo viene a quitar. Un registro de intentos rechazados es
+       * otra cosa y va con la identidad, no con la exposición.
+       */
+      send(response, 401, { error: who.detail });
+      return;
+    }
+
+    /*
      * Anotar que algo salió.
      *
      * @invariant NoDeliveryWithoutItsRecord: se anota antes de escribir en el
@@ -707,7 +827,6 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       delivered: readonly string[] = [],
       outcome = 'served',
     ): void => {
-      const who = reader(request.headers.authorization);
       recordExposure(store, {
         participant: who.participant,
         credential: who.credential,
@@ -768,6 +887,35 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           return;
         }
 
+        /*
+         * Y si esa credencial está cercada, si el cambio cabe dentro del cerco.
+         *
+         * Aquí y no en `authorise`, que decide identidad y alcance y sólo mira la
+         * clase del cambio: el cerco necesita saber sobre qué página se escribe,
+         * y eso está en el cambio entero.
+         *
+         * @invariant TheFenceIsInTheCredentialAndNotInTheDoor: se comprueba en la
+         * única puerta de escritura y no en la herramienta MCP. El mismo secreto
+         * entra por aquí sin pasar por ninguna herramienta, y un límite que sólo
+         * comprueba la herramienta es una sugerencia dirigida a quien ya decidió
+         * obedecerla. Ver specs/confined-writing.allium.
+         */
+        const fence =
+          who.credential === null ? null : confinementOf(store, who.credential.id);
+        if (fence !== null) {
+          const refusal = fenceRefusal(
+            store,
+            fence,
+            who.participant,
+            input.change,
+            (block) => graph.block(block)?.page ?? null,
+          );
+          if (refusal !== null) {
+            send(response, refusal.status, { status: 'rejected', reason: refusal.error });
+            return;
+          }
+        }
+
         const outcome = graph.submitOperation({
           ...input,
           participant: who.participant,
@@ -814,6 +962,35 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             detail: error instanceof Error ? error.message : String(error),
           });
           return;
+        }
+
+        /*
+         * Una página plantada por una credencial cercada nace marcada.
+         *
+         * @invariant TheKindAndTheSourceComeFromTheFence: las dos propiedades las
+         * pone Vera y no viajan en el cambio. Un agente que pudiera mandarlas
+         * escribiría una página que dice ser de otra clase y venir de otra parte,
+         * y las dos cosas son justamente lo que el cerco existe para fijar.
+         *
+         * Entran por la misma puerta y como operaciones suyas, así que quedan en
+         * el registro con su autor y su sitio en la secuencia, como todo lo
+         * demás. Si alguna fallara, la página existe igual y sin marca: es un
+         * resultado pobre y legible, y mejor que una página que no llegó a nacer.
+         */
+        if (fence !== null && input.change.kind === 'create_page') {
+          const born = outcome.subjectId;
+          const names = propertyNames();
+          const mark = (key: string, value: string, step: number): void => {
+            const stamped = graph.submitOperation({
+              originId: `${input.originId}:${step}`,
+              participant: who.participant,
+              ...(who.channel === null ? {} : { channel: who.channel }),
+              change: { kind: 'set_property', page: born, propertyKey: key, propertyValue: value },
+            });
+            if (stamped.status === 'applied') recordOperation(store, graph, stamped.operation);
+          };
+          mark(names.kind, fence.kind, 1);
+          if (fence.source !== null) mark(BIBLIOGRAPHY_NAMES.source, fence.source, 2);
         }
 
         send(response, 201, {
@@ -910,8 +1087,83 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         send(response, 403, blocked);
         return;
       }
-      // @guarantee TheSecretIsShownOnce: aquí nunca hay secretos que mostrar.
-      send(response, 200, listCredentials(store));
+      /*
+       * @guarantee TheSecretIsShownOnce: aquí nunca hay secretos que mostrar.
+       *
+       * El cerco viaja con su credencial y no en otra petición. @guarantee
+       * AFenceIsReadWhereTheCredentialIsRead: un permiso que hay que ir a buscar
+       * a otra pantalla es un permiso que se olvida de revisar.
+       */
+      const fenced = new Map(confinements(store).map((one) => [one.token, one]));
+      send(
+        response,
+        200,
+        listCredentials(store).map((one) => ({
+          ...one,
+          confinement: fenced.get(one.id) ?? null,
+        })),
+      );
+      return;
+    }
+
+    /*
+     * Cercar una credencial, y quitarle el cerco.
+     *
+     * Cosa del dueño, como emitirla: @invariant AFenceIsGrantedByAPerson. Y
+     * quitar el cerco es ampliar un permiso, no retirarlo —una credencial sin
+     * cerco escribe donde quiera—, así que pasa por la misma puerta.
+     */
+    if (request.method === 'POST' && /^\/agents\/credentials\/[^/]+\/confinement$/.test(path)) {
+      const blocked = ownerOnly();
+      if (blocked !== null) {
+        send(response, 403, blocked);
+        return;
+      }
+      const token = decodeURIComponent(path.split('/')[3] ?? '');
+      if (!listCredentials(store).some((one) => one.id === token)) {
+        send(response, 404, { error: `no existe la credencial ${token}` });
+        return;
+      }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { kind?: unknown; source?: unknown };
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+        const kind = typeof body.kind === 'string' ? body.kind.trim() : '';
+        if (kind === '') {
+          send(response, 400, {
+            error: 'un cerco concede una clase de página, y hace falta decir cuál',
+          });
+          return;
+        }
+        const owner = graph.owner;
+        if (owner === null) {
+          send(response, 500, { error: 'this graph has no owner' });
+          return;
+        }
+        const source =
+          typeof body.source === 'string' && body.source.trim() !== '' ? body.source.trim() : null;
+        send(response, 200, grantConfinement(store, { token, kind, source, grantedBy: owner }));
+      });
+      return;
+    }
+
+    if (request.method === 'DELETE' && /^\/agents\/credentials\/[^/]+\/confinement$/.test(path)) {
+      const blocked = ownerOnly();
+      if (blocked !== null) {
+        send(response, 403, blocked);
+        return;
+      }
+      const token = decodeURIComponent(path.split('/')[3] ?? '');
+      send(response, withdrawConfinement(store, token) ? 200 : 404, {
+        token,
+        confined: false,
+      });
       return;
     }
 
@@ -1788,7 +2040,43 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       if (path === '/mcp') {
         const seen = clientsSeen(store);
         const door = mcpPage(graph, SPECIAL_KIND, seen);
-        send(response, 200, door ?? { id: null, connections: [], undeclared: seen });
+        /*
+         * Y con qué datos se enchufa una IA a esta instancia.
+         *
+         * Van con la página y no en una petición aparte porque son la mitad de
+         * la respuesta a la única pregunta que se hace ahí: qué entra por esta
+         * puerta y cómo se la abre. Se calculan de este despliegue —ver
+         * mcp-connect.ts—, así que no se desactualizan.
+         */
+        const connect = mcpConnect({
+          here: import.meta.dirname,
+          port: options.port ?? 4173,
+          execPath: process.execPath,
+          nodeVersion: process.version,
+          reachableAt: options.reachableAt ?? null,
+        });
+        /*
+         * Y lo que las máquinas pidieron que se fuera.
+         *
+         * Se dibuja aquí porque aquí está quien lo pidió: la página de la puerta
+         * es donde se ve qué entra, qué se le permite y qué hizo. La lista es del
+         * corpus y no de la puerta —una persona también puede marcar—, y si algún
+         * día se mira desde otro sitio, se mueve.
+         */
+        const names = propertyNames();
+        const marked = discardRequests(store, {
+          key: names.discard_request,
+          pages: graph.pages().map((one) => ({ id: one.id, title: one.title })),
+          propertiesOf: (page) => graph.propertiesOf(page),
+          nameOf: (participant) => graph.participant(participant)?.name ?? null,
+        });
+
+        send(response, 200, {
+          ...(door ?? { id: null, connections: [], undeclared: seen }),
+          connect,
+          marked,
+          markKey: names.discard_request,
+        });
         return;
       }
 
@@ -2703,6 +2991,15 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         deliver({
           id: page.id,
           title: page.title,
+          /*
+           * El recorrido, cuando la página dice que su orden es un argumento.
+           *
+           * Viaja con la página y no en una petición aparte porque leer un
+           * recorrido es leer su página: pedirlo dos veces haría que el texto y
+           * su hilo llegaran en momentos distintos y la página parpadeara al
+           * abrirse. Cuando la página no lo declara, viaja nulo y no cuesta nada.
+           */
+          trail: trailOf(page.id),
           visibility: page.visibility,
           createdAt: page.createdAt,
           originCreatedAt: page.originCreatedAt,

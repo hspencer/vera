@@ -1035,7 +1035,8 @@ input {
   width: var(--fold, 1rem);
   margin-left: calc(-1 * (var(--fold, 1rem) + var(--fold-gap, 0.05rem)));
   margin-right: calc(var(--fold-gap, 0.05rem) - var(--rail-gap, 0.5rem));
-  height: 1.55rem;
+  /* El alto y la bajada al renglón del texto van con los de la viñeta: son el
+     par, y una que bajara sin la otra los rompería. Ver `.bullet`. */
   font-size: 1.05rem;
   color: var(--text-dim);
   background: none;
@@ -1270,10 +1271,60 @@ input {
  */
 /* Crece a la par del chevron: si una de las dos marcas de la fila se agranda y
    la otra no, dejan de leerse como el par que son. */
+/*
+ * La marca cae en el primer renglón del texto, sea ese renglón el que sea.
+ *
+ * Un bloque que empieza por un título mide dos renglones y sólo el segundo lleva
+ * letra: el primero es el aire que el título pide por encima, que existe para
+ * que lo que separa se lea separado. La marca se quedaba arriba, en el aire, y
+ * apuntaba a un renglón vacío —señalaba dónde empieza la caja, no dónde empieza
+ * lo que dice—. Baja lo que baje el texto y mide lo que mide su renglón, así que
+ * el punto queda centrado en la línea que encabeza, y no a su altura por
+ * casualidad.
+ *
+ * En tres variables y no en una regla por caso: el alto sale del tamaño del
+ * texto y de su interlínea, que es de donde tiene que salir. Ver `--head-2` y
+ * los suyos.
+ */
+.bullet,
+.fold {
+  /* De qué tamaño es el texto que abre el bloque, con qué interlínea, y cuánto
+     aire pide por encima. Lo corriente es prosa: el tamaño de lectura, la
+     interlínea del token, y ningún aire. */
+  --lead: var(--text-size, 1rem);
+  --lead-line: var(--line-height);
+  --lead-skip: 0px;
+  margin-top: var(--lead-skip);
+  /* La misma razón que en `.fold`: la fila la mide su texto, no sus marcas.
+     Medía `1.55rem`, que era el valor que tenía `--line-height` el día que esto
+     se escribió: al subirla en Ajustes, la marca dejaba de medir un renglón y se
+     descentraba un pelo en todo el corpus. */
+  height: calc(var(--lead) * var(--lead-line));
+}
+
+.block:has(> .body > .body-text > :first-child:is(h2, h3, h4, h5, h6)) > :is(.bullet, .fold) {
+  --lead-line: var(--head-line);
+  --lead-skip: var(--head-skip);
+}
+.block:has(> .body > .body-text > :first-child:is(h2)) > :is(.bullet, .fold) {
+  --lead: var(--head-2);
+}
+.block:has(> .body > .body-text > :first-child:is(h3)) > :is(.bullet, .fold) {
+  --lead: var(--head-3);
+}
+.block:has(> .body > .body-text > :first-child:is(h4)) > :is(.bullet, .fold) {
+  --lead: var(--head-4);
+}
+.block:has(> .body > .body-text > :first-child:is(h5, h6)) > :is(.bullet, .fold) {
+  --lead: var(--head-5);
+}
+
 .bullet {
+  /* El diámetro del punto, lleno o hueco. Es el que tenía el `•` de la fuente:
+     lo que cambia es la marca de la máquina, que baja a este mismo tamaño. */
+  --dot: 0.32em;
   position: relative;
   color: var(--text-dim);
-  font-size: 1.15rem;
   flex: none;
   cursor: pointer;
   background: none;
@@ -1281,10 +1332,41 @@ input {
   padding: 0;
   align-self: flex-start;
   width: var(--rail, 1.4rem);
-  /* La misma razón que en `.fold`: la fila la mide su texto, no sus marcas. */
-  height: 1.55rem;
   line-height: 1;
   border-radius: 50%;
+}
+
+/*
+ * El punto se dibuja, no se escribe.
+ *
+ * Era un carácter `•` para lo escrito a mano y un recuadro redondo para lo
+ * generado, y por eso no medían lo mismo: el disco de la fuente daba 5 px y el
+ * recuadro 9,9 —el doble de diámetro, cuatro veces de tinta— así que la marca de
+ * la máquina pesaba en la página mucho más que la de quien escribió. La
+ * distinción tiene que estar en si el punto está lleno o hueco, que es un hecho
+ * sobre quién lo escribió, y no en su tamaño, que no dice nada.
+ *
+ * Dibujados los dos, el diámetro es uno solo y no puede volver a separarse. Y en
+ * `em` del texto: una marca que no creciera con la letra se volvería un residuo
+ * en cuanto alguien suba el tamaño de lectura.
+ *
+ * Con fondo y no con borde: un borde se redondea a píxeles enteros, y con el
+ * diámetro partido en dos el punto lleno salía 4 px donde el hueco medía 5,4 —el
+ * mismo defecto que se venía a quitar, al revés—. Un fondo respeta la fracción.
+ *
+ * `print-color-adjust` porque un fondo es de las cosas que el navegador tira al
+ * imprimir, y esto no es un fondo sino la marca del bloque. No afecta al PDF de
+ * Vera, que se compone aparte y sin viñetas (ver paper.ts): afecta a quien
+ * imprima la aplicación tal cual la ve.
+ */
+.bullet::before {
+  content: '';
+  width: var(--dot);
+  height: var(--dot);
+  border-radius: 50%;
+  background: currentColor;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
 }
 
 .bullet::after {
@@ -1536,8 +1618,12 @@ input {
    * acaba de crear y quiere escribir. Guarda el alto de un renglón, que es lo
    * que va a ocupar en cuanto tenga texto: el sitio donde se pulsa es el mismo
    * donde aparecerá lo escrito.
+   *
+   * Un renglón de verdad, salido de la interlínea. Estaba escrito `1.55em`, que
+   * era cuánto medía el día que se escribió: quien subiera la interlínea en
+   * Ajustes dejaba el bloque vacío más corto que el renglón que iba a ocupar.
    */
-  min-height: 1.55em;
+  min-height: calc(1em * var(--line-height));
 }
 
 .body:hover {
@@ -1773,13 +1859,22 @@ code {
    es el h1— así que h2 es el mayor que aparece aquí. La escala es corta
    a propósito: seis tamaños distintos dentro de un esquema compiten con
    la jerarquía que ya expresa la sangría. */
-.body h2,
-.body h3,
-.body h4,
-.body h5,
-.body h6 {
-  font-family: var(--font-ui);
-  line-height: 1.25;
+/*
+ * La escala de los encabezados, dicha una vez.
+ *
+ * No la usan sólo ellos: la viñeta de un bloque tiene que caer en el primer
+ * renglón de su texto, y cuando ese texto es un título, saber dónde cae exige
+ * saber de qué tamaño es y cuánto aire pide por encima. Con los números escritos
+ * sólo en las reglas de abajo, la viñeta habría tenido que repetirlos, y dos
+ * copias de una escala tipográfica se separan a la primera que alguien afine
+ * una. Ver `.bullet`.
+ */
+:root {
+  --head-2: 1.3rem;
+  --head-3: 1.12rem;
+  --head-4: 1rem;
+  --head-5: 0.92rem;
+  --head-line: 1.25;
   /*
    * Una línea de aire por encima, ni más ni menos.
    *
@@ -1789,7 +1884,17 @@ code {
    * fuera, que es justo lo que rompe la retícula—. Debajo, la mitad: un título
    * pertenece a lo que viene después, y el aire dice de quién es.
    */
-  margin: calc(var(--line-height) * 1rem) 0 calc(var(--line-height) * 0.5rem);
+  --head-skip: calc(var(--line-height) * 1rem);
+}
+
+.body h2,
+.body h3,
+.body h4,
+.body h5,
+.body h6 {
+  font-family: var(--font-ui);
+  line-height: var(--head-line);
+  margin: var(--head-skip) 0 calc(var(--head-skip) / 2);
   font-weight: 600;
 }
 
@@ -1804,17 +1909,17 @@ code {
  */
 
 .body h2 {
-  font-size: 1.3rem;
+  font-size: var(--head-2);
 }
 .body h3 {
-  font-size: 1.12rem;
+  font-size: var(--head-3);
 }
 .body h4 {
-  font-size: 1rem;
+  font-size: var(--head-4);
 }
 .body h5,
 .body h6 {
-  font-size: 0.92rem;
+  font-size: var(--head-5);
   color: var(--text-dim);
 }
 
@@ -2681,10 +2786,8 @@ code {
   justify-content: center;
   align-self: flex-start;
   flex: none;
-  width: 1.4rem;
-  height: 1.55rem;
+  width: var(--rail, 1.4rem);
   color: var(--text-dim);
-  font-size: 1.15rem;
   line-height: 1;
   opacity: 0.5;
   pointer-events: none;
@@ -3122,14 +3225,16 @@ code {
  */
 .bullet.generated {
   color: var(--accent);
-  /* Hueca, frente a la viñeta llena de lo escrito a mano. */
+}
+
+/*
+ * Hueca, frente a la viñeta llena de lo escrito a mano. Y del mismo diámetro:
+ * llevaba el suyo propio y salía al doble de grande, que es lo que hacía que lo
+ * generado pesara más que lo escrito en una página donde casi todo es escrito.
+ */
+.bullet.generated::before {
   background: none;
-  box-shadow: inset 0 0 0 1.5px currentColor;
-  font-size: 0;
-  width: 0.62rem;
-  height: 0.62rem;
-  margin: 0.4rem 0.39rem;
-  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px currentColor;
 }
 
 /* --- La bitácora, leída de corrido ---------------------------------------- */
@@ -4551,9 +4656,9 @@ code {
  * Sólo en las de propiedades: en la de objetos, la segunda columna lleva las
  * propiedades que constituyen la clase, que sí son contenido.
  */
-.governing-cols-4 td.governing-col-1:not(.governing-empty),
-.governing-cols-5 td.governing-col-1:not(.governing-empty),
-.governing-cols-5 td.governing-col-3:not(.governing-empty) {
+.governing-properties.governing-cols-4 td.governing-col-1:not(.governing-empty),
+.governing-properties.governing-cols-5 td.governing-col-1:not(.governing-empty),
+.governing-properties.governing-cols-5 td.governing-col-3:not(.governing-empty) {
   font-family: var(--font-mono);
   font-size: 0.74rem;
   color: var(--text-dim);
@@ -4703,4 +4808,268 @@ code {
 .governing-chip-slot {
   display: inline-block;
   min-width: 9rem;
+}
+
+/* --------------------------------------------------------------------------
+ * Los datos con que se enchufa una IA a esta instancia.
+ *
+ * Una lista de campo y valor, no una tabla: son cinco renglones y cada uno se
+ * copia entero, así que lo que importa es que el valor se lea sin ambigüedad y
+ * que el botón de copiar esté al lado. Una ruta absoluta con banderas dentro se
+ * copia mal a ojo, y un argumento perdido se manifiesta como «el servidor no
+ * arrancó», que no dice nada sobre qué falta.
+ * -------------------------------------------------------------------------- */
+
+.connect {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.55rem 1rem;
+  margin: 0 0 1.2rem;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  align-items: baseline;
+}
+
+.connect dt {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.connect dd {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.6rem;
+}
+
+/* El valor, en la mono y respetando sus saltos: las variables de entorno son
+   varias líneas y pegarlas en una sola las rompe. */
+.connect-value {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text);
+  background: color-mix(in srgb, var(--rule) 30%, transparent);
+  border-radius: 3px;
+  padding: 0.1rem 0.35rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Un botón cuyo texto envuelve se lee como dos: «retira / r». Son dos palabras
+   como mucho y caben, o la columna está mal repartida, que se arregla en su
+   tabla y no aquí. */
+.connect-copy {
+  white-space: nowrap;
+  appearance: none;
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.05rem 0.4rem;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  flex: none;
+}
+
+.connect-copy:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* El único campo que se escribe, porque es lo único que aquí es una decisión. */
+.connect-client {
+  font: inherit;
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0.05rem 0.35rem;
+  width: 11rem;
+}
+
+.connect-says {
+  color: var(--text-dim);
+  font-size: 0.74rem;
+  flex-basis: 100%;
+}
+
+
+/* ---------------------------------------------------------------------------
+ * El recorrido
+ *
+ * Una página cuyo orden alguien declaró que era un argumento. Lo que se le añade
+ * es lo que un recorrido tiene y una página no: las paradas numeradas, y la
+ * costura entre una y la siguiente. Ver trail-page.ts y specs/trail.allium.
+ * ------------------------------------------------------------------------- */
+
+.trail-band {
+  margin: 0.4rem 0 1.2rem;
+  padding-left: calc(var(--rail, 1.4rem) + var(--rail-gap, 0.2rem));
+}
+
+.trail-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* La palabra que dice qué es esto. En versalitas y atenuada: es una etiqueta
+   sobre el texto y no una parte del texto. */
+.trail-what {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Para quién es. Es lo único que un recorrido pide y una página normal no: el
+   título dice de qué trata y el propósito dice quién debería leerlo. */
+.trail-intent {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.trail-shape {
+  margin: 0.25rem 0 0;
+  font-family: var(--font-ui);
+  font-size: 0.76rem;
+  color: var(--text-dim);
+}
+
+/*
+ * La parada lleva su número donde otros bloques llevan su punto.
+ *
+ * El número sustituye al punto y no se le añade: son la misma marca contestando
+ * la misma pregunta —qué es este bloque— y dos marcas en el mismo sitio se leen
+ * como dos cosas.
+ */
+.block.trail-stop > .bullet::before {
+  content: attr(data-ordinal);
+  width: auto;
+  height: auto;
+  background: none;
+  border-radius: 0;
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+/* Un puente cortado conserva su número y se dibuja tachado. Renumerar para
+   disimularlo cambiaría el argumento para que el dibujo quedara limpio. */
+.block.trail-broken > .bullet::before {
+  text-decoration: line-through;
+  color: var(--text-dim);
+}
+
+/*
+ * La costura, en el canalón.
+ *
+ * Continua por donde el corpus ya iba; discontinua por donde sólo va este
+ * argumento. Es la única cosa que un recorrido dibujado dice y uno leído no, y
+ * se lee sin contar nada: un hilo casi todo continuo va pegado al grafo, y uno
+ * casi todo discontinuo es literalmente la figura de una tesis sobre lo que
+ * faltaba.
+ *
+ * En tiempo presente, como la cara que dibuja: el mismo recorrido dentro de un
+ * año puede tener un tramo menos en el vacío porque alguien escribió por fin la
+ * frase que unía esas dos páginas.
+ */
+.block.trail-seam,
+.block.trail-stitch {
+  position: relative;
+}
+
+.block.trail-seam::before,
+.block.trail-stitch::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--rail, 1.4rem) / 2);
+  top: -0.3em;
+  /* Hasta la mitad de la primera línea de la parada, que es donde está su
+     número: la raya llega al número y no lo atraviesa. */
+  height: 1.2em;
+  border-left: 1.5px solid var(--accent);
+  opacity: 0.5;
+}
+
+/* En los bloques de la conectiva la raya recorre el bloque entero, que es lo que
+   la hace legible: un tramo largo escrito se lee con su costura al lado. */
+.block.trail-seam.trail-connective::before,
+.block.trail-stitch.trail-connective::before {
+  top: -0.3em;
+  height: calc(100% + 0.6em);
+}
+
+.block.trail-stitch::before {
+  /* Discontinua y no punteada: a este grosor, los puntos se leen como una raya
+     pálida y la diferencia con la continua sería de opacidad y no de forma. */
+  border-left-style: dashed;
+  opacity: 0.85;
+}
+
+/* Un tramo sobre el que nadie escribió nada. No es un aviso —dos paradas
+   seguidas sin nada entre ellas también dicen algo— sino que el hueco se ve
+   porque está vacío. */
+.block.trail-silent::before {
+  opacity: 0.28;
+}
+
+/* El hilo sobre el mapa: la ruta encendida entera, y no revelándose paso a paso.
+   La forma del argumento es en sí misma legible y no se puede ver una forma por
+   partes. */
+.thread {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.thread.open-ground {
+  stroke-dasharray: 3 4;
+}
+
+/* Un tramo que llega a un puente cortado se detiene: no hay adónde dibujarlo. */
+.thread.broken {
+  stroke-dasharray: 1 5;
+  opacity: 0.4;
+}
+
+/* Guardar lo andado. Al final de la fila del rastro y no al principio: el gesto
+   corriente sobre el rastro es volver, y promover es el que se hace de vez en
+   cuando. */
+.trail-keep {
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.3ex;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trail-keep:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.thread-stop {
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  fill: var(--accent);
+  pointer-events: none;
 }

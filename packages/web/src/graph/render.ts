@@ -1,8 +1,32 @@
 import * as d3 from "d3";
 import type { GraphData, GraphLink, GraphNode } from "./types.ts";
 import { is } from "../bindings.ts";
+import { icon } from "../icons.ts";
 
 export type NodeStyle = "circular" | "title";
+
+/**
+ * El hilo de un recorrido sobre el mapa.
+ *
+ * Mientras un recorrido está abierto, su propia página deja de dibujarse como un
+ * nodo y se dibuja como el hilo que pasa por los suyos: un argumento no está *al
+ * lado* de sus premisas sino *entre* ellas, y un nodo con doce aristas saliendo
+ * hacia sus paradas dibuja lo contrario de lo que el recorrido dice.
+ * @guarantee TheTrailsNodeBecomesTheThread.
+ *
+ * Los tramos no son aristas: no cambian distancias, ni grados, ni qué páginas
+ * caen dentro de un vecindario. Afirmar algo sobre dos sitios y acercarlos son
+ * dos cosas, y sólo la segunda cambiaría el mapa de quien no leyó el argumento.
+ * @guarantee AThreadIsNotAnEdge.
+ */
+export interface ThreadSettings {
+  /** La página del recorrido, que es la que se esconde. */
+  page: string;
+  /** Sus paradas en orden. `page` nulo es un puente cortado. */
+  stops: { page: string | null; ordinal: number }[];
+  /** De qué clase es cada tramo. Uno menos que paradas. */
+  kinds: ("by_path" | "across_open_ground")[];
+}
 
 export interface RenderSettings {
   chargeStrength?: number;
@@ -15,6 +39,7 @@ export interface RenderSettings {
   showNodes?: boolean;
   showTitles?: boolean;
   fontSize?: number;
+  thread?: ThreadSettings | null;
 }
 
 // ── Title-mode constants ──
@@ -178,6 +203,11 @@ export function renderGraph(
     linkStroke: cssVar("--link-stroke", dark ? "#333842" : "#d5d7d2"),
     hoverAccent: cssVar("--accent", dark ? "#4a9ade" : "#045591"),
     visited: cssVar("--warm", "#ef7a1c"),
+    // Las dos direcciones. Son los mismos tokens que pintan el filete de «La
+    // nombran» y «Nombra a» al pie de una página: quien aprendió el código
+    // leyendo lo reconoce aquí sin que nadie se lo explique.
+    linkIn: cssVar("--link-in", dark ? "#6fa8d0" : "#045591"),
+    linkOut: cssVar("--link-out", dark ? "#ee895d" : "#a84a0b"),
   };
 
   // History lookup
@@ -209,6 +239,46 @@ export function renderGraph(
     .join("g")
     .attr("cursor", "pointer")
     .style("transition", "opacity 0.2s");
+
+  /*
+   * El hilo del recorrido abierto, si hay uno.
+   *
+   * Se dibuja debajo de los nombres y encima de las aristas, porque es lo que se
+   * viene a ver. La página del recorrido sigue en la simulación —sus enlaces son
+   * los que mantienen a sus paradas juntas— y sólo se deja de dibujar: quitarla
+   * de la física dispersaría el argumento por el mapa.
+   */
+  const thread = settings.thread ?? null;
+  if (thread !== null) {
+    link.style("display", (d: any) => {
+      const from = typeof d.source === "object" ? d.source.id : d.source;
+      const to = typeof d.target === "object" ? d.target.id : d.target;
+      return from === thread.page || to === thread.page ? "none" : null;
+    });
+    node.style("display", (d) => (d.id === thread.page ? "none" : null));
+  }
+
+  const threadGroup = g.append("g").attr("class", "thread-layer");
+  const segment = threadGroup
+    .selectAll<SVGLineElement, number>("line")
+    .data(thread === null ? [] : thread.kinds.map((_, at) => at))
+    .join("line")
+    .attr("class", (at) =>
+      thread!.stops[at]?.page === null || thread!.stops[at + 1]?.page === null
+        ? "thread broken"
+        : thread!.kinds[at] === "by_path"
+          ? "thread"
+          : "thread open-ground",
+    );
+
+  /* El número de cada parada, al lado del nombre que ya está. */
+  const stopMark = threadGroup
+    .selectAll<SVGTextElement, { page: string | null; ordinal: number }>("text")
+    .data(thread === null ? [] : thread.stops.filter((one) => one.page !== null))
+    .join("text")
+    .attr("class", "thread-stop")
+    .attr("text-anchor", "middle")
+    .text((one) => String(one.ordinal));
 
   // ── Dimensions map (used for title-mode collision and both modes for history rings) ──
   const dims = new Map<string, { w: number; h: number }>();
@@ -274,6 +344,167 @@ export function renderGraph(
     (event as Event).stopPropagation();
     open(d);
   });
+  /*
+   * La flecha que abre, dentro del nombre y como un carácter más.
+   *
+   * El doble clic seguía siendo la única puerta, y una puerta que no se ve no
+   * existe: nada en el mapa decía que un nodo se pudiera abrir, y menos aún con
+   * qué gesto. La flecha aparece al señalar —no antes, porque cincuenta flechas
+   * quietas serían ruido— y dice las dos cosas a la vez: que ahí hay una página
+   * y que se entra pulsando.
+   *
+   * Va pegada al final de la última línea y del alto de una versal, no aparte y
+   * flotando a un lado. Separada, entre el nombre y la flecha quedaba un hueco
+   * sin nada pintado: el puntero lo cruzaba, el nodo dejaba de estar señalado y
+   * la flecha se apagaba justo cuando se iba a pulsar. Una puerta que se cierra
+   * al acercarse no es una puerta. Como carácter no hay hueco que cruzar, y
+   * además se lee por lo que es: la última letra del nombre es la que lleva
+   * fuera.
+   *
+   * Se pone después de medir: el tamaño del nodo lo fija su nombre, y sumarle la
+   * flecha lo engordaría para siempre por algo que sólo se ve un instante.
+   */
+  node.each(function (d: any) {
+    const box = dims.get(d.id);
+    if (box === undefined) return;
+    const g = d3.select(this);
+
+    /*
+     * El nodo entero, hoverable.
+     *
+     * Un texto sólo se señala por la tinta de sus letras: entre dos palabras,
+     * entre dos líneas y en el hombro de una letra no hay nada pintado, así que
+     * el puntero entra y sale del nodo mientras se mueve por encima de él y la
+     * flecha parpadea. Un rectángulo transparente del tamaño ya medido lo vuelve
+     * una sola superficie. No se sale de su caja: la colisión garantiza que las
+     * cajas no se solapan, así que no le roba el hover a nadie.
+     */
+    g.insert("rect", ":first-child")
+      .attr("x", -box.w / 2)
+      .attr("y", -box.h / 2)
+      .attr("width", box.w)
+      .attr("height", box.h)
+      .attr("fill", "transparent");
+
+    /*
+     * Dónde termina el nombre. Con `text-anchor: middle` y varias líneas no
+     * basta el ancho de la caja: la última línea puede ser la más corta, y la
+     * flecha tiene que ir donde acaba ella, no donde acaba la más larga.
+     */
+    const text = (this as SVGGElement).querySelector("text");
+    const spans = text?.querySelectorAll("tspan");
+    const last = spans !== undefined && spans.length > 0 ? spans[spans.length - 1] : null;
+    const fs = Number((text?.getAttribute("font-size") ?? "").replace("px", "")) || fontSize;
+    let endX = box.w / 2;
+    let baseline = fs * 0.35;
+    if (last instanceof SVGTextContentElement && last.getNumberOfChars() > 0) {
+      const start = last.getStartPositionOfChar(0);
+      endX = start.x + last.getComputedTextLength();
+      baseline = start.y;
+    }
+
+    /*
+     * Del alto de media versal, y pegada.
+     *
+     * Feather dibuja dentro de un lienzo de 24 y esta flecha ocupa de 7 a 17;
+     * con el trazo y sus remates redondos, la tinta llega a doce de veinticuatro
+     * —justo la mitad del lienzo—, así que lo que se ve es el doble de lo que la
+     * cuenta ingenua diría. Pedida del alto de una versal salía un aspa al lado
+     * del nombre en vez de un signo dentro de él.
+     *
+     * Va a media versal y separada del texto por una nada. Es un diacrítico, no
+     * una segunda palabra: lo que tiene que decir —que ahí se entra— lo dice
+     * igual pequeña, y grande compite con el nombre, que es lo que de verdad hay
+     * que leer.
+     */
+    const glyph = fs * 0.35;
+    const canvas = glyph * 2.4;
+    /** Media tinta: el trazo llega a seis de los veinticuatro del lienzo. */
+    const ink = canvas / 4;
+    /*
+     * El aire entre la última letra y la tinta de la flecha, y el que el marco
+     * deja alrededor de ella.
+     *
+     * No son independientes: el borde izquierdo del marco cae en `gap - pad`
+     * desde el final del nombre, así que un marco más holgado se come la
+     * separación y termina pisando la última letra. Los dos números están
+     * elegidos juntos para que quede una nada visible entre el texto y el marco
+     * y la flecha siga leyéndose como parte del nombre.
+     */
+    const gap = fs * 0.32;
+    const pad = fs * 0.18;
+    const cx = endX + ink + gap;
+    // A media altura de la letra y no de la flecha: lo que la alinea con el
+    // nombre es el ojo de las minúsculas, no su propio tamaño.
+    const cy = baseline - fs * 0.3;
+
+    const opener = g
+      .append("g")
+      .attr("class", "node-open")
+      .attr("cursor", "pointer")
+      .attr("opacity", 0)
+      .style("pointer-events", "none")
+      .style("transition", "opacity 0.15s");
+    opener.html(icon("arrow-up-right"));
+    opener
+      .select("svg")
+      .attr("class", "node-open-arrow")
+      .attr("width", canvas)
+      .attr("height", canvas)
+      .attr("x", cx - canvas / 2)
+      .attr("y", cy - canvas / 2)
+      .attr("stroke", colors.hoverAccent);
+
+    /*
+     * El marco, encendido sólo cuando el puntero está sobre la flecha misma.
+     *
+     * Señalar el nombre enciende la flecha; señalar la flecha tiene que decir
+     * otra cosa, porque es otro gesto con otra consecuencia —el nombre sólo
+     * selecciona, la flecha abre—. Sin esto, entre estar a punto de seleccionar
+     * y estar a punto de irse de la página no había ninguna diferencia visible,
+     * y la única manera de saber cuál de las dos iba a pasar era pulsar.
+     *
+     * Va detrás del dibujo y con las esquinas apenas curvadas: lo que se
+     * enciende es el sitio donde se va a pulsar, no un botón nuevo.
+     */
+    const side = ink * 2 + pad * 2;
+    const frame = opener
+      .insert("rect", ":first-child")
+      .attr("class", "node-open-frame")
+      .attr("x", cx - side / 2)
+      .attr("y", cy - side / 2)
+      .attr("width", side)
+      .attr("height", side)
+      .attr("rx", side * 0.22)
+      .attr("fill", "none")
+      .attr("stroke", colors.hoverAccent)
+      .attr("stroke-width", Math.max(fs * 0.06, 0.6))
+      .attr("opacity", 0)
+      .style("transition", "opacity 0.12s");
+
+    // Y encima, el blanco al que se apunta: el trazo es una línea de dos
+    // píxeles, y pedir puntería sobre una línea es pedir que no se use. Empieza
+    // dentro de la última letra para que no haya ni un píxel muerto entre el
+    // nombre y la flecha.
+    const reach = Math.max(canvas * 0.8, 16);
+    opener
+      .append("rect")
+      .attr("x", endX - fs * 0.2)
+      .attr("y", cy - reach / 2)
+      .attr("width", reach)
+      .attr("height", reach)
+      .attr("fill", "transparent");
+    opener
+      .on("mouseenter", () => frame.attr("opacity", 1))
+      .on("mouseleave", () => frame.attr("opacity", 0));
+    opener.on("click", (event: Event) => {
+      // Sin esto el clic también llega al nodo, que sólo señala, y el `select`
+      // posterior pisaría lo que la flecha acaba de abrir.
+      event.stopPropagation();
+      open(d);
+    });
+  });
+
   node.on("keydown", (_event, d: any) => {
     // Se pregunta a `bindings`, que es de donde la pagina de configuracion saca
     // lo que enseña: asi el atajo anunciado y el atendido son el mismo.
@@ -297,18 +528,45 @@ export function renderGraph(
         if (tgt === d.id) connected.add(src);
       });
       node.filter((n) => connected.has(n.id)).attr("opacity", 1);
+      /*
+       * Cada arista encendida con el color de su dirección.
+       *
+       * Todas en el mismo acento decían que hay vecindad y callaban de qué
+       * lado: no se distinguía la página que uno nombró de la que lo nombró a
+       * uno, que es justamente lo que se va a mirar. Los dos tonos son los del
+       * filete de «La nombran» y «Nombra a» al pie de la página.
+       */
       link
         .filter((l) => {
           const src = typeof l.source === "string" ? l.source : (l.source as any).id;
           const tgt = typeof l.target === "string" ? l.target : (l.target as any).id;
           return src === d.id || tgt === d.id;
         })
-        .attr("stroke-opacity", 0.8)
-        .attr("stroke", colors.hoverAccent);
+        .attr("stroke-opacity", 0.9)
+        .attr("stroke-width", 1.5)
+        .attr("stroke", (l: any) => {
+          const src = typeof l.source === "string" ? l.source : l.source.id;
+          return src === d.id ? colors.linkOut : colors.linkIn;
+        });
+      // Y la flecha, sólo la del nodo señalado: es la puerta de éste y no la de
+      // sus vecinos, que están encendidos por vecindad y no por estar mirándose.
+      d3.select(this)
+        .select<SVGGElement>("g.node-open")
+        .attr("opacity", 1)
+        .style("pointer-events", "auto");
     })
     .on("mouseleave", function () {
-      link.attr("stroke-opacity", 0.6).attr("stroke", colors.linkStroke);
+      link
+        .attr("stroke-opacity", 0.6)
+        .attr("stroke-width", 1)
+        .attr("stroke", colors.linkStroke);
       node.attr("opacity", 1);
+      const opener = d3.select(this).select<SVGGElement>("g.node-open");
+      opener.attr("opacity", 0).style("pointer-events", "none");
+      // Y su marco con ella: si el puntero salta fuera del nodo de un tirón, el
+      // `mouseleave` de la flecha puede no llegar, y el marco se quedaría
+      // encendido en un nodo que ya nadie está señalando.
+      opener.select(".node-open-frame").attr("opacity", 0);
     });
 
   /*
@@ -345,6 +603,27 @@ export function renderGraph(
       .attr("x2", (d: any) => d.target.x)
       .attr("y2", (d: any) => d.target.y);
     node.attr("transform", (d: any) => `translate(${d.x},${d.y})`);
+
+    if (thread !== null) {
+      const at = new Map<string, GraphNode>();
+      for (const one of data.nodes) at.set(one.id, one);
+      segment
+        .attr("x1", (index) => at.get(thread.stops[index]?.page ?? "")?.x ?? 0)
+        .attr("y1", (index) => at.get(thread.stops[index]?.page ?? "")?.y ?? 0)
+        .attr("x2", (index) => at.get(thread.stops[index + 1]?.page ?? "")?.x ?? 0)
+        .attr("y2", (index) => at.get(thread.stops[index + 1]?.page ?? "")?.y ?? 0)
+        // Un tramo con un extremo que ya no existe no se puede dibujar: no hay
+        // adónde. Se deja sin pintar y el puente cortado se ve por el número que
+        // falta en la cadena.
+        .style("display", (index) =>
+          thread.stops[index]?.page === null || thread.stops[index + 1]?.page === null
+            ? "none"
+            : null,
+        );
+      stopMark
+        .attr("x", (one) => at.get(one.page ?? "")?.x ?? 0)
+        .attr("y", (one) => (at.get(one.page ?? "")?.y ?? 0) - 12);
+    }
   };
 
   // El encuadre también se conserva: volver a una página no debe reencuadrar.
