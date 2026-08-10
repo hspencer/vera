@@ -5050,6 +5050,13 @@ code {
    corriente sobre el rastro es volver, y promover es el que se hace de vez en
    cuando. */
 .trail-keep {
+  /*
+   * La fila del rastro es sorda —`#map-trail` lleva `pointer-events: none` para
+   * no tapar el mapa que hay debajo— y cada cosa pulsable se lo devuelve por su
+   * cuenta. Sin esta línea el botón se ve, se ilumina al pasar por encima y el
+   * clic se lo lleva el mapa: no falla, es que nunca le llega.
+   */
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
