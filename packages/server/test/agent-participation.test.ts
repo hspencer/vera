@@ -288,6 +288,42 @@ describe('retirar una credencial', () => {
       blocks.some((block) => block['content'] === 'escrito antes'),
       'retirar el acceso no deshace lo que ya se escribió',
     );
+
+    /*
+     * Y tampoco lee.
+     *
+     * Retirar una credencial no reducía nada: la lectura caía al dueño cuando el
+     * secreto no resolvía, así que el cliente retirado seguía leyendo el corpus
+     * entero, y el registro de exposición atribuía esas lecturas al dueño. La
+     * revocación era una operación sin efecto sobre lo único que esa credencial
+     * podía hacer.
+     */
+    const read = await call(`/pages/${encodeURIComponent(page)}`, { secret });
+    assert.equal(read.status, 401, JSON.stringify(read.json));
+  });
+});
+
+describe('una credencial que no vale se rechaza, no asciende', () => {
+  // El agujero era éste: presentar una llave que no abre daba lo mismo que no
+  // presentar ninguna, y no presentar ninguna es el dueño. Leer se pone al día
+  // con escribir, que devuelve 401 desde el primer día.
+  it('un secreto inventado no lee como el dueño', async () => {
+    const answer = await call('/pages', { secret: 'vera_ag_esto_no_existe' });
+    assert.equal(answer.status, 401, JSON.stringify(answer.json));
+  });
+
+  it('sin credencial se sigue leyendo, que es lo que hoy es cierto en casa', async () => {
+    const answer = await call('/pages');
+    assert.equal(answer.status, 200);
+  });
+
+  it('con una credencial buena se lee', async () => {
+    const issued = await call('/agents/credentials', {
+      method: 'POST',
+      body: { participant: COTITO, scopes: ['read'], label: 'para leer' },
+    });
+    const answer = await call('/pages', { secret: issued.json['secret'] as string });
+    assert.equal(answer.status, 200, JSON.stringify(answer.json));
   });
 });
 

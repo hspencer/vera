@@ -132,7 +132,10 @@ export async function renderGoverning(
     title: string | null,
     note: string | null,
     headers: readonly string[],
-  ): TableBody => section(element, { title, note, headers });
+  ): TableBody =>
+    // `governing-properties` marca las que se visten como declaraciones: la mono
+    // atenuada en las columnas de estructura. Ver `section` y la hoja de estilos.
+    section(element, { title, note, headers, className: 'governing-properties' });
 
   /** Las propiedades declaradas, ofrecidas para constituir un objeto. */
   const declaredChoices: Choice[] = said.properties.map((one) => ({

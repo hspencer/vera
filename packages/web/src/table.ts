@@ -36,7 +36,34 @@ export interface TableBody {
  */
 export function section(
   host: HTMLElement,
-  said: { title?: string | null; note?: string | null; headers: readonly string[] },
+  said: {
+    title?: string | null;
+    note?: string | null;
+    headers: readonly string[];
+    /**
+     * Qué parte del ancho se lleva cada columna, en porcentaje.
+     *
+     * Los anchos por número de columnas viven en la hoja de estilos y sirven
+     * mientras dos tablas con el mismo número de columnas quieran repartirse
+     * igual. En cuanto dejan de quererlo —una de propiedades y una de páginas
+     * marcadas tienen las dos cinco columnas y no se parecen en nada— la clase
+     * compartida le da a una los anchos de la otra sin que nada avise. Quien sabe
+     * qué lleva cada columna es quien la escribe, así que puede decirlo aquí.
+     */
+    widths?: readonly number[];
+    /**
+     * Una clase propia, cuando la tabla quiere un trato que no sale del número
+     * de columnas.
+     *
+     * Mismo problema que los anchos y peor: las reglas por número de columnas
+     * también reparten estilo —qué celda se lee en la mono y cuál no envuelve— y
+     * dos tablas distintas con cinco columnas cada una acaban vistiéndose igual.
+     * La de páginas marcadas heredó de la de propiedades un `nowrap` en la
+     * segunda celda, y el motivo, que es lo que se lee para decidir, se salía
+     * por encima de las columnas siguientes.
+     */
+    className?: string;
+  },
 ): TableBody {
   if (said.title != null) {
     const heading = document.createElement('h3');
@@ -52,7 +79,9 @@ export function section(
   }
 
   const table = document.createElement('table');
-  table.className = `governing governing-cols-${said.headers.length}`;
+  table.className = `governing governing-cols-${said.headers.length}${
+    said.className === undefined ? '' : ` ${said.className}`
+  }`;
 
   const head = document.createElement('thead');
   const headRow = document.createElement('tr');
@@ -61,6 +90,8 @@ export function section(
     cell.scope = 'col';
     cell.textContent = label;
     cell.className = `governing-col-${at}`;
+    const width = said.widths?.[at];
+    if (width !== undefined) cell.style.width = `${width}%`;
     headRow.append(cell);
   }
   head.append(headRow);

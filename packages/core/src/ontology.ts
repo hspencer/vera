@@ -73,13 +73,68 @@ export function fieldKindOf(said: string): FieldKind | null {
   return FIELD_ALIASES[said.trim().toLowerCase()] ?? null;
 }
 
+/**
+ * De qué cuelga una propiedad.
+ *
+ * En el almacén una asignación nombra una página o un bloque, nunca las dos —lo
+ * dice la restricción de la tabla—, así que esto no es una convención sino la
+ * forma que el dato ya tiene. Que no estuviera dicho en ninguna parte es lo que
+ * hacía ilegible la página de propiedades: `término` y `cargo` se leían como
+ * cosas del mismo orden, y una cuelga de un bloque para explicar una relación
+ * entre dos páginas mientras la otra dice qué hace una persona en su trabajo.
+ *
+ * Lo declara el corpus con `sujeto::`. Cuando no lo dice, se deduce del papel
+ * —las tres de la relación explicada cuelgan de un bloque, y las demás de una
+ * página— y en último término se supone página, que es donde vive casi todo lo
+ * que alguien escribe. @invariant DefaultsLiveInTheCode.
+ */
+export type PropertySubject = 'bloque' | 'página';
+
+/**
+ * De qué cuelga cada papel que el código conoce.
+ *
+ * `explains`, `term` y `sense` son las tres claves de la relación explicada, y
+ * una relación se afirma desde un bloque: es el bloque el que dice por qué esta
+ * página y aquélla se tocan. Ver relations.ts. Los demás papeles hablan de la
+ * página entera —qué clase de cosa es, de qué trata, cuándo nació— y por eso
+ * cuelgan de ella.
+ */
+const SUBJECT_BY_ROLE: Record<string, PropertySubject> = {
+  explains: 'bloque',
+  term: 'bloque',
+  sense: 'bloque',
+};
+
+/** Qué escribe alguien cuando quiere decir de qué cuelga. */
+const SUBJECT_ALIASES: Record<string, PropertySubject> = {
+  bloque: 'bloque',
+  bloques: 'bloque',
+  block: 'bloque',
+  'página': 'página',
+  pagina: 'página',
+  'páginas': 'página',
+  paginas: 'página',
+  page: 'página',
+};
+
 /** Un bloque de una página especial, con lo que cuelga de él. */
 export interface DeclaredBlock {
+  /**
+   * El bloque del que salió, por su identidad estable.
+   *
+   * Sin esto una declaración es un dato suelto que no se puede corregir: se lee
+   * «Persona lleva org, cargo, grado» y no hay forma de volver al sitio donde
+   * eso está escrito. Se localiza por identidad y nunca por su texto, porque dos
+   * bloques pueden decir lo mismo y el texto se edita mientras se mira.
+   */
+  block: string;
   content: string;
   properties: readonly { key: string; value: string }[];
 }
 
 export interface PropertyDeclaration {
+  /** El bloque que la declara. Ver `DeclaredBlock.block`. */
+  block: string;
   /** Cómo se llama la propiedad en este corpus. */
   name: string;
   /** Qué clase de campo es. Nulo cuando no se dijo: nadie está obligado a decirlo. */
@@ -93,6 +148,8 @@ export interface PropertyDeclaration {
    * pegado a la propiedad de la que habla, que es donde alguien lo va a buscar.
    */
   role: string | null;
+  /** De qué cuelga. Ver `PropertySubject`. */
+  subject: PropertySubject;
   /** Los valores conocidos, cuando es «una de». */
   values: string[];
   /** Lo que quien la declaró quiso explicar. */
@@ -137,11 +194,16 @@ export function readPropertyDeclarations(blocks: readonly DeclaredBlock[]): Prop
   for (const block of blocks) {
     const name = nameIn(block.content);
     if (name === '') continue;
+    const role = valueOf(block, 'papel');
     said.push({
+      block: block.block,
       name,
+      subject:
+        SUBJECT_ALIASES[(valueOf(block, 'sujeto') ?? '').toLowerCase()] ??
+        (role === null ? 'página' : (SUBJECT_BY_ROLE[role.trim().toLowerCase()] ?? 'página')),
       field: fieldKindOf(valueOf(block, 'campo') ?? ''),
       many: yes(valueOf(block, 'varios')),
-      role: valueOf(block, 'papel'),
+      role,
       values: listOf(valueOf(block, 'valores')),
       says: valueOf(block, 'qué') ?? valueOf(block, 'nota'),
     });
@@ -150,10 +212,25 @@ export function readPropertyDeclarations(blocks: readonly DeclaredBlock[]): Prop
 }
 
 export interface ObjectDeclaration {
+  /** El bloque que la declara. Ver `DeclaredBlock.block`. */
+  block: string;
   /** La clase de cosa: «Persona», «Referencia», «Proyecto». */
   name: string;
   /** Qué propiedades la constituyen, en el orden en que se declararon. */
   properties: string[];
+  /**
+   * Qué papel del código cumple esta clase, si cumple alguno.
+   *
+   * Los papeles no son sólo de las claves. `day` no nombra una propiedad: nombra
+   * la clase con que nace un día, que es un valor de `tipo` y por tanto una de
+   * estas clases. Hasta que `papel::` se leyó también aquí, la única forma de
+   * atarlo era escribir `bitácora` en la página de propiedades como si fuera una
+   * clave, y quedaba declarada dos veces: bien aquí, como clase, y mal allí,
+   * como una propiedad que no existe.
+   *
+   * El papel viaja con la cosa que nombra, y aquí las cosas son clases.
+   */
+  role: string | null;
   says: string | null;
 }
 
@@ -164,8 +241,10 @@ export function readObjectDeclarations(blocks: readonly DeclaredBlock[]): Object
     const name = nameIn(block.content);
     if (name === '') continue;
     said.push({
+      block: block.block,
       name,
       properties: listOf(valueOf(block, 'propiedades')),
+      role: valueOf(block, 'papel'),
       says: valueOf(block, 'qué') ?? valueOf(block, 'nota'),
     });
   }

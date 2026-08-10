@@ -9,7 +9,9 @@ import {
 } from '../src/ontology.ts';
 import { namesFromRoles } from '../src/property-names.ts';
 
+let at = 0;
 const block = (content: string, properties: Record<string, string> = {}) => ({
+  block: `block:${(at += 1)}`,
   content,
   properties: Object.entries(properties).map(([key, value]) => ({ key, value })),
 });
@@ -74,10 +76,33 @@ describe('readObjectDeclarations', () => {
     const [said] = readObjectDeclarations([block('Bitácora', { qué: 'un día' })]);
     assert.deepEqual(said?.properties, []);
   });
+
+  it('una clase puede cumplir un papel del código', () => {
+    // `day` no nombra una propiedad: nombra la clase con que nace un día, que es
+    // un valor de `tipo`. Leerlo aquí es lo que evita tener que escribirlo en la
+    // página de propiedades como si fuera una clave.
+    const [said] = readObjectDeclarations([block('Bitácora', { papel: 'day', qué: 'un día' })]);
+    assert.equal(said?.role, 'day');
+  });
+
+  it('el papel de una clase nombra el valor, como el de una propiedad nombra la clave', () => {
+    const names = namesFromRoles([
+      ...readPropertyDeclarations([block('tipo', { papel: 'kind' })]),
+      ...readObjectDeclarations([block('Jornada', { papel: 'day' })]),
+    ]);
+    assert.equal(names.kind, 'tipo');
+    assert.equal(names.day, 'Jornada');
+  });
 });
 
 describe('missingFor', () => {
-  const persona = { name: 'Persona', properties: ['org', 'cargo', 'email'], says: null };
+  const persona = {
+    block: 'block:persona',
+    name: 'Persona',
+    properties: ['org', 'cargo', 'email'],
+    role: null,
+    says: null,
+  };
 
   it('dice qué falta, sin importar mayúsculas', () => {
     assert.deepEqual(missingFor(persona, ['Org', 'email']), ['cargo']);

@@ -1,0 +1,442 @@
+-- allium: 3
+-- confined-writing.allium
+
+-- Scope: Una credencial que escribe sin que nadie revise, y que por eso sólo
+--   puede escribir dentro de un cerco: páginas que ella misma creó, de una clase
+--   concedida
+-- Includes: Qué es un cerco, dónde vive, qué deja hacer y qué no, de dónde sale
+--   la procedencia de lo que se escribe así, y qué pasa cuando una persona toca
+--   después una de esas páginas
+-- Excludes:
+--   - Cómo se emite y se retira una credencial, y cómo se comprueban sus
+--     alcances (ver agent-participation.allium)
+--   - La autoría por bloque y el canal, que ya gobiernan de qué mano salió cada
+--     línea (ver agent-participation.allium)
+--   - La puerta MCP, su transporte y el registro de exposición
+--     (ver mcp-server.allium)
+--   - La propuesta revisada —escribir algo que una persona acepta antes de que
+--     entre—, que es otra forma de resolver lo mismo y no está aquí
+-- Dependencies: Page, Block, Change y Participant los gobierna core.allium;
+--   AccessToken y los alcances, agent-participation.allium; la aplicación de
+--   cualquier cambio, change-application.allium
+
+use "./core.allium" as core
+use "./agent-participation.allium" as agents
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- Escribir sin revisión previa, a cambio de no poder salir de casa.
+--
+-- Hay dos maneras de dejar que una inteligencia de fuera escriba en una memoria
+-- personal. Una es que proponga y una persona acepte; la otra es que escriba, y
+-- que lo que escriba esté acotado de antemano a un sitio del que no puede salir.
+-- Esta spec gobierna la segunda.
+--
+-- La segunda es más barata de lo que parece, y no por relajar nada: es que el
+-- problema que hacía cara a la escritura desaparece. Escribir a ciegas es
+-- peligroso porque el agente pudo leer una página hace un minuto, escribir
+-- ahora, y pisar lo que una persona escribió en medio —y hoy nada lo detecta,
+-- porque las precondiciones de revisión no existen en el dominio—. Un agente que
+-- sólo puede crear páginas nuevas y escribir dentro de ellas no pisa nada,
+-- porque no hay nada suyo que otro estuviera tocando. El conflicto no se
+-- resuelve: no llega a existir.
+--
+-- Lo que se paga es que no puede completar una página que ya estaba escrita, que
+-- es justamente lo que uno no quiere que haga todavía.
+contract ConfinedWriting {
+    permits: (token: agents/AccessToken, change: core/Change) -> Boolean
+
+    @invariant TheFenceIsInTheCredentialAndNotInTheDoor
+        -- El cerco lo lleva la credencial, no la herramienta con que se pide.
+        --
+        -- MCP no es la única entrada: `POST /operations` es la puerta por la que
+        -- entra todo cambio, y el mismo secreto entra por ahí sin pasar por
+        -- ninguna herramienta. Un límite comprobado en la herramienta sería una
+        -- sugerencia dirigida a quien ya decidió obedecerla.
+        --
+        -- Es el mismo argumento por el que el canal se deriva de quién escribe y
+        -- no se lee del cuerpo: lo que gobierna tiene que estar donde no puede
+        -- esquivarse.
+
+    @invariant ItWritesOnlyWhereItPlanted
+        -- Una credencial cercada puede crear páginas y escribir en las que ella
+        -- creó. En ninguna otra.
+        --
+        -- Quién creó una página no es un dato nuevo que haya que guardar: está en
+        -- el registro, que ya dice qué credencial sometió cada operación. Se
+        -- deriva, y por eso no puede desincronizarse de lo que de verdad pasó.
+
+    @invariant ANewPageIsOfTheGrantedKind
+        -- La página nace con la clase que el cerco concede y no con otra.
+        -- Conceder «puede crear páginas» sin decir de qué clase es conceder que
+        -- se meta en cualquier parte del vocabulario, y entonces el cerco sólo
+        -- limita dónde escribe y no qué finge ser.
+
+    @invariant AFenceNeverWidensWithUse
+        -- Nada de lo que la credencial haga agranda su cerco. Crear una página
+        -- le da esa página y nada más: no le da la clase entera, ni las páginas
+        -- que esa página enlace, ni las que otra credencial de la misma clase
+        -- haya creado.
+
+    @invariant AnUnfencedCredentialIsUnchanged
+        -- Una credencial sin cerco escribe como hasta ahora. El cerco es algo
+        -- que se concede, no un régimen nuevo que caiga sobre lo que ya existe:
+        -- Cotito escribe a diario en todo el corpus por decisión del dueño, y
+        -- esta spec no se la revoca de refilón.
+
+    @invariant WhatIsOutsideIsRefusedAndSaidWhy
+        -- Un cambio fuera del cerco se rechaza diciendo qué cerco es y qué
+        -- quedaba fuera. Un «no permitido» a secas obliga a adivinar si falta un
+        -- alcance, si la página es de otro o si la clase no era ésa, y un agente
+        -- que adivina reintenta.
+
+    @invariant ItNeverDiscards
+        -- Dentro del cerco puede escribir todo menos quitar. Un cambio que borre
+        -- —una página, un bloque— se rechaza aunque la credencial traiga el
+        -- alcance `discard`, y por eso no se le concede.
+        --
+        -- El cerco vale porque lo que hace se puede leer después: cada operación
+        -- deja el estado anterior en el registro, así que una página escrita de
+        -- más se corrige leyéndola. Borrar es el único acto que rompe eso: deja
+        -- una ausencia, y una ausencia no se revisa. Es la misma razón por la que
+        -- `discard` está separado de `write` desde el principio, llevada a su
+        -- conclusión: si el trato es «escribe sin que nadie mire», entonces lo
+        -- que no se puede mirar después no entra en el trato.
+}
+
+-- Lo que sí puede hacer en lugar de borrar: pedirlo.
+--
+-- Una máquina que redacta a diario acumula páginas que ya no sirven —la nota que
+-- se integró en otra, la que salió mal, la que duplicó una que ya estaba— y sin
+-- ninguna forma de decirlo, el corpus crece con basura que sólo su autor sabe
+-- reconocer. Pero borrar no puede, por ItNeverDiscards.
+--
+-- Marcar resuelve las dos mitades. La máquina dice lo que sabe —esta página
+-- sobra, y por esto—; la persona decide, que es lo que quería decidir. Y es una
+-- propuesta completa sin construir la maquinaria de propuestas: cabe porque lo
+-- pedido es de una sola clase y sobre una página que la máquina ya podía
+-- escribir entera. Ver la exclusión de arriba: la propuesta revisada general es
+-- otra cosa y sigue sin estar aquí.
+contract MarkingInsteadOfDiscarding {
+    marked: (page: core/Page) -> String?
+
+    @invariant AMarkIsAPropertyAndNothingMore
+        -- Se marca escribiendo una propiedad de la página, con la misma
+        -- operación con que se escribe cualquier otra. No hay una vía propia ni
+        -- una tabla aparte: quién la marcó y cuándo lo dice el registro, que ya
+        -- lo sabe, y derivarlo es lo que impide que diga algo distinto de lo que
+        -- pasó.
+
+    @invariant AMarkCarriesItsReason
+        -- Marcar sin decir por qué deja a quien decide con la misma pregunta que
+        -- tenía antes, y una más: por qué esta página y no otra. El motivo es el
+        -- valor de la propiedad, así que no hay marca muda que valga.
+
+    @invariant AMarkOnlyReachesItsOwnPages
+        -- Una credencial cercada sólo marca lo que plantó, porque marcar es
+        -- escribir y escribir ya está cercado. No hace falta una regla nueva
+        -- para eso, y hace falta decirlo: si no, se leería como un permiso
+        -- aparte que alcanza más lejos.
+
+    @invariant AMarkDecidesNothing
+        -- La página marcada sigue entera y se lee como cualquier otra. Nada se
+        -- oculta, nada caduca y nada se borra solo: una marca que además
+        -- escondiera la página sería borrar en diferido, y con menos rastro.
+
+    @invariant AMarkIsAnswerable
+        -- Quitar la marca es un acto de persona y no hace falta explicarlo:
+        -- decidir que una página se queda es la respuesta normal a que alguien
+        -- proponga que se vaya, y tener que argumentarla invertiría de quién es
+        -- el corpus.
+}
+
+-- De dónde vino una página, dicho por Vera y no por quien la escribió.
+--
+-- La autoría por bloque ya dice de qué mano salió cada línea, y es la salvaguarda
+-- que sostiene todo esto. Lo que no da es una marca de la página entera: no se
+-- puede preguntar «qué escribió ChatGPT esta semana» recorriendo autorías bloque
+-- a bloque, y una página escrita por una máquina tiene que reconocerse antes de
+-- abrirla.
+--
+-- Eso ya tiene palabra en este corpus. `fuente` dice de qué servicio de fuera
+-- vino una página, y es la que el importador escribe en cada página traída de
+-- Zotero. No hace falta inventar otra; hace falta que la escriba Vera.
+contract DerivedProvenance {
+    source_of: (token: agents/AccessToken) -> String?
+
+    @invariant TheSourceIsWrittenByVeraAndNotByTheAgent
+        -- La procedencia sale de la credencial, como el canal. Si la escribiera
+        -- el agente podría escribir otra, y una marca de procedencia que quien
+        -- la produce puede elegir no es una marca de procedencia.
+
+    @invariant ProvenanceOutlivesItsCredential
+        -- Retirar la credencial no borra de dónde vinieron las páginas que
+        -- escribió. Es un hecho pasado y el corpus no reescribe hechos pasados;
+        -- lo que la revocación quita es escribir más.
+
+    @invariant AHumanHandDoesNotEraseWhereItCameFrom
+        -- Que una persona edite después una de esas páginas no le quita la
+        -- procedencia: la página siguió naciendo de ahí. Quién escribió qué
+        -- dentro lo dice la autoría por bloque, que es más fina y ya existe.
+
+    @invariant TheSourceIsNotTheParticipant
+        -- `fuente` dice de qué servicio vino, y el participante dice quién
+        -- firma. Pueden no ser lo mismo —dos conexiones distintas pueden hablar
+        -- por el mismo participante— y confundirlos haría imposible retirar una
+        -- sin perder de vista lo que escribió la otra.
+}
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- El cerco de una credencial: qué puede plantar y dónde.
+--
+-- Cuelga de la credencial y no de la clase de página, porque lo que se concede
+-- se concede a alguien.
+--
+-- El territorio, en cambio, es del participante y no de la llave, y lo obligó la
+-- implementación: el registro de operaciones guarda con qué identidad se
+-- escribió y no con qué credencial. Resultó ser además lo correcto — dos
+-- credenciales del mismo participante son el mismo escritor con dos llaves, y
+-- separarlas impediría que la misma máquina corrigiera desde el portátil lo que
+-- escribió desde el escritorio—. Lo que queda separado es lo que importa: dos
+-- participantes distintos nunca comparten territorio, y ninguna credencial
+-- alcanza lo que escribió una persona.
+--
+-- Ver @invariant AFenceNeverWidensWithUse: nada de lo que hace agranda el cerco.
+entity Confinement {
+    token: agents/AccessToken
+
+    -- La clase de cosa que puede crear, dicha con la palabra del corpus. Es un
+    -- valor de la propiedad que cumple el papel `kind`, y las clases las declara
+    -- la página de objetos: el cerco no inventa vocabulario, elige de él.
+    kind: String
+
+    -- Con qué se marca lo que escriba, en la propiedad que cumple el papel de
+    -- procedencia. Nulo cuando no se quiso marcar nada, que deja la autoría por
+    -- bloque como única señal.
+    source: String?
+
+    granted_by: core/Participant
+    granted_at: Timestamp
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- Plantar: la credencial cercada crea una página, y nace marcada.
+rule ConfinedCredentialPlantsAPage {
+    when: agents/SubmitAsAgent(agent, token, secret, change, origin_id)
+
+    let fence = Confinement{token: token}
+
+    requires: exists fence
+    requires: change.kind = create_page
+
+    ensures:
+        core/Page.created(graph: token.graph, title: change.title)
+        page_kind(change.page) = fence.kind
+        page_source(change.page) = fence.source
+
+    @invariant TheKindAndTheSourceComeFromTheFence
+        -- Las dos propiedades las pone Vera al aplicar y no viajan en el cambio.
+        -- Un agente que pudiera mandarlas escribiría una página que dice ser de
+        -- otra clase y venir de otra parte, y las dos cosas son justamente lo que
+        -- el cerco existe para fijar.
+
+    @invariant ItIsWrittenLikeAnythingElse
+        -- Entra por la única puerta de escritura que Vera tiene, con su autoría,
+        -- su canal y su sitio en la secuencia. Que ocurra sin revisión no le da
+        -- una vía propia: un cambio que no se pudiera auditar como cualquier
+        -- edición hecha a mano no podría hacerse sin revisión.
+}
+
+-- Escribir dentro: sólo en lo que ella plantó.
+rule ConfinedCredentialWritesInsideItsOwnPage {
+    when: agents/SubmitAsAgent(agent, token, secret, change, origin_id)
+
+    let fence = Confinement{token: token}
+
+    requires: exists fence
+    requires: change.kind != create_page
+    requires: planted_by(subject_page(change), token)
+
+    ensures: change_applies
+
+    @guidance
+        -- `planted_by` se contesta con el registro: quién sometió el
+        -- `create_page` de esa página. No hay una tabla de propiedad que
+        -- mantener, y por eso no puede decir algo distinto de lo que pasó.
+}
+
+-- Y fuera, no.
+rule ConfinedCredentialIsRefusedOutside {
+    when: agents/SubmitAsAgent(agent, token, secret, change, origin_id)
+
+    let fence = Confinement{token: token}
+
+    requires: exists fence
+    requires: change.kind != create_page
+    requires: not planted_by(subject_page(change), token)
+
+    ensures: change_refused
+
+    @invariant RefusalNamesTheFence
+        -- Se dice qué clase concede el cerco y de quién es la página que se
+        -- quiso tocar. Ver @invariant WhatIsOutsideIsRefusedAndSaidWhy.
+}
+
+-- Borrar, no: ni con el alcance puesto.
+rule ConfinedCredentialIsRefusedToDiscard {
+    when: agents/SubmitAsAgent(agent, token, secret, change, origin_id)
+
+    let fence = Confinement{token: token}
+
+    requires: exists fence
+    requires: discards(change)
+
+    ensures: change_refused
+
+    @invariant TheFenceOutranksTheScope
+        -- Se rechaza aunque `discard` esté en los alcances de la credencial. El
+        -- alcance dice qué se le concedió; el cerco dice qué clase de trato es
+        -- éste, y este trato no incluye dejar ausencias. Comprobarlo sólo en la
+        -- ausencia del alcance dejaría el agujero abierto para el día en que
+        -- alguien conceda los tres alcances de un tirón sin pensarlo.
+
+    @invariant TheRefusalOffersTheMark
+        -- El rechazo dice que se puede marcar en vez de borrar. Un agente al que
+        -- se le niega algo sin decirle qué sí puede hacer reintenta lo mismo, o
+        -- deja de intentar y la página inútil se queda para siempre.
+}
+
+-- Y en su lugar, marcarla.
+rule ConfinedCredentialMarksItsPageForDiscarding {
+    when: agents/SubmitAsAgent(agent, token, secret, change, origin_id)
+
+    let fence = Confinement{token: token}
+
+    requires: exists fence
+    requires: change.kind = set_property
+    requires: change.property_key = discard_mark_key(token.graph)
+    requires: planted_by(change.page, token)
+    requires: change.property_value != ""
+
+    ensures: change_applies
+
+    @guidance
+        -- Con qué palabra se marca lo dice el corpus, como todo lo demás que se
+        -- nombra: es la propiedad que cumple el papel de la marca, declarada
+        -- donde se declaran las propiedades. El papel es del programa y la
+        -- palabra es de quien escribe — ver property-names en el código y
+        -- @invariant DefaultsLiveInTheCode.
+}
+
+-- Una persona escribe donde quiera, también aquí.
+rule APersonWritesInsideAnAgentsPage {
+    when: core/ParticipantSubmits(participant, graph, origin_id, change, channel, evidence?)
+
+    requires: participant.kind = human
+
+    ensures: change_applies
+
+    @invariant TheFenceOnlyBindsTheCredentialThatCarriesIt
+        -- El cerco limita a quien lo lleva y a nadie más. Una página escrita por
+        -- una máquina es una página del corpus: se lee, se corrige, se enlaza y
+        -- se borra como cualquier otra, y quien lo haga queda registrado como en
+        -- cualquier otra.
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant AFenceGrantsAKindTheCorpusDeclares {
+    for fence in Confinements:
+        fence.kind != ""
+}
+
+invariant OneFencePerCredential {
+    for fence in Confinements:
+        for other in Confinements:
+            other.token = fence.token implies other = fence
+}
+
+invariant AFenceIsGrantedByAPerson {
+    for fence in Confinements:
+        fence.granted_by.kind = human
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor ConfinedAgent {
+    within: core/Graph
+    identified_by: agents/AccessToken where Confinement{token: this}
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface ConfinementAdministration {
+    facing owner: core/Participant
+    context token: agents/AccessToken
+
+    exposes:
+        Confinement
+
+    provides:
+        GrantConfinement(owner, token, kind, source)
+        WithdrawConfinement(owner, token)
+
+    @guarantee AFenceIsReadWhereTheCredentialIsRead
+        -- El cerco se ve donde se ve la credencial que lo lleva, y no en otra
+        -- pantalla. Un permiso que hay que ir a buscar a otro sitio es un
+        -- permiso que se olvida de revisar.
+
+    @guarantee WhatWasPlantedIsCountedWhereItWasGranted
+        -- Junto al cerco se dice cuántas páginas ha plantado esa credencial y
+        -- cuándo fue la última. Conceder escritura sin revisión y no poder ver
+        -- de un vistazo cuánto se escribió sería conceder a ciegas.
+
+    @guarantee AConfinedPageSaysSoWhereItIsRead
+        -- Una página escrita así lo dice al abrirla, por su clase y por su
+        -- procedencia, sin que haya que mirar la autoría bloque a bloque.
+
+    @guarantee WhatWasMarkedIsFoundWithoutLookingForIt
+        -- Las páginas marcadas para borrar se ven juntas, con su motivo y quién
+        -- lo escribió, y desde ahí se borran o se desmarcan de un gesto. Una
+        -- marca que hubiera que salir a buscar página por página es una marca
+        -- que nadie atiende, y entonces la máquina habrá dicho algo que nadie
+        -- oyó: peor que no poder decirlo, porque además parecía que servía.
+
+    @guarantee BorrarSigueSiendoUnActoDeliberado
+        -- Que la lista exista no convierte borrar en un trámite de una tecla
+        -- para todo el montón. Lo que la máquina propone se acepta de a una,
+        -- porque cada página que se va deja una ausencia y la ausencia es lo
+        -- único que el registro no puede enseñar después.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- Las que quedaron al decidir esto el 9 de agosto de 2026.
+-- La primera —si una credencial cercada podía borrar— la contestó Herbert ese
+-- mismo día y por eso ya no está aquí: no borra, marca. Ver ItNeverDiscards y el
+-- contrato MarkingInsteadOfDiscarding.
+open question "¿Qué pasa con el cerco cuando una persona mueve bloques desde la página de la máquina a otra página suya? ¿La procedencia viaja con el texto, se queda con la página que lo vio nacer, o deja de decirse?"
+open question "¿La clase concedida tiene que estar declarada en la página de objetos en el momento de conceder el cerco, o basta con que sea una palabra? Exigirlo ata el cerco al vocabulario; no exigirlo deja crear páginas de una clase que nadie definió."
+
+-- Y una que viene de más atrás y aquí se vuelve urgente.
+open question "Con varias credenciales cercadas escribiendo a la vez, ¿el registro de exposición y el de operaciones bastan para reconstruir qué hizo cada una, o hace falta poder preguntar «qué escribió ésta» sin recorrer el log entero?"
+
+-- Las dos que abrió la decisión de marcar en vez de borrar.
+open question "¿Puede la máquina desmarcar lo que ella misma marcó —porque se dio cuenta de que la página sí servía— o desmarcar es siempre de la persona, como aceptar? Dejarla desmarcar le permite retirar una petición; también le permite retirarla justo antes de que alguien la lea."
+open question "Una página marcada que después edita una persona, ¿sigue marcada? El texto ya no es sólo de la máquina, y la razón que dio pudo dejar de ser cierta; pero quitar la marca por el hecho de que alguien la tocó decidiría por quien todavía no decidió."

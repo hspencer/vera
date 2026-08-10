@@ -419,6 +419,36 @@ CREATE TABLE IF NOT EXISTS access_tokens (
 CREATE INDEX IF NOT EXISTS access_tokens_by_participant
     ON access_tokens (graph_id, participant_id);
 
+-- El cerco de una credencial: qué clase puede plantar y con qué se marca.
+--
+-- Una credencial cercada escribe sin que nadie revise, a cambio de no poder
+-- salir de casa: crea páginas de la clase concedida, escribe dentro de las que
+-- ella plantó, y no borra nada aunque traiga el alcance `discard`. Ver
+-- specs/confined-writing.allium.
+--
+-- Una fila por credencial cercada, y ninguna para las que escriben sin cerco: el
+-- cerco se concede, no es un régimen que caiga sobre lo que ya existe.
+--
+-- No guarda qué páginas plantó. Eso se deriva del registro de operaciones —quién
+-- sometió el `create_page` de cada página—, que ya lo sabe y no puede
+-- desincronizarse de lo que de verdad pasó.
+CREATE TABLE IF NOT EXISTS confinements (
+    token_id    TEXT PRIMARY KEY REFERENCES access_tokens (id) ON DELETE CASCADE,
+    graph_id    TEXT NOT NULL REFERENCES graphs (id),
+    -- La clase de cosa que puede crear, con la palabra del corpus.
+    kind        TEXT NOT NULL,
+    -- Con qué se marca su procedencia. Nulo cuando no se quiso marcar nada.
+    source      TEXT,
+    -- @invariant AFenceIsGrantedByAPerson
+    granted_by  TEXT NOT NULL REFERENCES participants (id),
+    granted_at  INTEGER NOT NULL
+) STRICT;
+
+-- Y el índice que hace barato preguntar quién plantó una página: se pregunta en
+-- cada escritura de una credencial cercada, y sin él es un recorrido del log.
+CREATE INDEX IF NOT EXISTS operations_by_subject
+    ON operations (subject_id, change_kind);
+
 -- De qué mano salió el texto que un bloque tiene ahora.
 --
 -- @invariant GeneratedContentIsAlwaysDistinguishable: se materializa aquí para

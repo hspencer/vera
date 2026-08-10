@@ -267,12 +267,51 @@ const addExposureLog: Migration = {
   },
 };
 
+/*
+ * El cerco de una credencial: qué clase puede plantar y con qué se marca.
+ *
+ * Ver specs/confined-writing.allium. Una fila por credencial cercada, y ninguna
+ * para las que escriben sin cerco: el cerco se concede, no es un régimen que
+ * caiga sobre lo que ya existe.
+ *
+ * No guarda qué páginas plantó. Eso se deriva del registro de operaciones —quién
+ * sometió el `create_page` de cada página—, que ya lo sabe y no puede
+ * desincronizarse de lo que de verdad pasó. Una tabla de propiedad sería un
+ * segundo sitio diciendo lo mismo.
+ */
+const addConfinements: Migration = {
+  version: 6,
+  name: 'cercos de credencial',
+  apply(db) {
+    db.exec(`CREATE TABLE IF NOT EXISTS confinements (
+      token_id    TEXT PRIMARY KEY REFERENCES access_tokens (id) ON DELETE CASCADE,
+      graph_id    TEXT NOT NULL REFERENCES graphs (id),
+      kind        TEXT NOT NULL,
+      source      TEXT,
+      granted_by  TEXT NOT NULL REFERENCES participants (id),
+      granted_at  INTEGER NOT NULL
+    ) STRICT`);
+    /*
+     * Y el índice que hace barato preguntar quién plantó una página.
+     *
+     * `planted_by` se contesta buscando el `create_page` de esa página en el
+     * registro, y se pregunta en cada escritura de una credencial cercada. Sin
+     * índice es un recorrido del log entero por cada bloque que escriba una
+     * máquina, que en un corpus de sesenta mil operaciones se nota.
+     */
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS operations_by_subject ON operations (subject_id, change_kind)',
+    );
+  },
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   addWalkedChannel,
   addPageOriginCreatedAt,
   addServiceSecrets,
   addDrawnChannel,
   addExposureLog,
+  addConfinements,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

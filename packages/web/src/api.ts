@@ -466,6 +466,25 @@ export const api = {
     json('/agents', { method: 'POST', body: JSON.stringify(said) }),
 
   /**
+   * Conectar una IA nueva: participante, credencial, cerco y su fila, de una vez.
+   *
+   * Cinco escrituras y ninguna sirve sola, así que van juntas y en el servidor.
+   * Devuelve el secreto, y es la única vez que sale: ver TheSecretIsShownOnce.
+   */
+  connect: (said: {
+    name: string;
+    client: string;
+    deal: 'leer' | 'propio' | 'todo';
+    kind?: string;
+    source?: string;
+    says?: string;
+  }) =>
+    json<CredentialView & { secret: string; block: string; participant: string; client: string }>(
+      '/mcp/connections',
+      { method: 'POST', body: JSON.stringify(said) },
+    ),
+
+  /**
    * La clave entera, cuando su dueño pulsa el ojo.
    *
    * Se pide aparte y no viaja con la página: así no está en la respuesta que el

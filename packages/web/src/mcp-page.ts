@@ -13,7 +13,14 @@
 //
 // Ver packages/server/src/mcp-page.ts y specs/mcp-server.allium.
 
-import { api, type Change, type MCPConnection, type SeenClient } from './api.ts';
+import {
+  api,
+  type Change,
+  type DiscardRequest,
+  type MCPConnect,
+  type MCPConnection,
+  type SeenClient,
+} from './api.ts';
 import { cellIn, editableCell, observedCell, rowIn, section } from './table.ts';
 
 /** ¿Esta página gobierna la puerta MCP? Se responde con lo que la página trae. */
@@ -91,14 +98,174 @@ function reading(seen: SeenClient | null): string {
   return `${times} · ${when(seen.lastAt)}`;
 }
 
+/**
+ * Los datos con que se enchufa una IA, listos para pegar en su formulario.
+ *
+ * Todos los «agregar servidor MCP» piden lo mismo con nombres distintos: tipo,
+ * comando, argumentos, variables de entorno y directorio de trabajo. Hasta ahora
+ * eso vivía en `packages/mcp/README.md`, o sea fuera de Vera: había que salirse
+ * de la aplicación y abrir un archivo del repositorio para saber qué pegar.
+ *
+ * No se escriben: se calculan de este despliegue. Una prosa con la ruta y el
+ * puerto dentro mentiría con toda confianza el día que se mueva cualquiera de
+ * los dos.
+ */
+function connectPanel(connect: MCPConnect, host: HTMLElement): void {
+  const heading = document.createElement('h3');
+  heading.className = 'governing-title';
+  heading.textContent = 'Cómo se enchufa una IA a esta Vera';
+  host.append(heading);
+
+  const note = document.createElement('p');
+  note.className = 'governing-note';
+  note.textContent = connect.present
+    ? 'Esto es lo que pide cualquier formulario de «agregar servidor MCP», con los ' +
+      'valores de este equipo. El tipo es stdio: no hay una dirección que pegar, el ' +
+      'cliente lanza un proceso y le habla. Por eso sólo sirve para una IA que corra ' +
+      'en un equipo tuyo.'
+    : 'No se encontró la puerta donde debería estar. Estos valores están calculados ' +
+      'igual, pero antes de pegarlos hay que comprobar que el repositorio está donde ' +
+      'dice.';
+  host.append(note);
+
+  const list = document.createElement('dl');
+  list.className = 'connect';
+  host.append(list);
+
+  /*
+   * Un renglón por campo del formulario, con su valor copiable.
+   *
+   * Copiar y no seleccionar a mano: una ruta absoluta con banderas dentro se
+   * copia mal a ojo, y un argumento perdido se manifiesta como «el servidor no
+   * arrancó», que no dice nada sobre qué falta.
+   */
+  const row = (label: string, value: string, says?: string): HTMLElement => {
+    const key = document.createElement('dt');
+    key.textContent = label;
+    const held = document.createElement('dd');
+
+    const text = document.createElement('code');
+    text.className = 'connect-value';
+    text.textContent = value;
+    held.append(text);
+
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'connect-copy';
+    copy.textContent = 'copiar';
+    copy.setAttribute('aria-label', `copiar ${label}`);
+    copy.addEventListener('click', () => {
+      void navigator.clipboard?.writeText(value).then(
+        () => {
+          copy.textContent = 'copiado';
+          window.setTimeout(() => (copy.textContent = 'copiar'), 1500);
+        },
+        () => (copy.textContent = 'no se pudo'),
+      );
+    });
+    held.append(copy);
+
+    if (says !== undefined) {
+      const aside = document.createElement('span');
+      aside.className = 'connect-says';
+      aside.textContent = says;
+      held.append(aside);
+    }
+
+    list.append(key, held);
+    return held;
+  };
+
+  row('Tipo', connect.transport, 'no es una URL: es un proceso que el cliente lanza');
+  row('Comando', connect.command, `node ${connect.node}, por su ruta entera para no depender del PATH`);
+  row('Argumentos', connect.args.join(' '));
+  row('Directorio de trabajo', connect.cwd);
+
+  /*
+   * El nombre del cliente se escribe, porque es lo único de aquí que es una
+   * decisión: es cómo va a aparecer esa IA en la tabla de abajo y en el registro
+   * de exposición. Sin él caen todas juntas en «sin declarar».
+   */
+  const named = document.createElement('dt');
+  named.textContent = 'Variables de entorno';
+  const values = document.createElement('dd');
+
+  const field = document.createElement('input');
+  field.type = 'text';
+  field.className = 'connect-client';
+  field.value = 'chatgpt';
+  field.setAttribute('aria-label', 'cómo se va a llamar esta conexión');
+  field.placeholder = 'nombre de la conexión';
+
+  const env = document.createElement('code');
+  env.className = 'connect-value';
+
+  const copyEnv = document.createElement('button');
+  copyEnv.type = 'button';
+  copyEnv.className = 'connect-copy';
+  copyEnv.textContent = 'copiar';
+
+  const settle = (): void => {
+    const client = field.value.trim() === '' ? 'vera-mcp' : field.value.trim();
+    env.textContent = `VERA_URL=${connect.url}\nVERA_CLIENT=${client}`;
+  };
+  settle();
+  field.addEventListener('input', settle);
+  copyEnv.addEventListener('click', () => {
+    void navigator.clipboard?.writeText(env.textContent ?? '').then(() => {
+      copyEnv.textContent = 'copiado';
+      window.setTimeout(() => (copyEnv.textContent = 'copiar'), 1500);
+    });
+  });
+
+  const says = document.createElement('span');
+  says.className = 'connect-says';
+  says.textContent = 'el nombre es lo único que decides: es cómo aparece abajo y en el registro';
+  values.append(env, copyEnv, field, says);
+  list.append(named, values);
+
+  /*
+   * Y la advertencia que evita la tarde perdida.
+   *
+   * `127.0.0.1` sólo vale si la IA corre en este mismo equipo. Desde el portátil
+   * o el teléfono, esa dirección apunta a su propia máquina, donde no hay
+   * ninguna Vera, y el error que se ve es «no se pudo conectar», que no dice
+   * cuál de las dos cosas falló.
+   */
+  const elsewhere = document.createElement('p');
+  elsewhere.className = 'governing-note';
+  elsewhere.textContent =
+    connect.reachableAt === null
+      ? 'Si la IA corre en otro equipo, VERA_URL no puede ser 127.0.0.1: ahí no hay ' +
+        'ninguna Vera. Hay que poner la dirección por la que se alcanza este equipo, y ' +
+        'este despliegue no la tiene declarada (VERA_REACHABLE_AT en .env). Además el ' +
+        'repositorio y node tienen que existir también en ese equipo, porque el proceso ' +
+        'corre allí.'
+      : `Si la IA corre en otro equipo, cambia VERA_URL por ${connect.reachableAt}, que es ` +
+        'por donde se alcanza esta Vera desde la tailnet. El repositorio y node tienen ' +
+        'que existir también en ese equipo: el proceso corre allí, no aquí.';
+  host.append(elsewhere);
+
+  const http = document.createElement('p');
+  http.className = 'governing-note';
+  http.textContent =
+    'La otra opción de esos formularios —tipo HTTP, con una URL y un bearer— todavía ' +
+    'no existe: la puerta sólo habla por stdio. Es lo que hace falta para una IA que ' +
+    'corra en el navegador, y es M5.';
+  host.append(http);
+}
+
 export async function renderMCP(
   write: Write,
+  notify: (message: string) => void,
 ): Promise<{ element: HTMLElement; declaring: Set<string> } | null> {
   const door = await api.mcp().catch(() => null);
   if (door === null || door.id === null) return null;
 
   const element = document.createElement('div');
   element.className = 'governing-tables';
+
+  if (door.connect !== undefined) connectPanel(door.connect, element);
 
   /** Escribir una propiedad del bloque que declara, o quitarla si queda vacía. */
   const put = (block: string, key: string) => async (next: string): Promise<boolean> =>
@@ -215,8 +382,347 @@ export async function renderMCP(
     }
   }
 
+  connectForm(element, door.connect ?? null, notify);
+  await credentialsSection(element, notify);
+  markedSection(element, door, write, notify);
+
   if (declaring.size === 0 && door.undeclared.length === 0) return null;
   return { element, declaring };
+}
+
+/**
+ * Las credenciales y su cerco.
+ *
+ * @guarantee AFenceIsReadWhereTheCredentialIsRead: el cerco se ve donde se ve la
+ * credencial que lo lleva. Un permiso que hay que ir a buscar a otra pantalla es
+ * un permiso que se olvida de revisar.
+ *
+ * Y aquí, en la página de la puerta, porque es donde está la pregunta que esto
+ * contesta: qué IA entra, con qué identidad y qué se le permite. La tabla de
+ * arriba dice con qué identidad *debería* entrar cada conexión; esto es lo que
+ * hace que esa columna deje de ser una intención.
+ */
+/**
+ * Conectar una IA nueva, desde la página que gobierna la puerta.
+ *
+ * Conectar un servicio es un solo gesto y no cuatro: pedirlos por separado
+ * —admitir el participante, emitir la credencial, cercarla, escribir su fila—
+ * deja a alguien a medias sin manera de saber por dónde iba. El servidor los
+ * hace juntos; esto pregunta lo único que hay que decidir.
+ *
+ * Y lo que devuelve es lo que se pega: el secreto una sola vez, dentro del
+ * bloque de variables de entorno que el panel de arriba ya sabe dictar. Hasta
+ * ahora ese panel daba el comando sin credencial, así que lo que se conectara
+ * entraba como el dueño — el agujero que esta misma página denuncia al final.
+ */
+function connectForm(
+  host: HTMLElement,
+  connect: MCPConnect | null,
+  notify: (message: string) => void,
+): void {
+  const heading = document.createElement('h3');
+  heading.className = 'governing-title';
+  heading.textContent = 'Conectar una IA';
+  host.append(heading);
+
+  const note = document.createElement('p');
+  note.className = 'governing-note';
+  note.textContent =
+    'Vera crea la identidad, emite su credencial, le pone el cerco si lo lleva, y le escribe ' +
+    'su fila arriba. El secreto se enseña una sola vez y no se puede volver a leer: si se ' +
+    'pierde, se emite otra y se retira ésta.';
+  host.append(note);
+
+  const form = document.createElement('div');
+  form.className = 'connect-new';
+  host.append(form);
+
+  const field = (label: string, placeholder: string, value = ''): HTMLInputElement => {
+    const wrap = document.createElement('label');
+    wrap.className = 'connect-field';
+    const said = document.createElement('span');
+    said.textContent = label;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = placeholder;
+    input.value = value;
+    wrap.append(said, input);
+    form.append(wrap);
+    return input;
+  };
+
+  const name = field('Nombre', 'ChatGPT');
+  const client = field('Se declara como', 'chatgpt');
+  // El nombre se escribe primero y casi siempre dice ya cómo se declara. Se
+  // rellena solo mientras nadie lo haya tocado: adivinar está bien; insistir en
+  // la adivinanza después de que alguien la corrigió, no.
+  let touched = false;
+  client.addEventListener('input', () => (touched = true));
+  name.addEventListener('input', () => {
+    if (!touched) client.value = name.value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+  });
+
+  /*
+   * El trato, en tres y no en tres casillas de alcance.
+   *
+   * `read`, `write` y `discard` son el vocabulario del código. Aquí la pregunta
+   * es qué clase de trato es éste, que es una sola decisión y se puede leer.
+   */
+  const deals: { value: 'leer' | 'propio' | 'todo'; label: string; says: string }[] = [
+    { value: 'leer', label: 'Sólo leer', says: 'lo que la puerta hace hoy' },
+    {
+      value: 'propio',
+      label: 'Escribe en lo suyo',
+      says: 'crea páginas de una clase, escribe dentro de ellas, y no borra: marca',
+    },
+    { value: 'todo', label: 'Todo', says: 'la excepción de la casa; escribe y borra donde sea' },
+  ];
+  const chooser = document.createElement('label');
+  chooser.className = 'connect-field';
+  const dealSaid = document.createElement('span');
+  dealSaid.textContent = 'Qué se le permite';
+  const select = document.createElement('select');
+  for (const one of deals) {
+    const option = document.createElement('option');
+    option.value = one.value;
+    option.textContent = one.label;
+    select.append(option);
+  }
+  chooser.append(dealSaid, select);
+  form.append(chooser);
+
+  const kind = field('Clase que puede crear', 'Nota de máquina');
+  const explains = document.createElement('p');
+  explains.className = 'connect-says';
+  form.append(explains);
+
+  const settle = (): void => {
+    const chosen = deals.find((one) => one.value === select.value);
+    explains.textContent = chosen?.says ?? '';
+    // La clase sólo se pregunta cuando hay cerco que ponerle.
+    (kind.parentElement as HTMLElement).hidden = select.value !== 'propio';
+  };
+  settle();
+  select.addEventListener('change', settle);
+
+  const go = document.createElement('button');
+  go.type = 'button';
+  go.className = 'connect-copy';
+  go.textContent = 'conectar';
+  form.append(go);
+
+  const born = document.createElement('div');
+  born.className = 'connect-born';
+  host.append(born);
+
+  go.addEventListener('click', () => {
+    const said = {
+      name: name.value.trim(),
+      client: client.value.trim(),
+      deal: select.value as 'leer' | 'propio' | 'todo',
+      ...(select.value === 'propio' ? { kind: kind.value.trim() } : {}),
+    };
+    if (said.name === '' || said.client === '') {
+      notify('una conexión necesita nombre y con qué palabra se declara');
+      return;
+    }
+    go.disabled = true;
+    void api
+      .connect(said)
+      .then((made) => {
+        /*
+         * El secreto, una vez y en su sitio.
+         *
+         * No se enseña suelto: se enseña dentro del bloque que hay que pegar en
+         * el formulario de esa IA, porque suelto obliga a saber en qué variable
+         * va. Y con el aviso, que es parte de entregarlo — quien no lo copie
+         * ahora tendrá que emitir otra.
+         */
+        born.innerHTML = '';
+        const warn = document.createElement('p');
+        warn.className = 'governing-note';
+        warn.textContent =
+          `«${made.label}» conectada, y escribe como ${made.participant}. Copia esto ahora: ` +
+          'el secreto no se puede volver a leer.';
+        const value = document.createElement('code');
+        value.className = 'connect-value';
+        value.textContent =
+          `VERA_URL=${connect?.url ?? 'http://127.0.0.1:4173'}\n` +
+          `VERA_CLIENT=${made.client}\n` +
+          `VERA_TOKEN=${made.secret}`;
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'connect-copy';
+        copy.textContent = 'copiar';
+        copy.addEventListener('click', () => {
+          void navigator.clipboard?.writeText(value.textContent ?? '').then(() => {
+            copy.textContent = 'copiado';
+          });
+        });
+        born.append(warn, value, copy);
+        notify(`${made.label} conectada`);
+      })
+      .catch((error: Error) => {
+        go.disabled = false;
+        notify(error.message);
+      });
+  });
+}
+
+async function credentialsSection(
+  host: HTMLElement,
+  notify: (message: string) => void,
+): Promise<void> {
+  const held = await api.credentials().catch(() => null);
+  if (held === null) return;
+
+  const table = section(host, {
+    title: 'Credenciales',
+    note:
+      'Con qué llave entra cada máquina. Sin credencial se entra como el dueño, y lo ' +
+      'que se lea queda anotado con tu nombre: emitirle una a cada conexión es lo que ' +
+      'hace que el registro diga quién leyó de verdad.',
+    headers: ['Etiqueta', 'Escribe como', 'Alcances', 'Cerco', 'Última vez', ''],
+    // La etiqueta y el cerco son los que llevan frases; el resto son palabras
+    // cortas y la última columna sólo un botón.
+    widths: [22, 18, 14, 24, 12, 10],
+  });
+
+  for (const one of held) {
+    const row = rowIn(table);
+    let at = 0;
+    observedCell(cellIn(row, at++), one.label);
+    observedCell(cellIn(row, at++), one.participant);
+    observedCell(cellIn(row, at++), one.scopes.join(', '));
+
+    /*
+     * El cerco, dicho por lo que concede y no por su nombre técnico.
+     *
+     * «sin cerco» no es un hueco: es un permiso mucho más ancho, y tiene que
+     * leerse como tal. Una celda vacía ahí se leería como «todavía no
+     * configurado», que es lo contrario de lo que pasa.
+     */
+    const fence = cellIn(row, at++);
+    observedCell(
+      fence,
+      one.confinement === null
+        ? 'escribe en todo'
+        : one.confinement.source === null
+          ? `sólo «${one.confinement.kind}»`
+          : `sólo «${one.confinement.kind}» · ${one.confinement.source}`,
+      one.confinement === null
+        ? 'esta credencial no está cercada: escribe donde quiera, como una persona'
+        : 'crea páginas de esa clase, escribe dentro de las suyas, y no borra',
+    );
+
+    observedCell(cellIn(row, at++), one.status === 'revoked' ? 'retirada' : when(one.lastUsedAt));
+
+    const acts = cellIn(row, at++);
+    if (one.status !== 'revoked') {
+      const drop = document.createElement('button');
+      drop.type = 'button';
+      drop.className = 'connect-copy';
+      drop.textContent = 'retirar';
+      drop.title = 'Deja de valer al instante. Lo que ya escribió se queda.';
+      drop.addEventListener('click', () => {
+        void api
+          .revokeCredential(one.id)
+          .then(() => {
+            notify(`${one.label} retirada`);
+            drop.disabled = true;
+            drop.textContent = 'retirada';
+          })
+          .catch((error: Error) => notify(error.message));
+      });
+      acts.append(drop);
+    }
+  }
+}
+
+/**
+ * Lo que las máquinas pidieron que se fuera.
+ *
+ * @guarantee WhatWasMarkedIsFoundWithoutLookingForIt. Y @guarantee
+ * BorrarSigueSiendoUnActoDeliberado: se acepta de a una. Que la lista exista no
+ * convierte borrar en una tecla para todo el montón — cada página que se va deja
+ * una ausencia, y la ausencia es lo único que el registro no puede enseñar
+ * después.
+ */
+function markedSection(
+  host: HTMLElement,
+  door: { marked?: DiscardRequest[]; markKey?: string },
+  write: Write,
+  notify: (message: string) => void,
+): void {
+  const marked = door.marked ?? [];
+  if (marked.length === 0) return;
+
+  const table = section(host, {
+    title: 'Pedidas para borrar',
+    note:
+      'Una credencial cercada no borra: marca, y dice por qué. Aquí decides tú. ' +
+      'Quitar la marca no hay que explicarlo — que una página se quede es la respuesta ' +
+      'normal a que alguien proponga que se vaya.',
+    headers: ['Página', 'Por qué', 'Quién lo pidió', 'Cuándo', ''],
+    // El motivo es lo que se lee para decidir, así que se lleva la mitad.
+    widths: [22, 40, 14, 10, 14],
+  });
+
+  for (const one of marked) {
+    const row = rowIn(table);
+    let at = 0;
+
+    // El título lleva a la página: decidir sobre algo que no se ha leído no es
+    // decidir, y desde aquí tiene que costar un clic llegar a leerlo.
+    const named = cellIn(row, at++);
+    const open = document.createElement('a');
+    open.href = `/p/${encodeURIComponent(one.title)}`;
+    open.textContent = one.title;
+    open.className = 'property-word';
+    named.append(open);
+
+    observedCell(cellIn(row, at++), one.reason);
+    observedCell(cellIn(row, at++), one.byName ?? one.by ?? '—');
+    observedCell(cellIn(row, at++), when(one.at));
+
+    const acts = cellIn(row, at++);
+
+    const keep = document.createElement('button');
+    keep.type = 'button';
+    keep.className = 'connect-copy';
+    keep.textContent = 'se queda';
+    keep.title = 'Quita la marca. La página no se toca.';
+    keep.addEventListener('click', () => {
+      void write({
+        kind: 'remove_property',
+        page: one.page,
+        propertyKey: door.markKey ?? 'por borrar',
+      }).then((done) => notify(done ? `«${one.title}» se queda` : 'no se pudo quitar la marca'));
+    });
+
+    const drop = document.createElement('button');
+    drop.type = 'button';
+    drop.className = 'connect-copy';
+    drop.textContent = 'borrar';
+    /*
+     * Y una confirmación, que aquí no es ceremonia.
+     *
+     * Borrar es el único acto que el registro no puede enseñar después: deja una
+     * ausencia. En todo lo demás de Vera lo que quedó mal se corrige escribiendo,
+     * y por eso nada más pregunta.
+     */
+    drop.title = 'Deja una ausencia. Es lo único que el registro no puede enseñarte después.';
+    drop.addEventListener('click', () => {
+      if (!window.confirm(`¿Borrar «${one.title}»? Es lo único que no se puede deshacer leyendo.`)) {
+        return;
+      }
+      void write({ kind: 'remove_page', page: one.page }).then((done) =>
+        notify(done ? `«${one.title}» borrada` : 'no se pudo borrar: la página tiene bloques dentro'),
+      );
+    });
+
+    acts.append(keep, drop);
+  }
 }
 
 export type { MCPConnection };

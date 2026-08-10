@@ -94,7 +94,7 @@ import {
 import { LOCAL_MODEL, LOCAL_MODEL_NAME, promptFor, readAnswer } from './answer.ts';
 import { mentionsOf } from './mentions.ts';
 import { paperHtml, toPdf } from './paper.ts';
-import { mcpPage } from './mcp-page.ts';
+import { CLIENT_KEY, MCP_KIND, mcpPage } from './mcp-page.ts';
 import { mcpConnect } from './mcp-connect.ts';
 import {
   confinementOf,
@@ -1077,6 +1077,187 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           return;
         }
         send(response, 201, { id, name, kind: 'agent', status: 'active' });
+      });
+      return;
+    }
+
+    /*
+     * Conectar una IA nueva, de una vez.
+     *
+     * Son cinco escrituras —admitir el participante, emitir la credencial,
+     * cercarla, escribir su fila en la página de la puerta y ponerle sus
+     * propiedades— y ninguna sirve sola: un participante sin credencial no entra,
+     * una credencial sin fila lee sin que nadie sepa quién es, y una fila sin
+     * credencial es una intención. Pedirlas por separado dejaría a alguien a
+     * medias sin manera de saber por dónde iba.
+     *
+     * Va aquí y no en la herramienta MCP porque es un acto del dueño sobre su
+     * corpus, y porque el bloque de la fila entra por la puerta de siempre, con
+     * su autor y su sitio en la secuencia, como cualquier edición hecha a mano.
+     *
+     * El trato es grueso a propósito. `read`, `write` y `discard` son el
+     * vocabulario del código —«deliberadamente grueso», dice credentials.ts— y
+     * aun así son tres decisiones donde quien conecta una IA tiene una: qué clase
+     * de trato es éste. Tres tratos con nombre se pueden leer y decidir; tres
+     * casillas obligan a saberse qué implica cada una antes de poder contestar.
+     */
+    if (request.method === 'POST' && path === '/mcp/connections') {
+      const blocked = ownerOnly();
+      if (blocked !== null) {
+        send(response, 403, blocked);
+        return;
+      }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: {
+          name?: unknown;
+          client?: unknown;
+          deal?: unknown;
+          kind?: unknown;
+          source?: unknown;
+          says?: unknown;
+        };
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        const client = typeof body.client === 'string' ? body.client.trim() : '';
+        const deal = typeof body.deal === 'string' ? body.deal.trim() : '';
+        if (name === '' || client === '') {
+          send(response, 400, {
+            error: 'una conexión necesita un nombre y con qué palabra se declara el cliente',
+          });
+          return;
+        }
+        const DEALS: Record<string, { scopes: Scope[]; permission: string; fenced: boolean }> = {
+          leer: { scopes: ['read'], permission: 'leer', fenced: false },
+          propio: { scopes: ['read', 'write'], permission: 'escribe en lo suyo', fenced: true },
+          todo: { scopes: ['read', 'write', 'discard'], permission: 'todo', fenced: false },
+        };
+        const chosen = DEALS[deal];
+        if (chosen === undefined) {
+          send(response, 400, { error: `el trato es uno de ${Object.keys(DEALS).join(', ')}` });
+          return;
+        }
+        const kind = typeof body.kind === 'string' ? body.kind.trim() : '';
+        if (chosen.fenced && kind === '') {
+          send(response, 400, {
+            error: 'para escribir en lo suyo hace falta decir qué clase de página puede crear',
+          });
+          return;
+        }
+
+        const door = governing(MCP_KIND);
+        if (door === undefined) {
+          send(response, 409, {
+            error: 'no hay página que gobierne la puerta MCP, y la conexión vive en ella',
+          });
+          return;
+        }
+        const owner = graph.owner;
+        if (owner === null) {
+          send(response, 500, { error: 'this graph has no owner' });
+          return;
+        }
+
+        /*
+         * La identidad se deriva del nombre con que se declara el cliente.
+         *
+         * Pedirla aparte sería pedir dos veces lo mismo con dos formas distintas,
+         * y la forma exacta —`participant:chatgpt`— es una convención del
+         * almacén que no tiene por qué saberse para conectar una IA.
+         */
+        const participant = `participant:${client.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`;
+        if (graph.participant(participant) === undefined) {
+          saveParticipant(store, { id: participant, name, kind: 'agent' });
+          graph.addParticipant({ id: participant, name, kind: 'agent' });
+          graph.admit(participant);
+        }
+
+        let issued;
+        try {
+          issued = issueCredential(store, {
+            participant,
+            scopes: chosen.scopes,
+            label: name,
+            issuedBy: owner,
+            expiresAt: null,
+          });
+        } catch (error) {
+          send(response, 500, {
+            error: 'no se pudo emitir la credencial',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+
+        const source = typeof body.source === 'string' && body.source.trim() !== ''
+          ? body.source.trim()
+          : client;
+        if (chosen.fenced) {
+          grantConfinement(store, {
+            token: issued.credential.id,
+            kind,
+            source,
+            grantedBy: owner,
+          });
+        }
+
+        /*
+         * Y su fila, colgando del apartado que las reúne.
+         *
+         * Se busca el encabezado por lo que dice y no por su posición: la página
+         * es de quien la escribe y puede reordenarla. Si no aparece, la fila va al
+         * final de la página, que es peor sitio y sigue siendo la página.
+         */
+        const stamp = Date.now();
+        let step = 0;
+        const write = (change: Change): string | null => {
+          const outcome = graph.submitOperation({
+            originId: `connection:${issued.credential.id}:${(step += 1)}`,
+            participant: owner,
+            channel: 'typed_text',
+            change,
+          });
+          if (outcome.status !== 'applied') return null;
+          recordOperation(store, graph, outcome.operation);
+          return outcome.subjectId;
+        };
+
+        const blocks = graph.blocksOf(door.id);
+        const heading = blocks.find((one) =>
+          /^conexiones/i.test(one.content.trim().replace(/^#{1,6}\s+/, '')),
+        );
+        const parent = heading?.stableId ?? null;
+        const position = blocks.filter((one) => one.parent === parent).length;
+
+        const row = write({ kind: 'create_block', page: door.id, parent, position, content: name });
+        if (row === null) {
+          send(response, 500, { error: 'la credencial quedó emitida pero su fila no se pudo escribir' });
+          return;
+        }
+        write({ kind: 'set_property', block: row, propertyKey: CLIENT_KEY, propertyValue: client });
+        write({ kind: 'set_property', block: row, propertyKey: 'participante', propertyValue: participant });
+        write({ kind: 'set_property', block: row, propertyKey: 'permiso', propertyValue: chosen.permission });
+        if (typeof body.says === 'string' && body.says.trim() !== '') {
+          write({ kind: 'set_property', block: row, propertyKey: 'qué', propertyValue: body.says.trim() });
+        }
+
+        // @guarantee TheSecretIsShownOnce: la única vez que el secreto sale de
+        // aquí. No se vuelve a poder leer, y decirlo es parte de entregarlo.
+        send(response, 201, {
+          ...issued.credential,
+          secret: issued.secret,
+          block: row,
+          participant,
+          client,
+          stamp,
+        });
       });
       return;
     }

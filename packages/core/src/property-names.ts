@@ -22,6 +22,7 @@
 //       - term · término
 //       - sense · sentido
 //       - day · bitácora
+//       - discard_request · por borrar
 //       - created · creación
 //       - updated · actualización
 //       - visible · público
@@ -38,6 +39,15 @@ export type PropertyRole =
   | 'term'
   | 'sense'
   | 'day'
+  /*
+   * Con qué se pide que una página se vaya.
+   *
+   * No borra: marca. Una credencial cercada no puede dejar ausencias —ver
+   * specs/confined-writing.allium—, así que lo que puede hacer con una página
+   * suya que ya no sirve es decirlo, con su motivo, y esperar a que una persona
+   * decida. El valor de la propiedad es ese motivo.
+   */
+  | 'discard_request'
   // Las tres derivadas: no se guardan en ninguna propiedad y aun así se leen y
   // se preguntan como si lo fueran. Ver DERIVED más abajo.
   | 'created'
@@ -61,6 +71,7 @@ export const DEFAULT_PROPERTY_NAMES: PropertyNames = {
   sense: 'sentido',
   // Éste no es una clave sino un valor: la clase con que nace un día.
   day: 'bitácora',
+  'discard_request': 'por borrar',
   created: 'creación',
   updated: 'actualización',
   visible: 'público',
@@ -98,6 +109,7 @@ const ROLES: PropertyRole[] = [
   'term',
   'sense',
   'day',
+  'discard_request',
   'created',
   'updated',
   'visible',

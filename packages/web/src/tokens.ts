@@ -64,6 +64,18 @@ export const DEFAULT_TOKENS: DesignToken[] = [
   { name: '--node-central', light: '#045591', dark: '#ec5f22' },
   { name: '--node-fill', light: '#393a3c', dark: '#acc8af' },
   { name: '--link-stroke', light: '#c5c8c1', dark: '#54273c' },
+  // Las dos direcciones de un enlace, con un color cada una.
+  //
+  // Una arista sin dirección dice que dos páginas se tocan y calla lo único que
+  // hace falta saber: quién nombró a quién. El par se usa en los dos sitios
+  // donde esa pregunta aparece —el filete de «La nombran» y «Nombra a» al pie de
+  // la página, y las aristas que se encienden al señalar un nodo del mapa— para
+  // que el código de color se aprenda en uno y sirva en el otro.
+  //
+  // Lo entrante va frío y lo saliente cálido: lo que sale de esta página es de
+  // esta página, y por eso lleva el calor del acento.
+  { name: '--link-in', light: '#045591', dark: '#6fa8d0' },
+  { name: '--link-out', light: '#a84a0b', dark: '#ee895d' },
   { name: '--warm', light: '#e6706a', dark: '#ec9d98' },
   // Grabando. El rojo se reserva para cuando la grabación está corriendo, que
   // es lo que significa en toda grabadora desde antes de que existiera esta

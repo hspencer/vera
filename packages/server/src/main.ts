@@ -61,12 +61,24 @@ const ownerName = setting('VERA_OWNER_NAME');
 const declaredOwner =
   ownerId === undefined ? undefined : { id: ownerId, name: ownerName ?? ownerId };
 
+/*
+ * Por dónde se alcanza esta Vera desde otro equipo.
+ *
+ * Vera escucha en loopback y quien la publica elige el frente —aquí `tailscale
+ * serve`—, así que esta dirección la sabe quien la configuró y no el proceso que
+ * corre detrás. Se declara para poder dictarla en la página de la puerta: un
+ * cliente MCP que corra en otro equipo de la tailnet necesita ponerla en
+ * `VERA_URL`, y sin esto habría que acordarse de memoria.
+ */
+const reachableAt = setting('VERA_REACHABLE_AT');
+
 const { vera } = listen({
   port,
   databasePath,
   host,
   webRoot,
   objectsRoot,
+  ...(reachableAt === undefined ? {} : { reachableAt }),
   ...(declaredOwner === undefined ? {} : { owner: declaredOwner }),
 });
 
