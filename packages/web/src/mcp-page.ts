@@ -22,6 +22,7 @@ import {
   type SeenClient,
 } from './api.ts';
 import { cellIn, editableCell, observedCell, rowIn, section } from './table.ts';
+import { when } from './dates.ts';
 
 /** ¿Esta página gobierna la puerta MCP? Se responde con lo que la página trae. */
 export function isMCPPage(properties: readonly { key: string; value: string }[]): boolean {
@@ -31,20 +32,6 @@ export function isMCPPage(properties: readonly { key: string; value: string }[])
 }
 
 export type Write = (change: Change) => Promise<boolean>;
-
-/** Una fecha dicha como se dice de viva voz. */
-function when(stamp: number | null): string {
-  if (stamp === null) return 'nunca';
-  const minutes = Math.floor((Date.now() - stamp) / 60_000);
-  if (minutes < 1) return 'ahora mismo';
-  if (minutes < 60) return `hace ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `hace ${hours} h`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'ayer';
-  if (days < 30) return `hace ${days} días`;
-  return new Date(stamp).toISOString().slice(0, 10);
-}
 
 /** Cuánta memoria se llevó, en unidades que una persona puede pesar. */
 function weigh(characters: number): string {
@@ -99,18 +86,6 @@ function reading(seen: SeenClient | null): string {
 }
 
 /**
- * Los datos con que se enchufa una IA, listos para pegar en su formulario.
- *
- * Todos los «agregar servidor MCP» piden lo mismo con nombres distintos: tipo,
- * comando, argumentos, variables de entorno y directorio de trabajo. Hasta ahora
- * eso vivía en `packages/mcp/README.md`, o sea fuera de Vera: había que salirse
- * de la aplicación y abrir un archivo del repositorio para saber qué pegar.
- *
- * No se escriben: se calculan de este despliegue. Una prosa con la ruta y el
- * puerto dentro mentiría con toda confianza el día que se mueva cualquiera de
- * los dos.
- */
-/**
  * La configuración de un cliente que corre en otro equipo, dictada entera.
  *
  * El cliente lanza `ssh` y la puerta corre aquí, al lado de Vera: no hay una
@@ -147,6 +122,18 @@ export function remoteLaunch(connect: MCPConnect, client: string): string {
   );
 }
 
+/**
+ * Los datos con que se enchufa una IA, listos para pegar en su formulario.
+ *
+ * Todos los «agregar servidor MCP» piden lo mismo con nombres distintos: tipo,
+ * comando, argumentos, variables de entorno y directorio de trabajo. Hasta ahora
+ * eso vivía en `packages/mcp/README.md`, o sea fuera de Vera: había que salirse
+ * de la aplicación y abrir un archivo del repositorio para saber qué pegar.
+ *
+ * No se escriben: se calculan de este despliegue. Una prosa con la ruta y el
+ * puerto dentro mentiría con toda confianza el día que se mueva cualquiera de
+ * los dos.
+ */
 function connectPanel(connect: MCPConnect, host: HTMLElement): void {
   const heading = document.createElement('h3');
   heading.className = 'governing-title';

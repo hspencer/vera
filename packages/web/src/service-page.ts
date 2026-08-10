@@ -21,19 +21,10 @@
 
 import { api, type Change, type ServiceCheck, type ServiceItem, type ServiceView } from './api.ts';
 import { icon } from './icons.ts';
+import { when } from './dates.ts';
 import { cellIn, editableCell, observedCell, rowIn, section } from './table.ts';
 
 export type Write = (change: Change) => Promise<boolean>;
-
-/** Una fecha dicha como se dice de viva voz. */
-function when(stamp: number | null): string {
-  if (stamp === null) return 'nunca';
-  const days = Math.floor((Date.now() - stamp) / 86_400_000);
-  if (days === 0) return 'hoy';
-  if (days === 1) return 'ayer';
-  if (days < 30) return `hace ${days} días`;
-  return new Date(stamp).toISOString().slice(0, 10);
-}
 
 /** Un botón de los de esta tabla: pequeño, en línea con lo que hay al lado. */
 function button(label: string, title = label): HTMLButtonElement {
