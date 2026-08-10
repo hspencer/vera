@@ -41,6 +41,7 @@ import { isMCPPage, renderMCP } from './mcp-page.ts';
 import { isServicePage, pickBibliography, renderService } from './service-page.ts';
 import { TRAIL_KIND } from '@vera/core';
 import { renderTrailBand, trailMarks, type TrailMark } from './trail-page.ts';
+import { pendingLine, saySeconds } from './waiting.ts';
 import { createPage } from './pages.ts';
 import { createSession, type SaveIntent } from './session.ts';
 import {
@@ -739,11 +740,23 @@ async function processPage(
   log.className = 'process-log';
   body.append(log);
 
+  /*
+   * Y debajo del registro, qué se está esperando.
+   *
+   * Lo hecho se acumula encima y lo que falta está en un solo sitio. Lleva su
+   * cuenta de segundos, que es lo que faltaba: un paso que lleva doce segundos
+   * se veía igual que uno que lleva doscientos milisegundos, y el silencio entre
+   * dos líneas no se distinguía de un proceso muerto. Ver waiting.ts.
+   */
+  const pending = pendingLine(log);
+  pending.say('pidiendo al servidor que la procese', 'process:start');
+
   const step = (text: string, kind: 'doing' | 'ok' | 'bad' | 'note' = 'doing'): HTMLElement => {
     const line = document.createElement('li');
     line.className = `process-step ${kind}`;
     line.textContent = text;
-    log.append(line);
+    // Por encima de la línea de espera, que es siempre la última.
+    log.insertBefore(line, pending.element);
     line.scrollIntoView({ block: 'nearest' });
     return line;
   };
@@ -775,6 +788,7 @@ async function processPage(
         switch (event['step']) {
           case 'reading':
             step(`leídos ${String(event['blocks'])} bloques · ${String(event['chars'])} caracteres`, 'ok');
+            pending.say('mirando la forma de la página');
             break;
           /*
            * La forma de la página, leída contando y sin modelo.
@@ -787,6 +801,7 @@ async function processPage(
            */
           case 'structure': {
             step(`forma: ${String(event['summary'])}`, 'ok');
+            pending.say('el servidor sigue trabajando');
             const seen = (event['observations'] ?? []) as { defect: string; evidence: string }[];
             for (const [defect, count] of countBy(seen)) {
               step(`${count} × ${DEFECTS[defect] ?? defect}`, 'note');
@@ -833,6 +848,7 @@ async function processPage(
               step(`puesta en forma a medias: ${escritas} de ${changes.length} operaciones`, 'bad');
             }
             if (escritas > 0) callbacks?.onReload(null);
+            pending.say('el servidor sigue trabajando');
             break;
           }
           /*
@@ -850,9 +866,32 @@ async function processPage(
             const part =
               of > 1 ? ` · parte ${which} de ${of}${section === '' ? '' : ` · «${section}»`}` : '';
             if (event['state'] === 'asking') {
-              step(`preguntando al modelo local qué es y de qué trata…${part}`);
-            } else if (event['state'] === 'failed') step(String(event['why']), 'bad');
-            else step('el modelo contestó', 'ok');
+              /*
+               * La espera larga del proceso, y la única de la que se sabe de
+               * antemano que va a serlo.
+               *
+               * Se recuerda con una clave que no incluye la parte —«parte 2 de
+               * 3» es la misma espera que «parte 1 de 3»— para que las medidas
+               * de todas las llamadas al modelo promedien juntas.
+               */
+              pending.say(`preguntando al modelo local qué es y de qué trata${part}`, 'process:model');
+            } else if (event['state'] === 'failed') {
+              step(String(event['why']), 'bad');
+              pending.say('el servidor sigue trabajando');
+            } else {
+              /*
+               * Lo que tardó se queda en el registro.
+               *
+               * La línea de espera se va con el proceso, y sin esto el registro
+               * terminado no decía nada de lo que costó: «el modelo contestó»
+               * se lee igual si tardó medio segundo o cuarenta. Ver el comentario
+               * del registro: cuando algo sale mal, esta lista es la única
+               * explicación que va a haber.
+               */
+              const took = pending.elapsed();
+              step(`el modelo contestó${took > 1500 ? ` · ${saySeconds(took)}` : ''}`, 'ok');
+              pending.say('buscando qué páginas nombra sin enlazar');
+            }
             break;
           }
           case 'mentions': {
@@ -864,6 +903,7 @@ async function processPage(
                 : `nombra sin enlazar: ${titles.join(' · ')}`,
               found === 0 ? 'note' : 'ok',
             );
+            pending.say('el servidor sigue trabajando');
             break;
           }
           case 'link': {
@@ -871,6 +911,17 @@ async function processPage(
             const where = `${String(event['done'])}/${String(event['total'])}`;
             if (event['unreachable'] !== null) step(`${where} · no contestó · ${url}`, 'bad');
             else step(`${where} · ${String(event['title'] ?? event['kind'] ?? 'sin título')} · ${url}`, 'ok');
+            // Cada enlace es una petición a un servidor de fuera, y algunos
+            // tardan lo suyo. Sin esto, entre un enlace y el siguiente no había
+            // nada que dijera que se seguía esperando a alguien.
+            if (Number(event['done']) < Number(event['total'])) {
+              pending.say(
+                `consultando enlaces · ${String(event['done'])} de ${String(event['total'])}`,
+                'process:link',
+              );
+            } else {
+              pending.say('el servidor sigue trabajando');
+            }
             break;
           }
           case 'done':
@@ -885,6 +936,10 @@ async function processPage(
   } catch {
     step('se perdió la conexión con el servidor a mitad', 'bad');
     return;
+  } finally {
+    // Una línea de espera que sobrevive al proceso es la peor forma de mentir:
+    // parece que sigue habiendo algo.
+    pending.close();
   }
 
   if (reading === null) {

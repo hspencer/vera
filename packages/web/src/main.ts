@@ -427,19 +427,91 @@ function nameWindow(title: string | null): void {
   document.title = title === null || title.trim() === '' ? 'Vera' : `Vera — ${title}`;
 }
 
+/**
+ * Cuánto se aguanta sin decir nada.
+ *
+ * Por debajo de esto, enseñar un hueco y quitarlo enseguida es un parpadeo que
+ * molesta más que la espera. Por encima, el silencio se lee como que el clic no
+ * entró.
+ */
+const PATIENCE = 300;
+
+/**
+ * El aviso: el título de lo que viene, en el sitio donde va a aparecer.
+ *
+ * No dice «espera» ni imita el contenido con rectángulos grises —un esqueleto
+ * finge una página que todavía no existe—. Dice qué está cargando y dónde, que
+ * es lo que uno quiere saber, y cuando llega el texto el título ya está puesto y
+ * sólo se rellena debajo.
+ */
+function awaiting(title: string | null): void {
+  const text = $('#text');
+  text.innerHTML = '';
+  const holder = document.createElement('div');
+  holder.className = 'page awaiting';
+  const header = document.createElement('header');
+  header.className = 'page-header';
+  const heading = document.createElement('h1');
+  heading.className = 'page-title';
+  heading.textContent = title ?? 'abriendo…';
+  header.append(heading);
+  holder.append(header);
+  text.append(holder);
+}
+
 async function openPage(
   id: string,
   focus: { block: string; at: number } | null = null,
-  options: { fromUrl?: boolean; reveal?: string | null; gesture?: NavigationGesture } = {},
+  options: {
+    fromUrl?: boolean;
+    reveal?: string | null;
+    gesture?: NavigationGesture;
+    /** Cómo se llama lo que viene, cuando quien llama ya lo sabe. */
+    title?: string;
+  } = {},
 ): Promise<void> {
   let page;
+  /*
+   * Si el corpus tarda, se dice qué se está abriendo.
+   *
+   * El temporizador se cancela pase lo que pase: un aviso que sobrevive a la
+   * respuesta deja la página anterior borrada y un título colgando.
+   */
+  const named = options.title ?? pages.find((one) => one.id === id)?.title ?? null;
+  /*
+   * Sólo al ir a otra página, nunca al redibujar la misma.
+   *
+   * Cada guardado vuelve a abrir la página en la que se está, y con el aviso
+   * puesto ahí el texto se borraría y volvería en cada pulsación. La dirección
+   * puede nombrarla por su título, así que se comparan las dos formas.
+   */
+  const here =
+    id === workspace.activePage ||
+    pages.find((one) => one.id === workspace.activePage)?.title === id;
+  let painted = false;
+  const slow = here
+    ? null
+    : setTimeout(() => {
+        painted = true;
+        awaiting(named);
+      }, PATIENCE);
   try {
     page = await api.page(id);
   } catch (error) {
     // Una página que no se pudo traer se dice; no se deja la vista anterior
     // fingiendo que la navegación ocurrió.
     notice(`No se pudo abrir la página: ${error instanceof Error ? error.message : 'error'}.`);
+    // Si el aviso llegó a pintarse, no puede quedarse: un título solo, sin
+    // texto y sin explicación, se lee como una página vacía y no como un fallo.
+    if (painted) {
+      const said = document.createElement('p');
+      said.className = 'awaiting-failed';
+      said.textContent = 'no se pudo abrir';
+      $('#text').querySelector('.awaiting')?.append(said);
+    }
     return;
+  } finally {
+    if (slow !== null) clearTimeout(slow);
   }
 
   // De dónde se venía, antes de que activePage deje de decirlo.
@@ -1162,8 +1234,18 @@ function wireSearch(): void {
       item.append(where, what);
       item.addEventListener('click', () => {
         close();
-        input.value = '';
-        void openPage(page.id, null, { gesture: 'searched' });
+        /*
+         * El acuse: lo elegido se queda escrito hasta que la página llega.
+         *
+         * Vaciaba el campo y cerraba la lista, así que entre el clic y la página
+         * no quedaba en pantalla ni una señal de que el clic hubiera entrado.
+         * Dejar puesto el título cuesta nada y contesta la primera pregunta —¿me
+         * ha oído?— sin prometer nada sobre la segunda —¿cuánto falta?—.
+         */
+        input.value = page.title;
+        void openPage(page.id, null, { gesture: 'searched', title: page.title }).then(() => {
+          if (input.value === page.title) input.value = '';
+        });
       });
       results.insertBefore(item, before);
     }
@@ -1221,8 +1303,13 @@ function wireSearch(): void {
         item.append(where, excerpt);
         item.addEventListener('click', () => {
           close();
-          input.value = '';
-          void openPage(hit.page, null, { gesture: 'searched' });
+          const named = pages.find((one) => one.id === hit.page)?.title ?? null;
+          if (named !== null) input.value = named;
+          void openPage(hit.page, null, { gesture: 'searched', ...(named === null ? {} : { title: named }) }).then(
+            () => {
+              if (named !== null && input.value === named) input.value = '';
+            },
+          );
         });
         results.append(item);
       }

@@ -3398,6 +3398,26 @@ code {
 .process-step.bad::before { content: '✗ '; }
 
 /*
+ * La línea de abajo: qué se está esperando, y desde cuándo.
+ *
+ * Se distingue de un paso hecho porque va en el color del texto —lo que está
+ * pasando es lo que se mira— mientras que lo hecho queda atenuado. Y no se
+ * anima: lo que se mueve es el número, que es un dato y no un adorno.
+ */
+.process-step.pending {
+  color: var(--text);
+}
+
+/*
+ * La cuenta. En cifras tabulares para que no baile al pasar de 9 a 10, y
+ * atenuada: es el margen del renglón y no lo que el renglón dice.
+ */
+.process-elapsed {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
  * Una observación sobre la forma de la página. Ni logro ni fallo: algo que se vio.
  *
  * Se marca distinto de las otras tres a propósito —@guarantee
@@ -5148,4 +5168,26 @@ code {
 .connect-born .governing-note {
   margin: 0;
   color: var(--text);
+}
+
+
+/* ---------------------------------------------------------------------------
+ * Mientras una página viene
+ *
+ * El título de lo que se está abriendo, en el sitio donde va a aparecer. Ni
+ * «espera» ni rectángulos grises imitando párrafos: dice qué carga y dónde, y
+ * cuando el texto llega el título ya estaba puesto. Ver `awaiting` en main.ts.
+ * ------------------------------------------------------------------------- */
+
+.awaiting .page-title {
+  /* Atenuado, que es lo que lo distingue de la página ya abierta: se ve que
+     todavía no es del todo. Sin animación: lo que falta por saber es cuánto
+     tarda, y eso no se contesta moviendo el título. */
+  color: var(--text-dim);
+}
+
+.awaiting-failed {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--voice);
 }
