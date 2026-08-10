@@ -4,7 +4,7 @@
 # recordar en qué orden. La única regla con algo propio es `deploy`, y lo propio
 # es que termina comprobando que el servidor sirve lo que se acaba de compilar.
 
-.PHONY: deploy dev serve start stop restart status build check test spec
+.PHONY: deploy dev serve start stop restart status build check test spec worktree
 
 # Publica: comprueba, compila, commitea, empuja y verifica.
 #   make deploy m="qué cambió y por qué"
@@ -50,3 +50,12 @@ test:
 
 spec:
 	@npm run spec
+
+# Un árbol de trabajo aparte, para llevar dos cosas a la vez sin que se pisen.
+#   make worktree n=tareas
+#
+# Dos tareas en el mismo directorio no fallan ruidosamente: fallan al confirmar,
+# porque `git add -A` se lleva los archivos de la otra y todo compila igual con
+# los de la otra delante. Cada una en su árbol y juntar es un merge.
+worktree:
+	@./scripts/worktree.sh "$(n)"

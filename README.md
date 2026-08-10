@@ -452,6 +452,28 @@ un cambio en las reglas no llega a la instancia hasta que el proceso vuelve a
 nacer, y no avisa, porque la aplicación sigue respondiendo con las reglas
 anteriores. Después de tocar `packages/core` o `packages/store`, `make restart`.
 
+**Dos cosas a la vez.** Trabajar dos tareas en el mismo directorio no falla
+ruidosamente: falla al confirmar. `git add -A` se lleva los archivos de la otra
+tarea, y como cada una compila con los archivos de la otra delante, el defecto no
+aparece hasta que alguien clona el repositorio y descubre que la rama importa un
+módulo que nunca se agregó al índice.
+
+```sh
+make worktree n=tareas        # ../vera-tareas, en su propia rama
+cd ../vera-tareas             # ahí vale todo lo que no publica
+git merge v0.3-tareas         # y para juntar, desde el principal
+```
+
+El árbol aparte instala sus dependencias en vez de enlazar las del principal.
+Dentro de `node_modules` los paquetes del monorepo son enlaces relativos
+—`@vera/core -> ../../packages/core`—, así que un `node_modules` compartido hace
+que el árbol aparte pruebe el código del principal sin decirlo. Instalar cuesta
+un par de segundos con la caché de npm ya llena.
+
+Lo que no se hace en un árbol aparte es levantar un segundo servidor: el corpus
+es uno, y dos procesos con su propio grafo en memoria sobre la misma base
+acabarían escribiendo cada uno sobre lo que el otro no vio.
+
 **`make deploy`** comprueba, compila, commitea, empuja y verifica que el servidor
 está sirviendo la huella recién compilada, que es la condición para que un aparato
 instalado la reciba. Se detiene al primer fallo: publicar algo que no compila es
