@@ -4209,23 +4209,42 @@ code {
 }
 
 /*
- * El lápiz vive en el canalón, con su propia columna, y no sobre el dibujo.
+ * El pie de un dibujo: cuándo se hizo, y por dónde se vuelve a él.
  *
- * Un dibujo se ve del tamaño de sus trazos —@invariant ItsOwnSizePlusAMargin— y
- * un garabato de dos centímetros es un tamaño legítimo: un control superpuesto en
- * su esquina taparía justo el trazo que alguien mira antes de decidir si lo
- * retoca. La columna se reserva sólo en las filas que llevan dibujo, así que
- * nada se mueve al aparecer y desaparecer.
+ * Debajo y no encima. Un dibujo se ve del tamaño de sus trazos —@invariant
+ * ItsOwnSizePlusAMargin— y un garabato de dos centímetros es un tamaño legítimo:
+ * cualquier cosa puesta sobre él tapa justo el trazo que alguien mira antes de
+ * decidir si lo retoca.
+ *
+ * Y no más ancho que el dibujo: `width: fit-content` hace que el pie mida lo que
+ * mide la figura, así que el lápiz cae bajo su esquina derecha y no en el borde
+ * de la columna, a media pantalla de lo que edita.
  */
+.drawn-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  width: fit-content;
+  min-width: 8rem;
+  max-width: 100%;
+  margin: -0.1rem 0 0.5rem;
+  font-family: var(--font-ui);
+}
+
+/* La fecha se lee y no se pulsa: del tamaño y el color de lo que acompaña. */
+.drawn-when {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
 .drawn-edit {
   appearance: none;
   background: none;
   border: none;
   margin: 0;
-  padding: 0;
+  padding: 0.1rem;
   flex: none;
-  align-self: flex-start;
-  width: var(--rail, 1.4rem);
   line-height: 0;
   color: var(--text-dim);
   cursor: pointer;
@@ -4239,9 +4258,10 @@ code {
 }
 
 /* Al enfocar o al pasar por encima, y no antes.
-   @invariant WhatIsFocusedShowsTheWayIn. */
-.block:hover > .drawn-edit,
-.block:focus-within > .drawn-edit,
+   @invariant WhatIsFocusedShowsTheWayIn.
+   Sin reservar sitio: el pie ya lo ocupa, así que aparecer no mueve la página. */
+.block:hover .drawn-edit,
+.block:focus-within .drawn-edit,
 .drawn-edit:focus-visible {
   opacity: 1;
   color: var(--accent);

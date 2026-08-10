@@ -210,6 +210,20 @@ rule ADrawingTakesTheCursorWithoutTakingTheKeyboard {
         -- el puntero, y no antes. Un control permanente sobre cada dibujo sería
         -- una barra de herramientas repartida por la página, que es lo mismo que
         -- @invariant NothingElseIsOnTheCanvas rechaza dentro del lienzo.
+        --
+        -- Vive al pie del dibujo y no encima ni al margen. Encima taparía el
+        -- trazo que se está mirando justo para decidir si se retoca, y un dibujo
+        -- se ve del tamaño de sus trazos, así que el pequeño es el que peor lo
+        -- lleva. Al margen desalinearía el dibujo del texto de sus vecinos.
+
+    @invariant ADrawingSaysWhenItWasLastDrawn
+        -- Al pie va también cuándo se dibujó por última vez. No es un dato nuevo
+        -- que haya que guardar: redibujar es escribir el bloque, así que la
+        -- última escritura es el último trazo y la autoría del bloque ya lo dice.
+        --
+        -- Se ve siempre, a diferencia del gesto. Es lo único que un dibujo dice
+        -- de sí mismo —no tiene título, ni primera línea, ni nada que leer— y sin
+        -- ello dos garabatos parecidos no se distinguen en nada.
 }
 
 rule ADrawingCanBeSteppedPast {

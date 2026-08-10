@@ -37,6 +37,7 @@ import { answerQueryBlock } from './query-block.ts';
 import { renderMermaid } from './mermaid.ts';
 import { is } from './bindings.ts';
 import { icon } from './icons.ts';
+import { when } from './dates.ts';
 import { isMCPPage, renderMCP } from './mcp-page.ts';
 import { isServicePage, pickBibliography, renderService } from './service-page.ts';
 import { DEADLINE_KEY, TRAIL_KIND, nextState, readTask, writeTask } from '@vera/core';
@@ -2870,17 +2871,35 @@ export function renderOutliner(
       body.classList.add('drawn-body');
 
       /*
-       * El lápiz va en el canalón, junto a la viñeta, y no sobre el dibujo.
+       * Debajo del dibujo, su pie: cuándo se hizo y por dónde se vuelve a él.
        *
-       * Un dibujo se ve del tamaño de sus trazos —@invariant ItsOwnSizePlusAMargin—
-       * y un garabato de dos centímetros es un tamaño legítimo. Un control
-       * superpuesto en su esquina taparía justo el trazo que alguien quiere
-       * mirar antes de decidir si lo retoca. En el canalón no tapa nada y cae
-       * donde ya viven los controles de la fila.
+       * No encima ni al lado. Un dibujo se ve del tamaño de sus trazos
+       * —@invariant ItsOwnSizePlusAMargin— y un garabato de dos centímetros es un
+       * tamaño legítimo: cualquier cosa puesta sobre él tapa justo el trazo que
+       * alguien mira antes de decidir si lo retoca, y cualquier cosa puesta en el
+       * canalón desalinea el dibujo del texto de los bloques vecinos.
        *
-       * Se ve al enfocar o al pasar por encima, no siempre.
-       * @invariant WhatIsFocusedShowsTheWayIn.
+       * Al pie caben las dos cosas que hay que saber de un dibujo terminado, y
+       * caen donde uno acaba de mirar: la fecha a la izquierda, porque se lee, y
+       * el lápiz a la derecha, porque se pulsa.
        */
+      const foot = document.createElement('div');
+      foot.className = 'drawn-foot';
+
+      /*
+       * Cuándo se dibujó por última vez.
+       *
+       * Del registro de autoría, que ya viaja con la página y dice de qué mano
+       * salió cada bloque y cuándo. No hace falta una fecha nueva: redibujar es
+       * escribir el bloque, así que la última escritura es el último trazo.
+       */
+      const stamp = document.createElement('span');
+      stamp.className = 'drawn-when';
+      stamp.textContent = when(hand?.writtenAt ?? null);
+      foot.append(stamp);
+
+      // Y el lápiz, que se ve al enfocar o al pasar por encima y no siempre.
+      // @invariant WhatIsFocusedShowsTheWayIn.
       const pencil = document.createElement('button');
       pencil.type = 'button';
       pencil.className = 'drawn-edit';
@@ -2891,6 +2910,8 @@ export function renderOutliner(
         event.stopPropagation();
         void redraw(node.block, callbacks, toast);
       });
+      foot.append(pencil);
+      body.append(foot);
 
       /*
        * La decisión la toma `resolveDrawingKey`; aquí sólo se ejecuta.
@@ -2946,10 +2967,9 @@ export function renderOutliner(
           .catch(() => toast('no se pudo escribir el bloque: sin conexión con el servidor'));
       });
 
-      row.append(bullet, pencil, body);
-    } else {
-      row.append(bullet, body);
     }
+
+    row.append(bullet, body);
     list.append(row);
     editors.set(node.block.stableId, { node, body });
     // El orden de lectura, que es este y no el del arbol guardado.
