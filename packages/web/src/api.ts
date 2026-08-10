@@ -164,10 +164,27 @@ export interface BlockHistory {
 
 /** Una propiedad declarada, con qué clase de campo es. */
 export interface PropertyDeclared {
+  /**
+   * El bloque que la declara, por su identidad estable.
+   *
+   * Es lo que permite que la tabla de la página especial no sea una copia:
+   * corregir una celda escribe en el bloque del que salió, y no en un sitio
+   * aparte que después habría que reconciliar.
+   */
+  block: string;
   name: string;
   field: string | null;
   many: boolean;
   role: string | null;
+  /**
+   * De qué cuelga: de un bloque o de una página.
+   *
+   * Lo declara el corpus con `sujeto::` y, si no lo dice, sale del papel. Es lo
+   * que permite leer `término` como lo que es —una clave que un bloque escribe
+   * para explicar una relación entre dos páginas— y no como un atributo de una
+   * página al lado de `cargo`.
+   */
+  subject: 'bloque' | 'página';
   values: string[];
   says: string | null;
   /**
@@ -180,8 +197,17 @@ export interface PropertyDeclared {
 
 /** Una clase de cosa, con qué propiedades la constituyen. */
 export interface ObjectDeclared {
+  /** El bloque que la declara. Ver `PropertyDeclared.block`. */
+  block: string;
   name: string;
   properties: string[];
+  /**
+   * Qué papel del código cumple esta clase, si cumple alguno.
+   *
+   * Una clase puede cumplir uno: `day` no nombra una propiedad sino la clase con
+   * que nace un día. Ver `ObjectDeclaration.role`.
+   */
+  role: string | null;
   says: string | null;
 }
 
@@ -371,6 +397,33 @@ export const api = {
    * la clave. Ver specs/service-connections.allium.
    */
   services: () => json<ServiceView[]>('/services'),
+
+  /*
+   * La puerta MCP: lo que su página declara y lo que el registro observó.
+   *
+   * Las dos cosas juntas porque la página las pone en la misma fila, y ahí está
+   * lo que hay que ver: dónde lo decidido y lo que pasa no coinciden.
+   */
+  mcp: () => json<MCPView>('/mcp'),
+
+  /**
+   * La clave entera, cuando su dueño pulsa el ojo.
+   *
+   * Se pide aparte y no viaja con la página: así no está en la respuesta que el
+   * navegador guarda ni en la que uno pega al depurar. Y queda anotada en el
+   * registro de exposición, porque mirar una clave es de lo que uno quiere poder
+   * ver que ocurrió.
+   */
+  revealSecret: async (page: string, name = 'clave'): Promise<string | { error: string }> => {
+    const answer = await fetch(
+      `/services/${encodeURIComponent(page)}/secret?name=${encodeURIComponent(name)}`,
+    );
+    const said = (await answer.json()) as { secret?: string; error?: string };
+    if (!answer.ok || typeof said.secret !== 'string') {
+      return { error: said.error ?? 'no se pudo leer la clave' };
+    }
+    return said.secret;
+  },
 
   /**
    * De qué está hecho este corpus: sus propiedades y sus objetos.
@@ -600,3 +653,36 @@ export const api = {
     return { status: 'rejected', reason: said.detail === undefined ? why : `${why}: ${said.detail}` };
   },
 };
+
+
+/** Lo que el registro vio de un cliente, agregado. */
+export interface SeenClient {
+  client: string | null;
+  participant: string;
+  /** El nombre del participante, para no poner un identificador en una celda. */
+  name: string;
+  deliveries: number;
+  volume: number;
+  firstAt: number;
+  lastAt: number;
+}
+
+/** Una conexión declarada en la página de la puerta, con lo que se observó. */
+export interface MCPConnection {
+  block: string;
+  name: string;
+  client: string;
+  participant: string | null;
+  participantName: string | null;
+  permission: string | null;
+  says: string | null;
+  seen: SeenClient | null;
+}
+
+export interface MCPView {
+  id: string | null;
+  title?: string;
+  stage?: string | null;
+  connections: MCPConnection[];
+  undeclared: SeenClient[];
+}

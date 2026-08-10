@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { forgetSecret, saveSecret, secretsOf, useSecret } from '../src/secrets.ts';
+import { forgetSecret, revealSecret, saveSecret, secretsOf, useSecret } from '../src/secrets.ts';
 import { openStore } from '../src/store.ts';
 
 const abierto = () => {
@@ -36,6 +36,32 @@ describe('los secretos de un servicio', () => {
     assert.equal(said?.tail, '8wL3');
     assert.equal(said?.savedAt, 1000);
     assert.ok(!JSON.stringify(said).includes('P9xK2mQ7'));
+  });
+
+  it('su dueño puede mirarlo entero cuando lo pide', () => {
+    /*
+     * Que no se enseñe por defecto y que no se pueda ver nunca son cosas
+     * distintas, y sólo la primera es prudencia. La segunda obliga a guardar la
+     * clave además en otra parte, que es tener dos copias y una de ellas fuera
+     * de aquí.
+     */
+    const store = abierto();
+    saveSecret(store, 'page:1', 'clave', 'P9xK2mQ7vB4nR1tY8wL3', 1000);
+    assert.equal(revealSecret(store, 'page:1', 'clave'), 'P9xK2mQ7vB4nR1tY8wL3');
+  });
+
+  it('mirarlo no es usarlo', () => {
+    // Si mirar contara como uso, una conexión muerta parecería viva por haberla
+    // mirado, y la fecha de último uso dejaría de servir para lo único que sirve.
+    const store = abierto();
+    saveSecret(store, 'page:1', 'clave', 'P9xK2mQ7vB4nR1tY8wL3', 1000);
+    revealSecret(store, 'page:1', 'clave');
+    assert.equal(secretsOf(store, 'page:1')[0]?.lastUsedAt, null);
+  });
+
+  it('lo que no está guardado no se puede mirar', () => {
+    const store = abierto();
+    assert.equal(revealSecret(store, 'page:1', 'clave'), null);
   });
 
   it('de un secreto corto no se enseña ni la cola', () => {

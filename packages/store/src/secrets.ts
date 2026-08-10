@@ -89,6 +89,29 @@ export function useSecret(store: Store, page: string, name: string, at: number):
   return row.secret;
 }
 
+/**
+ * El secreto entero, para que quien lo puso pueda mirarlo.
+ *
+ * Que no se enseñe por defecto y que no se pueda ver nunca son cosas distintas,
+ * y sólo la primera es prudencia. La segunda convierte a Vera en el único sitio
+ * del mundo donde uno guarda una clave suya y luego no puede leerla: al rotarla
+ * en Zotero hay que comparar, al depurar una conexión hay que ver cuál se pegó, y
+ * si no se puede, la respuesta es guardarla además en otra parte —que es tener
+ * dos copias, una de ellas fuera de aquí—. Un gestor de contraseñas la enseña
+ * cuando su dueño la pide, y por eso funciona.
+ *
+ * No se toca la fecha de último uso: mirarla no es usarla, y confundir las dos
+ * cosas haría que una conexión muerta pareciera viva por haberla mirado.
+ */
+export function revealSecret(store: Store, page: string, name: string): string | null {
+  const row = store.db
+    .prepare(
+      `SELECT secret FROM service_secrets WHERE graph_id = ? AND page_id = ? AND name = ?`,
+    )
+    .get(store.graphId, page, name) as { secret: string } | undefined;
+  return row?.secret ?? null;
+}
+
 /** Lo que se puede contar de un secreto sin contarlo. */
 export function secretsOf(store: Store, page: string): SecretStatus[] {
   const rows = store.db

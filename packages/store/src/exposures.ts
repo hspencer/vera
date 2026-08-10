@@ -166,3 +166,50 @@ export function whoRead(store: Store, subject: string, most = 100): RecordedExpo
     .all(store.graphId, subject, Math.max(1, Math.min(1000, most))) as unknown as Row[];
   return rows.map((row) => shape(store, row));
 }
+
+export interface SeenClient {
+  /** Cómo se declaró. Nulo cuando no dijo nada. */
+  client: string | null;
+  participant: string;
+  /** Cuántas entregas, y cuánto midieron en total. */
+  deliveries: number;
+  volume: number;
+  firstAt: number;
+  lastAt: number;
+}
+
+/**
+ * Quién ha estado leyendo, agrupado por cómo se declaró.
+ *
+ * Es lo que la página de la puerta MCP pone al lado de cada conexión declarada:
+ * lo que se decidió a un lado, lo que pasó al otro. Donde las dos columnas no
+ * coinciden —una conexión declarada como un agente que lee como el dueño— es
+ * donde está el agujero, y verlo es todo el punto de la página.
+ */
+export function clientsSeen(store: Store, since = 0): SeenClient[] {
+  const rows = store.db
+    .prepare(
+      `SELECT client, participant_id, COUNT(*) AS n, SUM(volume) AS volume,
+              MIN(at) AS first_at, MAX(at) AS last_at
+         FROM exposures
+        WHERE graph_id = ? AND at >= ?
+        GROUP BY client, participant_id
+        ORDER BY last_at DESC`,
+    )
+    .all(store.graphId, since) as unknown as {
+    client: string | null;
+    participant_id: string;
+    n: number;
+    volume: number;
+    first_at: number;
+    last_at: number;
+  }[];
+  return rows.map((row) => ({
+    client: row.client,
+    participant: row.participant_id,
+    deliveries: row.n,
+    volume: row.volume ?? 0,
+    firstAt: row.first_at,
+    lastAt: row.last_at,
+  }));
+}

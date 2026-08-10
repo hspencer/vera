@@ -81,7 +81,17 @@ contract SelfDescription {
 
 -- What a special page governs. Open on purpose: the list grows, and each new
 -- kind is a decision to be argued rather than a value to be added quietly.
-enum SpecialKind { ontology | presentation | instructions | service }
+--
+-- `service` and `mcp` look alike and are opposites, and the difference decides
+-- how many pages each gets. A service is an outgoing connection — Vera goes out,
+-- with a key, a library, a set of collections — and no two outgoing services
+-- share anything but the word: one page each. MCP is the other direction, one
+-- door and many who come through it, distinguished only by who they are, what
+-- they may do and what they took: one page, one row per connection. Four pages
+-- would be four copies of the same three fields.
+enum SpecialKind {
+    ontology | properties | objects | presentation | instructions | service | mcp
+}
 
 enum ProposalStatus { proposed | accepted | rejected }
 

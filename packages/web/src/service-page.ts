@@ -1,20 +1,29 @@
 // La página de un servicio de fuera, con su clave a la vista.
 //
-// «A la vista» no quiere decir que la clave se lea: quiere decir que se ve que
-// está, cuándo se guardó, cuándo se usó por última vez y cómo quitarla, todo en
-// la misma página que dice qué servicio es y qué se trae de él. Lo que había
-// antes en otros programas —un archivo de configuración que hay que abrir con un
-// editor de texto para saber si uno puso la clave y cuál— es lo que esto
-// reemplaza.
+// «A la vista» quiere decir dos cosas y las dos importan: que se ve que la clave
+// está, cuándo se guardó, cuándo se usó y cómo quitarla —todo en la misma página
+// que dice qué servicio es y qué se trae de él—, y que su dueño puede mirarla
+// pulsando el ojo. Que no se enseñe por defecto y que no se pueda ver nunca son
+// cosas distintas, y sólo la primera es prudencia: la segunda obliga a guardar la
+// clave además en otra parte, que es tener dos copias y una de ellas fuera de
+// aquí. Lo que esto reemplaza es el archivo de configuración que hay que abrir
+// con un editor de texto para saber si uno puso la clave y cuál.
 //
 // El valor no vive en el corpus. Se guarda en una tabla que no entra al log, no
 // se proyecta a Markdown y no se indexa, porque un log append-only no sabe
 // olvidar: una clave escrita ahí se queda escrita aunque uno la rote y aunque
 // borre el bloque. Ver packages/store/src/secrets.ts y
 // specs/service-connections.allium.
+//
+// Se dibuja con la misma tabla que «Objetos», «Propiedades» y la puerta MCP. Ver
+// table.ts: tres páginas que se leen igual tienen que dibujarse con el mismo
+// código y no con tres códigos parecidos.
 
-import { api, type ServiceCheck, type ServiceItem, type ServiceView } from './api.ts';
+import { api, type Change, type ServiceCheck, type ServiceItem, type ServiceView } from './api.ts';
 import { icon } from './icons.ts';
+import { cellIn, editableCell, observedCell, rowIn, section } from './table.ts';
+
+export type Write = (change: Change) => Promise<boolean>;
 
 /** Una fecha dicha como se dice de viva voz. */
 function when(stamp: number | null): string {
@@ -26,14 +35,14 @@ function when(stamp: number | null): string {
   return new Date(stamp).toISOString().slice(0, 10);
 }
 
-function row(name: string): HTMLElement {
-  const line = document.createElement('div');
-  line.className = 'service-row';
-  const key = document.createElement('span');
-  key.className = 'service-key';
-  key.textContent = name;
-  line.append(key);
-  return line;
+/** Un botón de los de esta tabla: pequeño, en línea con lo que hay al lado. */
+function button(label: string, title = label): HTMLButtonElement {
+  const one = document.createElement('button');
+  one.type = 'button';
+  one.className = 'service-button';
+  one.textContent = label;
+  one.title = title;
+  return one;
 }
 
 /**
@@ -45,13 +54,14 @@ function row(name: string): HTMLElement {
 export async function renderService(
   pageId: string,
   notify: (message: string) => void,
+  write: Write,
 ): Promise<HTMLElement | null> {
   const all = await api.services().catch(() => null);
   const service = all?.find((one) => one.id === pageId);
   if (service === undefined || service === null) return null;
 
   const panel = document.createElement('section');
-  panel.className = 'service';
+  panel.className = 'service governing-tables';
 
   const head = document.createElement('div');
   head.className = 'service-head';
@@ -63,26 +73,44 @@ export async function renderService(
   head.append(name, state);
   panel.append(head);
 
-  const held = service.secrets.find((one) => one.name === 'clave') ?? null;
+  const table = section(panel, { headers: ['Qué', 'Cómo está'] });
+
+  /** Escribir una propiedad de la página, o quitarla si queda vacía. */
+  const put = (key: string) => async (next: string): Promise<boolean> =>
+    write(
+      next.trim() === ''
+        ? { kind: 'remove_property', page: service.id, propertyKey: key }
+        : { kind: 'set_property', page: service.id, propertyKey: key, propertyValue: next.trim() },
+    );
+
+  const named = (label: string): HTMLTableCellElement => {
+    const row = rowIn(table);
+    const key = cellIn(row, 0);
+    key.className = 'governing-col-0 service-key';
+    key.textContent = label;
+    return cellIn(row, 1);
+  };
 
   /*
    * La fila de la clave.
    *
    * Enseña que hay una y cuál es —por sus últimos cuatro caracteres, que es lo
-   * que hace falta para saber cuál de las tres puso uno— y nunca su valor. El
-   * campo donde se escribe es de contraseña: lo que se pega ahí no se queda
-   * escrito en la pantalla de nadie.
+   * que hace falta para saber cuál de las tres puso uno— y su valor sólo cuando
+   * se pide. El campo donde se escribe es de contraseña: lo que se pega ahí no
+   * se queda escrito en la pantalla de nadie.
    */
-  const keyRow = row('clave');
+  const keyCell = named('clave');
+  keyCell.classList.add('service-value');
   const keyState = document.createElement('span');
-  keyState.className = 'service-value';
-  const change = document.createElement('button');
-  change.type = 'button';
-  change.className = 'service-button';
-  const forget = document.createElement('button');
-  forget.type = 'button';
-  forget.className = 'service-button';
-  forget.textContent = 'olvidar';
+  const shown = document.createElement('code');
+  shown.className = 'service-secret';
+  shown.hidden = true;
+
+  const look = document.createElement('button');
+  look.type = 'button';
+  look.className = 'service-eye';
+  const change = button('poner');
+  const forget = button('olvidar', 'borrarla de verdad: aquí olvidar es olvidar');
 
   const field = document.createElement('input');
   field.type = 'password';
@@ -90,13 +118,19 @@ export async function renderService(
   field.placeholder = 'pega aquí la clave de la API';
   field.autocomplete = 'off';
   field.hidden = true;
-  const save = document.createElement('button');
-  save.type = 'button';
-  save.className = 'service-button';
-  save.textContent = 'guardar';
+  const save = button('guardar');
   save.hidden = true;
 
-  let secret = held;
+  let secret = service.secrets.find((one) => one.name === 'clave') ?? null;
+  let looking = false;
+
+  const drawEye = (): void => {
+    look.innerHTML = icon(looking ? 'eye-off' : 'eye');
+    look.title = looking ? 'esconder la clave' : 'ver la clave';
+    look.setAttribute('aria-label', look.title);
+    look.setAttribute('aria-pressed', String(looking));
+  };
+
   const draw = (): void => {
     keyState.textContent =
       secret === null
@@ -105,12 +139,42 @@ export async function renderService(
           ` · usada ${when(secret.lastUsedAt)}`;
     change.textContent = secret === null ? 'poner' : 'cambiar';
     forget.hidden = secret === null;
+    look.hidden = secret === null;
+    if (secret === null) {
+      looking = false;
+      shown.hidden = true;
+      shown.textContent = '';
+    }
+    keyState.hidden = looking;
+    drawEye();
     state.textContent = secret === null ? 'sin conectar' : 'con clave guardada';
   };
+  drawEye();
   draw();
 
-  keyRow.append(keyState, change, forget, field, save);
-  panel.append(keyRow);
+  keyCell.append(keyState, shown, look, change, forget, field, save);
+
+  look.addEventListener('click', () => {
+    if (looking) {
+      looking = false;
+      shown.hidden = true;
+      shown.textContent = '';
+      draw();
+      return;
+    }
+    // Se pide al pulsar y no antes: así la clave no viaja con la página ni queda
+    // en la respuesta que el navegador guarda.
+    void api.revealSecret(service.id).then((clear) => {
+      if (typeof clear !== 'string') {
+        notify(clear.error);
+        return;
+      }
+      looking = true;
+      shown.textContent = clear;
+      shown.hidden = false;
+      draw();
+    });
+  });
 
   change.addEventListener('click', () => {
     field.hidden = !field.hidden;
@@ -130,6 +194,8 @@ export async function renderService(
       return;
     }
     secret = done.find((one) => one.name === 'clave') ?? null;
+    looking = false;
+    shown.hidden = true;
     draw();
     notify('clave guardada, fuera del registro');
   };
@@ -153,24 +219,39 @@ export async function renderService(
     });
   });
 
-  /* Lo que la página declara, dicho por si falta algo. */
-  const libraryRow = row('biblioteca');
-  const libraryValue = document.createElement('span');
-  libraryValue.className = 'service-value';
-  libraryValue.textContent =
-    service.library ?? 'sin declarar — se le pregunta al servicio al conectar';
-  libraryRow.append(libraryValue);
-  panel.append(libraryRow);
+  /*
+   * Lo que la página declara, y ahora se corrige aquí mismo.
+   *
+   * Estaba escrito en el frontmatter y sólo se leía; que se pueda cambiar desde
+   * la tabla es lo que hace de esto gobierno y no un informe. Escribe en la
+   * propiedad de la página, que es de donde salió.
+   */
+  editableCell(
+    named('biblioteca'),
+    {
+      shows: service.library ?? '',
+      label: 'con qué biblioteca hablar',
+      placeholder: 'sin declarar — se le pregunta al servicio al conectar',
+    },
+    put('biblioteca'),
+  );
 
-  const broughtRow = row('traído');
-  const broughtValue = document.createElement('span');
-  broughtValue.className = 'service-value';
-  broughtValue.textContent =
+  editableCell(
+    named('colecciones'),
+    {
+      shows: service.collections.join(', '),
+      label: 'qué colecciones se traen',
+      placeholder: 'todas',
+    },
+    put('colecciones'),
+  );
+
+  observedCell(
+    named('traído'),
     service.pages === 0
       ? 'todavía ninguna página'
-      : `${service.pages} ${service.pages === 1 ? 'página' : 'páginas'} del corpus vinieron de aquí`;
-  broughtRow.append(broughtValue);
-  panel.append(broughtRow);
+      : `${service.pages} ${service.pages === 1 ? 'página' : 'páginas'} del corpus vinieron de aquí`,
+  );
 
   /*
    * Probar la conexión.

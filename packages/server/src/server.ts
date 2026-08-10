@@ -63,8 +63,8 @@ import {
   type Store,
 } from '@vera/store';
 import { HASH, objectPath, putObject } from '@vera/store/objects';
-import { forgetSecret, saveSecret, secretsOf, useSecret } from '@vera/store/secrets';
-import { exposuresOf, recordExposure, whoRead } from '@vera/store/exposures';
+import { forgetSecret, revealSecret, saveSecret, secretsOf, useSecret } from '@vera/store/secrets';
+import { clientsSeen, exposuresOf, recordExposure, whoRead } from '@vera/store/exposures';
 import { parseDocument } from '@vera/importer/document';
 import {
   SCOPES,
@@ -90,6 +90,7 @@ import {
 import { LOCAL_MODEL, LOCAL_MODEL_NAME, promptFor, readAnswer } from './answer.ts';
 import { mentionsOf } from './mentions.ts';
 import { paperHtml, toPdf } from './paper.ts';
+import { mcpPage } from './mcp-page.ts';
 import {
   BIBLIOGRAPHY_NAMES,
   blocksFor,
@@ -451,15 +452,23 @@ export function createVeraServer(options: ServerOptions): VeraServer {
   const declaredObjects = () => readObjectDeclarations(declaredIn('objects'));
 
   /*
-   * Cómo llama este corpus a las propiedades que el dominio necesita conocer.
+   * Cómo llama este corpus a lo que el dominio necesita conocer.
    *
-   * Primero la página de propiedades, donde cada una dice su papel pegado a sí
-   * misma; y si no hay ninguna, la lista de la ontología, que es como se
-   * declaraba antes. Un corpus que ya lo escribió así no tiene por qué enterarse
-   * de que Vera cambió de sitio.
+   * De las dos páginas donde puede estar dicho, porque los papeles no son todos
+   * de claves: `kind` o `topic` nombran una propiedad y se declaran en
+   * «Propiedades»; `day` nombra la clase con que nace un día, que es un valor de
+   * `tipo` y por tanto una clase de «Objetos». Leer sólo la primera obligaba a
+   * escribir `bitácora` allí como si fuera una clave, y quedaba declarada dos
+   * veces —bien como clase, mal como propiedad—.
+   *
+   * Y si no hay ninguna, la lista de la ontología, que es como se declaraba
+   * antes. Un corpus que ya lo escribió así no tiene por qué enterarse de que
+   * Vera cambió de sitio.
    */
   const propertyNames = () => {
-    const roles = declaredProperties().filter((one) => one.role !== null);
+    const roles = [...declaredProperties(), ...declaredObjects()].filter(
+      (one) => one.role !== null,
+    );
     if (roles.length > 0) return namesFromRoles(roles);
     return readPropertyNames(declared(/^Nombres de propiedades/i));
   };
@@ -1770,6 +1779,19 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         return;
       }
 
+      /*
+       * La puerta MCP y quién entra por ella.
+       *
+       * Lo declarado y lo observado en la misma respuesta, para que la página
+       * los pueda poner en la misma fila. Ver mcp-page.ts.
+       */
+      if (path === '/mcp') {
+        const seen = clientsSeen(store);
+        const door = mcpPage(graph, SPECIAL_KIND, seen);
+        send(response, 200, door ?? { id: null, connections: [], undeclared: seen });
+        return;
+      }
+
       if (path === '/services') {
         const brought = broughtFrom('zotero');
         send(
@@ -2006,6 +2028,35 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         send(response, 422, {
           error: `«${page.title}» no declara ser un servicio: le falta special-kind:: service y servicio::`,
         });
+        return;
+      }
+
+      /*
+       * Mirar la clave.
+       *
+       * Sólo el dueño y nunca con credencial: un agente que puede leer el corpus
+       * no puede por eso leer las llaves de las casas de al lado. Y queda
+       * anotado en el registro de exposición, porque mirar una clave es
+       * exactamente la clase de cosa que uno quiere poder ver que ocurrió.
+       *
+       * No se manda con la página: viaja sólo cuando se pide, y se pide al
+       * pulsar el ojo. Así no está en la respuesta que el navegador cachea ni en
+       * la que se copia al depurar.
+       */
+      if (request.method === 'GET' && what === 'secret') {
+        const blocked = ownerOnly();
+        if (blocked !== null) {
+          send(response, 403, blocked);
+          return;
+        }
+        const name = url.searchParams.get('name') ?? 'clave';
+        const clear = revealSecret(store, page.id, name);
+        if (clear === null) {
+          send(response, 404, { error: 'ahí no había ninguna clave guardada' });
+          return;
+        }
+        note(`GET /services/:id/secret (${name})`, page.id, clear.length, [page.id], 'revealed');
+        send(response, 200, { page: page.id, name, secret: clear });
         return;
       }
 

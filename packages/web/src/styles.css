@@ -959,15 +959,19 @@ input {
  */
 .block {
   /*
-   * Las dos columnas de la izquierda y el hueco entre ellas, dichos una vez.
+   * La columna de la izquierda y el hueco hasta el texto, dichos una vez.
    *
-   * El chevron y la viñeta miden lo mismo y siempre están, aunque estén vacíos,
-   * para que las viñetas queden en columna hagan lo que hagan sus vecinas. Lo
-   * que quiera alinearse con el texto —y no con el borde de la fila— tiene que
-   * poder sumar esas dos columnas sin volver a medirlas a ojo.
+   * La viñeta es la única columna que ocupa sitio, y siempre está: por eso las
+   * viñetas quedan alineadas hagan lo que hagan sus vecinas, y por eso lo que
+   * quiera alinearse con el texto —y no con el borde de la fila— sólo tiene que
+   * sumar `--rail` y `--rail-gap`.
+   *
+   * El chevron no cuenta: cuelga hacia fuera, en el margen. Ver `.fold`.
    */
   --rail: 1.4rem;
   --rail-gap: 0.5rem;
+  --fold: 1rem;
+  --fold-gap: 0.05rem;
   display: flex;
   gap: var(--rail-gap);
   align-items: baseline;
@@ -1010,11 +1014,27 @@ input {
  * mide lo que mide su texto; la marca se sigue centrando sola —para eso es un
  * botón— y queda a la altura del primer renglón también en un bloque largo.
  */
+/*
+ * Cuelga en el margen, y pegado a la viñeta.
+ *
+ * Ocupaba una columna propia igual de ancha que la viñeta, con el mismo hueco
+ * que separa la viñeta del texto. Eran dos cosas: el bloque arrancaba una
+ * columna entera más a la derecha que el título de su página —cuando el chevron
+ * ni siquiera se ve la mayor parte del tiempo—, y el par se leía como dos
+ * marcas sueltas en vez de como una marca con su mando.
+ *
+ * El margen izquierdo negativo lo saca del flujo hacia la izquierda: la viñeta
+ * pasa a arrancar donde arranca el título, y el chevron aparece colgando en el
+ * margen. El margen derecho negativo encoge el hueco de flex —que es el que
+ * separa la viñeta del texto— hasta el pelo que basta entre el chevron y ella.
+ */
 .fold {
   position: relative;
   flex: none;
   align-self: flex-start;
-  width: var(--rail, 1.4rem);
+  width: var(--fold, 1rem);
+  margin-left: calc(-1 * (var(--fold, 1rem) + var(--fold-gap, 0.05rem)));
+  margin-right: calc(var(--fold-gap, 0.05rem) - var(--rail-gap, 0.5rem));
   height: 1.55rem;
   font-size: 1.05rem;
   color: var(--text-dim);
@@ -1044,14 +1064,22 @@ input {
   }
 }
 
-/* El mismo trato que el bullet: el triángulo es pequeño, el área no. */
+/*
+ * El mismo trato que el bullet: el triángulo es pequeño, el área no.
+ *
+ * A lo alto se llega a los 44 px de un dedo; a lo ancho no se puede, porque
+ * ahora el chevron y la viñeta están a 18 px uno de otro y dos áreas de 44 se
+ * comerían la una a la otra —la viñeta va después en el documento, así que
+ * ganaría ella y el chevron dejaría de poder pulsarse—. Cada uno se queda con
+ * su lado: ver el ancho del área en `.bullet::after`.
+ */
 .fold:not(.empty)::after {
   content: '';
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 40px;
+  width: 20px;
   height: 44px;
   border-radius: 50%;
 }
@@ -1127,6 +1155,37 @@ input {
 .property-key:hover,
 .property-value:hover {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/*
+ * La fila que dice qué gobierna una página: se ve y no se toca.
+ *
+ * Ni la clave ni el valor son del corpus —`special-kind` es la palabra con que
+ * Vera reconoce una página de gobierno, y sus valores son la junta con el
+ * código—, así que no hay nada que elegir ahí. Se enseña de todas formas: una
+ * página que gobernase en secreto sería peor que una fila intocable.
+ *
+ * Y se enseña como intocable, que es la otra mitad. Sin el cursor de escribir y
+ * sin el realce al pasar por encima: los dos prometen, en todas las demás filas,
+ * que pulsar abre un campo. Una fila que promete y no cumple se pulsa una vez, y
+ * a partir de ahí no se confía en ninguna.
+ */
+.property-fixed,
+.property-fixed:hover {
+  cursor: default;
+  background: none;
+  color: var(--text-dim);
+}
+
+/* El valor literal, al lado de lo que significa: lo que significa es para leer y
+   lo literal es lo que hay escrito en la página, y hace falta para poder
+   auditarla. Ver @invariant SpecialityIsDeclaredNotGuessed. */
+.property-literal {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  color: var(--text-dim);
+  opacity: 0.7;
+  margin-left: 0.45rem;
 }
 
 .property-value {
@@ -1234,7 +1293,12 @@ input {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 44px;
+  /*
+   * A lo ancho, lo que hay entre el chevron y la primera letra: pasarse por la
+   * izquierda deja el chevron sin pulsar y pasarse por la derecha se come el
+   * principio del texto, donde se pincha para escribir. Ver `.fold::after`.
+   */
+  width: 30px;
   height: 44px;
   /* Sólo amplía dónde se puede tocar; no se ve ni empuja nada. */
   border-radius: 50%;
@@ -1299,14 +1363,27 @@ input {
 /*
  * La misma lista, colgada de un campo de una línea.
  *
- * El ancho de arriba está medido para el editor de un bloque, que ocupa la
- * columna entera; sobre el nombre de una propiedad, treinta rem son cuatro veces
- * su ancla y la lista se lee como si fuera de otra cosa. Lo único que cambia es
- * cuánto mide: lo que hay dentro y cómo se recorre son los mismos.
+ * El ancho de arriba está medido para el editor de un bloque; aquí lo pone el
+ * propio campo, medido al dibujarla, para que las dos cosas midan lo mismo y se
+ * lean como una. Estos dos topes sólo se apartan del camino: lo que hay dentro y
+ * cómo se recorre son los mismos.
  */
 .complete.narrow {
-  min-width: 16rem;
-  max-width: min(22rem, 90vw);
+  min-width: 0;
+  max-width: none;
+}
+
+/*
+ * La fila en la que se está nombrando una propiedad.
+ *
+ * Ocupa las dos columnas del `dl`: mientras no tiene nombre tampoco tiene valor,
+ * así que la columna derecha no tiene nada que enseñar, y el campo —y con él su
+ * lista— gana el ancho de la columna de lectura. Sólo existe mientras se
+ * escribe: en cuanto la propiedad nace, la página se rehace y la fila vuelve a
+ * ser un par nombre/valor como las demás.
+ */
+.properties dt.property-naming {
+  grid-column: 1 / -1;
 }
 
 .complete-item {
@@ -2222,10 +2299,13 @@ code {
     flex: none;
   }
 
-  /* El indicador de inicio del teléfono se sienta sobre el final del texto. */
+  /* El indicador de inicio del teléfono se sienta sobre el final del texto.
+     A la izquierda hay un pelo más: es donde cuelga el chevron —ver `.fold`—, y
+     con menos asomaría fuera de la columna y la dejaría con desplazamiento
+     lateral. */
   #text {
     padding: 1rem calc(1rem + env(safe-area-inset-right)) calc(5rem + env(safe-area-inset-bottom))
-      calc(1rem + env(safe-area-inset-left));
+      calc(1.25rem + env(safe-area-inset-left));
   }
 
   #graph {
@@ -3033,14 +3113,13 @@ code {
  *
  * Se marca sólo lo generado y no todo. Casi todo el corpus es suyo; firmar cada
  * bloque con su autor sería un muro de atribuciones donde lo excepcional se
- * perdería. La marca es un filo a la izquierda —no un color de texto— para que
- * la distinción se lea sin cambiar cómo se lee el texto.
+ * perdería. La marca está en la viñeta —no en el color del texto— para que la
+ * distinción se lea sin cambiar cómo se lee el texto.
+ *
+ * Y está sólo ahí. Llevó además un filo de color a la izquierda de la fila, que
+ * decía lo mismo dos veces: la viñeta hueca ya distingue, y un bloque con dos
+ * marcas para un solo hecho se lee como si tuviera dos.
  */
-.block.generated {
-  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  margin-left: -2px;
-}
-
 .bullet.generated {
   color: var(--accent);
   /* Hueca, frente a la viñeta llena de lo escrito a mano. */
@@ -3791,6 +3870,13 @@ code {
   gap: 0 2rem;
 }
 
+/* El filete de cada columna lleva el color de su dirección. Es la leyenda del
+   mapa: las mismas dos tintas encienden las aristas entrantes y salientes al
+   señalar un nodo, así que el código se aprende leyendo y sirve navegando. Más
+   grueso que el filete corriente porque aquí el filete significa algo. */
+.reference-in > summary { border-bottom: 2px solid var(--link-in); }
+.reference-out > summary { border-bottom: 2px solid var(--link-out); }
+
 .references ul {
   list-style: none;
   margin: 0;
@@ -3801,8 +3887,21 @@ code {
    tenue hasta que se pasa por encima; está siempre, pero no pide nada. */
 .reference {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 0.4rem;
+}
+
+/* La explicación de por qué estas dos páginas se tocan, debajo del renglón y no
+   estrujada a su derecha. Con la letra del extracto al que alude: son la misma
+   frase mirada dos veces, y un cuerpo mayor la haría parecer el titular de lo
+   que cita. Sangrada hasta donde empieza el extracto —pluma, hueco y filete—
+   para que las dos líneas arranquen en la misma vertical. */
+.reference .relation-said {
+  flex-basis: 100%;
+  margin: 0.1rem 0 0 calc(0.85em + 1.2rem);
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 .reference-explain {
@@ -3960,12 +4059,12 @@ code {
    * Ocupa su propia línea dentro de la fila, que es flex.
    *
    * Sin esto se colocaba como una columna más, a la derecha del texto: estrujada
-   * al ancho de una letra y altísima. La sangría iguala lo que miden el chevron
-   * y la viñeta —ver `--rail` en `.block`— para que empiece donde empieza el
+   * al ancho de una letra y altísima. La sangría iguala lo que mide la viñeta
+   * con su hueco —ver `--rail` en `.block`— para que empiece donde empieza el
    * texto y no donde empieza la fila.
    */
   flex-basis: 100%;
-  margin: 0.5rem 0 0.75rem calc(2 * (var(--rail, 1.4rem) + var(--rail-gap, 0.5rem)));
+  margin: 0.5rem 0 0.75rem calc(var(--rail, 1.4rem) + var(--rail-gap, 0.5rem));
   padding: 0.5rem 0.6rem;
   border-left: 2px solid var(--rule);
   font-size: 0.8rem;
@@ -4114,6 +4213,56 @@ code {
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 0.85em;
+}
+
+/*
+ * El ojo.
+ *
+ * Del tamaño del texto y sin recuadro: es una acción sobre lo que tiene al lado
+ * y no un botón más de la fila. Cuando la clave está a la vista, el icono es el
+ * ojo tachado, que dice qué va a pasar al pulsarlo y no en qué estado se está.
+ */
+.service-eye {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.service-eye:hover {
+  color: var(--accent);
+}
+
+.service-eye .icon {
+  width: 1em;
+  height: 1em;
+}
+
+/* La clave, cuando su dueño la mira. Se puede seleccionar entera de una pasada,
+   que es para lo que uno la enseña. */
+.service-secret {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--text);
+  word-break: break-all;
+  user-select: all;
+}
+
+/* Dentro de la tabla, la fila de la clave lleva su estado y sus botones en la
+   misma celda: se alinean por la línea base y bajan de renglón si no caben. */
+.governing td.service-value {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.governing td.service-key {
+  font-family: var(--font-mono);
+  color: var(--text-dim);
 }
 
 .service-result {
@@ -4301,4 +4450,257 @@ code {
   .embed figcaption {
     display: none;
   }
+}
+
+/* --------------------------------------------------------------------------
+ * La tabla de una página que gobierna.
+ *
+ * «Objetos» y «Propiedades» no se leen como texto: se leen comparando filas. La
+ * tabla toma prestada la forma de `.query-table` —sin rejilla, cabecera tenue,
+ * una línea a media tinta por fila— porque las dos son lo mismo desde el punto
+ * de vista de quien mira: una lista de cosas con las mismas columnas. Lo que no
+ * comparte es que aquí se escribe: cada celda se corrige pulsándola, y por eso
+ * responden al puntero como responde una propiedad del encabezado.
+ * -------------------------------------------------------------------------- */
+
+.governing {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  margin: 0 0 1.5rem;
+}
+
+/*
+ * El reparto, por lo que lleva cada columna.
+ *
+ * El nombre no crece —son palabras sueltas—, «cuelga de» y el papel son de ancho
+ * conocido, y lo que sobra se lo llevan las que traen frases: la lista de
+ * propiedades de un objeto y la descripción. Con reparto automático, dos
+ * descripciones largas empujarían el nombre a una palabra por línea, que es
+ * justo lo que una tabla venía a evitar.
+ */
+.governing-cols-3 th.governing-col-0 { width: 22%; }
+.governing-cols-3 th.governing-col-1 { width: 34%; }
+.governing-cols-3 th.governing-col-2 { width: 44%; }
+
+/* El vocabulario: nombre, de qué cuelga, tipo y para qué se usa. */
+.governing-cols-4 th.governing-col-0 { width: 20%; }
+.governing-cols-4 th.governing-col-1 { width: 12%; }
+.governing-cols-4 th.governing-col-2 { width: 24%; }
+.governing-cols-4 th.governing-col-3 { width: 44%; }
+
+/* Y con el papel, que sólo llevan las que Vera necesita. */
+/* Dos columnas: una conexión con un servicio de fuera, dicha campo a campo. La
+   primera nombra el campo y no crece; el valor se lleva el resto, porque ahí
+   caben la clave, sus botones y su fecha. */
+.governing-cols-2 th.governing-col-0 { width: 9rem; }
+.governing-cols-2 th.governing-col-1 { width: auto; }
+
+/* Seis: la puerta MCP. Las cuatro primeras se deciden y las dos últimas se
+   observan. El nombre de la conexión se lleva lo que sobra porque es por donde
+   se busca la fila; lo demás son palabras cortas de ancho conocido. */
+.governing-cols-6 th.governing-col-0 { width: 19%; }
+.governing-cols-6 th.governing-col-1 { width: 16%; }
+.governing-cols-6 th.governing-col-2 { width: 13%; }
+.governing-cols-6 th.governing-col-3 { width: 18%; }
+.governing-cols-6 th.governing-col-4 { width: 12%; }
+.governing-cols-6 th.governing-col-5 { width: 22%; }
+
+.governing-cols-5 th.governing-col-0 { width: 17%; }
+.governing-cols-5 th.governing-col-1 { width: 11%; }
+.governing-cols-5 th.governing-col-2 { width: 20%; }
+.governing-cols-5 th.governing-col-3 { width: 15%; }
+.governing-cols-5 th.governing-col-4 { width: 37%; }
+
+/*
+ * El nombre de cada tabla y la línea que dice qué reúne.
+ *
+ * Una tabla partida en dos sin decir por dónde se partió es peor que una tabla
+ * larga: quien la lee tiene que adivinar el criterio, y adivina mal. Por eso el
+ * título va acompañado siempre, y por eso la explicación se lee como prosa de la
+ * página y no como una etiqueta de interfaz.
+ */
+.governing-title {
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+  margin: 1.8rem 0 0.2rem;
+}
+
+.governing-tables > .governing-title:first-child {
+  margin-top: 0.6rem;
+}
+
+.governing-note {
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+  margin: 0 0 0.7rem;
+  max-width: 44rem;
+}
+
+/*
+ * De qué cuelga y qué papel cumple: estructura, no contenido.
+ *
+ * Se leen en la mono y atenuadas, como se lee el papel, para que no compitan con
+ * el nombre ni con la descripción, que son lo que se busca al recorrer la tabla.
+ * Sólo en las de propiedades: en la de objetos, la segunda columna lleva las
+ * propiedades que constituyen la clase, que sí son contenido.
+ */
+.governing-cols-4 td.governing-col-1:not(.governing-empty),
+.governing-cols-5 td.governing-col-1:not(.governing-empty),
+.governing-cols-5 td.governing-col-3:not(.governing-empty) {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  /* `explains` partido en «explain / s» no se lee como un identificador: se lee
+     como un error. Son palabras cortas y sin espacios; caben enteras o la
+     columna está mal repartida, que se arregla arriba y no aquí. */
+  white-space: nowrap;
+}
+
+/*
+ * Lo que Vera observó, en la misma tabla y sin parecer editable.
+ *
+ * Atenuada, en la mono y sin cursor de escribir. Una celda que parece editable y
+ * no lo es se pulsa una vez, no pasa nada, y a partir de ahí no se confía en
+ * ninguna de las de al lado.
+ */
+.governing td.governing-observed {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  cursor: default;
+}
+
+/* Y cuando lo observado contradice lo declarado. No es un error del programa:
+   es una conexión entrando con una identidad que no es la suya, y tiene que
+   verse recorriendo la tabla sin leer celda por celda. */
+.governing td.governing-warn {
+  color: var(--warn, var(--accent));
+}
+
+.governing th,
+.governing td {
+  background: transparent;
+  border: 0;
+  padding: 0.4rem 0.75rem;
+  text-align: left;
+}
+
+/* La primera columna comparte vertical con el título de la página y con la
+   prosa de arriba, como en la tabla de una consulta. */
+.governing th:first-child,
+.governing td:first-child {
+  padding-left: 0;
+}
+
+.governing th {
+  font-weight: 400;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.governing td {
+  vertical-align: baseline;
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 50%, transparent);
+  overflow-wrap: anywhere;
+}
+
+/* El nombre pesa: es lo que se busca al recorrer la tabla con la vista. */
+.governing td.governing-col-0 {
+  color: var(--accent);
+}
+
+/*
+ * Una celda que se puede corregir se comporta como tal.
+ *
+ * El mismo realce que una propiedad del encabezado al pasar por encima, y el
+ * mismo cursor de texto: si pulsarla abre un campo, tiene que parecerlo antes de
+ * pulsarla. Ver `.property-key:hover`.
+ */
+.governing td {
+  border-radius: 3px;
+  cursor: text;
+}
+
+.governing td:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* Lo que nadie dijo se lee como lo que es: un hueco, no un valor. */
+.governing-empty {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/*
+ * Una propiedad de las que constituyen un objeto.
+ *
+ * Palabra a palabra y no una cadena con comas, por lo mismo que en el encabezado
+ * de una página: son varias respuestas y cada una es una cosa que se quita por
+ * separado. La cruz sólo aparece al pasar por encima de su palabra —una fila con
+ * diez cruces a la vista es una fila que parece un formulario.
+ */
+.governing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  margin: 0 0.3rem 0.2rem 0;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--rule) 35%, transparent);
+  white-space: nowrap;
+}
+
+.governing-chip-drop {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  display: inline-flex;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.governing-chip:hover .governing-chip-drop,
+.governing-chip-drop:focus-visible {
+  opacity: 1;
+}
+
+.governing-chip-drop svg {
+  width: 0.7em;
+  height: 0.7em;
+}
+
+/* Añadir no es una palabra más: no lleva fondo, para que no se lea como si ya
+   estuviera declarada. */
+.governing-chip-add {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0.05rem 0.2rem;
+  font: inherit;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.governing-chip-add:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* El hueco donde se escribe la propiedad nueva, entre las que ya están y el más. */
+.governing-chip-slot {
+  display: inline-block;
+  min-width: 9rem;
 }

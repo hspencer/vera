@@ -59,7 +59,18 @@ contract AConnectionIsGovernedByAPage {
     @invariant TheSecretIsSeenWithoutBeingShown
         -- De una credencial guardada se enseña que está, cuándo se guardó,
         -- cuándo se usó por última vez y sus últimos caracteres. Lo bastante para
-        -- saber cuál de las tres puso uno; nunca su valor.
+        -- saber cuál de las tres puso uno, sin que su valor esté en pantalla
+        -- mientras nadie lo pidió.
+
+    @invariant TheOwnerCanLookAtTheirOwnKey
+        -- Y pidiéndolo, su dueño la ve entera. Que no se enseñe por defecto y que
+        -- no se pueda ver nunca son cosas distintas, y sólo la primera es
+        -- prudencia: la segunda convierte a Vera en el único sitio donde uno
+        -- guarda una clave suya y luego no puede leerla, y la respuesta a eso es
+        -- guardarla además en otra parte, que es tener dos copias y una fuera de
+        -- aquí. Sólo el dueño y nunca con credencial de agente; mirarla no cuenta
+        -- como usarla; y queda anotada en el registro de exposición, porque mirar
+        -- una clave es de lo que uno quiere poder ver que ocurrió.
 
     @invariant ForgettingTheGoverningPageForgetsTheSecret
         -- Borrar la página que gobierna una conexión borra su credencial. Una

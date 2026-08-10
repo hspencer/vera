@@ -289,6 +289,20 @@ surface Drawable {
     @guarantee TheGraphIsNotTouchedUntilTheCanvasCloses
         -- Mientras se dibuja no se escribe nada. Quien cierre la ventana a mitad
         -- de un dibujo lo pierde, y eso es lo honesto: nada a medias quedó dicho.
+
+    @guarantee ACanvasThatCannotOpenSaysSo
+        -- Si el lienzo no llega a abrirse, se dice y se dice qué hacer. El lienzo
+        -- se carga aparte y puede faltar —un cliente viejo pide un archivo que el
+        -- servidor ya no tiene—, y entonces el comando borraba lo escrito, no
+        -- abría nada y callaba. Un fallo que no habla es indistinguible de un
+        -- comando que no existe, y manda a buscar el error donde no está.
+
+    @guarantee ADrawingThatDidNotGetWrittenSaysSo
+        -- Un dibujo vive dentro del lienzo hasta que se guarda, y el lienzo ya se
+        -- cerró cuando se guarda: una escritura que falle callando pierde lo
+        -- dibujado sin que nadie se entere. Un rechazo del dominio y una red
+        -- caída son sucesos distintos y aquí dicen lo mismo —no quedó escrito—,
+        -- y los dos tienen que llegar a quien dibujó.
 }
 
 ------------------------------------------------------------

@@ -13,6 +13,7 @@
 
 import {
   DEFAULT_PROPERTY_NAMES,
+  SPECIAL_KIND,
   answersIn,
   looksLikeDrawing,
   looksLikeQuery,
@@ -21,12 +22,22 @@ import {
   titleKey,
   type RenderOptions,
 } from '@vera/core';
-import { api, type BlockView, type Change, type CrossingRow, type PageView } from './api.ts';
+import {
+  api,
+  type BlockView,
+  type Change,
+  type CrossingRow,
+  type PageView,
+  type SubmitResult,
+} from './api.ts';
 
+import { completeInPlace, editInPlace, placeNear, type Choice } from './fields.ts';
+import { governingKind, kindSays, renderGoverning } from './governing-table.ts';
 import { answerQueryBlock } from './query-block.ts';
 import { renderMermaid } from './mermaid.ts';
 import { is } from './bindings.ts';
 import { icon } from './icons.ts';
+import { isMCPPage, renderMCP } from './mcp-page.ts';
 import { isServicePage, pickBibliography, renderService } from './service-page.ts';
 import { createPage } from './pages.ts';
 import { createSession, type SaveIntent } from './session.ts';
@@ -166,49 +177,6 @@ function bindDismissal(): void {
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeMenu();
   });
-}
-
-/**
- * Deja algo flotante junto a su ancla, dentro de la ventana.
- *
- * Un desplegable cabe en la pantalla o no sirve: el de un control pegado al
- * borde derecho salía fuera y sus opciones quedaban inalcanzables, y el de un
- * bloque al pie de la página se abría por debajo del fondo. Hay que medirlo
- * antes de colocarlo, y para medirlo hay que haberlo puesto en el documento: va
- * invisible primero y se sitúa después, que es cosa de quien llama.
- *
- * Estaba escrito tres veces con las mismas cuentas y tres constantes iguales.
- */
-function placeNear(
-  floating: HTMLElement,
-  anchor: HTMLElement,
-  options: { gap: number; alignRight: boolean },
-): void {
-  const at = anchor.getBoundingClientRect();
-  const box = floating.getBoundingClientRect();
-  const margin = 8;
-
-  // Se alinea por la izquierda del ancla; si no cabe y se permite, por su
-  // derecha; y si tampoco, se pega al borde. Nunca se sale.
-  let left = at.left;
-  if (options.alignRight && left + box.width > window.innerWidth - margin) {
-    left = at.right - box.width;
-  }
-  left = Math.max(margin, Math.min(left, window.innerWidth - box.width - margin));
-
-  // Abajo del ancla, salvo que no quepa: entonces encima, que es donde queda el
-  // hueco.
-  let top = at.bottom + options.gap;
-  if (
-    top + box.height > window.innerHeight - margin &&
-    at.top - box.height - options.gap > margin
-  ) {
-    top = at.top - box.height - options.gap;
-  }
-  top = Math.max(margin, Math.min(top, window.innerHeight - box.height - margin));
-
-  floating.style.left = `${Math.round(left + window.scrollX)}px`;
-  floating.style.top = `${Math.round(top + window.scrollY)}px`;
 }
 
 interface MenuAction {
@@ -506,296 +474,6 @@ function pickDate(anchor: HTMLElement, onPick: (date: string) => void): void {
   } catch {
     // El navegador exige un gesto suyo para abrirlo. El campo ya está enfocado.
   }
-}
-
-function editInPlace(
-  host: HTMLElement,
-  original: string,
-  label: string,
-  commit: (next: string) => Promise<boolean>,
-): void {
-  if (host.querySelector('input') !== null) return;
-
-  const field = document.createElement('input');
-  field.type = 'text';
-  field.className = 'inline-edit';
-  field.value = original;
-  field.setAttribute('aria-label', label);
-
-  const held = host.innerHTML;
-  host.innerHTML = '';
-  host.append(field);
-  field.focus();
-  field.select();
-
-  let settled = false;
-  const finish = (accept: boolean): void => {
-    if (settled) return;
-    settled = true;
-    const next = field.value;
-    if (!accept || next === original) {
-      host.innerHTML = held;
-      return;
-    }
-    void commit(next).then((applied) => {
-      // Aplicar recarga la página entera, así que sólo hay que restituir esto
-      // cuando el cambio no llegó a ocurrir.
-      if (!applied) host.innerHTML = held;
-    });
-  };
-
-  field.addEventListener('blur', () => finish(true));
-  field.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      finish(true);
-    }
-    // Aquí Escape sí descarta: nada se ha guardado todavía, porque un campo de
-    // una línea no tiene guardado al reposar.
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      settled = true;
-      host.innerHTML = held;
-    }
-  });
-}
-
-/** Una respuesta que se ofrece mientras se escribe. */
-interface Choice {
-  value: string;
-  /** Lo que se lee en gris al lado: por qué está ahí, o qué se sabe de ella. */
-  hint?: string;
-  /**
-   * Se ofrece antes que todo lo demás, y sin haber escrito nada.
-   *
-   * Es la única sugerencia con fundamento cuando el campo está vacío: lo que a
-   * esta clase de cosa le falta. El resto es una lista de lo que existe, y una
-   * lista de lo que existe no es una sugerencia.
-   */
-  first?: boolean;
-}
-
-/** Cuántas se enseñan de una vez sin que la lista deje de leerse. */
-const SUGGESTED_AT_MOST = 8;
-
-/**
- * Un campo de una línea que ofrece mientras se escribe.
- *
- * `editInPlace` con una lista debajo, y son dos cosas distintas por una razón:
- * un menú obliga a reconocer un nombre entre los que le enseñan, y un campo deja
- * escribir el que uno ya tiene en la cabeza. Con treinta y tres propiedades
- * declaradas y ochenta y seis más que el corpus usa sin declarar, reconocer
- * dejó de ser viable hace tiempo: el menú era a la vez demasiado largo para
- * leerlo y ciego a casi todo lo escrito.
- *
- * Lo que se escriba vale aunque no esté en la lista. @guarantee
- * AVocabularyGrowsAtThePointOfUse: un vocabulario que no crece donde se usa deja
- * de crecer, y con él deja de etiquetarse.
- *
- * Las opciones pueden llegar después de abrirse el campo —vienen del servidor— y
- * por eso se devuelve `offer`. Abrir un campo no puede esperar a una petición:
- * quien pulsó ya sabe lo que va a escribir.
- */
-function completeInPlace(
-  host: HTMLElement,
-  label: string,
-  commit: (next: string) => Promise<boolean>,
-): { offer(choices: readonly Choice[]): void } {
-  const field = document.createElement('input');
-  field.type = 'text';
-  field.className = 'inline-edit';
-  field.setAttribute('aria-label', label);
-  field.setAttribute('role', 'combobox');
-  field.setAttribute('aria-expanded', 'false');
-  field.setAttribute('autocomplete', 'off');
-
-  const held = host.innerHTML;
-  host.innerHTML = '';
-  host.append(field);
-  field.focus();
-
-  let choices: readonly Choice[] = [];
-  let shown: Choice[] = [];
-  let highlighted = -1;
-  let list: HTMLElement | null = null;
-  let settled = false;
-
-  const closeList = (): void => {
-    list?.remove();
-    list = null;
-    shown = [];
-    highlighted = -1;
-    field.setAttribute('aria-expanded', 'false');
-  };
-
-  /*
-   * Qué se ofrece para lo que se lleva escrito.
-   *
-   * Sin nada escrito, sólo lo que esta clase de cosa echa en falta, y detrás lo
-   * más usado hasta llenar la lista. Escribiendo, se busca en todo: primero lo
-   * que falta, luego lo que empieza por lo tecleado y luego lo que lo lleva
-   * dentro. El orden dentro de cada tramo lo puso quien llama, que es quien sabe
-   * cuánto se usa cada una.
-   */
-  const matching = (): Choice[] => {
-    const query = titleKey(field.value);
-    const missing = choices.filter((one) => one.first === true);
-    if (query === '') {
-      const rest = choices.filter((one) => one.first !== true);
-      return [...missing, ...rest].slice(0, SUGGESTED_AT_MOST);
-    }
-    const starts: Choice[] = [];
-    const holds: Choice[] = [];
-    const first: Choice[] = [];
-    for (const one of choices) {
-      const key = titleKey(one.value);
-      if (!key.includes(query)) continue;
-      if (one.first === true) first.push(one);
-      else if (key.startsWith(query)) starts.push(one);
-      else holds.push(one);
-    }
-    return [...first, ...starts, ...holds].slice(0, SUGGESTED_AT_MOST);
-  };
-
-  const draw = (): void => {
-    shown = matching();
-    /*
-     * Lo ya escrito no se ofrece a sí mismo.
-     *
-     * Una lista de un solo renglón que dice exactamente lo que hay en el campo
-     * no ofrece nada: sólo tapa lo que está debajo y hace dudar de si hay que
-     * pulsarla para que valga.
-     */
-    if (shown.length === 1 && titleKey(shown[0]?.value ?? '') === titleKey(field.value)) {
-      shown = [];
-    }
-    if (shown.length === 0) {
-      closeList();
-      return;
-    }
-    if (highlighted >= shown.length) highlighted = shown.length - 1;
-
-    if (list === null) {
-      list = document.createElement('div');
-      list.className = 'complete narrow';
-      list.setAttribute('role', 'listbox');
-      document.body.append(list);
-      field.setAttribute('aria-expanded', 'true');
-    }
-    list.innerHTML = '';
-    for (const [at, choice] of shown.entries()) {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = at === highlighted ? 'complete-item selected' : 'complete-item';
-      item.setAttribute('role', 'option');
-      const name = document.createElement('span');
-      name.textContent = choice.value;
-      item.append(name);
-      if (choice.hint !== undefined) {
-        const hint = document.createElement('span');
-        hint.className = 'complete-hint';
-        hint.textContent = choice.hint;
-        item.append(hint);
-      }
-      // `mousedown` y no `click`: el clic llegaría después del blur, que ya
-      // habría cerrado el campo y guardado lo que hubiera escrito.
-      item.addEventListener('mousedown', (event) => {
-        event.preventDefault();
-        finish(choice.value);
-      });
-      list.append(item);
-    }
-    placeNear(list, field, { gap: 2, alignRight: false });
-  };
-
-  function finish(next: string): void {
-    if (settled) return;
-    settled = true;
-    closeList();
-    const said = next.trim();
-    if (said === '') {
-      host.innerHTML = held;
-      return;
-    }
-    void commit(said).then((applied) => {
-      // Aplicar rehace la página entera, así que sólo hay que restituir esto
-      // cuando el cambio no llegó a ocurrir.
-      if (!applied) host.innerHTML = held;
-    });
-  }
-
-  const cancel = (): void => {
-    if (settled) return;
-    settled = true;
-    closeList();
-    host.innerHTML = held;
-  };
-
-  field.addEventListener('input', () => {
-    // Escribir deshace la elección: lo resaltado era una respuesta a otra
-    // pregunta. Enter con nada resaltado vale lo escrito, que es lo que quien
-    // teclea un nombre nuevo espera que pase.
-    highlighted = -1;
-    draw();
-  });
-
-  field.addEventListener('blur', () => finish(field.value));
-
-  field.addEventListener('keydown', (event) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      if (shown.length === 0) {
-        if (event.key === 'ArrowDown') draw();
-        return;
-      }
-      event.preventDefault();
-      /*
-       * Las flechas pasan por «ninguna».
-       *
-       * Los estados son las opciones más una: la de no haber elegido, que es
-       * donde vale lo escrito. Sin ella, bajar desde el último saltaría al
-       * primero y no habría forma de volver a lo tecleado sin borrar una letra
-       * —justo lo que hace quien escribe un nombre que todavía no existe.
-       */
-      const step = event.key === 'ArrowDown' ? 1 : -1;
-      const states = shown.length + 1;
-      highlighted = ((highlighted + 1 + step + states) % states) - 1;
-      draw();
-      return;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      finish(shown[highlighted]?.value ?? field.value);
-      return;
-    }
-    if (event.key === 'Tab' && highlighted >= 0) {
-      // Completar sin cerrar: se rellena el campo y se sigue.
-      event.preventDefault();
-      field.value = shown[highlighted]?.value ?? field.value;
-      highlighted = -1;
-      draw();
-      return;
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      // La lista primero y el campo después: con la lista abierta, Escape es lo
-      // que se pulsa para dejar de verla, no para renunciar a lo escrito.
-      if (list !== null) {
-        closeList();
-        return;
-      }
-      cancel();
-    }
-  });
-
-  return {
-    offer(next: readonly Choice[]): void {
-      if (settled) return;
-      choices = next;
-      // Sólo se abre sola si nadie ha escrito todavía: la lista llega tarde y no
-      // puede tapar lo que se esté tecleando en ese momento.
-      if (document.activeElement === field) draw();
-    },
-  };
 }
 
 /** Envía un cambio sin recargar. Devuelve si se aplicó. */
@@ -1743,6 +1421,65 @@ async function showHistory(
 }
 
 /**
+ * El lienzo, o el motivo por el que no va a haberlo.
+ *
+ * Se carga aparte, y sólo cuando alguien dibuja: es un archivo que no tiene por
+ * qué viajar con la primera pantalla. La contrapartida es que puede no llegar.
+ * Un cliente compilado hace rato pide un trozo con una huella que el servidor ya
+ * no tiene, y la petición vuelve 404 —le pasa a la pestaña que se quedó abierta
+ * desde antes de la última compilación, y al armazón que el service worker
+ * guardó—.
+ *
+ * Sin esto el rechazo caía dentro de un `void` y el navegador lo escribía en una
+ * consola que nadie mira: el comando borraba `/dibujo` del bloque, no abría
+ * nada, y no decía por qué. Un fallo que no habla es indistinguible de un
+ * comando que no existe, y manda a buscar el error donde no está.
+ *
+ * @guarantee ACanvasThatCannotOpenSaysSo.
+ */
+async function canvasModule(
+  notify: (message: string) => void,
+): Promise<typeof import('./canvas.ts') | null> {
+  try {
+    return await import('./canvas.ts');
+  } catch {
+    // Qué hacer, y no sólo qué pasó: recargar trae el cliente nuevo, y es lo
+    // único que quien mira puede hacer al respecto.
+    notify('no se pudo abrir el lienzo: este cliente quedó viejo, recarga la página');
+    return null;
+  }
+}
+
+/**
+ * Escribe un dibujo, y dice en voz alta cuando no pudo.
+ *
+ * Un dibujo sólo existe dentro del lienzo hasta que se guarda, y el lienzo ya se
+ * cerró cuando esto corre: si la escritura falla callando, lo dibujado se perdió
+ * sin que nadie se enterara. Un rechazo del dominio y una red caída son sucesos
+ * distintos, pero desde aquí dicen lo mismo —no quedó escrito— y las dos formas
+ * de fallar tienen que llegar a quien dibujó.
+ *
+ * @guarantee ADrawingThatDidNotGetWrittenSaysSo.
+ */
+async function drawingSaved(
+  write: () => Promise<SubmitResult>,
+  notify: (message: string) => void,
+): Promise<boolean> {
+  let said;
+  try {
+    said = await write();
+  } catch {
+    notify('no se pudo guardar el dibujo: sin conexión con el servidor');
+    return false;
+  }
+  if (said.status === 'rejected') {
+    notify(`no se pudo guardar el dibujo: ${said.reason}`);
+    return false;
+  }
+  return true;
+}
+
+/**
  * Abre el lienzo y deja lo dibujado en un bloque.
  *
  * Si el bloque estaba vacío —lo normal: se escribió `/dibujo` y nada más—, el
@@ -1761,20 +1498,24 @@ async function drawInto(
   callbacks: OutlinerCallbacks,
   notify: (message: string) => void,
 ): Promise<void> {
-  const { openCanvas } = await import('./canvas.ts');
-  const drawn = await openCanvas();
+  const canvas = await canvasModule(notify);
+  if (canvas === null) return;
+  const drawn = await canvas.openCanvas();
   if (drawn.content === '') {
     // @invariant AnEmptyCanvasWritesNothing: mirar el lienzo no es escribir. Lo
     // que hubiera escrito vuelve como estaba, sin el comando.
-    await api.submit({ kind: 'edit_block', block, content: written });
-    callbacks.onReload(null);
+    const back = await drawingSaved(
+      () => api.submit({ kind: 'edit_block', block, content: written }),
+      notify,
+    );
+    if (back) callbacks.onReload(null);
     return;
   }
 
-  const said =
+  const saved = await drawingSaved(
     written === ''
-      ? await api.submit({ kind: 'edit_block', block, content: drawn.content }, 'drawn')
-      : await (async () => {
+      ? () => api.submit({ kind: 'edit_block', block, content: drawn.content }, 'drawn')
+      : async () => {
           await api.submit({ kind: 'edit_block', block, content: written });
           return api.submit(
             {
@@ -1786,11 +1527,10 @@ async function drawInto(
             },
             'drawn',
           );
-        })();
-  if (said.status === 'rejected') {
-    notify(`no se pudo guardar el dibujo: ${said.reason}`);
-    return;
-  }
+        },
+    notify,
+  );
+  if (!saved) return;
   callbacks.onReload(null);
 }
 
@@ -1806,18 +1546,16 @@ async function redraw(
   callbacks: OutlinerCallbacks,
   notify: (message: string) => void,
 ): Promise<void> {
-  const { openCanvas } = await import('./canvas.ts');
-  const drawn = await openCanvas(readDrawing(block.content));
+  const canvas = await canvasModule(notify);
+  if (canvas === null) return;
+  const drawn = await canvas.openCanvas(readDrawing(block.content));
   // Borrar todos los trazos y salir deja el bloque vacío, no lo borra: quitar un
   // bloque es otra decisión y tiene su propio gesto.
-  const said = await api.submit(
-    { kind: 'edit_block', block: block.stableId, content: drawn.content },
-    'drawn',
+  const saved = await drawingSaved(
+    () => api.submit({ kind: 'edit_block', block: block.stableId, content: drawn.content }, 'drawn'),
+    notify,
   );
-  if (said.status === 'rejected') {
-    notify(`no se pudo guardar el dibujo: ${said.reason}`);
-    return;
-  }
+  if (!saved) return;
   callbacks.onReload(null);
 }
 
@@ -2130,6 +1868,42 @@ export function renderOutliner(
     // sobre una clave que se llama `type` obliga a saberse las dos para poder
     // preguntar por ella, y la que vale es la que el corpus dice.
     key.textContent = property.key;
+
+    /*
+     * La que dice qué gobierna esta página se ve y no se toca.
+     *
+     * Ni la clave ni el valor son del corpus: `special-kind` es la única palabra
+     * que Vera no puede dejar que se declare —es con la que encuentra la página
+     * donde el corpus declara las demás— y sus valores son la junta con el
+     * código, como los papeles. Ofrecer un desplegable para elegir otro sería
+     * ofrecer una decisión que no existe, y quitarla dejaría a la página
+     * gobernando sin decirlo.
+     *
+     * Se dibuja igual, y ésa es la mitad que importa: esconderla haría que la
+     * página gobernase en secreto, que es peor que enseñar algo intocable. Se
+     * enseña lo que decide, con su valor literal al lado, atenuada y sin ninguno
+     * de los gestos que en las demás filas prometen que se puede cambiar.
+     */
+    if (property.key === SPECIAL_KIND) {
+      const said = kindSays(property.value);
+      key.classList.add('property-fixed');
+      key.title = 'La palabra con que Vera reconoce una página de gobierno. La pone el programa.';
+
+      const value = document.createElement('dd');
+      value.className = 'property-value property-fixed';
+      value.title = key.title;
+
+      const what = document.createElement('span');
+      what.textContent = said?.what ?? `gobierna «${property.value}»`;
+      const literal = document.createElement('code');
+      literal.className = 'property-literal';
+      literal.textContent = property.value;
+      value.append(what, literal);
+
+      properties.append(key, value);
+      continue;
+    }
+
     key.tabIndex = 0;
     key.title = 'renombrar la propiedad';
     key.addEventListener('click', () => {
@@ -2366,18 +2140,27 @@ export function renderOutliner(
    * servidor— se escribe igual, que es lo que siempre se pudo hacer.
    */
   add.addEventListener('click', () => {
+    /*
+     * Mientras se nombra, la fila entera y sin columna de valor.
+     *
+     * Una propiedad que todavía no tiene nombre tampoco tiene valor, así que la
+     * columna derecha no tiene nada que enseñar: el campo abarca las dos y la
+     * lista que cuelga de él mide lo mismo que él. Antes ocupaba sólo la columna
+     * del nombre —que mide lo que mide la palabra más larga— y la lista salía
+     * más ancha que su propio campo, sobresaliendo por la derecha con un escalón
+     * que la hacía parecer de otra cosa.
+     *
+     * Ninguna fila que ya tenga nombre cambia: esto vale sólo para la que se
+     * está escribiendo, y desaparece con ella.
+     */
     const key = document.createElement('dt');
-    key.className = 'property-key';
-    const value = document.createElement('dd');
-    value.className = 'property-value';
-    value.textContent = '';
-    properties.append(key, value);
+    key.className = 'property-key property-naming';
+    properties.append(key);
 
     const put = async (next: string): Promise<boolean> => {
       const said = next.trim();
       if (said === '') {
         key.remove();
-        value.remove();
         return true;
       }
       // Nace con valor vacío; el valor se escribe en el siguiente clic. El
@@ -2388,7 +2171,12 @@ export function renderOutliner(
       );
     };
 
-    const field = completeInPlace(key, 'nombre de la propiedad nueva', put);
+    // Salir sin escribir nada retira la fila que se había preparado. Antes se
+    // quedaba puesta y vacía: no se veía, pero estaba, y ocupaba una fila del
+    // `dl` hasta la próxima vez que la página se rehiciera.
+    const field = completeInPlace(key, 'nombre de la propiedad', put, {
+      onCancel: () => key.remove(),
+    });
 
     void api
       .ontology()
@@ -2555,7 +2343,12 @@ export function renderOutliner(
    * dejaría la página en blanco mientras tanto. Ver service-page.ts.
    */
   if (isServicePage(page.properties)) {
-    void renderService(page.id, toast).then((panel) => {
+    void renderService(page.id, toast, (change) =>
+      submitQuietly(change).then((applied) => {
+        if (applied) callbacks.onReload(null);
+        return applied;
+      }),
+    ).then((panel) => {
       if (panel !== null) header.after(panel);
     });
   }
@@ -2563,6 +2356,61 @@ export function renderOutliner(
   const list = document.createElement('div');
   list.className = 'blocks';
   container.append(list);
+
+  /*
+   * Si esta página declara de qué está hecho el corpus, sus fichas se dibujan
+   * como una tabla y no como bloques sueltos.
+   *
+   * La lista se esconde hasta saberlo. La ontología se pide al servidor y llega
+   * un instante después de dibujarse la página; enseñar entretanto los catorce
+   * bloques para retirarlos en cuanto conteste haría parpadear la página entera
+   * cada vez que se abre. Un blanco corto es menos ruidoso que un salto, y si la
+   * petición falla la lista vuelve con todos sus bloques, que es exactamente lo
+   * que la página era antes de que esto existiera.
+   */
+  /*
+   * Y si es la página de la puerta MCP, sus conexiones son otra tabla.
+   *
+   * Se dibuja como la de la ontología y por el mismo motivo: las filas son los
+   * bloques que declaran, así que los bloques se retiran y la tabla ocupa su
+   * sitio. Ver mcp-page.ts.
+   */
+  if (isMCPPage(page.properties)) {
+    list.hidden = true;
+    void renderMCP((change) =>
+      submitQuietly(change).then((applied) => {
+        if (applied) callbacks.onReload(null);
+        return applied;
+      }),
+    ).then((made) => {
+      list.hidden = false;
+      if (made === null) return;
+      const rows = [...list.querySelectorAll<HTMLElement>('.block')].filter((row) =>
+        made.declaring.has(row.dataset['id'] ?? ''),
+      );
+      rows[0]?.before(made.element);
+      for (const row of rows) row.remove();
+    });
+  }
+
+  const governing = governingKind(page.properties);
+  if (governing !== null) {
+    list.hidden = true;
+    void renderGoverning(governing, (change) => submitQuietly(change).then((applied) => {
+      if (applied) callbacks.onReload(null);
+      return applied;
+    })).then((made) => {
+      list.hidden = false;
+      if (made === null) return;
+      // Los bloques que declaran ya están dibujados: se retiran, y la tabla
+      // ocupa el sitio del primero para que quede donde el documento la tenía.
+      const rows = [...list.querySelectorAll<HTMLElement>('.block')].filter((row) =>
+        made.declaring.has(row.dataset['id'] ?? ''),
+      );
+      rows[0]?.before(made.element);
+      for (const row of rows) row.remove();
+    });
+  }
 
   const drawBlock = (node: Node, depth: number): void => {
     const row = document.createElement('div');
@@ -3414,13 +3262,18 @@ export function renderOutliner(
 
       const columns = document.createElement('div');
       columns.className = 'reference-columns';
-      for (const [name, rows, gesture] of [
-        ['Nombra a', names, 'followed_reference'],
-        ['La nombran', named, 'followed_backlink'],
-      ] as [string, Row[], 'followed_reference' | 'followed_backlink'][]) {
+      /*
+       * Lo entrante a la izquierda y lo saliente a la derecha, en el orden en
+       * que se lee: primero quién llegó hasta aquí y después hacia dónde sale
+       * esta página. La flecha va de izquierda a derecha y las columnas también.
+       */
+      for (const [name, rows, gesture, way] of [
+        ['La nombran', named, 'followed_backlink', 'in'],
+        ['Nombra a', names, 'followed_reference', 'out'],
+      ] as [string, Row[], 'followed_reference' | 'followed_backlink', 'in' | 'out'][]) {
         if (rows.length === 0) continue;
         const column = foldingSection(`ref:${name}`, `${name} (${rows.length})`, 3);
-        column.section.classList.add('reference-column');
+        column.section.classList.add('reference-column', `reference-${way}`);
         column.body.append(list(rows, gesture));
         columns.append(column.section);
       }
