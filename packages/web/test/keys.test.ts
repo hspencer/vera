@@ -9,6 +9,7 @@ import {
   resolveArrow,
   resolveBackspaceAtStart,
   resolveDelimiter,
+  resolveDrawingKey,
   resolveEnter,
   resolveTab,
   type Neighbourhood,
@@ -246,5 +247,77 @@ describe('autopar', () => {
 
   it('un cierre sin su pareja delante tampoco', () => {
     assert.equal(resolveDelimiter(')', 'ab', 1, 1), null);
+  });
+});
+
+/*
+ * Las teclas de un dibujo enfocado.
+ *
+ * Sus trazos son el texto del bloque, así que no hay cursor dentro: lo que se
+ * prueba aquí es que la página no se acabe en él. Ver specs/hand-drawing.allium.
+ */
+describe('un dibujo enfocado', () => {
+  it('sale por delante con la flecha abajo', () => {
+    assert.deepEqual(resolveDrawingKey('ArrowDown', near({ nextVisible: 'block:c' })), {
+      kind: 'mover-foco',
+      block: 'block:c',
+      at: 'inicio',
+    });
+  });
+
+  it('y la derecha hace lo mismo, porque no hay renglones que recorrer', () => {
+    // @invariant TheFourArrowsCross.
+    assert.deepEqual(
+      resolveDrawingKey('ArrowRight', near({ nextVisible: 'block:c' })),
+      resolveDrawingKey('ArrowDown', near({ nextVisible: 'block:c' })),
+    );
+  });
+
+  it('sale por detrás, y llega al final del anterior', () => {
+    const previous = { block: 'block:a', content: 'uno', hasChildren: false };
+    assert.deepEqual(resolveDrawingKey('ArrowUp', near({ previousVisible: previous })), {
+      kind: 'mover-foco',
+      block: 'block:a',
+      at: 'final',
+    });
+    assert.deepEqual(
+      resolveDrawingKey('ArrowLeft', near({ previousVisible: previous })),
+      resolveDrawingKey('ArrowUp', near({ previousVisible: previous })),
+    );
+  });
+
+  it('sin vecino por ese lado no hace nada, y la tecla sigue siendo del navegador', () => {
+    assert.deepEqual(resolveDrawingKey('ArrowDown', near()), { kind: 'ninguno' });
+    assert.deepEqual(resolveDrawingKey('ArrowUp', near()), { kind: 'ninguno' });
+  });
+
+  /*
+   * Enter es la razón de todo esto: un dibujo al final de una página era el
+   * final de la página, porque no había dónde poner el cursor para seguir.
+   */
+  it('Enter abre un hermano detrás, y no toca el dibujo', () => {
+    assert.deepEqual(resolveDrawingKey('Enter', near({ index: 2, parent: 'block:p' })), {
+      kind: 'abrir-debajo',
+      parent: 'block:p',
+      position: 3,
+    });
+  });
+
+  it('un dibujo con hijos gana un primer hijo, como cualquier otro bloque', () => {
+    // La misma regla que resolveEnter. @invariant ItOpensAndDoesNotSplit.
+    assert.deepEqual(resolveDrawingKey('Enter', near({ hasChildren: true, index: 2 })), {
+      kind: 'abrir-debajo',
+      parent: 'block:b',
+      position: 0,
+    });
+  });
+
+  it('escribir una letra encima no escribe nada', () => {
+    // @invariant TheCursorRestsOnItAndWritesNothing: un dibujo enfocado no es un
+    // campo, y una tecla sin querer no puede escribir en el grafo desde un sitio
+    // donde nadie estaba escribiendo.
+    assert.deepEqual(resolveDrawingKey('a', near({ nextVisible: 'block:c' })), { kind: 'ninguno' });
+    assert.deepEqual(resolveDrawingKey('Backspace', near()), { kind: 'ninguno' });
+    assert.deepEqual(resolveDrawingKey('Tab', near()), { kind: 'ninguno' });
   });
 });

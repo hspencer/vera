@@ -65,6 +65,7 @@ import {
   resolveArrow,
   resolveBackspaceAtStart,
   resolveDelimiter,
+  resolveDrawingKey,
   resolveEnter,
   resolveTab,
   type KeyOutcome,
@@ -2783,18 +2784,6 @@ export function renderOutliner(
         window.getSelection()?.removeAllRanges();
         return;
       }
-      /*
-       * Un dibujo se abre dibujando.
-       *
-       * Sus trazos son el texto del bloque, y abrir un campo con las
-       * coordenadas sería enseñar el formato a quien quería seguir un trazo.
-       * @invariant EditingADrawingOpensTheCanvas.
-       */
-      if (looksLikeDrawing(node.block.content)) {
-        void redraw(node.block, callbacks, toast);
-        return;
-      }
-
       // Empezar a escribir deshace lo escogido. @invariant NothingIsSelectedWhileWriting.
       if (picked.size > 0) clearPicked();
       pickedOn = node.block.stableId;
@@ -2802,7 +2791,102 @@ export function renderOutliner(
       openEditor(node, body);
     });
 
-    row.append(bullet, body);
+    /*
+     * Un dibujo: el lápiz por donde se entra y las teclas por donde se sale.
+     *
+     * Los trazos son el texto del bloque, así que aquí no hay dónde poner el
+     * cursor y ninguna tecla llegaba. Con un dibujo al final de una página eso
+     * era el final de la página: no había manera de escribir debajo.
+     *
+     * Enfocado responde a las cuatro flechas y a Enter, y a nada más: escribir
+     * una letra encima no escribe nada. @invariant TheCursorRestsOnItAndWritesNothing.
+     */
+    if (looksLikeDrawing(node.block.content)) {
+      // Un dibujo enfocado no abre editor, así que sin esto no se vería que lo
+      // está. La hoja le pone su señal. Ver `.drawn-body`.
+      body.classList.add('drawn-body');
+
+      /*
+       * El lápiz va en el canalón, junto a la viñeta, y no sobre el dibujo.
+       *
+       * Un dibujo se ve del tamaño de sus trazos —@invariant ItsOwnSizePlusAMargin—
+       * y un garabato de dos centímetros es un tamaño legítimo. Un control
+       * superpuesto en su esquina taparía justo el trazo que alguien quiere
+       * mirar antes de decidir si lo retoca. En el canalón no tapa nada y cae
+       * donde ya viven los controles de la fila.
+       *
+       * Se ve al enfocar o al pasar por encima, no siempre.
+       * @invariant WhatIsFocusedShowsTheWayIn.
+       */
+      const pencil = document.createElement('button');
+      pencil.type = 'button';
+      pencil.className = 'drawn-edit';
+      pencil.innerHTML = icon('edit-2');
+      pencil.title = 'seguir dibujando';
+      pencil.setAttribute('aria-label', 'seguir dibujando en este bloque');
+      pencil.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void redraw(node.block, callbacks, toast);
+      });
+
+      /*
+       * La decisión la toma `resolveDrawingKey`; aquí sólo se ejecuta.
+       *
+       * Es el mismo reparto que el resto de las teclas del outliner: en keys.ts
+       * entra la vecindad y sale qué hacer, sin DOM y sin red, y por eso se
+       * prueba sin navegador. Ver el encabezado de keys.ts.
+       */
+      body.addEventListener('keydown', (event) => {
+        // Aquí sólo se responde cuando el foco está de verdad en el bloque y no
+        // en algo suyo —el lápiz se lleva sus propias teclas—, y con las teclas
+        // desnudas: los atajos con modificador son de la página, no del bloque.
+        if (event.target !== body) return;
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        const near = neighbourhoods.get(node.block.stableId);
+        if (near === undefined) return;
+
+        const outcome = resolveDrawingKey(event.key, near);
+        if (outcome.kind === 'ninguno') return;
+        event.preventDefault();
+
+        /*
+         * Mover el foco no pasa por el servidor.
+         *
+         * El `mover-foco` de un bloque de texto recarga la página entera. Desde
+         * aquí no hace falta: los dos bloques están dibujados y sus asientos
+         * están en `editors`, así que mover el foco es mover el foco. Y
+         * `openEditor` ya sabe qué hacer si el vecino resulta ser otro dibujo.
+         */
+        if (outcome.kind === 'mover-foco') {
+          const seat = editors.get(outcome.block);
+          if (seat === undefined) return;
+          seat.body.closest('.block')?.scrollIntoView({ block: 'nearest' });
+          openEditor(seat.node, seat.body, outcome.at === 'inicio' ? 0 : Number.MAX_SAFE_INTEGER);
+          return;
+        }
+
+        void api
+          .submit({
+            kind: 'create_block',
+            page: page.id,
+            parent: outcome.parent,
+            position: outcome.position,
+            content: '',
+          })
+          .then((result) => {
+            if (result.status === 'rejected') {
+              toast(`rechazado: ${result.reason}`);
+              return;
+            }
+            callbacks.onReload({ block: result.subjectId, at: 0 });
+          })
+          .catch(() => toast('no se pudo escribir el bloque: sin conexión con el servidor'));
+      });
+
+      row.append(bullet, pencil, body);
+    } else {
+      row.append(bullet, body);
+    }
     list.append(row);
     editors.set(node.block.stableId, { node, body });
     // El orden de lectura, que es este y no el del arbol guardado.
@@ -3040,6 +3124,24 @@ export function renderOutliner(
   };
 
   function openEditor(node: Node, body: HTMLElement, caret?: number): void {
+    /*
+     * Un dibujo recibe el cursor y no el editor.
+     *
+     * Aquí y no en cada sitio que llama, porque son tres y llegan por caminos
+     * distintos: pulsando el bloque, cayendo en él con la flecha desde el de
+     * arriba, y volviendo a la página después de un cambio estructural. Los dos
+     * últimos abrían un campo de texto con las coordenadas del dibujo dentro, que
+     * es exactamente lo que @invariant EditingADrawingOpensTheCanvas prohíbe: el
+     * invariante estaba comprobado en el clic, y el clic no era la única puerta.
+     *
+     * Enfocado y sin editor, el bloque responde a las flechas y a Enter —ver
+     * `drawingKeys`— y enseña el lápiz por donde se entra al lienzo.
+     * @invariant TouchingADrawingIsNotEditingIt.
+     */
+    if (looksLikeDrawing(node.block.content)) {
+      body.focus();
+      return;
+    }
     const near = neighbourhoods.get(node.block.stableId);
     if (near === undefined) return;
     startEditing(

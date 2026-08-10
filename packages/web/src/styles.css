@@ -4154,9 +4154,26 @@ code {
   cursor: pointer;
 }
 
+/*
+ * Con una marca dentro y no una palabra, el botón deja de ser un rótulo.
+ *
+ * Pasa a ser un blanco al que se apunta con el dedo mientras la otra mano
+ * sostiene el lápiz, así que se le da el tamaño que una mano acierta sin mirar
+ * —los 44 puntos de siempre— en vez del ancho que midiera la palabra.
+ */
 .canvas-button.done {
   background: var(--accent);
   color: var(--bg);
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+}
+
+.canvas-button.done svg {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 /*
@@ -4175,6 +4192,59 @@ code {
   display: block;
   max-width: 100%;
   height: auto;
+}
+
+/*
+ * Un dibujo enfocado, y el lápiz por donde se entra al lienzo.
+ *
+ * Pulsar un dibujo lo enfoca y no lo abre —@invariant TouchingADrawingIsNotEditingIt—,
+ * así que hace falta que se vea que está enfocado: no hay campo de texto que lo
+ * delate, como en cualquier otro bloque. Un filete tenue, del grosor del que
+ * lleva una referencia, y no un recuadro: lo que está enfocado es el bloque, no
+ * una casilla.
+ */
+.drawn-body:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * El lápiz vive en el canalón, con su propia columna, y no sobre el dibujo.
+ *
+ * Un dibujo se ve del tamaño de sus trazos —@invariant ItsOwnSizePlusAMargin— y
+ * un garabato de dos centímetros es un tamaño legítimo: un control superpuesto en
+ * su esquina taparía justo el trazo que alguien mira antes de decidir si lo
+ * retoca. La columna se reserva sólo en las filas que llevan dibujo, así que
+ * nada se mueve al aparecer y desaparecer.
+ */
+.drawn-edit {
+  appearance: none;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  flex: none;
+  align-self: flex-start;
+  width: var(--rail, 1.4rem);
+  line-height: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.drawn-edit svg {
+  width: 0.9em;
+  height: 0.9em;
+}
+
+/* Al enfocar o al pasar por encima, y no antes.
+   @invariant WhatIsFocusedShowsTheWayIn. */
+.block:hover > .drawn-edit,
+.block:focus-within > .drawn-edit,
+.drawn-edit:focus-visible {
+  opacity: 1;
+  color: var(--accent);
 }
 
 /* --- La historia de un bloque ------------------------------------------- */

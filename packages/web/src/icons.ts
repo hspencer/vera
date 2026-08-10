@@ -79,6 +79,16 @@ const SHAPES = {
   edit:
     '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/>',
 
+  /*
+   * El lápiz solo, sin la hoja debajo: entrar a un dibujo que ya existe.
+   *
+   * El otro lleva hoja porque abre algo que hay que escribir desde cero. Aquí lo
+   * que hay ya está dibujado y el gesto es volver a la mano, no empezar un
+   * documento. Que sean dos iconos y no uno es lo que hace que en una misma
+   * página se distingan de reojo.
+   */
+  'edit-2': '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+
   // La pluma: explicar por qué esta página y aquélla se tocan es escribir.
   feather:
     '<path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/>',

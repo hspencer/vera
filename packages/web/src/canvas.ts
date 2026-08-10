@@ -17,6 +17,8 @@
 
 import { NIB, outlineOf, writeDrawing, type Point, type Stroke } from '@vera/core';
 
+import { icon } from './icons.ts';
+
 /** Cuánto se acerca o se aleja como mucho, con dos dedos. */
 const CLOSEST = 8;
 const FARTHEST = 0.15;
@@ -56,7 +58,18 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
     const done = document.createElement('button');
     done.type = 'button';
     done.className = 'canvas-button done';
-    done.textContent = 'listo';
+    /*
+     * El visto, y no la palabra «listo».
+     *
+     * Salir y aceptar son el mismo gesto —@invariant BothGesturesFinish—, así
+     * que el control dice «aceptar», que es lo que el visto significa en toda la
+     * interfaz. Una palabra además obliga a leer para saber qué hace el único
+     * botón de una pantalla donde lo único que se puede hacer es dibujar; una
+     * marca se reconoce con el dibujo todavía en la mano.
+     */
+    done.innerHTML = icon('check');
+    done.title = 'listo';
+    done.setAttribute('aria-label', 'listo, guardar el dibujo');
     controls.append(done);
     shell.append(controls);
     document.body.append(shell);

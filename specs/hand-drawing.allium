@@ -48,11 +48,28 @@ contract ADrawingIsABlock {
         -- hay identidad aparte que mantener.
 
     @invariant EditingADrawingOpensTheCanvas
-        -- Tocar un dibujo abre el lienzo con lo dibujado dentro, no un campo de
-        -- texto con sus coordenadas. Es la misma promesa que
-        -- @invariant EditingRevealsTheSource cumple para la prosa: al pulsar se
-        -- vuelve editable lo que se está mirando, y lo que se está mirando aquí
-        -- es un dibujo.
+        -- Editar un dibujo abre el lienzo con lo dibujado dentro, y nunca un
+        -- campo de texto con sus coordenadas. Vale para toda forma de llegar: el
+        -- gesto que edita, y también caer en el bloque con el teclado desde el de
+        -- arriba, que es por donde se colaba el campo con las coordenadas. Es lo
+        -- que @invariant EditingRevealsTheSource promete para la prosa —al editar
+        -- se vuelve editable lo que se está mirando— dicho para algo que no se
+        -- mira como texto.
+
+    @invariant TouchingADrawingIsNotEditingIt
+        -- Pulsar un dibujo lo enfoca; no lo abre. Editarlo pide su propio gesto,
+        -- visible sobre el bloque enfocado.
+        --
+        -- La primera versión hacía las dos cosas de una, y eso dejaba la página
+        -- sin salida: los trazos son el texto del bloque, así que un dibujo no
+        -- tiene dónde poner el cursor, y si además pulsarlo abría el lienzo
+        -- entonces un dibujo al final de una página era el final de la página. No
+        -- había manera de escribir debajo.
+        --
+        -- El precio es que editar un dibujo cuesta un gesto más que editar una
+        -- frase. Se paga porque los dos gestos no valen lo mismo: pulsar es lo
+        -- que uno hace para leer, y abrir el lienzo sobre toda la pantalla es un
+        -- acto.
 
     @invariant WhatCannotBeReadAsADrawingIsReadAsText
         -- Un bloque que dice ser un dibujo y no se puede leer como tal se
@@ -167,6 +184,63 @@ value Extents {
 -- Rules
 ------------------------------------------------------------
 
+-- Un dibujo enfocado: el cursor descansa en él sin que se pueda escribir dentro.
+--
+-- Es la contrapartida de @invariant TouchingADrawingIsNotEditingIt. Si pulsar no
+-- abre el lienzo, tiene que hacer algo, y lo que hace es lo que hace pulsar
+-- cualquier bloque: quedarse ahí. La diferencia es que en un bloque de prosa
+-- quedarse ahí es tener el cursor entre dos letras, y aquí no hay letras entre
+-- las que estar.
+rule ADrawingTakesTheCursorWithoutTakingTheKeyboard {
+    when: FocusDrawing(participant, block)
+
+    ensures: focused(participant, block)
+
+    @invariant TheCursorRestsOnItAndWritesNothing
+        -- Un dibujo enfocado no es un campo: escribir una letra encima no escribe
+        -- nada, ni en él ni debajo. Sólo responden las teclas que recorren la
+        -- página y la que abre un bloque nuevo.
+        --
+        -- Hacer que la primera letra naciera en un bloque de abajo ahorraría un
+        -- gesto y a cambio dejaría que una tecla suelta —el gato, el bolsillo—
+        -- escribiera en el grafo desde un sitio donde nadie estaba escribiendo.
+
+    @invariant WhatIsFocusedShowsTheWayIn
+        -- El gesto que abre el lienzo se ve cuando el bloque está enfocado o bajo
+        -- el puntero, y no antes. Un control permanente sobre cada dibujo sería
+        -- una barra de herramientas repartida por la página, que es lo mismo que
+        -- @invariant NothingElseIsOnTheCanvas rechaza dentro del lienzo.
+}
+
+rule ADrawingCanBeSteppedPast {
+    when: StepPastDrawing(participant, block)
+
+    requires: focused(participant, block)
+
+    ensures: focus_left(participant, block)
+
+    @invariant TheFourArrowsCross
+        -- Abajo y derecha van al bloque siguiente; arriba e izquierda, al
+        -- anterior. Un dibujo no tiene renglones que recorrer, así que las cuatro
+        -- significan aquí lo que significan en el borde de un bloque de texto:
+        -- salir por ese lado.
+}
+
+rule EnterOnADrawingOpensTheBlockBelow {
+    when: InsertAfterDrawing(participant, block)
+
+    requires: focused(participant, block)
+
+    ensures: opened_after(participant, block)
+
+    @invariant ItOpensAndDoesNotSplit
+        -- Un dibujo no se parte por el cursor, porque no hay cursor dentro: lo
+        -- que hace Enter es abrir un bloque vacío detrás, con el cursor dentro.
+        -- Dónde cae ese bloque lo decide lo mismo que para cualquier otro —ver
+        -- EnterSplitsTheBlock en block-editing.allium—: un dibujo con hijos gana
+        -- un primer hijo, y uno sin hijos gana un hermano detrás.
+}
+
 rule DrawingOpensAWholeScreen {
     when: StartDrawing(participant, block)
 
@@ -271,6 +345,9 @@ surface Drawable {
         fulfils AStrokeRemembersHowItWasMade
 
     provides:
+        FocusDrawing(participant, block)
+        StepPastDrawing(participant, block)
+        InsertAfterDrawing(participant, block)
         StartDrawing(participant, block)
         FinishDrawing(participant, block)
         UndoStroke(participant, block)
@@ -323,6 +400,12 @@ open question "¿Debe un dibujo poder llevar una descripción —para encontrarl
 -- veces sobre el mismo bloque deja diez versiones enteras del dibujo en la
 -- historia.
 open question "¿Debe la historia de un bloque de dibujo guardarse entera cada vez, o hay un punto en que un dibujo pesa lo bastante como para guardar sólo lo que cambió?"
+
+-- Un dibujo enfocado responde a las flechas y a Enter. Backspace no hace nada, y
+-- en cualquier otro bloque fusiona con el de arriba. Que no haga nada es
+-- deliberado —un dibujo no se pierde por una tecla— y también es una asimetría
+-- que quien la encuentre va a leer como que la tecla no llegó.
+open question "¿Debe Backspace sobre un dibujo enfocado quitarlo, y entonces qué lo distingue de perder un dibujo por pulsar una tecla sin querer?"
 
 -- Hoy sólo se puede quitar el último trazo. Borrar un trazo del medio, o una
 -- parte de uno, pediría señalarlo, y señalar pide una herramienta que el lienzo

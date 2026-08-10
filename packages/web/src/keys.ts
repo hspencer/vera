@@ -71,6 +71,58 @@ export function resolveEnter(
     : { kind: 'partir', head, tail, parent: near.parent, position: near.index + 1 };
 }
 
+/**
+ * Lo que puede pasar sobre un dibujo enfocado, que es poco y a propósito.
+ *
+ * No comparte `KeyOutcome` porque no comparte ninguno de sus casos: un dibujo no
+ * se parte, no se fusiona y no se indenta desde el teclado. Lo único que hace
+ * `abrir-debajo` y que no hace ningún otro es nacer un bloque sin tocar el que
+ * está enfocado, que es la diferencia entera entre un dibujo y una frase.
+ */
+export type DrawingOutcome =
+  | { kind: 'ninguno' }
+  | { kind: 'mover-foco'; block: string; at: 'inicio' | 'final' }
+  /** Un bloque vacío detrás; el dibujo no se toca. */
+  | { kind: 'abrir-debajo'; parent: string | null; position: number };
+
+/**
+ * Las teclas de un dibujo enfocado.
+ *
+ * Sus trazos son el texto del bloque, así que no hay cursor dentro y no hay nada
+ * que escribir: lo que queda es recorrer la página y abrir un bloque detrás. Sin
+ * esto, un dibujo al final de una página era el final de la página.
+ * Ver specs/hand-drawing.allium.
+ *
+ * Una letra suelta no hace nada. Podría nacer un bloque debajo y aterrizar en
+ * él, que ahorra un gesto; a cambio dejaría que una tecla sin querer escribiera
+ * en el grafo desde un sitio donde nadie estaba escribiendo.
+ * @invariant TheCursorRestsOnItAndWritesNothing.
+ */
+export function resolveDrawingKey(key: string, near: Neighbourhood): DrawingOutcome {
+  // @invariant TheFourArrowsCross: un dibujo no tiene renglones que recorrer,
+  // así que las cuatro flechas significan lo que significan en el borde de un
+  // bloque de texto — salir por ese lado.
+  if (key === 'ArrowDown' || key === 'ArrowRight') {
+    if (near.nextVisible === null) return { kind: 'ninguno' };
+    return { kind: 'mover-foco', block: near.nextVisible, at: 'inicio' };
+  }
+  if (key === 'ArrowUp' || key === 'ArrowLeft') {
+    if (near.previousVisible === null) return { kind: 'ninguno' };
+    return { kind: 'mover-foco', block: near.previousVisible.block, at: 'final' };
+  }
+
+  // Enter abre y no parte. Dónde cae el bloque nuevo es lo que decide
+  // `resolveEnter` para cualquier otro: con hijos, un primer hijo; sin hijos, un
+  // hermano detrás. @invariant ItOpensAndDoesNotSplit.
+  if (key === 'Enter') {
+    return near.hasChildren
+      ? { kind: 'abrir-debajo', parent: near.block, position: 0 }
+      : { kind: 'abrir-debajo', parent: near.parent, position: near.index + 1 };
+  }
+
+  return { kind: 'ninguno' };
+}
+
 /** Tab hace del bloque un hijo del hermano de arriba. Sin hermano arriba, nada. */
 export function resolveTab(forward: boolean, near: Neighbourhood): KeyOutcome {
   if (forward) {
