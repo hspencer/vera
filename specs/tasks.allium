@@ -1,0 +1,291 @@
+-- allium: 3
+-- tasks.allium
+
+-- Scope: Las cosas por hacer, escritas como líneas de una lista dentro de una
+--   página cualquiera
+-- Includes: Qué hace de un bloque una tarea, los tres estados y cómo se pasa de
+--   uno a otro, el plazo y su relación con el día, y qué se hizo con las tareas
+--   que el corpus traía escritas de Logseq
+-- Excludes:
+--   - Consultar tareas: preguntar por lo pendiente, acotarlo a una página o a un
+--     proyecto, comparar plazos (ver query-language.allium, y las preguntas
+--     abiertas del final, que dicen qué le falta a ese lenguaje para poder)
+--   - La página de clase `Tarea`, que es otra cosa y sigue siendo lo que era
+--     (ver controlled-ontology.allium)
+--   - La edición ordinaria de un bloque, que es la que se usa aquí sin cambiar
+--     nada (ver block-editing.allium)
+--   - El calendario con que se elige un día (ver workspace-interface.allium)
+-- Dependencies: Block, Page y ParticipantSubmits los gobierna core.allium; la
+--   propiedad de bloque y su vocabulario, controlled-ontology.allium; que un día
+--   sea una página, daily-log.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Qué es una tarea
+------------------------------------------------------------
+
+-- Los tres estados, y no más.
+--
+-- Logseq traía cinco y medio —TODO, DOING, DONE, LATER, NOW, WAITING— y el
+-- corpus usó tres de verdad: 240 TODO, 58 DONE, 4 DOING, y dos LATER y un NOW
+-- que son la pareja alternativa de los dos primeros. Los que no se usaron no se
+-- traen: un estado que nadie eligió es una decisión que hay que tomar cada vez
+-- que se mira la lista.
+enum TaskState { to_do | doing | done }
+
+-- Una tarea es un bloque que empieza por su marca.
+--
+-- La marca vive en el texto y no en una propiedad, y esa es la decisión que
+-- gobierna todo lo demás. Se tomó midiendo:
+--
+--   La proyección Markdown sale siendo una lista de tareas de verdad, de las que
+--   cualquier otro programa dibuja como casillas. Una propiedad colgando bajo
+--   cada ítem se leería fuera de Vera como ruido debajo de cada línea.
+--
+--   Cambiar de estado es editar el bloque. Una sola clase de operación, con su
+--   autoría, su revisión y su deshacer, sin nada que inventar.
+--
+--   Y es el mecanismo que Vera ya tiene: `#etiqueta` se escribe en el texto y se
+--   consulta como dato. Esta es la misma idea con otra marca.
+--
+-- El precio es una gramática más dentro del texto del bloque. Ya hay tres
+-- —`[[enlace]]`, `#etiqueta` y la valla de `dibujo`— así que se sabe lo que
+-- cuesta, y ninguna de las tres ha hecho falta deshacerla.
+value Task {
+    block: core/Block
+    state: TaskState
+    -- Lo que queda del bloque cuando se le quita la marca: la tarea misma.
+    said: String
+    -- Cuándo hay que tenerlo hecho, si alguien lo dijo. Ver Deadline.
+    due: core/Page?
+}
+
+-- read_task(content)                                              -- caja negra
+--     La marca al principio del bloque, y el resto. `[ ]` es por hacer, `[/]`
+--     está haciéndose y `[x]` está hecho. Nada más al principio de la línea es
+--     una tarea, y por eso escribir sobre corchetes no convierte una frase en
+--     una tarea por accidente.
+--
+--     Se lee sólo la primera línea. Un bloque con la marca arriba y tres
+--     párrafos debajo es una tarea con sus notas dentro, que es como la gente
+--     escribe: la tarea es el renglón y lo demás es lo que hay que saber para
+--     hacerla.
+
+contract TheMarkIsTheState {
+    read: (content: String) -> Task?
+    write: (state: TaskState, said: String) -> String
+
+    @invariant WhatIsWrittenIsWhatIsRead
+        -- Escribir un estado y volver a leerlo devuelve ese estado y el mismo
+        -- texto. Es lo que permite que pulsar sea reescribir el bloque sin que
+        -- nada más del bloque cambie.
+
+    @invariant NothingElseBecomesATask
+        -- Sólo la marca exacta al principio de la primera línea. Un bloque que
+        -- empieza citando `[algo]`, o una lista de Markdown pegada de fuera, o
+        -- un enlace `[[así]]`, siguen siendo lo que eran. Una gramática que
+        -- captura de más convierte texto ajeno en casillas que nadie puso.
+
+    @invariant TheMarkIsNotDecoration
+        -- Lo que se guarda es el texto con su marca, y no un texto limpio más un
+        -- estado aparte. Dos sitios diciendo lo mismo acaban diciendo cosas
+        -- distintas, y aquí además el segundo no sobreviviría a exportar el
+        -- corpus.
+}
+
+------------------------------------------------------------
+-- Cambiar de estado
+------------------------------------------------------------
+
+-- Pulsar la casilla avanza al estado siguiente.
+--
+-- Por hacer, haciendo, hecho, y otra vez por hacer. En rueda y no en un menú:
+-- son tres, el orden es el del trabajo, y volver atrás desde «hecho» es un
+-- pulso más y no un gesto distinto. Un menú de tres opciones para elegir la
+-- siguiente sería tres veces el trabajo para la respuesta que se quiere el
+-- noventa por ciento de las veces.
+rule PressingATaskAdvancesIt {
+    when: PressTask(participant, graph, block)
+
+    let task = Task{block: block}
+
+    requires: exists task
+    requires: participant.kind = human
+
+    ensures:
+        core/ParticipantSubmits(
+            participant: participant,
+            graph: graph,
+            origin_id: origin_id_for_press(participant, block),
+            change: edit_block(block, write(next_state(task.state), task.said)),
+            channel: typed_text
+        )
+
+    @invariant PressingIsEditing
+        -- No hay operación propia de tareas. Cambiar de estado es `edit_block`,
+        -- pasa por change-application.allium, deja revisión y se deshace con
+        -- ctrl+Z como cualquier otra cosa escrita. Quien mire la historia del
+        -- bloque dentro de un año verá cuándo se hizo y quién lo dio por hecho.
+
+    @invariant TheHandIsTypedText
+        -- El canal es el de escribir, porque escribir es lo que pasó. Inventar
+        -- un canal para esto diría que marcar algo como hecho es una clase de
+        -- autoría distinta de escribirlo, y no lo es.
+
+    @guidance
+        -- Sólo una persona. Un agente que quiera dar algo por hecho llega por
+        -- donde llega todo lo suyo, y hoy eso es escribir el bloque con su mano
+        -- marcada. Que Cotito pueda tachar la lista de la compra de alguien sin
+        -- que se note es exactamente lo que la autoría por bloque existe para
+        -- impedir.
+}
+
+------------------------------------------------------------
+-- El plazo
+------------------------------------------------------------
+
+-- Cuándo hay que tenerlo hecho.
+--
+-- Es una propiedad del bloque —`plazo:: 2026-08-20`— y no un trozo más de la
+-- primera línea. La marca dice en qué estado está y el texto dice qué es; meter
+-- además la fecha ahí dentro haría que la línea tuviera que leerse con tres
+-- gramáticas a la vez, y que borrar mal un carácter cambiara el plazo sin que
+-- nadie lo viera.
+--
+-- Como propiedad de bloque es lo que Logseq ya escribía y el corpus ya trae 453
+-- veces, así que no hay formato nuevo que aprender ni que importar.
+-- No hay entidad ni valor que declarar: el plazo es `Task.due`, que es la página
+-- del día. Nombrarlo aparte daría un objeto que sólo existe para tener nombre, y
+-- dos sitios donde mirar cuándo vence algo.
+contract ADeadlineIsADay {
+    set: (block: core/Block, day: String) -> core/Change
+    clear: (block: core/Block) -> core/Change
+
+    @invariant DueIsALinkToTheDay
+        -- El valor resuelve a la página del día, así que la tarea aparece entre
+        -- lo que ese día nombra. Preguntar «qué vence hoy» es abrir hoy y mirar
+        -- quién apunta aquí: no hace falta lenguaje de consulta ninguno, y por
+        -- eso la primera versión puede no tenerlo sin dejar el plazo inútil.
+
+    @invariant NoDeadlineIsNotADeadlineOfNone
+        -- Una tarea sin plazo no lleva la propiedad. No se escribe vacía, no se
+        -- escribe «sin plazo» y no se escribe una fecha lejana por defecto:
+        -- las tres formas convierten «nadie lo ha decidido» en algo decidido.
+
+    @invariant TheDayIsWrittenAsTheCorpusWritesDays
+        -- El mismo formato con que nacen los días de la bitácora, porque tienen
+        -- que ser la misma página. Un plazo escrito de otra manera sería un
+        -- enlace a una página que no existe y que nadie va a escribir.
+}
+
+------------------------------------------------------------
+-- Lo que el corpus ya traía
+------------------------------------------------------------
+
+-- Las tareas de Logseq eran texto y pasan a ser tareas.
+--
+-- El corpus llegó con unos trescientos bloques que empiezan por `TODO`, `DONE`,
+-- `DOING`, `LATER` o `NOW`, y hasta ahora eran prosa: no se podían pulsar, ni
+-- contar, ni encontrar como lo que son. Trescientos bloques que parecen tareas y
+-- no lo son es peor que cualquiera de los dos extremos, porque quien los mira no
+-- puede saber cuáles cuentan.
+--
+-- Se convierten de una vez y no según se tocan: un corpus a medias hace que una
+-- lista de pendientes mienta durante meses, y mentir a medias es la única forma
+-- de mentir que no se nota.
+rule LegacyMarkersBecomeTasks {
+    when: ConvertLegacyTasks(participant, graph)
+
+    requires: participant.kind = human
+
+    ensures:
+        for block in blocks_with_legacy_marker(graph):
+            core/ParticipantSubmits(
+                participant: participant,
+                graph: graph,
+                origin_id: origin_id_for_conversion(participant, block),
+                change: edit_block(block, converted(block.content)),
+                channel: typed_text
+            )
+
+    @invariant ConversionIsOperationsAndNotSurgery
+        -- Una operación por bloque, por la única puerta de escritura, con su
+        -- autoría y su sitio en el registro. Se puede leer lo que cambió, se
+        -- puede deshacer, y dentro de un año se sabrá que fue una conversión y
+        -- no una edición a mano. Tocar la base por debajo habría sido más rápido
+        -- y habría dejado trescientos cambios que nadie hizo.
+
+    @invariant FiveMarkersBecomeThree
+        -- `TODO` y `LATER` son por hacer; `DOING` y `NOW` están haciéndose;
+        -- `DONE` está hecho. Los dos pares eran alternativas de Logseq para lo
+        -- mismo y el corpus los usa como tales.
+
+    @invariant LogseqDatesBecomeDeadlines
+        -- `DEADLINE: <2024-03-22 Fri>` dentro del bloque se vuelve `plazo::` con
+        -- ese día. `SCHEDULED:` también: la distinción de Logseq entre cuándo
+        -- empezar y cuándo acabar no la usó nunca este corpus, y sostener dos
+        -- fechas para diferenciar algo que nadie diferenció es inventar trabajo.
+
+    @invariant WhatIsNotUnderstoodIsLeftAlone
+        -- Un bloque cuyo marcador no se reconozca, o cuya fecha no se lea, se
+        -- queda como estaba. Convertir a medias un bloque es peor que no
+        -- convertirlo: lo saca de la lista de lo pendiente sin ponerlo en
+        -- ninguna otra.
+}
+
+------------------------------------------------------------
+-- Superficies
+------------------------------------------------------------
+
+-- Escribir una tarea es escribir un bloque.
+--
+-- `/tarea` deja la marca puesta y el cursor detrás, que es todo lo que hace
+-- falta: lo que sigue se teclea. No hay formulario, no hay campos y no hay que
+-- decidir nada antes de escribir de qué se trata, que es lo único que uno sabe
+-- cuando se acuerda de que hay algo que hacer.
+surface WritingATask {
+    facing participant: core/Participant
+    context page: core/Page
+
+    provides:
+        InsertTaskMark(participant, page)
+        SetDeadline(participant, block, day)
+        PressTask(participant, graph, block)
+
+    @guarantee TheListIsTheText
+        -- Una lista de tareas es una lista de bloques, con su sangría, sus
+        -- hijos y su orden. Se reordena arrastrando, se anida, se pliega y se
+        -- parte como cualquier otra: no hay un sitio aparte donde vivan las
+        -- tareas ni un modo en que la página se comporte distinto.
+
+    @guarantee TheStateIsSeenBeforeItIsRead
+        -- Los tres estados se distinguen sin leer la línea: por la casilla. Una
+        -- lista de veinte pendientes se recorre para saber qué queda, y para eso
+        -- hay que poder contar sin leer.
+
+    @guarantee DoneIsQuietAndNotGone
+        -- Lo hecho se queda donde estaba, atenuado. No se va a otra parte, no se
+        -- pliega solo y no se borra: la lista de la semana pasada tiene que
+        -- poder leerse entera, y lo hecho es la mitad de lo que cuenta.
+
+    @guarantee TheCalendarWritesTheDay
+        -- El plazo se pone eligiendo un día en el calendario que Vera ya tiene, y
+        -- lo que queda escrito es el mismo día que la bitácora usa. Teclear la
+        -- fecha a mano sigue valiendo; lo que no puede pasar es que las dos vías
+        -- escriban formatos distintos.
+}
+
+------------------------------------------------------------
+-- Preguntas abiertas
+------------------------------------------------------------
+
+open question "Consultar lo pendiente exige tres cosas que el lenguaje de consulta no tiene: que un término mire las propiedades del bloque y no sólo las de la página, que la respuesta sean bloques y no páginas, y un término que diga «aquí» para acotar a la página donde la consulta está escrita. ¿Se añaden al lenguaje que hay, o una lista de tareas es una superficie propia que una consulta general no puede dar —la misma pregunta que trail.allium se hace sobre listar recorridos—?"
+
+open question "Comparar plazos —«lo que vence antes del viernes»— exige comparación tipada, que query-language.allium ya tiene como pregunta abierta desde antes de que hubiera tareas. Las tareas la vuelven urgente: ¿se resuelve para fechas solamente, que es donde duele, o el lenguaje aprende tipos de una vez?"
+
+open question "Una tarea puede merecer página propia, y la ontología ya declara la clase `Tarea`. ¿Hay un gesto para promover un bloque a página —como el rastro se promueve a recorrido, dejando en su sitio una cita— o son dos cosas que no se tocan y quien quiera la página la escribe?"
+
+open question "Un bloque hecho conserva la marca y nada dice cuándo se hizo: está en la historia del bloque y hay que ir a buscarlo. ¿Basta con eso, o «hecho el martes» es un dato que la lista tiene que enseñar —y entonces dónde vive, si el texto ya lleva una gramática y el plazo ya es una propiedad—?"
+
+open question "Las tareas de un proyecto son hoy las que están escritas en su página. ¿Es eso suficiente, o una tarea escrita en la bitácora de un martes tiene que poder decir a qué proyecto pertenece sin mudarse de página, y entonces esa pertenencia es un enlace, una propiedad, o la página donde está y nada más?"

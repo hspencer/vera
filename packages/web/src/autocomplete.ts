@@ -210,7 +210,7 @@ export interface Command {
    * ese punto de la escritura, y quien atiende el comando es el outliner, porque
    * el hecho ocurre en el grafo y no en el texto.
    */
-  acts?: 'hablar' | 'elegir-fecha' | 'importar' | 'zotero' | 'dibujar';
+  acts?: 'hablar' | 'elegir-fecha' | 'poner-plazo' | 'importar' | 'zotero' | 'dibujar';
 }
 
 /**
@@ -275,6 +275,26 @@ export const COMMANDS: Command[] = [
     inserts: '',
     caret: 0,
     acts: 'zotero',
+  },
+  /*
+   * Una cosa por hacer.
+   *
+   * Deja la marca puesta y el cursor detrás, que es todo lo que hace falta: lo
+   * que sigue se teclea. Sin formulario y sin campos que rellenar antes de decir
+   * de qué se trata, que es lo único que uno sabe cuando se acuerda de que hay
+   * algo que hacer. Ver specs/tasks.allium.
+   */
+  { name: 'tarea', hint: 'algo por hacer, con su casilla', inserts: '[ ] ' },
+  // El mismo comando con el nombre que tiene en la cabeza de quien viene de
+  // Logseq. No es un alias escondido: está en la lista, porque la lista es donde
+  // uno mira qué puede hacer.
+  { name: 'todo', hint: 'lo mismo que /tarea', inserts: '[ ] ' },
+  {
+    name: 'plazo',
+    hint: 'cuándo hay que tenerlo hecho: elegir el día',
+    inserts: '',
+    caret: 0,
+    acts: 'poner-plazo',
   },
   // Fechas. Un día es una página, así que fechar algo es enlazarlo: escribir
   // «hoy» como texto deja una palabra que dentro de un mes será falsa, y

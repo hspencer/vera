@@ -39,7 +39,7 @@ import { is } from './bindings.ts';
 import { icon } from './icons.ts';
 import { isMCPPage, renderMCP } from './mcp-page.ts';
 import { isServicePage, pickBibliography, renderService } from './service-page.ts';
-import { TRAIL_KIND } from '@vera/core';
+import { DEADLINE_KEY, TRAIL_KIND, nextState, readTask, writeTask } from '@vera/core';
 import { renderTrailBand, trailMarks, type TrailMark } from './trail-page.ts';
 import { pendingLine, saySeconds } from './waiting.ts';
 import { createPage } from './pages.ts';
@@ -680,6 +680,13 @@ const DEFAULT_NAMES = { kind: 'tipo', topic: 'concepto' };
  * partir»— y no como órdenes —«partir los párrafos»—, que es la diferencia entre
  * describir una página y decidir por quien la escribió.
  */
+/** Cómo se llama cada estado en la hoja de estilo. Sin espacios ni tildes. */
+const TASK_CLASS: Record<string, string> = {
+  'por hacer': 'todo',
+  haciendo: 'doing',
+  hecho: 'done',
+};
+
 const DEFECTS: Record<string, string> = {
   empty_block: 'bloques vacíos',
   monolithic_paragraph: 'párrafos largos sin partir',
@@ -2632,11 +2639,67 @@ export function renderOutliner(
       if (attached !== undefined) {
         renderAudioBlock(body, attached, audioHandlers, node.block.content);
       }
+      /*
+       * Una tarea se dibuja como su casilla, y el texto sin la marca.
+       *
+       * La marca sigue estando en el bloque —es lo que se guarda y lo que viaja
+       * al Markdown— y aquí sólo deja de leerse dos veces. Al editar vuelve a
+       * verse, como se ven los corchetes de un enlace: lo que se edita es el
+       * texto, y el texto la lleva.
+       */
+      const task = readTask(node.block.content);
+      if (task !== null) {
+        row.classList.add('task', `task-${TASK_CLASS[task.state]}`);
+        const box = document.createElement('button');
+        box.type = 'button';
+        box.className = 'task-box';
+        box.title = `${task.state} · pulsar para pasar a ${nextState(task.state)}`;
+        box.setAttribute('aria-label', box.title);
+        box.setAttribute('role', 'checkbox');
+        box.setAttribute('aria-checked', task.state === 'hecho' ? 'true' : 'mixed');
+        box.addEventListener('click', (event) => {
+          event.stopPropagation();
+          // Pulsar es editar el bloque: una sola clase de operación, con su
+          // historia y su deshacer. @invariant PressingIsEditing.
+          void submitQuietly({
+            kind: 'edit_block',
+            block: node.block.stableId,
+            content: writeTask(nextState(task.state), task.said),
+          }).then((applied) => {
+            if (applied) callbacks.onReload(null);
+          });
+        });
+        body.append(box);
+      }
+
       const text = document.createElement('div');
       text.className = 'body-text';
-      text.innerHTML = renderMarkdown(node.block.content, options);
+      text.innerHTML = renderMarkdown(task === null ? node.block.content : task.said, options);
       markMissingImages(text);
       body.append(text);
+
+      /*
+       * El plazo, cuando lo hay.
+       *
+       * Al lado de la tarea y no debajo: es un dato de la línea y no una nota
+       * que cuelgue. Lleva al día, que es una página, así que se puede ir a ver
+       * qué más vence entonces.
+       */
+      const due = (page.blockProperties?.[node.block.stableId] ?? []).find(
+        (one) => one.key.trim().toLowerCase() === DEADLINE_KEY,
+      );
+      if (task !== null && due !== undefined) {
+        const when = document.createElement('a');
+        when.className = 'task-due';
+        when.href = `/p/${encodeURIComponent(due.value)}`;
+        when.textContent = due.value;
+        when.title = `vence el ${due.value}`;
+        when.addEventListener('click', (event) => {
+          event.preventDefault();
+          callbacks.onNavigate?.(due.value);
+        });
+        body.append(when);
+      }
 
       /*
        * Un bloque que pregunta se contesta al leerse.
@@ -4435,6 +4498,28 @@ function startEditing(
         autosize();
         scheduleSave();
         editor.focus();
+      });
+      return;
+    }
+
+    /*
+     * El plazo se elige en el calendario y se escribe como propiedad del bloque.
+     *
+     * No en el texto: la marca dice en qué estado está y el texto dice qué es, y
+     * meter además la fecha ahí obligaría a leer la línea con tres gramáticas a
+     * la vez. Como propiedad es lo que Logseq ya escribía y lo que el corpus ya
+     * trae. @invariant DueIsALinkToTheDay: el valor es un día, que es una página.
+     */
+    if (acts === 'poner-plazo') {
+      pickDate(editor, (date) => {
+        void submitQuietly({
+          kind: 'set_property',
+          block: block.stableId,
+          propertyKey: DEADLINE_KEY,
+          propertyValue: date,
+        }).then((applied) => {
+          if (applied) callbacks.onReload(null);
+        });
       });
       return;
     }

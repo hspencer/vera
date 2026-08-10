@@ -5341,3 +5341,151 @@ code {
   font-size: 0.8rem;
   color: var(--voice);
 }
+
+
+/* ---------------------------------------------------------------------------
+ * Las cosas por hacer
+ *
+ * La casilla va donde iría la primera letra, no en el canalón: el canalón es de
+ * la viñeta, que sigue diciendo de quién es el bloque. Ver specs/tasks.allium.
+ * ------------------------------------------------------------------------- */
+
+/*
+ * En una tarea, el cuerpo del bloque se lee en línea.
+ *
+ * `.body` es un bloque corriente, así que la casilla caía encima del texto en
+ * vez de delante. Sólo en las tareas: el resto de los bloques no tiene nada que
+ * poner al lado de su texto y volverlos a todos una fila cambiaría cómo se
+ * envuelve el texto en toda la aplicación.
+ */
+.task > .body {
+  display: flex;
+  align-items: flex-start;
+}
+
+.task > .body > .body-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-box {
+  flex: none;
+  width: 0.82em;
+  height: 0.82em;
+  margin-right: 0.45em;
+  /*
+   * Centrada en la primera línea del texto, y no en el bloque.
+   *
+   * Una tarea de tres renglones tiene su casilla arriba, donde está su frase. Se
+   * calcula de la interlínea en vez de ajustarse a ojo: con un número fijo, subir
+   * el tamaño de lectura desalinea todas las casillas de la página a la vez.
+   */
+  align-self: flex-start;
+  border: 1.5px solid var(--text-dim);
+  border-radius: 0.25ex;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+}
+
+/*
+ * Centrada en la primera línea del texto, y no en el bloque.
+ *
+ * Una tarea de tres renglones tiene su casilla arriba, donde está su frase. Con
+ * `lh`, que es la altura de línea de verdad: si alguien cambia la interlínea en
+ * Ajustes, la casilla la sigue sola.
+ *
+ * El selector es largo porque tiene que ganarle a `.body > :first-child`, que
+ * quita el margen superior al primer hijo de cada bloque —y la casilla lo es—.
+ * Esa regla existe para que un párrafo no separe por arriba dentro de su propio
+ * bloque, y sigue estando bien: lo que no puede es alcanzar a algo que no es
+ * texto.
+ */
+.task > .body > .task-box {
+  margin-top: calc(0.5lh - 0.41em);
+}
+
+.task-box:hover {
+  border-color: var(--accent);
+}
+
+/*
+ * Los tres estados se distinguen sin leer la línea.
+ *
+ * Vacía, media y llena. @guarantee TheStateIsSeenBeforeItIsRead: una lista de
+ * veinte pendientes se recorre para saber qué queda, y para eso hay que poder
+ * contar sin leer.
+ */
+.task-doing .task-box {
+  border-color: var(--accent);
+}
+
+/* Media: la mitad de la casilla pintada. Ni un reloj ni tres puntos —lo que
+   dice es «va por la mitad», y media casilla lo dice sin metáfora—. */
+.task-doing .task-box::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  width: 50%;
+  background: var(--accent);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.task-done .task-box {
+  border-color: var(--accent);
+  background: var(--accent);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/* El visto, dibujado con dos trazos y no con un carácter: un ✓ de la fuente
+   cambia de tamaño y de peso con cada tipografía. */
+.task-done .task-box::after {
+  content: '';
+  position: absolute;
+  left: 32%;
+  top: 10%;
+  width: 26%;
+  height: 58%;
+  border: solid var(--bg);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(42deg);
+}
+
+/*
+ * Lo hecho se queda donde estaba, atenuado.
+ *
+ * @guarantee DoneIsQuietAndNotGone: no se va a otra parte, no se pliega solo y
+ * no se borra. La lista de la semana pasada tiene que poder leerse entera, y lo
+ * hecho es la mitad de lo que cuenta. Sin tachar: una línea tachada se lee peor
+ * y lo que se quería era que pesara menos, no que costara leerla.
+ */
+.task-done > .body > .body-text {
+  color: var(--text-dim);
+}
+
+/*
+ * El plazo, al lado y no debajo.
+ *
+ * Es un dato de la línea. Lleva al día —que es una página— así que desde una
+ * tarea se puede ir a ver qué más vence entonces.
+ */
+.task-due {
+  flex: none;
+  align-self: flex-start;
+  margin-top: 0.15em;
+  margin-left: 0.5em;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-decoration: none;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.task-due:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}

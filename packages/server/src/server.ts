@@ -3208,6 +3208,22 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               content: block.content,
             }))
             .sort((a, b) => a.position - b.position),
+          /*
+           * Lo que cuelga de cada bloque.
+           *
+           * El corpus las trae de Logseq —453 bloques las llevan— y hasta ahora
+           * no salían de aquí, así que el cliente no podía enseñar ni el plazo
+           * de una tarea ni el testimonio de un cruce. Sólo los bloques que
+           * llevan alguna: mandar una entrada vacía por bloque sería doblar el
+           * tamaño de una página para decir que no hay nada.
+           */
+          blockProperties: Object.fromEntries(
+            graph
+              .blocksOf(page.id)
+              .map((block) => [block.stableId, graph.propertiesOf(block.stableId)] as const)
+              .filter(([, said]) => said.length > 0)
+              .map(([id, said]) => [id, said.map((one) => ({ key: one.key, value: one.value }))]),
+          ),
           // Las referencias viajan ya nombradas: el cliente no puede resolver
           // mil títulos de página con mil peticiones más.
           // Sólo los medios que esta página nombra. El bloque conserva su

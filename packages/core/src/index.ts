@@ -176,3 +176,17 @@ export {
   type TrailNode,
   type TrailReading,
 } from './trail.ts';
+
+export {
+  DEADLINE_KEY,
+  MARKS,
+  TASK_STATES,
+  convertLegacy,
+  looksLegacy,
+  nextState,
+  readTask,
+  writeTask,
+  type Converted,
+  type Task,
+  type TaskState,
+} from './task.ts';

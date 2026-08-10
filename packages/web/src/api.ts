@@ -56,6 +56,13 @@ export interface PageView {
   lastEditedAt: number | null;
   properties: { key: string; value: string }[];
   /**
+   * Lo que cuelga de cada bloque, por su identidad.
+   *
+   * Sólo los bloques que llevan alguna. El corpus las trae de Logseq y son lo
+   * que sostiene el plazo de una tarea y el testimonio de un cruce.
+   */
+  blockProperties?: Record<string, { key: string; value: string }[]>;
+  /**
    * Lo que el corpus ya contesta a cada clave de esta página, por uso.
    *
    * Es lo que se ofrece en el desplegable. Vocabulario observado y no declarado:
