@@ -97,9 +97,13 @@ rule ApplyCreatePage {
     requires: change.title != null
     requires: change.visibility != null
     requires: not exists core/Page{graph: operation.submission.graph, title: change.title}
+    -- Como en ApplyCreateBlock: quien envía puede traer la identidad, y sólo vale
+    -- si nadie la lleva ya.
+    requires: change.stable_id = null or not exists core/Page{stable_id: change.stable_id}
 
     ensures: core/Page.created(
         graph: operation.submission.graph,
+        stable_id: change.stable_id ?? new_page_id(),
         title: change.title,
         visibility: change.visibility,
         created_at: now,
@@ -107,6 +111,18 @@ rule ApplyCreatePage {
         -- es sólo la importación. Ver core/Page.authored_at.
         origin_created_at: change.origin_created_at
     )
+
+    @guidance
+        -- La identidad de una página se podía traer para un bloque y no para una
+        -- página, y la asimetría no se decidió: el bloque la necesitaba para que
+        -- la importación conservara las referencias de Logseq, y la página no la
+        -- necesitó hasta ahora.
+        --
+        -- Ahora la necesita. Un cliente que aplica un cambio antes de enviarlo
+        -- —ver offline-reconciliation.allium— tiene que poder nombrar lo que crea
+        -- para navegar hasta ello y para colgarle bloques. Sin esto, crear una
+        -- página sigue siendo el único gesto que obliga a esperar a la red, y un
+        -- solo gesto que espera basta para que la promesa no se cumpla.
 }
 
 rule ApplyRenamePage {

@@ -70,33 +70,28 @@ distingue «guardado aquí, esperando a la red» de «perdido si cierras».
 durable en el navegador y la resolución de conflictos. Cero líneas. No contradice
 nada: falta.
 
-## 4. El bloqueador, y que es más pequeño de lo que parece
+## 4. El bloqueador que resultó no existir — *corregido al implementarlo*
 
 Un cliente que aplica un cambio antes de enviarlo necesita saber cómo se llama lo
-que ese cambio crea. Hoy no puede: el identificador lo acuña el servidor y viaja
-en la respuesta, así que crear un bloque obliga a esperar. Siete sitios del
-cliente dependen de ese `subjectId` de vuelta.
+que ese cambio crea. Este plan dijo que no podía, y que había que abrir el paso
+por HTTP. **Era falso, y la comprobación lo dijo enseguida**: `readOperation`
+pasa el cambio entero sin mirarlo, así que un `create_block` con su `stableId`
+dentro ya llegaba al dominio, que lo adopta y lo devuelve. `change-application.allium:189`
+ya lo gobernaba, y el importador lo usaba desde el principio para conservar los
+identificadores de Logseq.
 
-Lo que hace pequeño el bloqueador es que el dominio **ya lo admite**:
+Lo que sí faltaba era la mitad de eso, y en dos sentidos:
 
-```ts
-// packages/core/src/graph.ts:474
-const subjectId = this.#apply(input.change, input.subjectId ?? null, at);
-```
+1. **Nada lo fijaba.** Funcionaba por omisión. Cualquier validación de forma que
+   se añadiera a `readOperation` lo habría tirado sin que ninguna prueba se
+   quejara.
+2. **Una página no podía traer la suya.** `create_block` la admitía y
+   `create_page` no, y la asimetría no se había decidido: al bloque le hacía
+   falta para la importación y a la página no le hizo falta hasta ahora. Crear
+   una página era el único gesto que obligaba a esperar a la red, y un solo gesto
+   que espera basta para que la promesa no se cumpla.
 
-Quien envía puede traer la identidad, y el importador ya lo hace para conservar
-la de Logseq. Lo único que falta es que el paso por HTTP no la tire:
-`readOperation` (`server.ts:293`) no la lee.
-
-Hay dos decisiones dentro, y son de la spec y no del código:
-
-1. **Qué forma tiene una identidad acuñada en el cliente.** Tiene que ser
-   irrepetible sin coordinación, y tiene que distinguirse —o no— de las que
-   acuñó el servidor.
-2. **Quién puede acuñarla.** Aceptar cualquier `subjectId` de cualquiera es dejar
-   que alguien escriba encima de un bloque existente diciendo que lo está
-   creando. La regla mínima es que sólo vale para cambios que crean, y sólo si
-   nada lleva ya ese nombre.
+Ambas cosas están cerradas en el paso 0.
 
 ## 5. Lo que ya está puesto y no se está usando
 
@@ -115,11 +110,12 @@ Hay dos decisiones dentro, y son de la spec y no del código:
 Cada uno es entregable por su cuenta, deja el árbol verde, y no obliga al
 siguiente.
 
-### Paso 0 — la identidad la acuña quien crea
+### Paso 0 — la identidad la acuña quien crea — **hecho**
 
-`readOperation` acepta `subjectId` para los cambios que crean, y sólo si está
-libre. El cliente lo acuña. Desbloquea los siete sitios que hoy esperan la
-respuesta para saber el nombre de lo que crearon.
+Una página puede traer la suya, como ya podía un bloque, y sólo vale si está
+libre. Seis pruebas lo fijan de punta a punta por HTTP, incluida la de que
+reenviar el mismo origen no crea un segundo bloque con otro nombre —que es lo que
+hará segura la bandeja de salida del paso 3—.
 
 ### Paso 1 — el árbol local
 

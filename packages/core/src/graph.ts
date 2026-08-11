@@ -593,6 +593,12 @@ export class VeraGraph {
         if (this.#pageTitled(change.title) !== undefined) {
           return `a page already carries the title ${change.title}`;
         }
+        // La identidad que trae quien envía sólo vale si está libre. Aceptar una
+        // tomada sería crear escribiendo encima, y eso pierde algo sin dejar
+        // rastro. @invariant StableIdentityAcrossApplication.
+        if (change.stableId !== undefined && this.#pages.has(change.stableId)) {
+          return `a page already holds the stable id ${change.stableId}`;
+        }
         return null;
       }
       case 'recover_page_origin':
@@ -775,7 +781,11 @@ export class VeraGraph {
     if (recordedSubject !== null) this.#observeId(recordedSubject);
     switch (change.kind) {
       case 'create_page': {
-        const id = recordedSubject ?? this.#nextId('page');
+        // Igual que en `create_block`: la identidad propuesta gana. La trae la
+        // importación, para conservar la que el corpus ya tenía, y la trae un
+        // cliente que aplicó el cambio antes de enviarlo, para poder nombrar lo
+        // que acaba de crear sin preguntar.
+        const id = recordedSubject ?? change.stableId ?? this.#nextId('page');
         this.#pages.set(id, {
           id,
           graph: this.id,

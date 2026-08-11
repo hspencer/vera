@@ -72,7 +72,21 @@ export interface OriginEvidence {
 }
 
 export type Change =
-  | { readonly kind: 'create_page'; readonly title: string; readonly visibility: Visibility }
+  | {
+      readonly kind: 'create_page';
+      readonly title: string;
+      readonly visibility: Visibility;
+      /**
+       * Identidad propuesta por quien envía. Ver `create_block`, que la tenía
+       * desde el principio para que la importación conservara las referencias de
+       * Logseq.
+       *
+       * Una página la necesita por otra razón: un cliente que aplica el cambio
+       * antes de enviarlo tiene que poder nombrar lo que crea para navegar hasta
+       * ello y para colgarle bloques. Ver specs/offline-reconciliation.allium.
+       */
+      readonly stableId?: PageId | undefined;
+    }
   | {
       readonly kind: 'recover_page_origin';
       readonly page: PageId;

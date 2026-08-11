@@ -454,3 +454,129 @@ describe('relaciones explicadas', () => {
     assert.equal(after.lastSequence - before.lastSequence, 4);
   });
 });
+
+/*
+ * La identidad la puede acuñar quien crea, y por eso una mano no espera.
+ *
+ * Un cliente que aplica un cambio antes de enviarlo necesita saber cómo se llama
+ * lo que ese cambio crea. Puede: `change-application.allium:189` admite que el
+ * cambio traiga su `stable_id` y el dominio lo hace cumplir. Lo que faltaba era
+ * que nada lo fijara: `readOperation` pasa el cambio entero sin mirarlo, así que
+ * esto funcionaba por omisión y cualquier validación de forma que se añadiera
+ * mañana lo tiraría sin que nadie se enterase.
+ *
+ * Ver specs/offline-reconciliation.allium y docs/plan-local-first.md.
+ */
+describe('la identidad que trae quien crea', () => {
+  it('el bloque nace con el nombre que se le dio, y la respuesta lo confirma', async () => {
+    const page = await write({ kind: 'create_page', title: 'Acuñada', visibility: 'private' });
+    const said = await write({
+      kind: 'create_block',
+      page,
+      parent: null,
+      position: 0,
+      content: 'lo escribí antes de preguntar',
+      stableId: 'block:acunado-en-el-cliente',
+    });
+    assert.equal(said, 'block:acunado-en-el-cliente');
+
+    // Y está donde dice estar: el nombre no es un eco de la petición.
+    const view = (await get(`/pages/${page}`)) as { blocks: { stableId: string }[] };
+    assert.ok(view.blocks.some((one) => one.stableId === 'block:acunado-en-el-cliente'));
+  });
+
+  it('una página también puede traer la suya', async () => {
+    const said = await write({
+      kind: 'create_page',
+      title: 'Página acuñada',
+      visibility: 'private',
+      stableId: 'page:acunada-en-el-cliente',
+    });
+    assert.equal(said, 'page:acunada-en-el-cliente');
+  });
+
+  it('el nombre de una página tomado también se rechaza', async () => {
+    await write({
+      kind: 'create_page',
+      title: 'Primera acuñada',
+      visibility: 'private',
+      stableId: 'page:repetida',
+    });
+    const { status, json } = await post({
+      originId: 'http:pagina-repetida',
+      channel: 'typed_text',
+      change: {
+        kind: 'create_page',
+        title: 'Segunda acuñada',
+        visibility: 'private',
+        stableId: 'page:repetida',
+      },
+    });
+    assert.equal(status, 422);
+    assert.match(String(json['reason']), /page:repetida/);
+  });
+
+  it('sin nombre propio lo pone el servidor, que es lo que pasaba hasta ahora', async () => {
+    const page = await write({ kind: 'create_page', title: 'Sin acuñar', visibility: 'private' });
+    const said = await write({
+      kind: 'create_block',
+      page,
+      parent: null,
+      position: 0,
+      content: 'x',
+    });
+    assert.match(said, /^block:/);
+  });
+
+  it('un nombre ya tomado se rechaza, y dice cuál', async () => {
+    // @invariant StableIdentityAcrossApplication: ninguna regla asigna identidad
+    // a un bloque que ya existe. Aceptar un nombre tomado sería crear escribiendo
+    // encima, que es la manera de perder algo sin que quede en el registro.
+    const page = await write({ kind: 'create_page', title: 'Repetida', visibility: 'private' });
+    await write({
+      kind: 'create_block',
+      page,
+      parent: null,
+      position: 0,
+      content: 'el primero',
+      stableId: 'block:repetido',
+    });
+    const { status, json } = await post({
+      originId: 'http:repetido',
+      channel: 'typed_text',
+      change: {
+        kind: 'create_block',
+        page,
+        parent: null,
+        position: 1,
+        content: 'el segundo',
+        stableId: 'block:repetido',
+      },
+    });
+    assert.equal(status, 422);
+    assert.equal(json['status'], 'rejected');
+    assert.match(String(json['reason']), /block:repetido/);
+  });
+
+  it('reenviar el mismo origen no crea un segundo bloque con otro nombre', async () => {
+    // Es lo que hace segura una bandeja de salida: el cliente puede reintentar
+    // sin saber si lo anterior llegó. @invariant OriginIdentityIsTheIdempotencyKey.
+    const page = await write({ kind: 'create_page', title: 'Reenviada', visibility: 'private' });
+    const change = {
+      kind: 'create_block',
+      page,
+      parent: null,
+      position: 0,
+      content: 'una sola vez',
+      stableId: 'block:reenviado',
+    };
+    const first = await post({ originId: 'http:reenvio', channel: 'typed_text', change });
+    const again = await post({ originId: 'http:reenvio', channel: 'typed_text', change });
+    assert.equal(first.json['status'], 'applied');
+    assert.equal(again.json['status'], 'duplicate');
+    assert.equal(again.json['subjectId'], 'block:reenviado');
+
+    const view = (await get(`/pages/${page}`)) as { blocks: unknown[] };
+    assert.equal(view.blocks.length, 1);
+  });
+});
