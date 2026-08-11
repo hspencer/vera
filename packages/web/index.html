@@ -6,15 +6,15 @@
     <title>Vera</title>
     <meta name="description" content="Memoria personal soberana: versionable, editable, replicable y auditable." />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#16181c" />
+    <meta name="theme-color" content="#2e0024" />
 
-    <!-- La pestaña y la aplicación instalada llevan la misma marca. Sin estas
-         dos líneas el navegador buscaba `/favicon.ico`, no lo encontraba y
-         dejaba la pestaña con el icono genérico: Vera tenía icono para el
-         sistema operativo y ninguno para el navegador. El SVG es el que manda;
-         el PNG está para quien no lo acepte. -->
-    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <!-- La pestaña y la aplicación instalada llevan la misma marca. Se ofrecen
+         cortes raster propios para que el relieve sobreviva también en el
+         favicon mínimo, en vez de dejar que cada navegador reduzca el máster. -->
+    <link rel="icon" href="/icon-16.png" sizes="16x16" type="image/png" />
+    <link rel="icon" href="/icon-32.png" sizes="32x32" type="image/png" />
     <link rel="icon" href="/icon-192.png" sizes="192x192" type="image/png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
 
     <!-- iOS no lee los iconos del manifiesto ni acepta SVG para la pantalla de
          inicio: sin este PNG usaría una miniatura de la captura de pantalla.
