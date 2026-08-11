@@ -113,7 +113,10 @@ export interface OutlinerCallbacks {
    * saberlo. @invariant TheGestureIsObservedAndNeverInferred.
    */
   onOpen(page: string, gesture: NavigationGesture): void;
-  onChanged(): void;
+  /** El contenido anterior y el nuevo permiten invalidar sólo las proyecciones
+   *  cuyo significado cambió. Sin argumentos, el cambio se considera
+   *  estructural y por tanto relevante para el mapa. */
+  onChanged(before?: string, after?: string): void;
   /** Seguir una referencia hasta el bloque que nombra. */
   onOpenBlock?(page: string, block: string): void;
   /**
@@ -4579,11 +4582,12 @@ function startEditing(
       return false;
     }
 
+    const before = block.content;
     session.settled(intent.content);
     block.content = intent.content;
     editor.classList.remove('failed');
     editor.removeAttribute('title');
-    callbacks.onChanged();
+    callbacks.onChanged(before, intent.content);
     return true;
   };
 

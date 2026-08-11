@@ -781,6 +781,35 @@ input {
   height: 1.15rem;
 }
 
+#sync-state {
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+#sync-state[data-state='synchronised'] {
+  color: var(--accent);
+}
+
+#sync-state[data-state='offline'],
+#sync-state[data-state='rejected'] {
+  color: var(--danger, #c65b5b);
+}
+
+@media (max-width: 640px) {
+  #sync-state {
+    position: fixed;
+    right: max(0.75rem, env(safe-area-inset-right));
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    z-index: 30;
+    padding: 0.3rem 0.55rem;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: 0 1px 5px color-mix(in srgb, var(--text) 18%, transparent);
+  }
+}
+
 /* --- Memoria: lo que estaba en el panel lateral ------------------------- */
 
 #status {

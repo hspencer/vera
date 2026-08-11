@@ -366,6 +366,30 @@ export type SubmitResult =
   | { status: 'duplicate'; sequence: number; subjectId: string }
   | { status: 'rejected'; reason: string };
 
+export type SubmissionActivity =
+  | { phase: 'sending'; originId: string; startedAt: number }
+  | { phase: 'synchronised'; originId: string; durationMs: number; sequence: number }
+  | { phase: 'rejected'; originId: string; durationMs: number; reason: string }
+  | { phase: 'offline'; originId: string; durationMs: number };
+
+const submissionListeners = new Set<(activity: SubmissionActivity) => void>();
+
+/**
+ * Observa el trayecto de una escritura sin gobernarlo.
+ *
+ * La fase local-first completa tendrá una bandeja durable. Mientras tanto esto
+ * hace visible la verdad del cliente actual: la operación está viajando, fue
+ * confirmada, rechazada o ni siquiera alcanzó el servidor.
+ */
+export function onSubmissionActivity(listener: (activity: SubmissionActivity) => void): () => void {
+  submissionListeners.add(listener);
+  return () => submissionListeners.delete(listener);
+}
+
+function reportSubmission(activity: SubmissionActivity): void {
+  for (const listener of submissionListeners) listener(activity);
+}
+
 /**
  * Identificador de origen. Se genera aquí, en el dispositivo, porque es la
  * clave de idempotencia: reenviar la misma operación tras un corte de red no
@@ -705,9 +729,15 @@ export const api = {
      */
     channel: 'typed_text' | 'drawn' | 'walked' = 'typed_text',
   ): Promise<SubmitResult> {
-    const response = await fetch('/operations', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
+    const origin = originId();
+    const startedAt = performance.now();
+    reportSubmission({ phase: 'sending', originId: origin, startedAt });
+
+    let response: Response;
+    try {
+      response = await fetch('/operations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
       /*
        * El cuerpo no dice quién escribe, y por eso funciona en cualquier
        * instancia.
@@ -719,12 +749,16 @@ export const api = {
        * la credencial o, sin ella, del dueño del grafo: es lo que su propio
        * código ya declara, y afirmarlo aquí sólo podía contradecirlo.
        */
-      body: JSON.stringify({
-        originId: originId(),
-        channel,
-        change,
-      }),
-    });
+        body: JSON.stringify({
+          originId: origin,
+          channel,
+          change,
+        }),
+      });
+    } catch (error) {
+      reportSubmission({ phase: 'offline', originId: origin, durationMs: performance.now() - startedAt });
+      throw error;
+    }
 
     /*
      * Un fallo del servidor también es una respuesta, y tiene que tener la misma
@@ -744,9 +778,29 @@ export const api = {
     // que sirve: «una página ya lleva ese título» dice qué hacer, y «el servidor
     // contestó 422» no dice nada. Sólo se inventa una respuesta cuando el
     // servidor no mandó ninguna que se pueda leer.
-    if ('status' in said) return said;
+    if ('status' in said) {
+      const durationMs = performance.now() - startedAt;
+      if (said.status === 'rejected') {
+        reportSubmission({ phase: 'rejected', originId: origin, durationMs, reason: said.reason });
+      } else {
+        reportSubmission({
+          phase: 'synchronised',
+          originId: origin,
+          durationMs,
+          sequence: said.sequence,
+        });
+      }
+      return said;
+    }
     const why = said.error ?? `el servidor contestó ${response.status}`;
-    return { status: 'rejected', reason: said.detail === undefined ? why : `${why}: ${said.detail}` };
+    const reason = said.detail === undefined ? why : `${why}: ${said.detail}`;
+    reportSubmission({
+      phase: 'rejected',
+      originId: origin,
+      durationMs: performance.now() - startedAt,
+      reason,
+    });
+    return { status: 'rejected', reason };
   },
 };
 

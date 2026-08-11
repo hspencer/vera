@@ -5,7 +5,7 @@
 
 import './styles.css';
 
-import { api, type PageSummary, type PageView } from './api.ts';
+import { api, onSubmissionActivity, type PageSummary, type PageView } from './api.ts';
 import {
   allowEmbedsFrom,
   nameProperties,
@@ -23,6 +23,7 @@ import { brandMark, icon, type IconName } from './icons.ts';
 import { is } from './bindings.ts';
 import { suggestTitles } from '@vera/core';
 import { createPage } from './pages.ts';
+import { changesGraphMeaning } from './invalidation.ts';
 import { forgetPositions, renderGraph, selectNode, type ThreadSettings } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D, forgetCamera, selectNode3D } from './graph/render3d.ts';
 import {
@@ -84,6 +85,47 @@ let mapPanelOpen = false;
 
 let tokens = loadTokens();
 let pages: PageSummary[] = [];
+
+function wireSubmissionState(): void {
+  const indicator = $('#sync-state');
+  const pending = new Set<string>();
+  let clearTimer: number | undefined;
+
+  const say = (state: string, message: string, title = ''): void => {
+    indicator.dataset['state'] = state;
+    indicator.textContent = message;
+    indicator.title = title;
+    indicator.hidden = false;
+  };
+
+  onSubmissionActivity((activity) => {
+    window.clearTimeout(clearTimer);
+    if (activity.phase === 'sending') {
+      pending.add(activity.originId);
+      say('synchronising', pending.size === 1 ? 'guardando…' : `guardando ${pending.size}…`);
+      return;
+    }
+
+    pending.delete(activity.originId);
+    if (activity.phase === 'offline') {
+      say('offline', 'sin conexión', 'Lo escrito sigue en el editor, pero aún no está guardado.');
+      return;
+    }
+    if (activity.phase === 'rejected') {
+      say('rejected', 'rechazado', activity.reason);
+      return;
+    }
+    if (pending.size > 0) {
+      say('synchronising', `guardando ${pending.size}…`);
+      return;
+    }
+
+    say('synchronised', 'sincronizado', `Confirmado por el servidor en ${Math.round(activity.durationMs)} ms`);
+    clearTimer = window.setTimeout(() => {
+      indicator.hidden = true;
+    }, 1800);
+  });
+}
 /** Cierra los ajustes. Vive aquí porque Memoria también necesita cerrarlos: una
  *  de sus entradas lleva a una página, y quedarse encima de ella no serviría. */
 function closeSettings(): void {
@@ -734,7 +776,9 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
     onNavigate: (title) => void openTitle(title, 'followed_reference'),
     onOpen: (target, gesture) => void openPage(target, null, { gesture }),
     onUndo: (direction) => undoLast(direction),
-    onChanged: () => void refreshGraph(),
+    onChanged: (before, after) => {
+      if (changesGraphMeaning(before, after)) void refreshGraph();
+    },
     // @invariant ReferenceResolvesToItsBlock: seguir una referencia deja al
     // participante en el bloque que nombra, no sólo en su página. Llegar a una
     // página de cien bloques y tener que buscarlo no es haberla seguido.
@@ -1694,6 +1738,7 @@ function wireDivider(): void {
 
 async function start(): Promise<void> {
   wireTheme();
+  wireSubmissionState();
 
   // Lo recordado del participante llega del servidor y puede diferir de lo que
   // este navegador tenía. Se pide después de pintar, no antes: dibujar con lo
