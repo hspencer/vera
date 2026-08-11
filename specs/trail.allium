@@ -1508,7 +1508,10 @@ open question "El binario del cruce confunde «nadie unió estas dos páginas» 
 
 open question "El testimonio de un cruce y su cara derivada pueden discrepar —«se llegó aquí siguiendo una referencia» y hoy no hay ninguna—, y esa discrepancia se ha declarado informativa y no un error. ¿Debe verse cuando ocurre, como se ve una premisa que se movió, o enseñarla convertiría en aviso algo que ni siquiera es del guía sino del caminante que fue?"
 
-open question "Un rastro reordenado a mano ya es una composición, y sigue llamándose rastro. Si alguien arrastra veinte pasos durante media hora y cierra la pestaña, lo pierde todo sin que nada se lo haya advertido, porque el rastro es estado del taller y el estado del taller no se promete. ¿Es eso el precio correcto de que ordenar no cueste nada, o hay un punto —y cuál— a partir del cual un rastro ha dejado de ser estado y merece sobrevivir a la sesión?"
+-- Resuelta el 2026-08-11: el rastro sobrevive a recargar y cerrar la interfaz
+-- desde el primer paso. Persistir el estado privado del taller no lo vuelve una
+-- página ni le inventa autoría; la frontera sigue siendo promoverlo, que es cuando
+-- adquiere nombre, historia y lugar en el corpus.
 
 open question "Una conectiva puede acabar valiendo por sí sola, y entonces querría ser una página del corpus y no un fragmento dentro de un argumento. ¿Hay un gesto para promover una conectiva a página —dejando en su sitio un nodo que la cite— o eso es simplemente escribir la página y reescribir la conectiva, como cualquier otra cosa que se escribe dos veces?"
 

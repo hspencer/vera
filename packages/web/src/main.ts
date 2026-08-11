@@ -36,7 +36,16 @@ import {
   type GraphViewMode,
   type WorkspaceLayout,
 } from './tokens.ts';
-import { pagesOf, walked, type NavigationGesture, type TraceStep } from './trace.ts';
+import {
+  dropped,
+  loadTrace,
+  movedTo,
+  pagesOf,
+  saveTrace,
+  walked,
+  type NavigationGesture,
+  type TraceStep,
+} from './trace.ts';
 import {
   TESTIMONY_KEY,
   blocksFor,
@@ -69,7 +78,7 @@ const workspace: Workspace = {
   focusRoot: null,
   scheme: session.scheme(),
   divider: session.divider(),
-  trace: [],
+  trace: loadTrace(),
   depth: session.reach(),
 };
 
@@ -607,6 +616,7 @@ async function openPage(
       gesture: options.gesture,
       at: Date.now(),
     });
+    saveTrace(workspace.trace);
   }
 
   renderOutliner(text, page, callbacksFor(page), focus, workspace.focusRoot);
@@ -1071,20 +1081,64 @@ async function drawGraph(): Promise<void> {
 function drawTrail(): void {
   const trail = $('#map-trail');
   trail.innerHTML = '';
-  // Los últimos, y sin repetir: volver dos veces a la misma página no la pone
-  // dos veces en el rastro.
-  const seen = new Set<string>();
-  const recent: string[] = [];
-  // `pagesOf` ya devuelve una lista nueva, así que invertirla no toca el rastro.
-  for (const id of pagesOf(workspace.trace).reverse()) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    recent.push(id);
-    if (recent.length >= 6) break;
-  }
+  let draggedFrom: number | null = null;
 
-  for (const id of recent.reverse()) {
+  const reorder = (from: number, to: number): void => {
+    workspace.trace = movedTo(workspace.trace, from, to);
+    saveTrace(workspace.trace);
+    drawTrail();
+  };
+
+  for (const [index, step] of workspace.trace.entries()) {
+    const id = step.page;
     const page = pages.find((candidate) => candidate.id === id);
+    const item = document.createElement('span');
+    item.className = 'trail-step';
+    item.dataset['traceIndex'] = String(index);
+
+    const grip = document.createElement('button');
+    grip.type = 'button';
+    grip.className = 'trail-grip';
+    grip.innerHTML = icon('more-vertical');
+    grip.title = `mover ${page?.title ?? id}`;
+    grip.setAttribute('aria-label', `mover ${page?.title ?? id}`);
+
+    let pointerTarget = index;
+    grip.addEventListener('pointerdown', (event) => {
+      pointerTarget = index;
+      grip.setPointerCapture(event.pointerId);
+      item.classList.add('moving');
+    });
+    grip.addEventListener('pointermove', (event) => {
+      if (!grip.hasPointerCapture(event.pointerId)) return;
+      const under = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('.trail-step');
+      const target = Number(under?.dataset['traceIndex']);
+      if (Number.isInteger(target)) pointerTarget = target;
+    });
+    grip.addEventListener('pointerup', (event) => {
+      if (!grip.hasPointerCapture(event.pointerId)) return;
+      grip.releasePointerCapture(event.pointerId);
+      item.classList.remove('moving');
+      if (pointerTarget !== index) reorder(index, pointerTarget);
+    });
+
+    item.draggable = true;
+    item.addEventListener('dragstart', (event) => {
+      draggedFrom = index;
+      event.dataTransfer?.setData('text/plain', String(index));
+      item.classList.add('moving');
+    });
+    item.addEventListener('dragend', () => {
+      draggedFrom = null;
+      item.classList.remove('moving');
+    });
+    item.addEventListener('dragover', (event) => event.preventDefault());
+    item.addEventListener('drop', (event) => {
+      event.preventDefault();
+      const from = draggedFrom ?? Number(event.dataTransfer?.getData('text/plain'));
+      if (Number.isInteger(from) && from !== index) reorder(from, index);
+    });
+
     const pill = document.createElement('button');
     pill.type = 'button';
     pill.className = id === workspace.activePage ? 'trail-pill here' : 'trail-pill';
@@ -1100,9 +1154,23 @@ function drawTrail(): void {
     pill.title = `volver a ${page?.title ?? id} · con el botón derecho, guardar el recorrido desde aquí`;
     pill.addEventListener('contextmenu', (event) => {
       event.preventDefault();
-      void promoteTrace(id);
+      void promoteTrace(index);
     });
-    trail.append(pill);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'trail-remove';
+    remove.innerHTML = icon('x');
+    remove.title = `quitar ${page?.title ?? id} del rastro`;
+    remove.setAttribute('aria-label', `quitar ${page?.title ?? id} del rastro`);
+    remove.addEventListener('click', () => {
+      workspace.trace = dropped(workspace.trace, index);
+      saveTrace(workspace.trace);
+      drawTrail();
+    });
+
+    item.append(grip, pill, remove);
+    trail.append(item);
   }
 
   /*
@@ -1136,9 +1204,8 @@ function drawTrail(): void {
  * contar dos cosas distintas con el mismo paseo.
  * @invariant TheTraceItselfIsNotConsumed.
  */
-async function promoteTrace(from: string | null): Promise<void> {
-  const at = from === null ? 0 : workspace.trace.findIndex((step) => step.page === from);
-  const trace = workspace.trace.slice(at < 0 ? 0 : at);
+async function promoteTrace(from: number | null): Promise<void> {
+  const trace = workspace.trace.slice(from === null ? 0 : Math.max(0, from));
   if (trace.length === 0) {
     notice('No hay nada andado que guardar.');
     return;

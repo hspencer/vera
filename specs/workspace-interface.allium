@@ -854,6 +854,17 @@ surface VeraWorkspace {
         -- antes de que nadie haya decidido componer ninguno. Por eso vive aquí y
         -- no en trail.allium: es una cosa que se hace mientras se lee.
 
+    @guarantee TheTraceSurvivesRefresh
+        -- El rastro completo sobrevive a recargar o cerrar la interfaz. La última
+        -- parada sigue siendo donde el participante está, pero no reemplaza a las
+        -- anteriores: regresar al taller devuelve la secuencia que se estaba
+        -- componiendo, con sus repeticiones, podas y orden manual.
+        --
+        -- Esta durabilidad no convierte el rastro en corpus. Sigue siendo estado
+        -- privado del taller, sin página, autor ni historial de revisiones; sólo
+        -- deja de depender de que una pestaña permanezca abierta. Promoverlo sigue
+        -- siendo el gesto que lo vuelve texto compartible y auditable.
+
     @guarantee PromotingIsOneSmallGesture
         -- El rastro lleva una sola marca para promoverlo, discreta, con su nombre
         -- en un tooltip y no escrito al lado. Pulsarla no abre un diálogo, no pide

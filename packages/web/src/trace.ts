@@ -41,6 +41,43 @@ export interface TraceStep {
   readonly at: number;
 }
 
+const TRACE_KEY = 'vera.navigationTrace';
+const GESTURES = new Set<NavigationGesture>([
+  'followed_reference',
+  'followed_backlink',
+  'pressed_on_the_map',
+  'searched',
+  'returned',
+  'opened_directly',
+]);
+
+/** Recupera el taller local sin permitir que datos viejos o rotos impidan abrir Vera. */
+export function loadTrace(): TraceStep[] {
+  try {
+    const held: unknown = JSON.parse(localStorage.getItem(TRACE_KEY) ?? '[]');
+    if (!Array.isArray(held)) return [];
+    return held.filter((step): step is TraceStep => {
+      if (typeof step !== 'object' || step === null) return false;
+      const candidate = step as Partial<TraceStep>;
+      return (
+        typeof candidate.page === 'string' &&
+        (candidate.from === null || typeof candidate.from === 'string') &&
+        typeof candidate.gesture === 'string' &&
+        GESTURES.has(candidate.gesture as NavigationGesture) &&
+        typeof candidate.at === 'number' &&
+        Number.isFinite(candidate.at)
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** El rastro es local-first: cada gesto queda durable antes de volver a la red. */
+export function saveTrace(trace: readonly TraceStep[]): void {
+  localStorage.setItem(TRACE_KEY, JSON.stringify(trace));
+}
+
 /**
  * Añade una llegada.
  *
