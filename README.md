@@ -66,10 +66,10 @@ Al momento de escribir esta versión:
 
 | Medida | Valor |
 | --- | --- |
-| Especificaciones Allium | 29 (`allium check`: 0 errores, 9 avisos) |
-| Pruebas | 845, en 174 bloques, todas en verde |
+| Especificaciones Allium | 33 (`allium check`: 0 errores, 10 avisos) |
+| Pruebas | 966, en 200 bloques, todas en verde |
 | Specs sostenidas enteramente por implementación | 14 |
-| Specs implementadas en parte | 12 |
+| Specs implementadas en parte | 16 |
 | Specs sin implementación | 3 |
 
 El detalle spec por spec está en [Especificaciones](#especificaciones).
@@ -356,6 +356,20 @@ Implementadas en parte, con lo que falta declarado en la propia spec:
   de una página antes de opinar sobre ella, y decir qué se entendió y qué no. El
   reparto de páginas largas y el arreglo de forma están; ordenar los bloques por
   la lógica del material y explotar una página en varias siguen abiertos.
+
+- [`offline-reconciliation.allium`](specs/offline-reconciliation.allium) — el
+  camino entre un gesto y el registro canónico. La mano ya no espera a la red, lo
+  pendiente sobrevive a cerrar y lo leído se retiene, así que Vera abre y se
+  escribe sin servidor. Faltan el cursor canónico, traerse lo remoto sin recargar
+  y exponer los conflictos en vez de elegir en silencio.
+- [`waiting.allium`](specs/waiting.allium) — cómo se enseña que algo está
+  tardando: se cuenta y no se anima, nunca un porcentaje, y lo que suele tardar
+  sale de lo que este aparato midió. Puesto en transcribir, preguntar y abrir una
+  página; faltan el PDF, la importación de un documento y el mapa.
+- [`tasks.allium`](specs/tasks.allium) — un bloque que además es algo por hacer,
+  con su estado y su plazo, sin dejar de ser un bloque.
+- [`block-gloss.allium`](specs/block-gloss.allium) — lo que se cuelga de un
+  bloque para explicarlo sin meterse en su texto.
 
 - [`confined-writing.allium`](specs/confined-writing.allium) — el cerco que
   permite a una credencial escribir sin revisión previa a cambio de no salir de

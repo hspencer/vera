@@ -1,8 +1,9 @@
 # Hoja de ruta
 
-Lo que viene, en el orden en que unas cosas condicionan a otras. **Nada de lo que
-está aquí está construido**; lo construido se cuenta en el
-[README](README.md#estado) y en las specs.
+Lo que viene, en el orden en que unas cosas condicionan a otras. Lo que ya se
+construyó de esta hoja va marcado *hecho* donde corresponde; todo lo demás no
+existe. El estado general se cuenta en el [README](README.md#estado) y en las
+specs.
 
 Este documento no promete fechas. Dice **qué falta, por qué importa, qué lo
 bloquea y qué preguntas siguen abiertas**. Una hoja de ruta con fechas y sin
@@ -18,7 +19,8 @@ preguntas abiertas es una lista de deseos con formato de plan.
 
 ## Horizonte 1 — Que la mano no espere
 
-**Estado: en curso, rama `v0.4-local-first`. Pasos 0 a 3 hechos; 4 y 5 no.**
+**Estado: en curso, rama `v0.4-local-first`. Pasos 0 a 3 hechos y leer sin
+servidor también; faltan el cursor (4) y los conflictos (5).**
 
 Es la prioridad y no es una optimización. Una memoria personal que hace esperar
 al pensamiento no es una memoria personal: es un formulario. La spec que lo
@@ -31,65 +33,87 @@ Lo que ya cambió: el cliente sostiene un `VeraGraph` de verdad y le aplica los
 cambios con las mismas reglas del servidor —no hay una segunda implementación del
 dominio que pueda divergir—; el envío dejó de bloquear; y lo pendiente cae en
 IndexedDB antes de anunciarse como guardado, así que sobrevive a cerrar la
-pestaña y se drena solo cuando vuelve la red.
+pestaña y se drena solo cuando vuelve la red. Y lo que se lee se retiene, así que
+Vera abre sin servidor con lo que este aparato ya había leído.
 
-### 1.1 El cursor y lo que llega — *paso 4*
+### 1.1 Leer sin servidor — *hecho*
+
+**Lo leído se queda.** Cada página que el corpus entrega se retiene en IndexedDB
+—ver [`held.ts`](packages/web/src/held.ts)— junto con la lista de páginas y el
+estado del corpus, y cuando el servidor no contesta se lee de ahí. La réplica se
+siembra igual, así que **una página leída ayer se escribe hoy sin red** y lo
+escrito sale por la bandeja cuando vuelve.
+
+Nada se replica por adelantado, que es la respuesta práctica a §1.3: un corpus de
+casi dos mil páginas no cabe en un teléfono, y elegir de antemano qué bajar es
+adivinar la atención de alguien. **Leer es esa adivinanza ya hecha, por la
+persona.** El límite son 240 páginas, y se suelta por última lectura.
+
+Lo único que no se puede leer sin corpus es el **mapa**: el vecindario a dos
+saltos se calcula sobre el grafo entero. Se queda el anterior, atenuado y con la
+razón escrita, en vez de fingir que es el de la página abierta.
+
+### 1.2 El cursor y lo que llega — *paso 4, pendiente*
 
 `canonical_cursor` por réplica, `GET /ops?since=` en segundo plano, y aplicar lo
 que llegue **sin recargar la página**. El transporte ya existe entero en
 `server.ts` y no tiene un cliente que lo llame.
 
-Levanta los dos límites que el paso 3 dejó escritos:
+Hoy, al volver la red, la página abierta se vuelve a pedir entera. Funciona y es
+tosco: con el cursor bastaría con traer el tramo que falta.
 
-- **Sin servidor, la aplicación no abre.** Lo escrito está a salvo, pero leer
-  sigue siendo *server-first*: al recargar sin red se ve «no se pudo hablar con
-  el servidor» y nada más.
+Y queda el otro límite que el paso 3 dejó escrito:
+
 - **La primera escritura de un día necesita red.** Nace con un `create_page` que
   la réplica difiere, y un solo gesto que espera basta para que la promesa no se
-  cumpla.
+  cumpla. Es lo siguiente que hay que quitar: la lista de títulos ya está
+  retenida, así que la réplica podría saber si el título está libre sin preguntar.
 
-### 1.2 Los conflictos — *paso 5*
+### 1.3 Los conflictos — *paso 5*
 
 Exponer la divergencia en vez de elegir en silencio, y las tres resoluciones que
 la spec nombra. Un local-first que resuelve conflictos callando es un
 local-first que pierde texto sin decirlo.
 
-### 1.3 Cuánto cabe en un teléfono
+### 1.4 Cuánto cabe en un teléfono
 
-**Pregunta abierta que muerde en 1.1.** Un corpus de 1.979 páginas y 48.129
-bloques no se replica entero en un móvil. Falta decidir qué se replica, con qué
-criterio, y **qué está disponible antes de terminar de hidratarse** — porque la
-respuesta «nada hasta que termine» convierte el local-first en una pantalla de
-carga más larga.
+**Contestado a medias por 1.1**: se retiene lo leído, hasta 240 páginas, y no hay
+hidratación previa que esperar. Lo que sigue abierto es si conviene retener algo
+*además* de lo leído —el día en curso, lo que la página abierta enlaza— sabiendo
+que traerse a los vecinos anula justo lo que hace barata esta política, que es
+dejar que la atención elija. Y qué hacer en un aparato cuyo almacenamiento Vera
+no puede medir.
 
-### 1.4 Lo que sigue sin decidirse
+### 1.5 Lo que sigue sin decidirse
 
 - Qué pasa con lo pendiente cuando la credencial caduca con el aparato sin red.
 - Qué camino de recuperación conserva lo pendiente cuando el almacén local está
   lleno, no disponible o corrupto.
 - Qué cambios sobre el mismo sujeto se pueden fundir solos.
 
-### 1.5 Deuda menor, ya detectable
+### 1.6 Deuda menor
 
-Los comentarios de `main.ts:122` y `main.ts:159` siguen diciendo que la bandeja
-no es durable y que cerrar la pestaña pierde lo pendiente. El paso 3 lo cambió;
-el texto que la persona lee al quedarse sin red todavía no.
+Resuelta: los comentarios de `main.ts` que seguían diciendo que la bandeja no es
+durable, y el aviso que le decía a quien se quedaba sin red que cerrar la pestaña
+perdía lo escrito. Las dos cosas eran falsas desde el paso 3.
 
 ---
 
 ## Horizonte 2 — Que la espera se vea
 
-**Estado: la doctrina está escrita y probada en un solo sitio. Falta el resto.**
+**Estado: la doctrina está escrita, especificada y puesta en las tres esperas que
+más se notan. Faltan cuatro.**
 
 Local-first quita casi todas las esperas. Las que quedan son las verdaderas —el
 modelo local, la transcripción, la composición del PDF, la primera hidratación—
 y son largas. Una espera larga sin realimentación es peor que una espera larga,
 porque además de esperar hay que decidir si el programa murió.
 
-### 2.1 La regla, que ya existe
+### 2.1 La regla
 
-Está en [`packages/web/src/waiting.ts`](packages/web/src/waiting.ts) y se resume
-en cuatro decisiones que **no se van a revisar**:
+Vive en [`waiting.allium`](specs/waiting.allium) y en
+[`waiting.ts`](packages/web/src/waiting.ts), y se resume en cuatro decisiones que
+**no se van a revisar**:
 
 1. **No se anima.** Una rueda girando dice lo mismo esté viva o muerta. Una
    animación miente cuando el proceso se cuelga.
@@ -106,34 +130,48 @@ Y el umbral: **nada antes de 900 ms**. Lo que tarda menos de un segundo no tarda
 y un contador en cada paso instantáneo convierte la interfaz en un parpadeo de
 números.
 
-### 2.2 Dónde falta hoy
+Y una quinta que no estaba escrita y ahora sí: **sólo se recuerda lo que salió
+bien**. Un proceso que falló al segundo segundo no tardó dos segundos en hacerse
+—tardó dos segundos en fallar—, y guardarlo como lo primero prometería una
+velocidad que Vera no tiene.
 
-`waiting.ts` sólo lo usa el panel de procesar. Todo lo demás dice una palabra y
-se queda callado:
+### 2.2 Dónde está y dónde falta
 
-| Dónde | Qué dice hoy | Qué falta |
-| --- | --- | --- |
-| **Transcribir un audio** (`audio-block.ts:275`) | `transcribiendo…`, fijo | Es **la espera más larga de Vera** — minutos con un audio de media hora— y la que menos dice. Prioridad 1. |
-| **Una consulta al grafo** (`query-block.ts:78`) | `preguntando…`, fijo | Contador tras 900 ms. Una consulta amplia sobre 48.129 bloques no es instantánea. |
-| **Abrir una página** (`main.ts:539`) | El título de destino tras 300 ms | Está bien resuelto; falta el contador si se pasa de unos segundos. |
-| **Exportar a PDF** | El navegador sin ventana compone en el servidor | Sin señal alguna hoy. |
-| **Importar un documento** | — | Un `.docx` grande no dice nada mientras se lee. |
-| **Dibujar el mapa** | — | Con proximidad 3 sobre un corpus grande, el cálculo de fuerzas se nota. |
-| **Arranque en frío** | — | Hidratar la réplica es la espera que va a **aparecer** con el horizonte 1, no a desaparecer. |
+| Dónde | Estado |
+| --- | --- |
+| **Transcribir un audio** (`audio-block.ts`) | **Hecho.** La cuenta va en el botón que se pulsó, con clave `voice:transcribe`: a partir de la segunda vez el aparato dice cuánto suele tardar. Era la espera más larga de Vera y la que menos decía. |
+| **Una consulta al grafo** (`query-block.ts`) | **Hecho.** Contador donde va a salir la respuesta. Y con rama de fallo, que no había: sin servidor el bloque se quedaba en `preguntando…` para siempre. |
+| **Abrir una página** (`main.ts`) | **Hecho.** El título de destino tras 300 ms y la cuenta debajo, contada desde que se pidió la página y no desde que se pintó el aviso. |
+| **Exportar a PDF** | Falta. El navegador sin ventana compone en el servidor, sin señal alguna. |
+| **Importar un documento** | Falta. Un `.docx` grande no dice nada mientras se lee. |
+| **Dibujar el mapa** | Falta. Con proximidad 3 sobre un corpus grande, el cálculo de fuerzas se nota. |
+| **Arranque en frío** | Ya no aplica como se escribió: no hay hidratación previa que esperar (§1.1). |
 
-### 2.3 Lo que hay que decidir
+### 2.3 Lo decidido, y lo que sigue abierto
 
-- **Dónde va el contador.** El usuario pidió «un timer al medio». Hoy vive en la
-  línea del registro de procesar. Para una espera modal —transcribir, componer
-  un PDF— probablemente corresponde el centro de lo que se está esperando, y no
-  una esquina. Falta resolverlo como decisión de composición, no caso por caso.
-- **Un solo componente.** Que cada espera resuelva la suya es cómo se llega a
-  siete realimentaciones que no se parecen. El contador debe ser uno, con su
-  clave de medición, y las llamadas lo piden.
+**Dónde va el contador — resuelto, y no como se había planteado.** La pregunta
+era si el timer va «al medio». La respuesta es que va **donde estuvo la mano**:
+quien pulsó un botón mira el botón, quien hizo una pregunta mira dónde va a salir
+la respuesta, y quien abrió una página mira el sitio donde va a aparecer —y ahí
+sí queda centrado bajo el título, que es lo que «al medio» quería decir. Un
+rincón fijo de estado de la máquina obligaría a apartar la vista de lo que se
+está esperando para enterarse de que se está esperando.
+
+**Un solo componente — hecho.** `countInto(elemento, qué, clave)` es el
+mecanismo, y `pendingLine` es ahora un caso suyo. Una sola regla de estilo
+—`.counting`— para que el botón, el bloque de la pregunta y el título de una
+página que viene se parezcan, porque son la misma espera contada.
+
+Sigue abierto:
+
 - **Qué pasa cuando se pasa de lo razonable.** Después de un umbral, un contador
-  que sube solo también deja de informar. Hace falta decir qué se ofrece
-  entonces: cancelar, seguir en segundo plano, o al menos nombrar qué se está
-  esperando.
+  que sube solo también deja de informar. Falta decir qué se ofrece entonces:
+  cancelar, seguir en segundo plano, o al menos nombrar qué se está esperando.
+- **Si lo medido debe viajar entre aparatos.** Un teléfono y una estación de
+  trabajo llamando al mismo modelo local no miden lo mismo, así que hoy cada
+  aparato recuerda el suyo.
+- **Contar por pasos o de punta a punta** cuando el trabajo tiene varios, y si la
+  respuesta cambia según se esté mirando o se haya dejado corriendo.
 
 ### 2.4 Y lo que no se va a hacer
 
@@ -268,8 +306,8 @@ No está decidido y **se decide en una spec antes que en código**, como todo.
                               └──► README §4 · proyectos colaborativos
 ```
 
-Dos cosas se pueden empezar hoy sin depender de nada: **el horizonte 2** y la
-**publicación web (3.1)**. Todo lo demás pasa por la autenticación humana, que es
+Lo que se puede empezar hoy sin depender de nada: **lo que queda del horizonte
+2** —PDF, importación, mapa— y la **publicación web (3.1)**. Todo lo demás pasa por la autenticación humana, que es
 la deuda que bloquea el resto del proyecto: mientras exista una vía anónima que
 escribe como el propietario, exponer Vera fuera de la máquina es exponer la
 firma.
