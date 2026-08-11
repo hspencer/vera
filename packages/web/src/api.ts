@@ -554,28 +554,36 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * Lo que el grafo dice de sí mismo.
+ *
+ * Tiene nombre propio porque ya no se usa sólo al arrancar: se retiene en el
+ * aparato para poder abrir Vera sin servidor, y una forma anónima no se puede
+ * nombrar en la firma de quien la guarda. Ver `held.ts`.
+ */
+export interface CorpusHealth {
+  graph: string;
+  pages: number;
+  blocks: number;
+  lastSequence: number;
+  /** Cómo llama este corpus a las propiedades que Vera necesita conocer. */
+  names: {
+    kind: string;
+    topic: string;
+    explains: string;
+    term: string;
+    sense: string;
+    day: string;
+    created: string;
+    updated: string;
+    visible: string;
+  };
+  /** Y de qué servidores acepta incrustaciones. */
+  embedHosts?: string[];
+}
+
 export const api = {
-  health: () =>
-    json<{
-      graph: string;
-      pages: number;
-      blocks: number;
-      lastSequence: number;
-      /** Cómo llama este corpus a las propiedades que Vera necesita conocer. */
-      names: {
-        kind: string;
-        topic: string;
-        explains: string;
-        term: string;
-        sense: string;
-        day: string;
-        created: string;
-        updated: string;
-        visible: string;
-      };
-      /** Y de qué servidores acepta incrustaciones. */
-      embedHosts?: string[];
-    }>('/health'),
+  health: () => json<CorpusHealth>('/health'),
 
   pages: () => json<PageSummary[]>('/pages'),
 

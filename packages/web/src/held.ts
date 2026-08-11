@@ -1,0 +1,284 @@
+// Lo leído se queda.
+//
+// Ver specs/offline-reconciliation.allium, fase 2. @guarantee WhatWasReadStays: una
+// página que se leyó se vuelve a leer en ese aparato sin servidor, y se escribe
+// también.
+//
+// Hasta ahora leer era *server-first* de punta a punta. Escribir ya no esperaba a la
+// red —paso 3—, pero recargar sin ella daba «no se pudo hablar con el servidor» y
+// nada más: una memoria personal que necesita permiso de la red para dejarte leer lo
+// tuyo no es soberana, es un cliente. La bandeja resolvía la mitad de salida; esto
+// resuelve la de entrada.
+//
+// **Nada se replica por adelantado.** Un corpus de casi dos mil páginas no cabe en un
+// teléfono, y elegir de antemano qué bajar es adivinar la atención de alguien. Leer es
+// esa adivinanza ya hecha, por la persona, en voz alta — y se corrige sola, porque
+// aquello a lo que se vuelve es aquello a lo que se vuelve.
+//
+// Retener no es guardar: lo canónico está en el corpus. Por eso soltar lo más antiguo
+// es seguro, y por eso esto no se parece a la bandeja, donde soltar algo sería
+// perderlo. Cuando no hay dónde retener, no se retiene y ya está: esto es una mejora
+// de lectura, y una mejora que rompe al fallar es peor que no tenerla.
+//
+// El almacén se inyecta por la misma razón que en `outbox.ts`: IndexedDB no existe en
+// node, y lo que decide qué se suelta y cuándo tiene que poder probarse.
+
+import type { CorpusHealth, PageSummary, PageView } from './api.ts';
+
+/**
+ * Cuántas páginas se retienen. Ver rule ForgetTheLeastRecentlyRead.
+ *
+ * Un número y no una fracción del disco: el navegador no dice cuánto hay libre de
+ * forma que se pueda usar para decidir, y pedirle permiso a alguien para guardar
+ * lo que acaba de leer sería una pregunta que nadie quiere que le hagan.
+ */
+export const RETAINED = 240;
+
+/** Una página tal como queda retenida. */
+export interface KeptPage {
+  id: string;
+  /** El título en minúsculas: la dirección puede nombrar una página por él. */
+  titleKey: string;
+  /** Cuándo se leyó por última vez. Es por lo que se suelta, y no por tamaño. */
+  at: number;
+  view: PageView;
+}
+
+/** Lo mínimo que retener necesita de un almacén. */
+export interface Keeps {
+  put(kept: KeptPage): Promise<void>;
+  get(id: string): Promise<KeptPage | null>;
+  byTitle(titleKey: string): Promise<KeptPage | null>;
+  count(): Promise<number>;
+  /** Los `n` que se leyeron hace más tiempo, del más antiguo en adelante. */
+  oldest(n: number): Promise<string[]>;
+  drop(ids: readonly string[]): Promise<void>;
+  clear(): Promise<void>;
+  meta<T>(name: string): Promise<T | null>;
+  setMeta<T>(name: string, value: T): Promise<void>;
+}
+
+/** Lo que este aparato ya tenía cuando se le preguntó. */
+export interface Held {
+  page(id: string): Promise<PageView | null>;
+  keepPage(view: PageView): Promise<void>;
+
+  index(): Promise<PageSummary[] | null>;
+  keepIndex(pages: PageSummary[]): Promise<void>;
+
+  corpus(): Promise<CorpusHealth | null>;
+  keepCorpus(health: CorpusHealth): Promise<void>;
+
+  /** Cuántas páginas hay retenidas. Se enseña en Memoria; no se decide con ello. */
+  count(): Promise<number>;
+  forget(): Promise<void>;
+}
+
+/**
+ * La política, sobre un almacén cualquiera.
+ *
+ * Cada método se traga sus propios fallos, y no es descuido: un fallo al retener no
+ * puede impedir leer una página que el servidor acaba de entregar, y un fallo al
+ * leer lo retenido tiene la misma respuesta que no tener nada —«no tengo»—, que es
+ * lo que quien llama ya sabe manejar.
+ */
+export function heldOn(keeps: Keeps, now: () => number = Date.now): Held {
+  const quietly = async <T>(what: () => Promise<T>, otherwise: T): Promise<T> => {
+    try {
+      return await what();
+    } catch {
+      return otherwise;
+    }
+  };
+
+  /** Leer una retenida es leerla: cuenta como lectura y la aleja de ser soltada. */
+  const touch = (kept: KeptPage): Promise<void> => keeps.put({ ...kept, at: now() });
+
+  const found = async (kept: KeptPage | null): Promise<PageView | null> => {
+    if (kept === null) return null;
+    await touch(kept);
+    return kept.view;
+  };
+
+  return {
+    page: (id) =>
+      quietly(async () => {
+        // Por identidad y también por título, porque la dirección puede nombrarla
+        // de las dos formas y sin servidor no hay quien lo resuelva.
+        const byId = await keeps.get(id);
+        return found(byId ?? (await keeps.byTitle(id.toLowerCase())));
+      }, null),
+
+    keepPage: (view) =>
+      quietly(async () => {
+        await keeps.put({ id: view.id, titleKey: view.title.toLowerCase(), at: now(), view });
+        /*
+         * Y soltar lo que sobre, por última lectura.
+         *
+         * Se mira la cuenta antes de tocar nada: el caso corriente es que no sobre,
+         * y recorrer el almacén en cada lectura para descubrirlo cobraría el precio
+         * del límite a quien no lo ha alcanzado.
+         */
+        const held = await keeps.count();
+        if (held <= RETAINED) return;
+        await keeps.drop(await keeps.oldest(held - RETAINED));
+      }, undefined),
+
+    /*
+     * La lista de páginas de la última vez.
+     *
+     * No es un adorno: de ella salen el autocompletado de `[[enlaces]]`, resolver
+     * una dirección escrita por título y saber si una página existe antes de
+     * crearla. Sin lista, abrir sin red dejaría a Vera sabiendo leer una página y
+     * sin saber cómo se llama ninguna otra.
+     */
+    index: () => quietly(() => keeps.meta<PageSummary[]>('index'), null),
+    keepIndex: (pages) => quietly(() => keeps.setMeta('index', pages), undefined),
+
+    corpus: () => quietly(() => keeps.meta<CorpusHealth>('corpus'), null),
+    keepCorpus: (health) => quietly(() => keeps.setMeta('corpus', health), undefined),
+
+    count: () => quietly(() => keeps.count(), 0),
+
+    /*
+     * Olvidar todo lo retenido.
+     *
+     * Hace falta porque esto es una copia del corpus en un aparato, y quien deja de
+     * usar Vera en una máquina prestada tiene que poder llevársela. No toca la
+     * bandeja: lo pendiente no es copia de nada, y borrarlo sí sería perderlo.
+     */
+    forget: () => quietly(() => keeps.clear(), undefined),
+  };
+}
+
+const DB = 'vera-held';
+
+function open(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB, 1);
+    request.onupgradeneeded = () => {
+      const pages = request.result.createObjectStore('pages', { keyPath: 'id' });
+      // Por última lectura, para soltar lo más viejo; por título, para que abrir
+      // una dirección sin la lista cargada siga funcionando.
+      pages.createIndex('at', 'at');
+      pages.createIndex('titleKey', 'titleKey');
+      request.result.createObjectStore('meta', { keyPath: 'name' });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/** Una transacción, con su base cerrada al terminar. */
+async function within<T>(
+  store: 'pages' | 'meta',
+  mode: IDBTransactionMode,
+  act: (store: IDBObjectStore) => IDBRequest,
+): Promise<T> {
+  const db = await open();
+  return new Promise<T>((resolve, reject) => {
+    const transaction = db.transaction(store, mode);
+    const request = act(transaction.objectStore(store));
+    request.onsuccess = () => resolve(request.result as T);
+    request.onerror = () => reject(request.error);
+    transaction.oncomplete = () => db.close();
+  });
+}
+
+/** El almacén de verdad. */
+export function indexedDbKeeps(): Keeps {
+  return {
+    put: (kept) => within<void>('pages', 'readwrite', (store) => store.put(kept)),
+    get: async (id) => (await within<KeptPage | undefined>('pages', 'readonly', (s) => s.get(id))) ?? null,
+    byTitle: async (titleKey) =>
+      (await within<KeptPage | undefined>('pages', 'readonly', (s) =>
+        s.index('titleKey').get(titleKey),
+      )) ?? null,
+    count: () => within<number>('pages', 'readonly', (store) => store.count()),
+
+    /*
+     * Los más antiguos, leyendo sólo sus llaves.
+     *
+     * `getAllKeys` sobre el índice de última lectura los devuelve ya ordenados, y
+     * con un límite: no hay que traer doscientas cuarenta páginas enteras a memoria
+     * para averiguar cuáles son las tres que sobran.
+     */
+    oldest: (n) =>
+      n <= 0
+        ? Promise.resolve([])
+        : within<string[]>('pages', 'readonly', (s) => s.index('at').getAllKeys(null, n)),
+
+    drop: async (ids) => {
+      for (const id of ids) await within<void>('pages', 'readwrite', (store) => store.delete(id));
+    },
+    clear: async () => {
+      await within<void>('pages', 'readwrite', (store) => store.clear());
+      await within<void>('meta', 'readwrite', (store) => store.clear());
+    },
+    meta: async <T>(name: string) =>
+      (await within<{ name: string; value: T } | undefined>('meta', 'readonly', (s) => s.get(name)))
+        ?.value ?? null,
+    setMeta: (name, value) => within<void>('meta', 'readwrite', (s) => s.put({ name, value })),
+  };
+}
+
+/** Y uno de memoria, para probar y para cuando no hay otro. */
+export function inMemoryKeeps(): Keeps {
+  const pages = new Map<string, KeptPage>();
+  const meta = new Map<string, unknown>();
+  return {
+    put: async (kept) => void pages.set(kept.id, kept),
+    get: async (id) => pages.get(id) ?? null,
+    byTitle: async (titleKey) => [...pages.values()].find((one) => one.titleKey === titleKey) ?? null,
+    count: async () => pages.size,
+    oldest: async (n) =>
+      n <= 0 ? [] : [...pages.values()].sort((a, b) => a.at - b.at).slice(0, n).map((one) => one.id),
+    drop: async (ids) => {
+      for (const id of ids) pages.delete(id);
+    },
+    clear: async () => {
+      pages.clear();
+      meta.clear();
+    },
+    meta: async <T>(name: string) => (meta.get(name) as T | undefined) ?? null,
+    setMeta: async (name, value) => void meta.set(name, value),
+  };
+}
+
+/**
+ * La que no retiene nada.
+ *
+ * Navegación privada, permiso denegado, disco lleno, un navegador sin IndexedDB.
+ * Contesta «no tengo» a todo y acepta todo sin guardarlo, que deja la aplicación
+ * exactamente como estaba antes de que esto existiera.
+ *
+ * Es una tercera cosa y no el almacén de memoria: retener en memoria dentro de una
+ * pestaña no sirve de nada —lo que retiene se pierde en la recarga, que es justo
+ * cuando haría falta— y encima costaría la memoria de tenerlo.
+ */
+export function holdsNothing(): Held {
+  return {
+    page: async () => null,
+    keepPage: async () => {},
+    index: async () => null,
+    keepIndex: async () => {},
+    corpus: async () => null,
+    keepCorpus: async () => {},
+    count: async () => 0,
+    forget: async () => {},
+  };
+}
+
+/** La memoria de lectura de este aparato, si se puede abrir. */
+export async function heldHere(): Promise<Held> {
+  if (typeof indexedDB === 'undefined') return holdsNothing();
+  const keeps = indexedDbKeeps();
+  try {
+    // Abrir de verdad y no comprobar que el objeto existe: un permiso denegado o
+    // una cuota agotada no se notan hasta que se toca la base.
+    await keeps.count();
+  } catch {
+    return holdsNothing();
+  }
+  return heldOn(keeps);
+}

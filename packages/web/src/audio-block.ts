@@ -9,6 +9,7 @@
 // escribiendo; lo demás es la edición ordinaria de un bloque ordinario.
 
 import { audioUrl, startRecording, voice, type Recording } from './voice.ts';
+import { countInto } from './waiting.ts';
 
 export interface AudioBlockHandlers {
   /** Volver a traer la página: transcribir escribe el texto del bloque. */
@@ -272,13 +273,24 @@ export function renderAudioBlock(
         return;
       }
       ask.disabled = true;
-      ask.textContent = 'transcribiendo…';
+      /*
+       * La espera más larga de Vera, y hasta ahora la que menos decía.
+       *
+       * «transcribiendo…» se lee igual a los dos segundos que a los tres minutos:
+       * un modelo local sobre diez minutos de audio tarda lo que tarda, y quien
+       * pulsó no tenía forma de distinguir eso de un proceso muerto. Ahora la
+       * cuenta va en el botón que se pulsó, y a partir de la segunda vez el
+       * aparato ya sabe cuánto suele tardar y lo dice. Ver waiting.ts.
+       */
+      const counting = countInto(ask, 'transcribiendo…', 'voice:transcribe');
       void voice.transcribe(recording.id).then((next) => {
         if (fail(next)) {
+          counting.close('failed');
           ask.disabled = false;
           ask.textContent = again ? 'retranscribir' : 'transcribir';
           return;
         }
+        counting.close();
         handlers.onSettled();
       });
     });

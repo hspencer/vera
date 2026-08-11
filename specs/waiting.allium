@@ -1,0 +1,285 @@
+-- allium: 3
+-- waiting.allium
+
+-- Scope: How Vera shows that something is taking time, and how long it has been taking
+-- Includes: Naming the wait, counting elapsed time, remembering measured durations,
+--   saying how long something usually takes, and ending the indication
+-- Excludes:
+--   - Whether the work itself is fast (see offline-reconciliation.allium)
+--   - The meaning of the work being waited for
+--   - Timers, intervals and rendering libraries
+--
+-- North star: a number that rises cannot lie. If the work hangs, the number keeps
+-- rising, and that is exactly the truth — it is still waiting. A spinning wheel says
+-- the same thing whether it is alive or dead, which is why Vera does not spin one.
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract TruthfulWaiting {
+    begin: (work: String, key: String?) -> Wait
+    end: (wait: Wait) -> WaitMemory?
+
+    @invariant WaitingIsCountedNotAnimated
+        -- Elapsed time is presented as a rising measurement of time already spent.
+        -- An indeterminate animation is not a substitute: it looks identical while
+        -- the work advances, while it is blocked and after it has died, so it cannot
+        -- tell a participant which of the three is happening.
+
+    @invariant NothingIsPromisedThatIsNotKnown
+        -- Vera never presents a percentage, a proportion completed or a remaining
+        -- time for work whose remaining duration it cannot compute. Counting cannot
+        -- be wrong, because the time did pass. Predicting can.
+
+    @invariant BriefWorkWaitsInSilence
+        -- Work that finishes below the perceptibility threshold shows no indication
+        -- at all. An indicator that appears on every instantaneous step turns the
+        -- interface into a flicker of numbers and teaches the eye to ignore it.
+
+    @invariant EveryWaitIsNamed
+        -- What is being waited for is stated in the participant's terms. A duration
+        -- without a subject says that Vera is busy, which the participant already
+        -- knew from the fact that nothing happened.
+
+    @invariant ExpectationComesFromMeasurement
+        -- A statement about how long something usually takes is derived from
+        -- durations this device measured for that same named wait, never from a
+        -- constant, an estimate or another device's experience.
+
+    @invariant NoWaitOutlivesItsWork
+        -- The indication ends when the work ends, whether it succeeded or failed.
+        -- An indicator left behind is the worst available lie, because it reports
+        -- that something is still happening when nothing is.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum WaitOutcome { succeeded | failed | abandoned }
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity Wait {
+    -- Who is waiting. A duration measured on a phone and one measured on a
+    -- workstation are not the same measurement, and neither are two people's.
+    participant: core/Participant
+    -- What is being waited for, said as a person would say it.
+    work: String
+    -- How this wait is recognised across occurrences, or null when it cannot be
+    -- named reliably. Two calls to the same local model are the same wait even
+    -- when their text differs.
+    key: String?
+    started_at: Timestamp
+    -- Below this, nothing is shown.
+    threshold: Duration
+    ended: Boolean
+    outcome: WaitOutcome?
+}
+
+entity WaitMemory {
+    key: String
+    -- The most recent measured durations for this key, on this device.
+    durations: Duration
+    measured_on: core/Participant
+}
+
+entity ElapsedIndication {
+    wait: Wait
+    elapsed: Duration
+    -- Present only when this device has measured this key before.
+    usually_takes: Duration?
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule BeginWaitingForNamedWork {
+    when: WorkBegan(participant, work, key?)
+
+    ensures:
+        Wait.created(
+            participant: participant,
+            work: work,
+            key: key,
+            started_at: now(),
+            threshold: perceptibility_threshold(),
+            ended: false,
+            outcome: null
+        )
+
+    @guidance
+        -- The wait begins when the work begins, not when someone notices it is
+        -- slow. A wait started late reports a duration shorter than the one the
+        -- participant lived through, which is the same as understating it.
+}
+
+rule ShowElapsedOnceItIsPerceptible {
+    when: WaitObserved(wait)
+
+    requires: wait.ended = false
+    requires: now() - wait.started_at >= wait.threshold
+
+    ensures:
+        ElapsedIndication.created(
+            wait: wait,
+            elapsed: now() - wait.started_at,
+            usually_takes: usual_duration_for(wait.key)
+        )
+
+    @guidance
+        -- The elapsed value is recomputed often enough that the displayed number
+        -- never disagrees with a clock the participant can also see.
+}
+
+rule WithholdIndicationForBriefWork {
+    when: WaitObserved(wait)
+
+    requires: now() - wait.started_at < wait.threshold
+
+    ensures: not exists ElapsedIndication{wait: wait}
+}
+
+rule StopSayingTheUsualOnceItIsPast {
+    when: indication: ElapsedIndication.created
+
+    requires: indication.usually_takes != null
+    requires: indication.elapsed >= tolerance_of(indication.usually_takes)
+
+    ensures: indication.usually_takes = null
+
+    @guidance
+        -- Repeating "usually takes 20 s" at the fortieth second is Vera insisting on
+        -- something that has stopped being true, and a participant reads it as being
+        -- mocked. From there only the count remains, which is what there is.
+}
+
+rule RememberWhatTheWorkTook {
+    when: WorkEnded(wait, outcome)
+
+    requires: wait.key != null
+    requires: outcome = succeeded
+    requires: now() - wait.started_at >= wait.threshold
+
+    ensures:
+        WaitMemory{key: wait.key, measured_on: wait.participant}.durations = most_recent(
+            WaitMemory{key: wait.key, measured_on: wait.participant}.durations
+                + (now() - wait.started_at)
+        )
+
+    @guidance
+        -- Only what succeeded. Work that failed at the second second did not take
+        -- two seconds to do; it took two seconds to fail, and remembering it as the
+        -- former would promise a speed Vera cannot deliver.
+        --
+        -- The expectation offered to a participant is the middle value of what was
+        -- measured and not the average. One call that went to ninety seconds because
+        -- the machine was busy must not change what is promised the next twenty
+        -- times. The middle value ignores it; the average drags it along.
+}
+
+rule DoNotRememberAnUnnamedWait {
+    when: WorkEnded(wait, outcome)
+
+    requires: wait.key = null
+
+    ensures: not exists WaitMemory{key: wait.work}
+
+    @guidance
+        -- Counting always, remembering only what can be named. Between two known
+        -- milestones, what the machine is doing is the observer's conjecture; stored
+        -- as a measurement it would make Vera promise "usually takes 12 s" about a
+        -- wait that was for something else.
+}
+
+rule EndTheIndicationWithTheWork {
+    when: WorkEnded(wait, outcome)
+
+    ensures:
+        wait.ended = true
+        wait.outcome = outcome
+        not exists ElapsedIndication{wait: wait}
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant EveryIndicationBelongsToUnfinishedWork {
+    for indication in ElapsedIndications:
+        indication.wait.ended = false
+}
+
+invariant AnIndicationNeverShowsLessThanTheThreshold {
+    for indication in ElapsedIndications:
+        indication.elapsed >= indication.wait.threshold
+}
+
+invariant RememberedDurationsAreNamed {
+    for memory in WaitMemories:
+        memory.key != null
+}
+
+invariant ElapsedIsTimeThatPassedAndNotTimeRemaining {
+    for indication in ElapsedIndications:
+        indication.elapsed = now() - indication.wait.started_at
+}
+
+------------------------------------------------------------
+-- Actors and surfaces
+------------------------------------------------------------
+
+actor WaitingParticipant {
+    within: core/Graph
+    identified_by: core/Participant
+}
+
+surface WaitIndication {
+    facing participant: WaitingParticipant
+    context wait: Wait
+
+    exposes:
+        wait.work
+        wait.started_at
+        wait.outcome
+
+    provides:
+        WorkBegan(participant, work, key?)
+        WaitObserved(wait)
+        WorkEnded(wait, outcome)
+
+    contracts:
+        fulfils TruthfulWaiting
+
+    @guarantee TheLongestWaitIsTheOneMostWorthShowing
+        -- Wherever Vera hands work to something slower than itself — a model
+        -- transcribing speech, a query crossing the whole corpus, a document being
+        -- imported, a page arriving from the server — that is where the count
+        -- belongs. A wait that is already fast does not need one.
+
+    @guarantee AnUnknownWaitBecomesAnExpectedOne
+        -- Almost all of the discomfort of waiting is not knowing whether the wait is
+        -- normal. Saying what this device measured before converts an unknown wait
+        -- into an expected one without predicting anything.
+
+    @guarantee TheCountIsWhereTheGestureWas
+        -- The count appears where the participant last acted or where the result
+        -- will appear, and not in a corner reserved for machine status. Someone who
+        -- pressed a button looks at the button.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Should measured durations travel between a participant's devices, given that a phone and a workstation calling the same local model do not measure the same thing?"
+
+open question "When a wait exceeds what it usually takes by a large factor, is there a point at which Vera should offer to abandon it rather than only continue counting?"
+
+open question "Work composed of many named steps can be counted per step or end to end. Which of the two does a participant actually want to see, and does the answer differ between work they are watching and work they left running?"

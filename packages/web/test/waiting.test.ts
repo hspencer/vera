@@ -19,7 +19,9 @@ const store = new Map<string, string>();
   length: 0,
 } as unknown as Storage;
 
-const { remember, saySeconds, usuallyTakes } = await import('../src/waiting.ts');
+const { countInto, elapsedSaid, remember, saySeconds, usuallyTakes } = await import(
+  '../src/waiting.ts'
+);
 
 beforeEach(() => store.clear());
 
@@ -71,6 +73,112 @@ describe('lo que suele tardar', () => {
     assert.doesNotThrow(() => remember('modelo', 20_000));
     assert.equal(usuallyTakes('modelo'), null);
     (globalThis as unknown as { localStorage: Storage }).localStorage = held;
+  });
+});
+
+describe('lo que se lee de una espera en curso', () => {
+  it('antes del umbral no se dice nada: lo que tarda menos de un segundo no tarda', () => {
+    assert.equal(elapsedSaid(300, 'modelo'), '');
+    assert.equal(elapsedSaid(899, 'modelo'), '');
+  });
+
+  it('pasado el umbral, el número que subió', () => {
+    assert.equal(elapsedSaid(6_000, null), '6 s');
+  });
+
+  it('y lo que suele tardar, cuando se ha medido', () => {
+    for (const took of [20_000, 20_000, 20_000]) remember('modelo', took);
+    assert.equal(elapsedSaid(6_000, 'modelo'), '6 s · suele tardar ~20 s');
+  });
+
+  it('pero se calla en cuanto deja de ser cierto', () => {
+    /*
+     * Repetir «suele tardar 20 s» en el segundo cuarenta es la máquina insistiendo
+     * en algo que ya no pasa, y quien mira lo lee como burla. A partir de ahí sólo
+     * queda el número, que es lo que hay.
+     */
+    for (const took of [20_000, 20_000, 20_000]) remember('modelo', took);
+    assert.equal(elapsedSaid(40_000, 'modelo'), '40 s');
+  });
+
+  it('una espera sin nombre se cuenta igual, sólo que no se recuerda', () => {
+    // Contar no puede equivocarse —el tiempo pasó— y nombrar sí.
+    assert.equal(elapsedSaid(6_000, null), '6 s');
+  });
+});
+
+describe('contar dentro de un elemento', () => {
+  /** Lo mínimo de un elemento que `countInto` toca. Aquí no hay navegador. */
+  function fake(): HTMLElement & { classes: Set<string> } {
+    const classes = new Set<string>();
+    return {
+      textContent: '',
+      classes,
+      classList: { add: (c: string) => classes.add(c), remove: (c: string) => classes.delete(c) },
+    } as unknown as HTMLElement & { classes: Set<string> };
+  }
+
+  it('al empezar sólo dice qué se espera, sin número', () => {
+    const element = fake();
+    const counting = countInto(element, 'transcribiendo…', 'voz', { now: () => 1_000, since: 1_000 });
+    assert.equal(element.textContent, 'transcribiendo…');
+    counting.close();
+  });
+
+  it('y pasado el umbral, qué se espera y cuánto lleva', () => {
+    const element = fake();
+    let at = 1_000;
+    const counting = countInto(element, 'transcribiendo…', null, { now: () => at, since: 1_000 });
+    at = 7_000;
+    assert.equal(counting.elapsed(), 6_000);
+    counting.close();
+  });
+
+  it('cuenta desde que empezó el trabajo y no desde que se pintó el aviso', () => {
+    /*
+     * Lo que se espera de una página empieza a esperarse al pedirla. Contando desde
+     * el aviso, una espera de cuatro segundos se anunciaría como de tres, y la que
+     * Vera recordara sería la que no ocurrió.
+     */
+    const element = fake();
+    const counting = countInto(element, '', null, { now: () => 5_000, since: 1_000 });
+    assert.equal(counting.elapsed(), 4_000);
+    counting.close();
+  });
+
+  it('lo que falló no se recuerda: fallar rápido no es ser rápido', () => {
+    /*
+     * Si perder la conexión al segundo tres contara como una medida, unas cuantas
+     * caídas convencerían a Vera de que el modelo contesta en tres segundos, y se
+     * lo prometería a quien mire.
+     */
+    const element = fake();
+    let at = 1_000;
+    const counting = countInto(element, 'transcribiendo…', 'voz:falla', {
+      now: () => at,
+      since: 1_000,
+    });
+    at = 4_000;
+    counting.close('failed');
+    assert.equal(usuallyTakes('voz:falla'), null);
+  });
+
+  it('lo que sí salió bien queda medido', () => {
+    const element = fake();
+    let at = 1_000;
+    const counting = countInto(element, 'transcribiendo…', 'voz:bien', { now: () => at, since: 1_000 });
+    at = 21_000;
+    counting.close();
+    assert.equal(usuallyTakes('voz:bien'), 20_000);
+  });
+
+  it('al cerrarse deja de escribir en el elemento', () => {
+    // Una espera que sobrevive a su trabajo es la peor mentira disponible.
+    const element = fake();
+    const counting = countInto(element, 'preguntando…', null, { now: () => 1_000, since: 1_000 });
+    assert.ok(element.classes.has('counting'));
+    counting.close();
+    assert.ok(!element.classes.has('counting'));
   });
 });
 

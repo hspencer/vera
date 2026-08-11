@@ -5,7 +5,15 @@
 
 import './styles.css';
 
-import { api, onSubmissionActivity, type PageSummary, type PageView } from './api.ts';
+import {
+  api,
+  onSubmissionActivity,
+  type CorpusHealth,
+  type PageSummary,
+  type PageView,
+} from './api.ts';
+import { heldHere, holdsNothing, type Held } from './held.ts';
+import { countInto, type Counting } from './waiting.ts';
 import { applyLocally, blockPropertiesOf, blocksOf, seed, type Replica } from './replica.ts';
 import { createOutbox, durableOrNot, inOrder, type Outbox } from './outbox.ts';
 import {
@@ -118,9 +126,9 @@ function wireSubmissionState(): void {
      * Aplicado en casa: hecho, y todavía sin viajar.
      *
      * No se dice «guardando», porque no se está esperando nada para poder
-     * seguir; se dice que está aquí. Y no se dice «sincronizado», porque otros
-     * aparatos no lo saben todavía y la bandeja aún no es durable —paso 3—, así
-     * que cerrar la pestaña ahora mismo lo rompe.
+     * seguir; se dice que está aquí. Y no se dice «sincronizado», porque eso es
+     * lo que dirá cuando el corpus lo confirme: está a salvo de cerrar la pestaña
+     * —la bandeja es durable— y todavía no lo saben los demás aparatos.
      * @invariant SilenceNeverPretendsToBeSuccess.
      */
     if (activity.phase === 'local') {
@@ -156,7 +164,7 @@ function wireSubmissionState(): void {
         'offline',
         'sin conexión',
         wasLocal
-          ? 'Aplicado en este aparato. Volverá a intentarlo cuando haya red; cerrar la pestaña todavía lo pierde.'
+          ? 'Aplicado y guardado en este aparato. Sale solo cuando vuelva la red, aunque se cierre.'
           : 'Lo escrito sigue en el editor, pero aún no está guardado.',
       );
       return;
@@ -184,25 +192,20 @@ function closeSettings(): void {
   panel.innerHTML = '';
 }
 
-/** Lo que el grafo tiene. Se pide una vez al arrancar y se enseña en Memoria. */
-let corpus: {
-  graph: string;
-  pages: number;
-  blocks: number;
-  lastSequence: number;
-  names?: {
-    kind: string;
-    topic: string;
-    explains: string;
-    term: string;
-    sense: string;
-    day: string;
-    created: string;
-    updated: string;
-    visible: string;
-  };
-  embedHosts?: string[];
-} | null = null;
+/** Lo que el grafo tiene. Se pide al arrancar y se enseña en Memoria. */
+let corpus: CorpusHealth | null = null;
+
+/**
+ * Lo que este aparato ya tenía guardado de lo leído.
+ *
+ * Empieza sin nada y se sustituye al arrancar por la de verdad, si la hay. Que
+ * exista desde el principio es lo que permite llamarla sin preguntar antes si
+ * está: la que no retiene nada contesta «no tengo» a todo.
+ */
+let held: Held = holdsNothing();
+
+/** Si lo que está a la vista salió de ahí y no del corpus. */
+let showingKept = false;
 
 /**
  * Memoria: el estado del corpus y su índice.
@@ -535,8 +538,14 @@ const PATIENCE = 300;
  * finge una página que todavía no existe—. Dice qué está cargando y dónde, que
  * es lo que uno quiere saber, y cuando llega el texto el título ya está puesto y
  * sólo se rellena debajo.
+ *
+ * Y debajo del título, cuánto lleva. Sin eso, una página que tarda cuatro
+ * segundos se veía igual que una que tarda cuarenta, y el título atenuado y
+ * quieto se lee, pasado un rato, como que la navegación se rompió. Devuelve la
+ * cuenta para que quien pidió la página pueda cerrarla: una espera que sobrevive
+ * a su trabajo es la peor mentira disponible.
  */
-function awaiting(title: string | null): void {
+function awaiting(title: string | null, since: number): Counting {
   const text = $('#text');
   text.innerHTML = '';
   const holder = document.createElement('div');
@@ -546,9 +555,40 @@ function awaiting(title: string | null): void {
   const heading = document.createElement('h1');
   heading.className = 'page-title';
   heading.textContent = title ?? 'abriendo…';
-  header.append(heading);
+  const elapsed = document.createElement('span');
+  elapsed.className = 'awaiting-elapsed';
+  header.append(heading, elapsed);
   holder.append(header);
   text.append(holder);
+  /*
+   * Sin nombre para recordar.
+   *
+   * Una página de cuatro bloques y una de mil no son la misma espera, y guardar
+   * las dos juntas haría que Vera prometiera una mediana que no describe a
+   * ninguna. Se cuenta —que no puede equivocarse— y no se nombra. Ver waiting.ts.
+   */
+  return countInto(elapsed, '', null, { since });
+}
+
+/**
+ * Decir de dónde salió lo que se está leyendo.
+ *
+ * Lo retenido y lo canónico se ven exactamente igual, y ésa es justo la razón por
+ * la que hay que decirlo: quien lee sin red tiene que poder saber que lo que tiene
+ * delante es de la última vez que hubo, y no lo que el corpus dice ahora.
+ *
+ * Va debajo del título, que es donde empieza la lectura, y no en el rincón del
+ * estado: no es una noticia sobre la máquina, es una advertencia sobre el texto.
+ */
+function markShowing(text: HTMLElement, kept: boolean): void {
+  text.querySelector('.page-kept')?.remove();
+  if (!kept) return;
+  const said = document.createElement('p');
+  said.className = 'page-kept';
+  said.textContent = 'de lo guardado en este aparato · sin conexión con el corpus';
+  said.title =
+    'Se puede escribir igual. Lo que se escriba sale solo cuando vuelva la red, y entonces la página se pone al día.';
+  (text.querySelector('.page-header') ?? text.firstElementChild)?.append(said);
 }
 
 async function openPage(
@@ -569,7 +609,20 @@ async function openPage(
    * El temporizador se cancela pase lo que pase: un aviso que sobrevive a la
    * respuesta deja la página anterior borrada y un título colgando.
    */
-  const named = options.title ?? pages.find((one) => one.id === id)?.title ?? null;
+  /*
+   * Y por título además de por identidad.
+   *
+   * `/p/2026-08-11` nombra la página por su título, que es la forma en que llega
+   * casi toda navegación desde fuera —una dirección pegada, un marcador, volver
+   * atrás—. Buscando sólo por identidad no se encontraba nada y el aviso decía
+   * «abriendo…» justo en el caso en que el título ya se sabía: estaba escrito en
+   * la barra de direcciones.
+   */
+  const key = id.toLowerCase();
+  const named =
+    options.title ??
+    pages.find((one) => one.id === id || one.title.toLowerCase() === key)?.title ??
+    null;
   /*
    * Sólo al ir a otra página, nunca al redibujar la misma.
    *
@@ -580,30 +633,56 @@ async function openPage(
   const here =
     id === workspace.activePage ||
     pages.find((one) => one.id === workspace.activePage)?.title === id;
-  let painted = false;
+  const asked = Date.now();
+  /*
+   * La cuenta del aviso, si llegó a pintarse.
+   *
+   * En una caja y no en una variable suelta porque quien la asigna es un
+   * temporizador: el análisis de flujo no ve esa asignación y daría por hecho que
+   * sigue vacía, dejando pasar sin avisar el cierre que la quita.
+   */
+  const shown: { counting: Counting | null } = { counting: null };
   const slow = here
     ? null
     : setTimeout(() => {
-        painted = true;
-        awaiting(named);
+        shown.counting = awaiting(named, asked);
       }, PATIENCE);
+  /** Si esta página salió de lo retenido y no del corpus. */
+  let fromKept = false;
   try {
     page = await api.page(id);
+    // Leerla es lo que hace que se retenga. rule RetainDeliveredPage.
+    void held.keepPage(page);
   } catch (error) {
-    // Una página que no se pudo traer se dice; no se deja la vista anterior
-    // fingiendo que la navegación ocurrió.
-    notice(`No se pudo abrir la página: ${error instanceof Error ? error.message : 'error'}.`);
-    // Si el aviso llegó a pintarse, no puede quedarse: un título solo, sin
-    // texto y sin explicación, se lee como una página vacía y no como un fallo.
-    if (painted) {
-      const said = document.createElement('p');
-      said.className = 'awaiting-failed';
-      said.textContent = 'no se pudo abrir';
-      $('#text').querySelector('.awaiting')?.append(said);
+    /*
+     * Sin servidor, lo que este aparato guardó de esta página.
+     *
+     * Y con ella se siembra la réplica igual que con una recién entregada, así que
+     * se puede escribir dentro: lo que se escriba cae en la bandeja y sale cuando
+     * vuelva la red. rule ReadRetainedPageWithoutTheServer.
+     */
+    const remembered = await held.page(id);
+    if (remembered === null) {
+      // Una página que no se pudo traer ni se tenía se dice; no se deja la vista
+      // anterior fingiendo que la navegación ocurrió.
+      notice(`No se pudo abrir la página: ${error instanceof Error ? error.message : 'error'}.`);
+      // Si el aviso llegó a pintarse, no puede quedarse: un título solo, sin
+      // texto y sin explicación, se lee como una página vacía y no como un fallo.
+      if (shown.counting !== null) {
+        const said = document.createElement('p');
+        said.className = 'awaiting-failed';
+        said.textContent = 'no se pudo abrir';
+        $('#text').querySelector('.awaiting')?.append(said);
+      }
+      return;
     }
-    return;
+    page = remembered;
+    fromKept = true;
   } finally {
     if (slow !== null) clearTimeout(slow);
+    // La cuenta se va con la espera, saliera como saliera. Si no llegó a
+    // pintarse no hay nada que cerrar, que es el caso corriente.
+    shown.counting?.close();
   }
 
   // De dónde se venía, antes de que activePage deje de decirlo.
@@ -689,6 +768,8 @@ async function openPage(
   window.clearTimeout(catchUpTimer);
 
   renderOutliner(text, page, callbacksFor(page), focus, workspace.focusRoot);
+  showingKept = fromKept;
+  markShowing(text, fromKept);
 
   // Un día no se lee solo: se sigue leyendo hacia atrás. Ver `continueBackwards`.
   //
@@ -1027,9 +1108,25 @@ function notice(message: string): void {
  * sin conocerla el resto de la sesión.
  */
 async function loadPages(): Promise<void> {
-  pages = (await api.pages()).sort(
-    (a, b) => b.linkCount - a.linkCount || b.blockCount - a.blockCount,
-  );
+  try {
+    pages = (await api.pages()).sort(
+      (a, b) => b.linkCount - a.linkCount || b.blockCount - a.blockCount,
+    );
+    void held.keepIndex(pages);
+    return;
+  } catch (error) {
+    /*
+     * Sin servidor, la lista de la última vez.
+     *
+     * No es un adorno: de ella salen el autocompletado de `[[enlaces]]`, resolver
+     * una dirección escrita por título y saber si una página existe antes de
+     * crearla. Sin lista, abrir sin red dejaría a Vera sabiendo leer una página y
+     * sin saber cómo se llama ninguna otra.
+     */
+    const remembered = await held.index();
+    if (remembered === null) throw error;
+    pages = remembered;
+  }
 }
 
 /** Abrir por título es lo que hace un [[enlace]]. */
@@ -1131,7 +1228,36 @@ async function drawGraph(): Promise<void> {
   if (workspace.activePage === null) return;
   const container = $('#graph');
   const turn = ++graphTurn;
-  const data = await api.graph(workspace.activePage, workspace.depth);
+  let data;
+  try {
+    data = await api.graph(workspace.activePage, workspace.depth);
+  } catch {
+    /*
+     * El mapa es lo único que no se puede leer sin corpus, y hay que decirlo.
+     *
+     * Una página retenida es esa página entera; el vecindario no lo es: quién
+     * enlaza a quién a dos saltos se calcula sobre el grafo completo, y este
+     * aparato no lo tiene. Retenerlo no es opción —sería replicar el corpus, que
+     * es justo lo que retener por lectura evita.
+     *
+     * Antes esto se rompía sin más: la promesa se rechazaba, nadie la recogía y
+     * el mapa se quedaba con el vecindario de la página anterior sin decirlo —un
+     * grafo verdadero, de otra cosa. Ahora se queda igual pero atenuado y con la
+     * razón escrita, que es lo que lo separa de una mentira: sigue sirviendo para
+     * orientarse y ya no se lee como el vecindario de lo que está abierto.
+     * @invariant SilenceNeverPretendsToBeSuccess.
+     */
+    if (turn !== graphTurn) return;
+    container.classList.add('map-stale');
+    container.querySelector('.map-unavailable')?.remove();
+    const said = document.createElement('p');
+    said.className = 'map-unavailable';
+    said.textContent = 'el mapa necesita el corpus · sin conexión';
+    container.append(said);
+    return;
+  }
+  container.classList.remove('map-stale');
+  container.querySelector('.map-unavailable')?.remove();
   // Mientras se pedía éste, alguien pidió otro: el que manda es el último.
   if (turn !== graphTurn) return;
 
@@ -1973,8 +2099,24 @@ async function start(): Promise<void> {
     await api.drain();
   });
 
-  // Y cuando vuelve la red, lo que quedó sale solo.
-  window.addEventListener('online', () => void api.drain());
+  /*
+   * Y cuando vuelve la red, lo que quedó sale solo — y lo que se leía se pone al
+   * día.
+   *
+   * El orden importa: primero drena y después vuelve a abrir. Al revés, la página
+   * llegaría del servidor sin lo que todavía está en la bandeja y lo escrito sin
+   * red parpadearía fuera de la vista antes de volver.
+   *
+   * Sólo si lo que hay delante venía de lo retenido. Volver a abrir una página que
+   * ya era canónica sería pedirle al servidor algo que no cambió, cada vez que un
+   * túnel de metro devuelve la señal.
+   */
+  window.addEventListener('online', () => {
+    void api.drain().then(() => {
+      if (!showingKept || workspace.activePage === null) return;
+      void openPage(workspace.activePage);
+    });
+  });
 
   api.writesLocally((change, origin) => {
     if (replica === null) return null;
@@ -2025,9 +2167,33 @@ async function start(): Promise<void> {
     resizeTimer = window.setTimeout(() => applyLayout(), 150);
   });
 
+  /*
+   * Lo que este aparato ya tenía, antes de preguntarle nada a la red.
+   *
+   * rule OpenWorkspaceWithoutTheServer: abrir no puede depender de una respuesta.
+   * Se pide primero porque todo lo que viene después quiere poder caer aquí.
+   */
+  held = await heldHere();
+
   // El estado del corpus se guarda, no se dibuja: ahora vive en Ajustes →
   // Memoria y se pinta cuando alguien lo abre.
-  corpus = await api.health();
+  try {
+    corpus = await api.health();
+    void held.keepCorpus(corpus);
+  } catch (error) {
+    /*
+     * El servidor no está. Si este aparato ya abrió Vera alguna vez, se sigue.
+     *
+     * Y si no —una instalación nueva, sin nada retenido— no hay nada que enseñar
+     * y el fallo sube a `boot`, que es quien sabe avisar y reintentar. Fingir un
+     * corpus vacío sería peor que decir que no se pudo: enseñaría una Vera sin
+     * páginas a quien tiene mil novecientas.
+     */
+    const remembered = await held.corpus();
+    if (remembered === null) throw error;
+    corpus = remembered;
+    showingKept = true;
+  }
   // Las palabras del corpus, antes de dibujar nada: la cabecera de una página
   // las necesita para llamar a sus renglones como los llame quien escribe.
   if (corpus?.names !== undefined) nameProperties(corpus.names);

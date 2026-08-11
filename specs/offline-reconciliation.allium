@@ -59,6 +59,7 @@ contract MaximallyFluidLocalFirstWorkspace {
 ------------------------------------------------------------
 
 enum ReplicaAvailability { empty | hydrating | available }
+enum ContentOrigin { canonical | retained }
 enum ConnectionState { online | offline }
 enum PendingStatus { local | sending | acknowledged | rejected | conflicted }
 enum SynchronisationStatus { local | synchronising | synchronised | offline | attention_required }
@@ -74,8 +75,13 @@ entity LocalReplica {
     availability: ReplicaAvailability
     connection: ConnectionState
     canonical_cursor: Integer
+    -- Whether what is on screen came from the server or from what this device had
+    -- already kept. It is exposed and not inferred: a participant reading offline
+    -- must be able to tell, and «it looks the same» is the reason they cannot.
+    showing: ContentOrigin
     pending_changes: PendingChange with replica = this
     conflicts: Conflict with replica = this
+    retained_pages: RetainedPage with replica = this
 }
 
 entity PendingChange {
@@ -94,6 +100,15 @@ entity Conflict {
     pending: PendingChange
     canonical_operation: application/Operation
     resolved: Boolean
+}
+
+entity RetainedPage {
+    replica: LocalReplica
+    page: core/Page
+    -- The delivered content, held on this device so that reading it again does
+    -- not require the server.
+    content: core/Page
+    last_read_at: Timestamp
 }
 
 entity SynchronisationState {
@@ -174,6 +189,82 @@ rule ReturnPendingChangeAfterRestart {
     @guidance
         -- A change interrupted while sending is safe to retry because origin_id is
         -- idempotent. Restarting never turns uncertainty into loss or duplication.
+}
+
+rule RetainDeliveredPage {
+    when: PageDelivered(replica, page, origin)
+
+    requires: origin = canonical
+
+    ensures:
+        RetainedPage{replica: replica, page: page}.content = page
+        RetainedPage{replica: replica, page: page}.last_read_at = now()
+        replica.showing = canonical
+        BoundedRetentionEnforced(replica: replica)
+
+    @guidance
+        -- What is retained is what was read. Vera does not replicate the corpus onto
+        -- a device in advance: a graph of thousands of pages does not fit on a phone,
+        -- and choosing a subset in advance means guessing at attention. Reading is
+        -- that guess already made, by the person, out loud — and it is self-correcting,
+        -- because what someone returns to is what they return to.
+}
+
+rule ForgetTheLeastRecentlyRead {
+    when: BoundedRetentionEnforced(replica)
+
+    requires: count(RetainedPages{replica: replica}) > retention_limit(replica)
+
+    ensures:
+        for page in least_recently_read(replica, beyond: retention_limit(replica)):
+            not exists RetainedPage{replica: replica, page: page}
+
+    @guidance
+        -- Retention is bounded because device storage is, and it is dropped by last
+        -- read and not by size: the largest page is not the least wanted. Dropping
+        -- retained content is never a loss — it is canonical elsewhere — which is
+        -- what makes this safe and what distinguishes it from the outbox, where
+        -- dropping anything would be.
+}
+
+rule ReadRetainedPageWithoutTheServer {
+    when: PageRequested(replica, page)
+
+    requires: canonical_delivery_unavailable(replica, page)
+    requires: exists RetainedPage{replica: replica, page: page}
+
+    ensures:
+        replica.availability = available
+        PageDelivered(
+            replica: replica,
+            page: RetainedPage{replica: replica, page: page}.content,
+            origin: retained
+        )
+        replica.showing = retained
+
+    @guidance
+        -- This is not a cache consulted when the server is slow: it is the same page,
+        -- read from the device that already has it. The replica seeded from retained
+        -- content accepts gestures exactly as one seeded from a canonical delivery,
+        -- so a page read yesterday can be written into today with no connection at
+        -- all, and what is written leaves through the outbox like everything else.
+}
+
+rule OpenWorkspaceWithoutTheServer {
+    when: ReplicaOpened(replica)
+
+    requires: replica.connection = offline
+
+    ensures:
+        DurableReplicaLoaded(replica: replica)
+        replica.availability = available
+
+    @guidance
+        -- Opening cannot depend on an answer from the network. A workspace that shows
+        -- "could not reach the server" and nothing else has made connectivity a
+        -- condition of reading one's own memory, which is the one thing a sovereign
+        -- memory may not do. See workspace-interface.allium, invariant
+        -- OfflineReadingAndWriting.
 }
 
 ------------------------------------------------------------
@@ -329,6 +420,16 @@ invariant OfflineWorkIsNotReportedAsCanonical {
         pending.status = local or pending.status = sending implies pending.canonical_sequence = null
 }
 
+invariant RetentionIsBounded {
+    for replica in LocalReplicas:
+        count(replica.retained_pages) <= retention_limit(replica)
+}
+
+invariant RetainedPageBelongsToTheReplicaGraph {
+    for retained in RetainedPages:
+        retained.page.graph = retained.replica.graph
+}
+
 invariant CursorAdvancesOnlyThroughCanonicalOperations {
     for replica in LocalReplicas:
         replica.canonical_cursor >= 0
@@ -351,13 +452,17 @@ surface LocalFirstWorkspace {
         replica.availability
         replica.connection
         replica.canonical_cursor
+        replica.showing
         replica.pending_changes
         replica.conflicts
+        replica.retained_pages
 
     provides:
         ApplyLocally(replica, origin_id, change, channel, evidence?)
         SynchronisationStateRequested(replica)
         ParticipantResolvesConflict(participant, conflict, resolution, replacement?)
+        PageRequested(replica, page)
+        PageDelivered(replica, page, origin)
 
     contracts:
         fulfils MaximallyFluidLocalFirstWorkspace
@@ -365,6 +470,12 @@ surface LocalFirstWorkspace {
     @guarantee LocalFirstMeansFirst
         -- The local replica is not a cache consulted when the server is slow. It is the
         -- workspace the participant uses. The network reconciles work already done.
+
+    @guarantee WhatWasReadStays
+        -- A page that has been read is readable again on that device without a
+        -- server, and writable there too. Nothing is replicated in advance: reading
+        -- is what selects, which is both the cheapest possible policy and the only
+        -- one that follows a person's attention instead of guessing at it.
 
     @guarantee FluencyIsEndToEnd
         -- Fast keystrokes are insufficient if Enter, navigation, Markdown, a map redraw
@@ -378,7 +489,13 @@ surface LocalFirstWorkspace {
 ------------------------------------------------------------
 
 open question "What device-level latency budgets will define perceptual immediacy for text, structural gestures, navigation and derived projections?"
-open question "How much of a large graph must be replicated initially on storage-constrained devices, and what remains available before full hydration?"
+-- Answered in part: nothing is replicated initially, so there is no interval before
+-- full hydration to be available during. What is retained is what was read, bounded,
+-- dropped by last read. What that leaves open is narrower and is below.
+
+open question "Beyond the pages that were read, should anything be retained ahead of being asked for — the day in progress, what an open page links to — and does pulling in neighbours defeat the point of letting attention do the selecting?"
+
+open question "What sets the retention bound on a device whose storage Vera cannot measure, and should a participant be able to say 'keep this page whatever happens' for the ones they need on a plane?"
 open question "What happens to pending work when authentication expires while a device is offline?"
 open question "Which local data is retained or erased on sign-out, device transfer and participant removal?"
 open question "What recovery path preserves pending work when durable local storage is full, unavailable or corrupted?"

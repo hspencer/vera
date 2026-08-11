@@ -762,6 +762,8 @@ async function processPage(
    */
   const pending = pendingLine(log);
   pending.say('pidiendo al servidor que la procese', 'process:start');
+  /** Si el proceso se cortó a mitad, para no recordar un fallo como una duración. */
+  let broke = false;
 
   const step = (text: string, kind: 'doing' | 'ok' | 'bad' | 'note' = 'doing'): HTMLElement => {
     const line = document.createElement('li');
@@ -947,11 +949,16 @@ async function processPage(
     }
   } catch {
     step('se perdió la conexión con el servidor a mitad', 'bad');
+    broke = true;
     return;
   } finally {
     // Una línea de espera que sobrevive al proceso es la peor forma de mentir:
     // parece que sigue habiendo algo.
-    pending.close();
+    //
+    // Y lo que se cortó a mitad no se anota como medida: si perder la conexión
+    // al segundo tres contara, unas cuantas caídas convencerían a Vera de que el
+    // modelo local contesta en tres segundos, y se lo prometería a quien mire.
+    pending.close(broke ? 'failed' : 'succeeded');
   }
 
   if (reading === null) {

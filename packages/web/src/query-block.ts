@@ -10,6 +10,7 @@
 // cree.
 
 import { api, type QueryAnswer, type QueryHit, type QuerySort } from './api.ts';
+import { countInto } from './waiting.ts';
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
@@ -75,13 +76,43 @@ export function answerQueryBlock(
     answer.innerHTML = '';
     const waiting = document.createElement('p');
     waiting.className = 'query-waiting';
-    waiting.textContent = 'preguntando…';
     answer.append(waiting);
 
-    void api.query(source, sort).then((said) => {
-      answer.innerHTML = '';
-      answer.append(...drawAnswer(said, handlers, ask));
-    });
+    /*
+     * Una pregunta puede cruzar el corpus entero, y eso se nota.
+     *
+     * La cuenta va donde va a salir la respuesta, que es donde se está mirando.
+     */
+    const counting = countInto(waiting, 'preguntando…', 'query:ask');
+
+    void api.query(source, sort).then(
+      (said) => {
+        counting.close();
+        answer.innerHTML = '';
+        answer.append(...drawAnswer(said, handlers, ask));
+      },
+      /*
+       * Y si la pregunta no llega a contestarse, se dice.
+       *
+       * No había rama de fallo: sin servidor, el bloque se quedaba en
+       * «preguntando…» para siempre, que es exactamente la mentira que una
+       * espera puede contar —parece que sigue habiendo algo cuando ya no lo hay.
+       */
+      (error: unknown) => {
+        counting.close('failed');
+        answer.innerHTML = '';
+        const said = document.createElement('p');
+        said.className = 'query-error';
+        said.textContent = `no se pudo preguntar: ${error instanceof Error ? error.message : 'sin conexión con el corpus'}`;
+        const again = document.createElement('button');
+        again.type = 'button';
+        again.className = 'query-sort';
+        again.textContent = 'volver a preguntar';
+        again.addEventListener('click', () => ask(sort));
+        said.append(' ', again);
+        answer.append(said);
+      },
+    );
   };
 
   ask();

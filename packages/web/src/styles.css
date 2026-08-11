@@ -2478,6 +2478,32 @@ code {
   border-right: 1px solid var(--rule);
 }
 
+/*
+ * El mapa que no se pudo poner al día.
+ *
+ * El vecindario de una página se calcula sobre el grafo entero, y eso es lo
+ * único que no cabe en un aparato: sin corpus no hay mapa nuevo. Lo que queda a
+ * la vista es el anterior, y por eso se atenúa —sigue orientando y ya no dice
+ * ser el de lo que está abierto. Ver `drawGraph` en main.ts. */
+#graph.map-stale > :not(.map-unavailable):not(#map-controls):not(#map-trail) {
+  opacity: 0.35;
+}
+
+.map-unavailable {
+  position: absolute;
+  left: 50%;
+  bottom: 1.2rem;
+  transform: translateX(-50%);
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  background: var(--surface);
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+}
+
 
 /* --- Panel de tokens --------------------------------------------------- */
 
@@ -3689,6 +3715,18 @@ code {
 }
 
 /*
+ * Y lo mismo para cualquier otra cosa que esté contando.
+ *
+ * La pone y la quita `countInto` mientras dura la espera. Es una sola regla y no
+ * un estilo por sitio a propósito: el botón de transcribir, el bloque de una
+ * pregunta y el título de una página que viene son la misma espera contada, y si
+ * cada uno la escribiera a su manera dejarían de parecerlo.
+ */
+.counting {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
  * Una observación sobre la forma de la página. Ni logro ni fallo: algo que se vio.
  *
  * Se marca distinto de las otras tres a propósito —@guarantee
@@ -3861,6 +3899,7 @@ code {
 .query-waiting,
 .query-count,
 .query-empty,
+.query-error,
 .query-problem {
   margin: 0.2rem 0;
   color: var(--text-dim);
@@ -3878,6 +3917,10 @@ code {
    lo rompe al lado: un error que no señala dónde obliga a leer la línea entera
    buscando qué sobra. */
 .query-problem { color: var(--voice); }
+
+/* Y lo que no se pudo ni preguntar, que es otra cosa: la pregunta está bien y
+   quien tenía que contestarla no estaba. Por eso lleva con qué reintentar. */
+.query-error { color: var(--voice); }
 .query-problem::before { content: '✗ '; }
 
 .query-near {
@@ -5632,6 +5675,34 @@ code {
   font-family: var(--font-ui);
   font-size: 0.8rem;
   color: var(--voice);
+}
+
+/* Y la cuenta de cuánto lleva abriéndose, debajo del título.
+ *
+ * Centrada bajo lo que se está esperando, que es donde está mirando quien
+ * espera. Ver specs/waiting.allium, @guarantee TheCountIsWhereTheGestureWas. */
+.awaiting-elapsed {
+  display: block;
+  margin-top: 0.6rem;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  /* Tabular para que el número no empuje el texto de al lado al pasar de 9 a
+     10: un renglón que se mueve cada segundo es una animación disfrazada. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* De dónde salió lo que se está leyendo.
+ *
+ * Ver `markShowing` en main.ts. Sólo aparece cuando la página vino de lo que el
+ * aparato tenía guardado, así que no compite con nada el resto del tiempo. */
+.page-kept {
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 0.35rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--text-dim);
 }
 
 

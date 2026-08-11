@@ -1,10 +1,19 @@
 // Service worker de Vera.
 //
-// v0 sólo hace instalable la aplicación y cachea su propio armazón. El ciclo
-// offline real —cola local de operaciones y reconciliación— es la fase
-// siguiente, y por eso aquí NO se cachea ninguna respuesta de /operations ni de
-// las lecturas del grafo: servir grafo viejo sin poder escribir sería peor que
-// decir que no hay red.
+// Aquí se cachea el armazón: lo que hace que Vera abra sin red. Nada más.
+//
+// Ninguna lectura del grafo pasa por este caché, y ahora que Vera sí lee sin
+// servidor conviene decir por qué, porque parece una omisión y no lo es. Un
+// caché de service worker no sabe si hay red: contesta con lo que tiene y no
+// hay forma de que quien pregunta se entere de que la respuesta es de ayer. Lo
+// retenido de las páginas leídas vive en IndexedDB —ver `src/held.ts`— y sólo
+// se consulta cuando la petición al servidor falla de verdad, así que con red
+// se lee lo que el corpus dice ahora y sin red se lee lo de la última vez,
+// dicho. Cachear `/pages` aquí volvería a lo de antes: datos viejos servidos
+// como si fueran de ahora, sin nadie a quien preguntarle.
+//
+// Escribir tampoco pasa por aquí. `/operations` sale por la bandeja durable de
+// `src/outbox.ts`, que reintenta cuando vuelve la red.
 
 // Subir este número tira el caché anterior entero al activarse. Hace falta
 // cuando lo guardado deja de ser válido, y no sólo cuando cambia esta lista.

@@ -62,6 +62,16 @@ export function usuallyTakes(key: string): number | null {
     : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
 }
 
+/**
+ * Cómo salió lo que se estaba esperando.
+ *
+ * Importa para recordar: sólo se anota lo que terminó bien. Un proceso que falló
+ * al segundo segundo no tardó dos segundos en hacerse —tardó dos segundos en
+ * fallar—, y guardarlo como lo primero prometería una velocidad que Vera no tiene.
+ * Ver rule RememberWhatTheWorkTook en specs/waiting.allium.
+ */
+export type Outcome = 'succeeded' | 'failed';
+
 /** Anota lo que tardó, para poder decirlo la próxima vez. */
 export function remember(key: string, took: number): void {
   if (key === '' || took < THRESHOLD) return;
@@ -82,6 +92,91 @@ export function saySeconds(ms: number): string {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return rest === 0 ? `${minutes} min` : `${minutes} min ${rest} s`;
+}
+
+/**
+ * Lo que se lee de una espera en curso: cuánto lleva, y cuánto suele durar.
+ *
+ * Devuelve la cadena vacía mientras no haya nada que decir, que es el umbral
+ * hecho valor de retorno: quien la use no tiene que acordarse de la regla.
+ */
+export function elapsedSaid(took: number, key: string | null): string {
+  if (took < THRESHOLD) return '';
+  const usual = key === null ? null : usuallyTakes(key);
+  /*
+   * Lo que suele tardar se dice mientras se está dentro de lo normal, y se calla
+   * cuando se pasa: repetir «suele tardar 20 s» en el segundo cuarenta es la
+   * máquina insistiendo en algo que ya no es cierto, y quien mira lo lee como
+   * burla. A partir de ahí sólo queda el número, que es lo que hay.
+   */
+  const say = usual !== null && took < usual * 1.5 ? ` · suele tardar ~${saySeconds(usual)}` : '';
+  return `${saySeconds(took)}${say}`;
+}
+
+/**
+ * Contar dentro de un elemento cualquiera.
+ *
+ * `pendingLine` cuenta en el registro de procesar, que es una lista de pasos. Casi
+ * todas las esperas de Vera no son eso: son un botón que se quedó pulsado, una
+ * pregunta que aún no tiene respuesta, una página que todavía no llega. Este es el
+ * mismo mecanismo sin la lista.
+ *
+ * El elemento pasa a ser suyo mientras dura: se le escribe el texto entero. La
+ * cuenta aparece donde estaba la mano —el botón que se pulsó, el sitio donde va a
+ * salir la respuesta— y no en un rincón de estado de la máquina. @guarantee
+ * TheCountIsWhereTheGestureWas.
+ */
+export interface Counting {
+  /** Cuánto lleva. */
+  elapsed(): number;
+  /** Se acabó. Anota lo que tardó si salió bien, y deja de escribir. */
+  close(outcome?: Outcome): void;
+}
+
+export function countInto(
+  element: HTMLElement,
+  label: string,
+  key: string | null = null,
+  options: {
+    now?: () => number;
+    /**
+     * Desde cuándo se cuenta, si el trabajo empezó antes que la cuenta.
+     *
+     * Lo que se espera de una página empieza a esperarse al pedirla, y el aviso
+     * sólo se pinta si tarda. Contando desde el aviso, una espera de cuatro
+     * segundos se anunciaría como de tres, y la que Vera recordara sería la que
+     * no ocurrió.
+     */
+    since?: number;
+  } = {},
+): Counting {
+  const now = options.now ?? Date.now;
+  const started = options.since ?? now();
+  let ticking: ReturnType<typeof setInterval> | null = null;
+
+  const draw = (): void => {
+    const said = elapsedSaid(now() - started, key);
+    element.textContent = said === '' ? label : label === '' ? said : `${label} · ${said}`;
+  };
+
+  // Cifras de ancho fijo mientras cuenta: sin esto el número empuja lo que tenga
+  // al lado al pasar de 9 a 10, y un renglón que se mueve solo es una animación
+  // disfrazada, que es justamente lo que esto viene a no hacer.
+  element.classList.add('counting');
+  draw();
+  // Cada medio segundo y no cada segundo: con un segundo justo, el número salta
+  // de 3 a 5 cuando el reloj y la cuenta van desfasados.
+  ticking = setInterval(draw, 500);
+
+  return {
+    elapsed: () => now() - started,
+    close(outcome = 'succeeded') {
+      if (ticking !== null) clearInterval(ticking);
+      ticking = null;
+      element.classList.remove('counting');
+      if (key !== null && outcome === 'succeeded') remember(key, now() - started);
+    },
+  };
 }
 
 /**
@@ -109,8 +204,14 @@ export interface Pending {
   say(text: string, key?: string | null): void;
   /** Cuánto lleva esperándose lo de ahora. */
   elapsed(): number;
-  /** Se acabó. Anota lo que tardó lo último y quita la línea. */
-  close(): void;
+  /**
+   * Se acabó. Anota lo que tardó lo último —si salió bien— y quita la línea.
+   *
+   * Lo que se cortó a mitad no se anota: si perder la conexión al segundo tres
+   * contara como una medida, unas cuantas caídas convencerían a Vera de que
+   * procesar una página tarda tres segundos, y lo prometería.
+   */
+  close(outcome?: Outcome): void;
   /** El elemento, para poder insertar los pasos hechos por encima de él. */
   element: HTMLElement;
 }
@@ -130,20 +231,8 @@ export function pendingLine(host: HTMLElement, now: () => number = Date.now): Pe
   let ticking: ReturnType<typeof setInterval> | null = null;
 
   const draw = (): void => {
-    const took = now() - started;
-    if (took < THRESHOLD) {
-      elapsed.textContent = '';
-      return;
-    }
-    const usual = key === null ? null : usuallyTakes(key);
-    /*
-     * Lo que suele tardar se dice mientras se está dentro de lo normal, y se
-     * calla cuando se pasa: repetir «suele tardar 20 s» en el segundo cuarenta
-     * es la máquina insistiendo en algo que ya no es cierto, y quien mira lo lee
-     * como burla. A partir de ahí sólo queda el número, que es lo que hay.
-     */
-    const say = usual !== null && took < usual * 1.5 ? ` · suele tardar ~${saySeconds(usual)}` : '';
-    elapsed.textContent = ` … ${saySeconds(took)}${say}`;
+    const said = elapsedSaid(now() - started, key);
+    elapsed.textContent = said === '' ? '' : ` … ${said}`;
   };
 
   return {
@@ -161,11 +250,11 @@ export function pendingLine(host: HTMLElement, now: () => number = Date.now): Pe
       ticking = setInterval(draw, 500);
       draw();
     },
-    close() {
+    close(outcome = 'succeeded') {
       // Idempotente: se cierra desde el `finally` y puede haberse cerrado antes
       // en una salida temprana, y anotar dos veces la misma espera falsearía la
       // memoria de cuánto tarda.
-      if (key !== null) remember(key, now() - started);
+      if (key !== null && outcome === 'succeeded') remember(key, now() - started);
       key = null;
       if (ticking !== null) clearInterval(ticking);
       ticking = null;
