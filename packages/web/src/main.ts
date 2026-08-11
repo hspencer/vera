@@ -6,6 +6,7 @@
 import './styles.css';
 
 import { api, onSubmissionActivity, type PageSummary, type PageView } from './api.ts';
+import { applyLocally, blockPropertiesOf, blocksOf, seed, type Replica } from './replica.ts';
 import {
   allowEmbedsFrom,
   nameProperties,
@@ -98,6 +99,8 @@ let pages: PageSummary[] = [];
 function wireSubmissionState(): void {
   const indicator = $('#sync-state');
   const pending = new Set<string>();
+  /** Los que ya están aplicados aquí, para no llamar espera a lo que no lo es. */
+  const here = new Set<string>();
   let clearTimer: number | undefined;
 
   const say = (state: string, message: string, title = ''): void => {
@@ -109,15 +112,52 @@ function wireSubmissionState(): void {
 
   onSubmissionActivity((activity) => {
     window.clearTimeout(clearTimer);
+
+    /*
+     * Aplicado en casa: hecho, y todavía sin viajar.
+     *
+     * No se dice «guardando», porque no se está esperando nada para poder
+     * seguir; se dice que está aquí. Y no se dice «sincronizado», porque otros
+     * aparatos no lo saben todavía y la bandeja aún no es durable —paso 3—, así
+     * que cerrar la pestaña ahora mismo lo rompe.
+     * @invariant SilenceNeverPretendsToBeSuccess.
+     */
+    if (activity.phase === 'local') {
+      pending.add(activity.originId);
+      here.add(activity.originId);
+      say(
+        'local',
+        pending.size === 1 ? 'aquí' : `aquí · ${pending.size}`,
+        'Aplicado en este aparato. Viajando al corpus.',
+      );
+      return;
+    }
+
+    /*
+     * Que algo esté viajando no es una espera si ya está aplicado aquí.
+     *
+     * Decir «guardando…» sobre un cambio que ya ocurrió invita a esperar a que
+     * termine algo que no hace falta esperar, y ése era justo el hábito que la
+     * fase local-first viene a quitar. Sólo lo que no se pudo aplicar en casa
+     * —crear una página, renombrarla— es una espera de verdad, y ésa se dice.
+     */
     if (activity.phase === 'sending') {
       pending.add(activity.originId);
+      if (here.has(activity.originId)) return;
       say('synchronising', pending.size === 1 ? 'guardando…' : `guardando ${pending.size}…`);
       return;
     }
 
     pending.delete(activity.originId);
+    const wasLocal = here.delete(activity.originId);
     if (activity.phase === 'offline') {
-      say('offline', 'sin conexión', 'Lo escrito sigue en el editor, pero aún no está guardado.');
+      say(
+        'offline',
+        'sin conexión',
+        wasLocal
+          ? 'Aplicado en este aparato. Volverá a intentarlo cuando haya red; cerrar la pestaña todavía lo pierde.'
+          : 'Lo escrito sigue en el editor, pero aún no está guardado.',
+      );
       return;
     }
     if (activity.phase === 'rejected') {
@@ -619,6 +659,17 @@ async function openPage(
     saveTrace(workspace.trace);
   }
 
+  /*
+   * Y la réplica de lo que se acaba de abrir.
+   *
+   * Se siembra con lo que el servidor entregó y a partir de aquí es ella la que
+   * contesta qué pasó al aplicar un gesto. @invariant TheHandNeverWaitsForTheNetwork.
+   */
+  openView = page;
+  replica = seed(page);
+  derivedStale = false;
+  window.clearTimeout(catchUpTimer);
+
   renderOutliner(text, page, callbacksFor(page), focus, workspace.focusRoot);
 
   // Un día no se lee solo: se sigue leyendo hacia atrás. Ver `continueBackwards`.
@@ -780,6 +831,35 @@ function continueBackwards(from: string, keptScroll: number): void {
  * necesita saber de cuál es hijo— y compartirlos habría hecho que escribir en el
  * día de abajo creara bloques en el de arriba.
  */
+/**
+ * Lo derivado se pone al día cuando nadie está escribiendo.
+ *
+ * La réplica sabe cómo quedó el árbol y no sabe quién nombra a esta página desde
+ * el resto del corpus. Eso hay que ir a buscarlo, y no puede hacerse en el camino
+ * del gesto —sería volver a esperar a la red, que es lo que se vino a quitar—.
+ *
+ * Se espera a que el cursor no esté en ninguna parte. Volver a dibujar la página
+ * con alguien escribiendo dentro le quitaría el foco a mitad de una frase, y un
+ * retroenlace que llega dos segundos tarde no vale eso. Mientras haya un cursor
+ * puesto, se vuelve a esperar.
+ */
+function catchUp(): void {
+  if (!derivedStale) return;
+  window.clearTimeout(catchUpTimer);
+  catchUpTimer = window.setTimeout(() => {
+    const at = document.activeElement;
+    const writing =
+      at instanceof HTMLTextAreaElement || at instanceof HTMLInputElement ||
+      (at instanceof HTMLElement && at.isContentEditable);
+    if (writing) {
+      catchUp();
+      return;
+    }
+    derivedStale = false;
+    if (workspace.activePage !== null) void openPage(workspace.activePage);
+  }, 2000);
+}
+
 function callbacksFor(page: PageView): OutlinerCallbacks {
   return {
     // Pulsar el nombre de otra página dentro del texto que se lee.
@@ -797,10 +877,28 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
         revealBlock(block),
       );
     },
-    // Un cambio estructural rehace la página desde el grafo y devuelve el cursor
-    // donde el modelo dice que quedó. Parchear el árbol dibujado en vez de
-    // volver a pedirlo sería mantener una segunda idea de cómo quedó.
+    /*
+     * Un cambio estructural rehace la página desde el modelo y devuelve el cursor
+     * donde el modelo dice que quedó.
+     *
+     * Desde el modelo local, no desde el servidor. Esto decía —y era cierto—
+     * que parchear el árbol dibujado sería mantener una segunda idea de cómo
+     * quedó; la conclusión era volver a pedir la página, y costaba 125 ms y 62 KB
+     * por cada Enter. La segunda idea no hacía falta: el dominio corre aquí, así
+     * que hay un modelo de verdad al que preguntarle, y es el mismo que el
+     * servidor va a aplicar. @invariant TheHandNeverWaitsForTheNetwork.
+     *
+     * Lo derivado —quién nombra a esta página, qué cruces tiene— no sale de una
+     * página sola, así que se pone al día aparte y sin prisa. Ver `catchUp`.
+     */
     onReload: (focus) => {
+      if (replica !== null && openView !== null && workspace.activePage === replica.page) {
+        openView.blocks = blocksOf(replica);
+        openView.blockProperties = blockPropertiesOf(replica);
+        renderOutliner($('#text'), openView, callbacksFor(openView), focus, workspace.focusRoot);
+        catchUp();
+        return;
+      }
       if (workspace.activePage !== null) void openPage(workspace.activePage, focus);
     },
     // @invariant FocusBoundsTheStructure: con la vista enraizada en un bloque,
@@ -985,6 +1083,26 @@ async function openTitle(title: string, gesture: NavigationGesture): Promise<voi
  * vuelve a ser una página como las demás, con su nodo y sus enlaces, y así es
  * como se le encuentra sin saber que existía.
  */
+/*
+ * La réplica de la página abierta, y la página tal como se está mirando.
+ *
+ * Una réplica no sobrevive a cambiar de página: sostiene un árbol, y al abrir
+ * otra deja de describir lo que hay delante. Ver specs/offline-reconciliation.allium
+ * y docs/plan-local-first.md.
+ */
+let replica: Replica | null = null;
+let openView: PageView | null = null;
+/**
+ * Lo derivado que dejó de ser cierto: retroenlaces, referencias, cruces.
+ *
+ * La réplica sostiene una página y eso no alcanza para recalcular a quién nombra
+ * el corpus entero. @invariant RenderingFollowsChangedMeaning: se marca cuando
+ * cambió el texto —que es lo único que produce enlaces— y no cada vez que pasa
+ * algo.
+ */
+let derivedStale = false;
+let catchUpTimer: number | undefined;
+
 let openTrail: ThreadSettings | null = null;
 
 let graphTurn = 0;
@@ -1806,6 +1924,22 @@ function wireDivider(): void {
 async function start(): Promise<void> {
   wireTheme();
   wireSubmissionState();
+
+  /*
+   * Quién aplica un cambio en casa antes de que salga a la red.
+   *
+   * `api` no sabe qué es una réplica y no debe saberlo: es el transporte. Aquí
+   * se le dice a quién preguntar, y la respuesta gobierna si el gesto espera.
+   * Ver specs/offline-reconciliation.allium, rule AcceptChangeIntoAvailableReplica.
+   */
+  api.writesLocally((change, origin) => {
+    if (replica === null) return null;
+    const said = applyLocally(replica, change, origin);
+    if (said.kind === 'defer') return null;
+    if (said.kind === 'rejected') return { applied: false, reason: said.reason };
+    if (said.staleDerived) derivedStale = true;
+    return { applied: true, subjectId: said.subjectId };
+  });
 
   // Lo recordado del participante llega del servidor y puede diferir de lo que
   // este navegador tenía. Se pide después de pintar, no antes: dibujar con lo

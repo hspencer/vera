@@ -304,7 +304,13 @@ export interface BroughtItem {
 }
 
 export type Change =
-  | { kind: 'create_page'; title: string; visibility: 'private' | 'public' }
+  | {
+      kind: 'create_page';
+      title: string;
+      visibility: 'private' | 'public';
+      /** El nombre que le pone quien la crea. Ver `named` y `mint`. */
+      stableId?: string | undefined;
+    }
   | { kind: 'rename_page'; page: string; title: string }
   | { kind: 'set_page_visibility'; page: string; visibility: 'private' | 'public' }
   // Sólo se borra una página vacía. Vaciarla es una secuencia de `remove_block`,
@@ -312,7 +318,15 @@ export type Change =
   // página no es un acto único que se traga cuanto hubiera dentro sin dejar
   // rastro de qué había.
   | { kind: 'remove_page'; page: string }
-  | { kind: 'create_block'; page: string; parent: string | null; position: number; content: string }
+  | {
+      kind: 'create_block';
+      page: string;
+      parent: string | null;
+      position: number;
+      content: string;
+      /** El nombre que le pone quien lo crea. Ver `named` y `mint`. */
+      stableId?: string | undefined;
+    }
   | { kind: 'edit_block'; block: string; content: string }
   // Indentar, desindentar y mudar a los hijos de un bloque que se fusiona son
   // todos el mismo cambio: el bloque pasa a colgar de otro padre, en un índice.
@@ -367,6 +381,15 @@ export type SubmitResult =
   | { status: 'rejected'; reason: string };
 
 export type SubmissionActivity =
+  /**
+   * Aplicado en casa, todavía sin viajar.
+   *
+   * No es «guardando»: es que ya está hecho donde se está trabajando, y lo que
+   * falta es que otros aparatos se enteren. Mientras la bandeja no sea durable
+   * —paso 3 de docs/plan-local-first.md— esto sigue siendo una promesa que
+   * cerrar la pestaña rompe, y por eso se dice aparte de `synchronised`.
+   */
+  | { phase: 'local'; originId: string }
   | { phase: 'sending'; originId: string; startedAt: number }
   | { phase: 'synchronised'; originId: string; durationMs: number; sequence: number }
   | { phase: 'rejected'; originId: string; durationMs: number; reason: string }
@@ -397,6 +420,56 @@ function reportSubmission(activity: SubmissionActivity): void {
  */
 function originId(): string {
   return `web:${crypto.randomUUID()}`;
+}
+
+/**
+ * La identidad de lo que se acaba de crear, acuñada aquí.
+ *
+ * Sin coordinación con nadie, porque coordinarse es esperar. El servidor cuenta
+ * —`block:1`, `block:2`— y por eso ésta no cuenta: un sufijo que no es un número
+ * no puede chocar con el suyo ni mover su contador, que sólo mira los números
+ * para no repetirlos. Ver `#observeId` en graph.ts.
+ *
+ * @invariant TheHandNeverWaitsForTheNetwork: sin esto, crear algo obliga a
+ * preguntar cómo se llama lo creado, y preguntar es esperar.
+ */
+export function mint(prefix: 'block' | 'page'): string {
+  return `${prefix}:${crypto.randomUUID()}`;
+}
+
+/**
+ * Un cambio que crea algo, con el nombre de lo que crea ya puesto.
+ *
+ * Lo que ya venía bautizado se respeta: la importación trae los identificadores
+ * que el corpus tenía en Logseq, y reescribirlos rompería las referencias que
+ * existían fuera de Vera.
+ */
+export function named(change: Change): Change {
+  if (change.kind === 'create_block' && change.stableId === undefined) {
+    return { ...change, stableId: mint('block') };
+  }
+  if (change.kind === 'create_page' && change.stableId === undefined) {
+    return { ...change, stableId: mint('page') };
+  }
+  return change;
+}
+
+/**
+ * Quién aplica un cambio en casa antes de que salga a la red.
+ *
+ * Lo instala el espacio de trabajo, que es quien sostiene la réplica de la página
+ * abierta; `api` no sabe qué es una réplica y no debe saberlo. Devolver `null`
+ * —o que no haya ninguno puesto— deja el camino de siempre: preguntar y esperar.
+ */
+export type LocalWrite = (
+  change: Change,
+  originId: string,
+) => { applied: true; subjectId: string } | { applied: false; reason: string } | null;
+
+let writeLocally: LocalWrite | null = null;
+
+function setLocalWriter(writer: LocalWrite | null): void {
+  writeLocally = writer;
 }
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
@@ -720,6 +793,14 @@ export const api = {
    * pantalla llega con denominación de origen humana, como una grabación, y el
    * bloque lo conserva. Ver specs/hand-drawing.allium.
    */
+  /**
+   * Quién aplica un cambio en casa antes de que salga a la red.
+   *
+   * Lo instala el espacio de trabajo, que es quien sostiene la réplica de la
+   * página abierta. Sin nadie puesto, todo sigue el camino de siempre.
+   */
+  writesLocally: setLocalWriter,
+
   async submit(
     change: Change,
     /*
@@ -730,6 +811,58 @@ export const api = {
     channel: 'typed_text' | 'drawn' | 'walked' = 'typed_text',
   ): Promise<SubmitResult> {
     const origin = originId();
+
+    /*
+     * Lo que se crea se bautiza aquí, siempre.
+     *
+     * Y «siempre» no es por gusto: sin esto, la réplica le pone al bloque nuevo
+     * el nombre que dice su propio contador —`block:1`— y el servidor le pone el
+     * suyo —`block:8`—, y a partir de ahí las dos hablan de cosas distintas.
+     * Costó verlo una vez en el navegador: se escribía una palabra en el bloque
+     * recién creado, la pantalla la enseñaba, y el servidor rechazaba la edición
+     * con «no such block» porque ese nombre allí no existía. La palabra se
+     * perdía, y la pantalla seguía enseñándola.
+     *
+     * Bautizar antes de aplicar cierra eso de raíz: hay un solo nombre desde el
+     * principio, y es el que viaja.
+     */
+    change = named(change);
+
+    /*
+     * Primero en casa, y la red después.
+     *
+     * @invariant TheHandNeverWaitsForTheNetwork. Lo que la réplica sabe aplicar
+     * se aplica aquí y se contesta aquí; el viaje ocurre sin que nadie lo espere.
+     * Lo que no sabe —crear una página, renombrarla: cosas que tocan enlaces que
+     * la réplica de una página no tiene— sigue el camino de siempre, porque una
+     * respuesta local que no puede ser correcta es peor que esperar.
+     *
+     * Una negativa local no viaja. Es la misma que habría dado el servidor
+     * —sale del mismo dominio, no de una comprobación paralela— así que mandarla
+     * a preguntar sólo añadiría el tiempo de que se la repitan.
+     */
+    const local = writeLocally?.(change, origin) ?? null;
+    if (local !== null && !local.applied) {
+      return { status: 'rejected', reason: local.reason };
+    }
+    if (local !== null) {
+      reportSubmission({ phase: 'local', originId: origin });
+      void this.send(change, channel, origin).catch(() => {
+        // La red ya avisó por su cuenta —fase `offline`— y quien llamó no está
+        // esperando esto. Tragarlo aquí evita un rechazo sin dueño en la consola.
+      });
+      return { status: 'applied', sequence: 0, subjectId: local.subjectId };
+    }
+
+    return this.send(change, channel, origin);
+  },
+
+  /** El viaje, que a partir de ahora puede ocurrir con nadie esperándolo. */
+  async send(
+    change: Change,
+    channel: 'typed_text' | 'drawn' | 'walked',
+    origin: string,
+  ): Promise<SubmitResult> {
     const startedAt = performance.now();
     reportSubmission({ phase: 'sending', originId: origin, startedAt });
 

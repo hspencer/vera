@@ -1,0 +1,226 @@
+// La réplica local de la página abierta.
+//
+// Ver specs/offline-reconciliation.allium. @invariant TheHandNeverWaitsForTheNetwork:
+// un gesto se aplica aquí y se dibuja desde aquí; la red viene después a poner de
+// acuerdo lo ya hecho.
+//
+// No hay una segunda implementación del dominio. La réplica es un `VeraGraph` de
+// verdad —el mismo que corre en el servidor— sembrado con lo que el servidor
+// entregó de esta página. Eso importa más de lo que parece: si el cliente
+// decidiera por su cuenta qué es un `move_block` válido, tarde o temprano diría
+// que sí donde el servidor dice que no, y el participante vería su bloque moverse
+// y volver. Aquí las negativas son literalmente las mismas, porque son el mismo
+// código.
+//
+// `@vera/core` no tiene una sola dependencia de `node:`, así que esto no cuesta
+// nada: el dominio ya corría en un navegador, sólo que nadie lo había puesto.
+//
+// Lo que la réplica NO sabe es lo derivado de todo el corpus: retroenlaces,
+// referencias, cruces, medios. Eso sigue viniendo del servidor y se pone al día
+// aparte, fuera del camino del gesto. Ver `staleAfter`.
+
+import { VeraGraph, type Change } from '@vera/core';
+import type { BlockView, PageView } from './api.ts';
+
+/** Quién escribe, mientras las personas no se autentiquen ante Vera. */
+const LOCAL = 'participant:local';
+
+export interface Replica {
+  /** La página que sostiene. Una réplica no sobrevive a cambiar de página. */
+  readonly page: string;
+  readonly graph: VeraGraph;
+}
+
+/**
+ * Siembra una réplica con la página que el servidor entregó.
+ *
+ * Se replantan los bloques con la identidad que ya tienen, que es lo que hace
+ * que aplicar un cambio aquí y aplicarlo allá den el mismo árbol. Y en el orden
+ * en que el servidor los mandó: `position` viaja con cada bloque, así que el
+ * orden se conserva aunque la siembra no lo respetara.
+ */
+export function seed(page: PageView): Replica {
+  const graph = VeraGraph.create({ name: 'local' });
+  graph.addParticipant({ id: LOCAL, name: 'quien escribe', kind: 'human' });
+  graph.admit(LOCAL);
+
+  let at = 0;
+  const submit = (change: Change): void => {
+    at += 1;
+    graph.submitOperation({
+      originId: `seed:${at}`,
+      participant: LOCAL,
+      channel: 'typed_text',
+      change,
+    });
+  };
+
+  submit({ kind: 'create_page', title: page.title, visibility: page.visibility, stableId: page.id });
+
+  /*
+   * Los padres antes que los hijos.
+   *
+   * `create_block` rechaza un padre que todavía no existe, y el servidor manda
+   * los bloques en el orden del árbol pero nada lo promete. Se recorre por
+   * niveles: primero los que cuelgan de la página, después los que cuelgan de
+   * los ya plantados, hasta que no quede ninguno que se pueda plantar.
+   */
+  const pending = [...page.blocks];
+  const planted = new Set<string>();
+  let growing = true;
+  while (growing && pending.length > 0) {
+    growing = false;
+    for (let index = pending.length - 1; index >= 0; index -= 1) {
+      const block = pending[index];
+      if (block === undefined) continue;
+      if (block.parent !== null && !planted.has(block.parent)) continue;
+      submit({
+        kind: 'create_block',
+        page: page.id,
+        parent: block.parent,
+        position: block.position,
+        content: block.content,
+        stableId: block.stableId,
+      });
+      planted.add(block.stableId);
+      pending.splice(index, 1);
+      growing = true;
+    }
+  }
+
+  // Lo que cuelga de cada bloque, que el corpus trae de Logseq y sostiene el
+  // plazo de una tarea y el testimonio de un cruce.
+  for (const [block, said] of Object.entries(page.blockProperties ?? {})) {
+    for (const one of said) {
+      submit({ kind: 'set_property', block, propertyKey: one.key, propertyValue: one.value });
+    }
+  }
+  for (const one of page.properties) {
+    submit({ kind: 'set_property', page: page.id, propertyKey: one.key, propertyValue: one.value });
+  }
+
+  return { page: page.id, graph };
+}
+
+/** Lo que sale de aplicar un cambio en casa. */
+export type LocalOutcome =
+  | { kind: 'applied'; subjectId: string; blocks: BlockView[]; staleDerived: boolean }
+  /** El dominio dijo que no, y lo dijo aquí: no hubo viaje. */
+  | { kind: 'rejected'; reason: string }
+  /** Esto no se sabe aplicar en casa; que lo conteste el servidor. */
+  | { kind: 'defer' };
+
+/**
+ * Qué cambios sabe aplicar la réplica de una sola página.
+ *
+ * Los que empiezan y terminan dentro de ella. Crear una página, renombrarla o
+ * borrarla tocan cosas que esta réplica no tiene —los enlaces que la nombran
+ * desde otras páginas, la lista de títulos— y por eso se difieren en vez de
+ * fingirse: una respuesta local que no puede ser correcta es peor que esperar.
+ */
+const AT_HOME = new Set([
+  'create_block',
+  'edit_block',
+  'move_block',
+  'remove_block',
+  'set_property',
+  'remove_property',
+]);
+
+/**
+ * Lo derivado que el cambio pudo mover, y que la réplica no puede recalcular.
+ *
+ * Sólo el texto de un bloque produce enlaces, etiquetas y cruces. Mover, plegar
+ * o reordenar no cambian a quién nombra la página, así que no ensucian nada de
+ * lo que vino del servidor. @invariant RenderingFollowsChangedMeaning: lo
+ * derivado se recalcula cuando cambiaron sus entradas, y no porque algo pasara.
+ */
+function touchesDerived(change: Change): boolean {
+  return change.kind === 'edit_block' || change.kind === 'create_block' || change.kind === 'remove_block';
+}
+
+/**
+ * ¿El sujeto de este cambio vive en esta réplica?
+ *
+ * Es una condición de corrección y no una optimización. La réplica sostiene una
+ * página; un cambio sobre un bloque de otra se rechazaría aquí con «no such
+ * block» —que es verdad en esta réplica y mentira en el corpus— y quien escribió
+ * vería una negativa inventada sobre algo que existe. Media docena de sitios
+ * escriben en páginas que no son la abierta: la tabla de la puerta MCP, la de
+ * una conexión de servicio, promover un rastro.
+ *
+ * Lo que no se pueda contestar con lo que hay aquí se difiere, y lo contesta
+ * quien lo sabe.
+ */
+function holds(replica: Replica, change: Change): boolean {
+  const { graph, page } = replica;
+  switch (change.kind) {
+    case 'create_block':
+      return change.page === page && (change.parent === null || graph.block(change.parent) !== undefined);
+    case 'edit_block':
+    case 'remove_block':
+      return graph.block(change.block) !== undefined;
+    case 'move_block':
+      // Y el destino también: mover a otra página saca el bloque de esta réplica,
+      // que es justamente lo que ella no puede representar.
+      return graph.block(change.block) !== undefined && change.page === page;
+    case 'set_property':
+    case 'remove_property':
+      return change.block !== undefined
+        ? graph.block(change.block) !== undefined
+        : change.page === page;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Aplica un cambio a la réplica y devuelve el árbol que queda.
+ *
+ * Las negativas salen del dominio y no de una comprobación paralela: son las
+ * mismas palabras que habría contestado el servidor, dichas sin salir de casa.
+ */
+export function applyLocally(replica: Replica, change: Change, originId: string): LocalOutcome {
+  if (!AT_HOME.has(change.kind)) return { kind: 'defer' };
+  if (!holds(replica, change)) return { kind: 'defer' };
+
+  const outcome = replica.graph.submitOperation({
+    originId,
+    participant: LOCAL,
+    channel: 'typed_text',
+    change,
+  });
+
+  if (outcome.status === 'rejected') return { kind: 'rejected', reason: outcome.reason };
+  // Reenviar el mismo origen no aplica dos veces, aquí como allá.
+  const subjectId = outcome.status === 'duplicate' ? outcome.operation.subjectId : outcome.subjectId;
+
+  return {
+    kind: 'applied',
+    subjectId,
+    blocks: blocksOf(replica),
+    staleDerived: touchesDerived(change),
+  };
+}
+
+/** El árbol de la réplica, en la forma en que la vista lo espera. */
+export function blocksOf(replica: Replica): BlockView[] {
+  return replica.graph.blocksOf(replica.page).map((block) => ({
+    stableId: block.stableId,
+    parent: block.parent,
+    position: block.position,
+    content: block.content,
+  }));
+}
+
+/** Y lo que cuelga de cada bloque, para que la vista no se quede atrás. */
+export function blockPropertiesOf(replica: Replica): Record<string, { key: string; value: string }[]> {
+  const said: Record<string, { key: string; value: string }[]> = {};
+  for (const block of replica.graph.blocksOf(replica.page)) {
+    const properties = replica.graph
+      .propertiesOf(block.stableId)
+      .map((one) => ({ key: one.key, value: one.value }));
+    if (properties.length > 0) said[block.stableId] = properties;
+  }
+  return said;
+}

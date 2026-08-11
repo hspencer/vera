@@ -117,15 +117,23 @@ libre. Seis pruebas lo fijan de punta a punta por HTTP, incluida la de que
 reenviar el mismo origen no crea un segundo bloque con otro nombre —que es lo que
 hará segura la bandeja de salida del paso 3—.
 
-### Paso 1 — el árbol local
+### Paso 1 — el árbol local — **hecho**
 
-El cliente sostiene un `VeraGraph` de la página abierta y le aplica el cambio.
-Redibuja desde ahí. Mueren los 34 `onReload()`.
+El cliente sostiene un `VeraGraph` de la página abierta y le aplica el cambio;
+`onReload` redibuja desde ahí en vez de volver a pedir la página. Los 34 sitios
+siguen llamándolo y ninguno viaja.
 
-### Paso 2 — el envío deja de bloquear
+### Paso 2 — el envío deja de bloquear — **hecho**
 
-`submit()` devuelve en cuanto el cambio está aplicado localmente. La red pasa a
-segundo plano.
+`submit()` devuelve en cuanto el cambio está aplicado en casa, y el viaje ocurre
+sin que nadie lo espere. Salió con el paso 1 porque son la misma cosa vista desde
+los dos lados: aplicar en casa es lo que permite no esperar, y no esperar es
+para lo que se aplica en casa.
+
+Lo que faltaba y no estaba en este plan: **bautizar en el cliente lo que se
+crea**. Sin eso la réplica y el servidor le ponen nombres distintos al mismo
+bloque y lo que se escriba después se pierde. No lo encontró ninguna prueba: lo
+encontró abrir el navegador.
 
 ### Paso 3 — la bandeja durable
 
