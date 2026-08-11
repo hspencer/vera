@@ -12,7 +12,9 @@ Si es la primera vez, el orden es: **[README](../README.md)** → **[Manual](man
 | | |
 | --- | --- |
 | **[Manual](manual.md)** | Cómo se escribe, se enlaza, se pregunta y se navega. Cada tecla, cada comando, cada gesto — y qué hace exactamente cada uno. Importado del corpus, donde se sigue editando. |
+| **[Conectar una IA](conectar-una-ia.md)** | Enchufar cualquier servicio —Anthropic, OpenAI, Google, Microsoft, DeepSeek, Mistral— a la puerta MCP. Cinco valores, los mismos para todos, y qué se puede y qué no. |
 | **[Portabilidad](portabilidad.md)** | Levantar una instancia propia: qué instalar, qué reemplazar, cómo exponerla con Tailscale, cómo llevarse el corpus. |
+| **[Exponer Vera](exponer-vera.md)** | Los tres modos de estar alcanzable —privado, público de lectura, público de acceso—, qué exige cada uno y por qué el que casi todo el mundo quiere no necesita autenticar a nadie. |
 
 ## Para quien la construye
 
@@ -34,6 +36,7 @@ falsos.
 | --- | --- |
 | **[Que la mano no espere](plan-local-first.md)** | Local-first. En curso: pasos 0 a 3 hechos, 4 y 5 pendientes. |
 | **[Del rastro al argumento](plan-recorridos.md)** | Recorridos. Cerrado — los recorridos existen. |
+| **[Nadie por omisión](plan-nadie-por-omision.md)** | Que sin credencial no se sea el dueño. Sin empezar — prerrequisito de cualquier exposición pública. |
 
 ## Gobierno del proyecto
 

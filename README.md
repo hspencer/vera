@@ -67,7 +67,7 @@ Al momento de escribir esta versión:
 | Medida | Valor |
 | --- | --- |
 | Especificaciones Allium | 33 (`allium check`: 0 errores, 10 avisos) |
-| Pruebas | 966, en 200 bloques, todas en verde |
+| Pruebas | 984, en 203 bloques, todas en verde |
 | Specs sostenidas enteramente por implementación | 14 |
 | Specs implementadas en parte | 16 |
 | Specs sin implementación | 3 |
@@ -228,9 +228,12 @@ configuración de proyecto. Para el resto, la forma general es la misma:
 }
 ```
 
-Las instrucciones por cliente —Claude Code, Claude Desktop, Codex, Gemini CLI— y
-la tabla completa de variables de entorno están en
-[packages/mcp/README.md](packages/mcp/README.md).
+Cómo se enchufa cualquier servicio —Anthropic, OpenAI, Google, Microsoft,
+DeepSeek, Mistral— está en [docs/conectar-una-ia.md](docs/conectar-una-ia.md):
+todos los formularios de «agregar servidor MCP» piden los mismos cinco valores
+con nombres distintos, y lo que decide si un servicio entra no es la marca sino
+dónde corre su cliente. Las recetas por cliente y la tabla de variables de
+entorno están en [packages/mcp/README.md](packages/mcp/README.md).
 
 Dentro de la aplicación, una página del corpus gobierna esta puerta: enumera las
 conexiones, permite mirar y revocar las credenciales emitidas, y dicta los datos
@@ -556,6 +559,11 @@ instancia aloja varios grafos privados o si cada persona levanta la suya. Es la
 precondición de casi todo lo demás: mientras exista una vía anónima que escribe
 como el propietario, exponer Vera fuera de la máquina es exponer la firma.
 
+El primer trozo —cerrar el camino anónimo sin abrir todavía el multiusuario— está
+medido en [docs/plan-nadie-por-omision.md](docs/plan-nadie-por-omision.md), y los
+tres modos de estar alcanzable, con lo que exige cada uno, en
+[docs/exponer-vera.md](docs/exponer-vera.md).
+
 ### 2. Acceso MCP desde la nube
 
 Hoy la puerta MCP es local por construcción: un proceso lanzado por el cliente,
@@ -608,7 +616,9 @@ El **manual de uso** —cada tecla, cada comando, cada gesto— está en
 | | |
 | --- | --- |
 | [Manual](docs/manual.md) | Cómo se usa Vera. |
+| [Conectar una IA](docs/conectar-una-ia.md) | Enchufar cualquier servicio a la puerta MCP. |
 | [Portabilidad](docs/portabilidad.md) | Levantar una instancia propia. |
+| [Exponer Vera](docs/exponer-vera.md) | Privado, público de lectura, público de acceso. |
 | [Arquitectura](docs/architecture.md) | La forma técnica, con lo construido y lo propuesto marcados aparte. |
 | [Interfaz](docs/interfaz.md) | Inventario de lo que hay hoy en pantalla. |
 | [Obligaciones de prueba](docs/test-obligations.md) | Qué cubre la suite y qué no. |

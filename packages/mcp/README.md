@@ -22,6 +22,11 @@ y M4.
 
 ## Cómo se conecta cada cliente
 
+La guía completa —el método general, válido para cualquier proveedor, con la
+tabla de qué pide cada formulario y qué hacer cuando falla— está en
+[docs/conectar-una-ia.md](../../docs/conectar-una-ia.md). Aquí quedan las cuatro
+recetas de siempre.
+
 Vera tiene que estar corriendo (`npm run serve`, por omisión en el 4173).
 
 **Claude Code** — ya está: el `.mcp.json` de la raíz del repositorio lo declara.
