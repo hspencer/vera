@@ -3198,12 +3198,14 @@ export function renderOutliner(
     }
 
     row.classList.toggle('wide-content', hasWideContent(body));
-    // El carril estructural siempre queda a la izquierda del contenido.
-    // `.fold` ya fue añadido primero —o su hueco equivalente—, así que añadir
-    // ahora la viñeta y el cuerpo conserva el orden chevron · viñeta · texto.
-    // `prepend` los ponía delante del chevron y lo expulsaba al extremo derecho
-    // de la fila en cuanto la glosa ensanchaba su geometría.
-    row.append(bullet, body);
+    // Dos carriles distintos, y no una fila accidental de controles.
+    //
+    // El chevron —o su hueco— ya es el primer hijo. La viñeta y el cuerpo se
+    // insertan inmediatamente después, antes de la marca de glosa que
+    // `renderGloss` añadió al extremo derecho. `append` dejaba esa marca entre
+    // el chevron y la viñeta: visualmente parecía otro mando del outline cuando
+    // en realidad abre una lectura lateral.
+    row.firstElementChild?.after(bullet, body);
     list.append(row);
     editors.set(node.block.stableId, { node, body });
     // El orden de lectura, que es este y no el del arbol guardado.

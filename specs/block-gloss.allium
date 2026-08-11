@@ -267,8 +267,10 @@ surface BlockGloss {
         -- In split text-and-map layout, and on a narrow mobile presentation, the
         -- marginal column withdraws. When the block has a gloss, a small
         -- floating `align-left` mark from the Feather icon vocabulary remains
-        -- attached beside it; activating the mark reveals the gloss below its
-        -- block without navigating away or changing the outline.
+        -- attached at the right of its block text, distinct from the folding
+        -- chevron and block mark in the left-hand structural rail. Activating
+        -- it reveals the gloss below its block without navigating away or
+        -- changing the outline.
 
     @guarantee MarginaliaDoesNotDisplaceTheOutlineControls
         -- Introducing or revealing a gloss never moves the block's structural
