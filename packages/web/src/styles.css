@@ -1081,6 +1081,26 @@ input {
     margin: 0;
   }
 
+  /*
+   * Una columna tipográfica discreta, derivada de la columna de lectura.
+   *
+   * No es 60% del viewport ni del espacio sobrante: es tres quintos del token
+   * `--content-width`, redondeados al `em` entero más cercano. `width: 100%`
+   * deja que `max-width` sea quien mande; el segundo término de `min()` conserva
+   * el tope físico de pantalla. La regla anterior queda como fallback para un
+   * motor que todavía no entienda `round()`.
+   */
+  @supports (max-width: round(nearest, calc(45em * 0.6), 1em)) {
+    #vera-root[data-layout='text_only'] .block:not(.wide-content) > .block-gloss:not(.empty),
+    #vera-root[data-layout='text_only'] .block:not(.wide-content) > .block-gloss.empty.open {
+      width: 100%;
+      max-width: min(
+        round(nearest, calc(var(--content-width, 45em) * 0.6), 1em),
+        calc(100vw - var(--rail) - var(--rail-gap) - var(--content-width, 45em) - 4rem)
+      );
+    }
+  }
+
   #vera-root[data-layout='text_only'] .block:not(.wide-content) > .gloss-toggle {
     display: none;
   }

@@ -243,8 +243,9 @@ surface BlockGloss {
     @guarantee TheWideTextViewHasAMarginForThought
         -- When Vera shows only text and the screen leaves sufficient room, a
         -- prose block's gloss begins immediately after the configured maximum
-        -- text width. Its column is three fifths as wide as the prose column,
-        -- includes the block's outline indentation before that width, and
+        -- text width. Its maximum width is three fifths of the configured prose
+        -- width, rounded to the nearest whole em, and includes the block's
+        -- outline indentation before that width. It
         -- follows exactly the block's line rhythm while reading and editing.
         -- The first rendered line of both voices shares one typographic
         -- baseline even though the gloss uses a smaller body and lighter weight.
