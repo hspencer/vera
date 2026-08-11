@@ -1777,6 +1777,13 @@ export function renderOutliner(
 
   const glosses = page.glosses ?? {};
 
+  /** Contenido que, a diferencia de la prosa, usa el ancho entero del bloque. */
+  const hasWideContent = (body: HTMLElement): boolean =>
+    body.matches('.drawn-body') ||
+    body.querySelector(
+      ':is(.table-scroll, table, img, .drawn, .mermaid-figure, code.language-mermaid, pre, .audio-block, iframe, video)',
+    ) !== null;
+
   /**
    * La glosa comparte bloque, pero no su contenido ni su editor.
    *
@@ -1800,8 +1807,9 @@ export function renderOutliner(
     panel.setAttribute('aria-label', 'glosa del bloque');
 
     const text = document.createElement('div');
-    text.className = 'gloss-text';
-    text.textContent = held;
+    // También es un cuerpo Markdown: comparte la gramática visual del bloque,
+    // aunque su color, lugar y gesto de edición sigan siendo los de la glosa.
+    text.className = 'gloss-text body';
     text.tabIndex = 0;
     text.title = 'editar glosa';
     text.setAttribute('role', 'button');
@@ -1814,6 +1822,13 @@ export function renderOutliner(
     editor.rows = Math.max(1, held.split('\n').length);
     editor.setAttribute('aria-label', 'glosa del bloque');
     panel.append(text, editor);
+
+    const paint = (content: string): void => {
+      text.innerHTML = renderMarkdown(content, options);
+      markMissingImages(text);
+      void renderMermaid(text);
+    };
+    paint(held);
 
     const edit = (): void => {
       panel.classList.add('open', 'editing');
@@ -1847,7 +1862,7 @@ export function renderOutliner(
         createdAt: glosses[block]?.createdAt ?? Date.now(),
         updatedAt: Date.now(),
       };
-      text.textContent = next;
+      paint(next);
       panel.classList.toggle('empty', next === '');
       toggle.classList.toggle('empty', next === '');
       panel.classList.remove('editing');
@@ -1880,6 +1895,22 @@ export function renderOutliner(
 
     text.addEventListener('click', (event) => {
       event.stopPropagation();
+      const target = event.target as HTMLElement;
+      const link = target.closest('a');
+      if (link !== null) {
+        if (link.classList.contains('wiki')) {
+          event.preventDefault();
+          callbacks.onNavigate?.(link.dataset['page'] ?? '');
+        } else if (link.classList.contains('block-ref')) {
+          event.preventDefault();
+          const id = link.dataset['block'] ?? '';
+          const ref = page.blockRefs.find((candidate) => candidate.id === id);
+          if (ref === undefined) toast('esa referencia no nombra ningún bloque de este grafo');
+          else if (callbacks.onOpenBlock === undefined) callbacks.onOpen(ref.page, 'followed_reference');
+          else callbacks.onOpenBlock(ref.page, ref.id);
+        }
+        return;
+      }
       edit();
     });
     text.addEventListener('keydown', (event) => {
@@ -3100,6 +3131,7 @@ export function renderOutliner(
 
     }
 
+    row.classList.toggle('wide-content', hasWideContent(body));
     row.prepend(bullet, body);
     list.append(row);
     editors.set(node.block.stableId, { node, body });

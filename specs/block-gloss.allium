@@ -6,7 +6,7 @@
 --   compact access beside the block, editing from either presentation, and
 --   searching or counting the human marginalia as a distinct corpus
 -- Excludes:
---   - Typography, colour values and breakpoint measurements
+--   - Concrete typography, colour values and breakpoint measurements
 --   - The storage representation of a gloss
 -- Dependencies: Block and Participant are governed by core.allium; Workspace and
 --   its text_only, split and graph_only layouts by workspace-interface.allium
@@ -241,18 +241,42 @@ surface BlockGloss {
         fulfils GlossDiscovery
 
     @guarantee TheWideTextViewHasAMarginForThought
-        -- When Vera shows only text and the screen leaves sufficient room, each
-        -- gloss is a second column immediately beside the text column. It begins
-        -- at the vertical position of its block, follows the text's line rhythm
-        -- and uses a quieter colour so the annotation accompanies without being
-        -- mistaken for the text.
+        -- When Vera shows only text and the screen leaves sufficient room, a
+        -- prose block's gloss begins immediately after the configured maximum
+        -- text width. Its column is three fifths as wide as the prose column,
+        -- begins at the vertical position of its block and follows exactly the
+        -- block's line rhythm while reading and editing.
+
+    @guarantee ALongMarginalGlossDoesNotStretchTheOutline
+        -- In the lateral presentation a gloss may extend below the height of
+        -- the block it annotates without increasing that block's row height or
+        -- pushing subsequent blocks down. Only a below-block presentation takes
+        -- part in the outline's vertical flow.
+
+    @guarantee WideContentsKeepTheirGlossBelow
+        -- A block whose principal content is intentionally unconstrained by the
+        -- prose width -- including a table, image, drawing or diagram -- keeps
+        -- its gloss below the content instead of placing it beyond the content's
+        -- right edge. The gloss is lightly indented and may occupy the same
+        -- available width as the block.
 
     @guarantee ConstrainedTextKeepsTheGlossAtItsBlock
         -- In split text-and-map layout, and on a narrow mobile presentation, the
         -- marginal column withdraws. When the block has a gloss, a small
         -- floating `align-left` mark from the Feather icon vocabulary remains
-        -- attached beside it; activating the mark reveals the gloss without
-        -- navigating away or changing the outline.
+        -- attached beside it; activating the mark reveals the gloss below its
+        -- block without navigating away or changing the outline.
+
+    @guarantee AGlossHasItsOwnVisibleVoice
+        -- Readable gloss text, its compact mark and its editing focus use the
+        -- workspace accent colour. The distinction remains legible and does not
+        -- make the marginalia look disabled or merge it with the source voice.
+
+    @guarantee AGlossReadsAsRenderedWriting
+        -- Outside its editor a gloss is rendered as Markdown with the same
+        -- supported structures and link behaviour as a block. Internal page
+        -- links, stable block references and external links remain usable; only
+        -- activating non-link gloss text enters source editing.
 
     @guarantee AGlossCanBeginWhereItWillBeRead
         -- A block that has no gloss offers `Add gloss` among that block's own
