@@ -62,6 +62,11 @@ contract NativeMarkdownEditing {
         -- headings, lists, quotations, code, tables, images, horizontal rules and
         -- footnote references read as themselves rather than as their marks.
 
+    @invariant OrderedListsKeepTheirSequence
+        -- Numbered items separated by blank source lines remain one ordered
+        -- list rather than restarting at one. When the first authored ordinal
+        -- is not one, the rendered list begins from that ordinal.
+
     @invariant EditingRevealsTheSource
         -- Beginning to edit replaces the rendered presentation with the exact
         -- Markdown source that produced it. Rendering is a view onto the source

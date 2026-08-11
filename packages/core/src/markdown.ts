@@ -364,7 +364,7 @@ const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const BULLET = /^(\s*)[-*+]\s+(.*)$/;
-const ORDERED = /^(\s*)\d+[.)]\s+(.*)$/;
+const ORDERED = /^(\s*)(\d+)[.)]\s+(.*)$/;
 const FOOTNOTE = /^ {0,3}\[\^([^\]\s]+)\]:\s*(.*)$/;
 const TABLE_ROW = /^\s*\|.*\|\s*$/;
 const TABLE_DIVIDER = /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/;
@@ -372,6 +372,7 @@ const TABLE_DIVIDER = /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/;
 interface ListItem {
   indent: number;
   ordered: boolean;
+  ordinal?: number;
   text: string;
 }
 
@@ -391,13 +392,19 @@ function renderList(items: ListItem[], options: RenderOptions): string {
     const current = top();
     if (current === undefined || item.indent > current.indent) {
       const tag = item.ordered ? 'ol' : 'ul';
-      html += `<${tag}>`;
+      const start = tag === 'ol' && item.ordinal !== undefined && item.ordinal !== 1
+        ? ` start="${item.ordinal}"`
+        : '';
+      html += `<${tag}${start}>`;
       open.push({ indent: item.indent, tag });
     } else if (current.tag !== (item.ordered ? 'ol' : 'ul')) {
       // Cambiar de viñetas a numeración al mismo nivel abre una lista nueva.
       html += `</li></${open.pop()?.tag}>`;
       const tag = item.ordered ? 'ol' : 'ul';
-      html += `<${tag}>`;
+      const start = tag === 'ol' && item.ordinal !== undefined && item.ordinal !== 1
+        ? ` start="${item.ordinal}"`
+        : '';
+      html += `<${tag}${start}>`;
       open.push({ indent: item.indent, tag });
     } else {
       html += '</li>';
@@ -568,14 +575,24 @@ export function renderMarkdown(source: string, options: RenderOptions = {}): str
       const items: ListItem[] = [];
       while (at < lines.length) {
         const current = lines[at] ?? '';
+        if (current.trim() === '') {
+          let next = at + 1;
+          while (next < lines.length && (lines[next] ?? '').trim() === '') next += 1;
+          if (!BULLET.test(lines[next] ?? '') && !ORDERED.test(lines[next] ?? '')) break;
+          // Una línea vacía afloja la lista; no la termina si después continúa
+          // otra marca. Vera no envuelve aún cada ítem suelto en <p>, pero sí
+          // conserva la continuidad y, con ella, la numeración del <ol>.
+          at = next;
+          continue;
+        }
         const bullet = BULLET.exec(current);
         const ordered = ORDERED.exec(current);
         if (bullet === null && ordered === null) break;
-        const match = (ordered ?? bullet) as RegExpExecArray;
         items.push({
-          indent: (match[1] ?? '').length,
+          indent: ((ordered ?? bullet)?.[1] ?? '').length,
           ordered: ordered !== null,
-          text: match[2] ?? '',
+          ...(ordered === null ? {} : { ordinal: Number(ordered[2] ?? '1') }),
+          text: ordered === null ? (bullet?.[2] ?? '') : (ordered[3] ?? ''),
         });
         at += 1;
       }

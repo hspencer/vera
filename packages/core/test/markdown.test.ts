@@ -274,6 +274,17 @@ describe('renderMarkdown', () => {
       assert.equal(renderMarkdown('1. uno\n2. dos'), '<ol><li>uno</li><li>dos</li></ol>');
     });
 
+    it('mantiene una sola numeración aunque haya aire entre los ítems', () => {
+      assert.equal(
+        renderMarkdown('1. uno\n\n1. dos\n\n1. tres'),
+        '<ol><li>uno</li><li>dos</li><li>tres</li></ol>',
+      );
+    });
+
+    it('respeta el ordinal con que comienza una lista', () => {
+      assert.equal(renderMarkdown('3. tres\n4. cuatro'), '<ol start="3"><li>tres</li><li>cuatro</li></ol>');
+    });
+
     it('anida por sangría', () => {
       assert.equal(
         renderMarkdown('- uno\n  - hijo\n- dos'),
