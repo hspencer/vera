@@ -21,3 +21,7 @@ objects/
 
 # El registro del servidor local. Es de esta máquina, no del proyecto.
 .vera-server.log
+
+# Espacios de trabajo locales de asistentes. Pueden contener repositorios
+# anidados y jamás forman parte del producto.
+.claude/
