@@ -715,7 +715,27 @@ input {
   display: inline-flex;
   align-items: center;
   min-width: 0;
+  height: 1.4rem;
+  box-sizing: border-box;
+  border: 1px solid var(--rule);
   border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  overflow: hidden;
+}
+
+.trail-step:hover,
+.trail-step:focus-within {
+  border-color: var(--accent);
+}
+
+/* Dentro del salchichón hay tres gestos, pero una sola figura. El nombre deja
+   de traer su propia pastilla: el borde pertenece al conjunto entero. */
+.trail-step .trail-pill {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding-inline: 0.25rem;
 }
 
 .trail-step.moving {
@@ -727,8 +747,8 @@ input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.15rem;
-  height: 1.4rem;
+  width: 1.2rem;
+  height: 100%;
   padding: 0;
   border: 0;
   background: none;
@@ -750,6 +770,14 @@ input {
 .trail-grip:hover,
 .trail-remove:hover {
   color: var(--accent);
+}
+
+.trail-grip {
+  padding-left: 0.15rem;
+}
+
+.trail-remove {
+  padding-right: 0.15rem;
 }
 
 .trail-pill {
