@@ -2,6 +2,9 @@
 -- core.allium
 
 -- Scope: Participation, provenance, semantic graph changes and personal publishing
+-- Terminology: Vera is the system; a memory is one human's sovereign corpus;
+--   Graph is the structural domain model of that memory. A library is a
+--   bibliographic region or integration within it, not a synonym for the whole.
 -- Includes: Human and agent participants, authenticated submissions, revisions,
 --   canonical human voice evidence, public/private page visibility, and projection
 --   of public graph pages as a personal website
@@ -55,6 +58,7 @@ enum Visibility { private | public }
 enum ChangeKind {
     create_page | rename_page | set_page_visibility | recover_page_origin | remove_page |
     create_block | edit_block | move_block | remove_block |
+    set_block_gloss |
     set_property | remove_property
 }
 enum SubmissionStatus { submitted | accepted | rejected }
@@ -72,6 +76,7 @@ entity Participant {
 
 entity Graph {
     name: String
+    owner: Participant
     memberships: Membership with graph = this
     pages: Page with graph = this
 }
@@ -314,6 +319,17 @@ invariant RevisionParticipantBelongsToGraph {
         exists Membership{graph: revision.graph, participant: revision.authored_by}
 }
 
+invariant EveryMemoryHasOneHumanOwner {
+    for graph in Graphs:
+        graph.owner.kind = human and
+        graph.owner.status = active and
+        exists Membership{
+            graph: graph,
+            participant: graph.owner,
+            status: active
+        }
+}
+
 -- A page title is what a [[reference]] names, so two pages sharing one would make
 -- every link to it ambiguous.
 invariant PageTitleIsUniqueWithinGraph {
@@ -429,6 +445,7 @@ deferred ControlledOntology.curate      -- see: controlled-ontology.allium
 deferred BibliographicIntegration.sync  -- see: bibliographic-integration.allium
 deferred IdentityAccess.authorize        -- see: identity-access.allium
 deferred Trail.compose                   -- see: trail.allium
+deferred BlockGloss.annotate             -- see: block-gloss.allium
 
 ------------------------------------------------------------
 -- Open Questions

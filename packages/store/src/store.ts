@@ -552,6 +552,18 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
       return;
     }
 
+    case 'set_block_gloss': {
+      const gloss = graph.gloss(change.block);
+      if (gloss === undefined) return;
+      db.prepare(
+        `INSERT INTO block_glosses (block_id, content, created_at, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (block_id) DO UPDATE SET
+           content = excluded.content, updated_at = excluded.updated_at`,
+      ).run(gloss.block, gloss.content, gloss.createdAt, gloss.updatedAt);
+      return;
+    }
+
     case 'set_property':
     case 'remove_property': {
       /*
@@ -787,7 +799,7 @@ export function loadGraph(store: Store, graphName = 'mind'): VeraGraph {
 export interface StoredHit {
   page: string;
   block: string | null;
-  field: 'page_title' | 'block_content';
+  field: 'page_title' | 'block_content' | 'gloss_content';
   excerpt: string;
   rank: number;
 }
@@ -819,9 +831,21 @@ export function searchStore(store: Store, text: string, limit = 50): StoredHit[]
     )
     .all(term, limit) as { page: string; block: string; excerpt: string }[];
 
+  const glosses = store.db
+    .prepare(
+      `SELECT b.page_id AS page, g.block_id AS block, substr(g.content, 1, 120) AS excerpt
+       FROM glosses_fts f
+       JOIN block_glosses g ON g.rowid = f.rowid
+       JOIN blocks b ON b.id = g.block_id
+       WHERE glosses_fts MATCH ?
+       ORDER BY g.block_id LIMIT ?`,
+    )
+    .all(term, limit) as { page: string; block: string; excerpt: string }[];
+
   return [
     ...pages.map((row) => ({ ...row, block: null, field: 'page_title' as const })),
     ...blocks.map((row) => ({ ...row, field: 'block_content' as const })),
+    ...glosses.map((row) => ({ ...row, field: 'gloss_content' as const })),
   ].map((hit, at) => ({ ...hit, rank: at + 1 }));
 }
 

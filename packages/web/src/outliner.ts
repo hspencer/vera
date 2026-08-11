@@ -1775,6 +1775,131 @@ export function renderOutliner(
   const pending = new Set(page.pendingLinks ?? []);
   if (pending.size > 0) options.pageExists = (title) => !pending.has(title);
 
+  const glosses = page.glosses ?? {};
+
+  /**
+   * La glosa comparte bloque, pero no su contenido ni su editor.
+   *
+   * Si todavía no existe, no deja una puerta vacía en cada renglón: se empieza
+   * desde el menú del bloque. Si existe, se lee como texto y se edita pulsando
+   * ese mismo texto. En poco ancho la marca sólo revela lo que ya existe.
+   */
+  const renderGloss = (row: HTMLElement, block: string): (() => void) => {
+    const held = glosses[block]?.content ?? '';
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = held === '' ? 'gloss-toggle empty' : 'gloss-toggle';
+    toggle.innerHTML = icon('align-left');
+    toggle.title = held === '' ? 'añadir glosa' : 'leer o editar glosa';
+    toggle.setAttribute('aria-label', toggle.title);
+    toggle.setAttribute('aria-expanded', 'false');
+
+    const panel = document.createElement('aside');
+    panel.className = held === '' ? 'block-gloss empty' : 'block-gloss';
+    panel.setAttribute('aria-label', 'glosa del bloque');
+
+    const text = document.createElement('div');
+    text.className = 'gloss-text';
+    text.textContent = held;
+    text.tabIndex = 0;
+    text.title = 'editar glosa';
+    text.setAttribute('role', 'button');
+    text.setAttribute('aria-label', 'editar glosa del bloque');
+
+    const editor = document.createElement('textarea');
+    editor.className = 'gloss-editor';
+    editor.value = held;
+    editor.placeholder = 'Glosar este pasaje…';
+    editor.rows = Math.max(1, held.split('\n').length);
+    editor.setAttribute('aria-label', 'glosa del bloque');
+    panel.append(text, editor);
+
+    const edit = (): void => {
+      panel.classList.add('open', 'editing');
+      toggle.setAttribute('aria-expanded', 'true');
+      editor.value = glosses[block]?.content ?? '';
+      editor.rows = Math.max(1, editor.value.split('\n').length);
+      editor.focus();
+      editor.setSelectionRange(editor.value.length, editor.value.length);
+    };
+
+    let saving = false;
+    const save = async (): Promise<void> => {
+      const next = editor.value;
+      if (saving) return;
+      if (next === (glosses[block]?.content ?? '')) {
+        panel.classList.remove('editing');
+        if (next === '') {
+          panel.classList.remove('open');
+          toggle.setAttribute('aria-expanded', 'false');
+        }
+        return;
+      }
+      saving = true;
+      editor.disabled = true;
+      const applied = await submitQuietly({ kind: 'set_block_gloss', block, content: next });
+      editor.disabled = false;
+      saving = false;
+      if (!applied) return;
+      glosses[block] = {
+        content: next,
+        createdAt: glosses[block]?.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+      };
+      text.textContent = next;
+      panel.classList.toggle('empty', next === '');
+      toggle.classList.toggle('empty', next === '');
+      panel.classList.remove('editing');
+      if (next === '') {
+        panel.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+      }
+    };
+
+    editor.addEventListener('input', () => {
+      editor.rows = Math.max(1, editor.value.split('\n').length);
+    });
+    editor.addEventListener('blur', () => void save());
+    editor.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault();
+        void save();
+      }
+      if (event.key === 'Escape') {
+        editor.value = glosses[block]?.content ?? '';
+        panel.classList.remove('editing');
+        if ((glosses[block]?.content ?? '') === '') {
+          panel.classList.remove('open');
+          toggle.setAttribute('aria-expanded', 'false');
+        } else {
+          text.focus();
+        }
+      }
+    });
+
+    text.addEventListener('click', (event) => {
+      event.stopPropagation();
+      edit();
+    });
+    text.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      edit();
+    });
+
+    toggle.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const open = !panel.classList.contains('open');
+      panel.classList.toggle('open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+      if (open) text.focus();
+    });
+
+    row.append(toggle, panel);
+    return edit;
+  };
+
   const header = document.createElement('header');
   header.className = 'page-header';
 
@@ -2714,6 +2839,8 @@ export function renderOutliner(
       }
     }
 
+    const editGloss = renderGloss(row, node.block.stableId);
+
     bullet.addEventListener('click', (event) => {
       event.stopPropagation();
       // Un bloque con hijos no es hoja, y remove_block sólo acepta hojas. Se
@@ -2744,6 +2871,10 @@ export function renderOutliner(
         {
           label: 'Ver la historia del bloque',
           run: () => void showHistory(node.block.stableId, row, toast),
+        },
+        {
+          label: glosses[node.block.stableId]?.content ? 'Editar glosa' : 'Agregar glosa',
+          run: editGloss,
         },
         /*
          * Explicar por qué esta página y aquélla se tocan.
@@ -2969,7 +3100,7 @@ export function renderOutliner(
 
     }
 
-    row.append(bullet, body);
+    row.prepend(bullet, body);
     list.append(row);
     editors.set(node.block.stableId, { node, body });
     // El orden de lectura, que es este y no el del arbol guardado.

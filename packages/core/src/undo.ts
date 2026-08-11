@@ -310,6 +310,17 @@ export function blockBefore(
   return held;
 }
 
+/** Qué decía la glosa única justo antes de una revisión; vacío si aún no existía. */
+function glossBefore(operations: readonly Operation[], block: string, sequence: number): string {
+  let held = '';
+  for (const one of operations) {
+    if (one.sequence >= sequence) break;
+    const change = one.submission.change;
+    if (change.kind === 'set_block_gloss' && change.block === block) held = change.content;
+  }
+  return held;
+}
+
 /** El valor que tenía una propiedad justo antes de cierta operación. */
 export function propertyBefore(
   operations: readonly Operation[],
@@ -406,6 +417,14 @@ export function contraryOf(
       return {
         change: { kind: 'edit_block', block: change.block, content: before.content },
         says: before.content.trim() === '' ? 'vaciar el bloque otra vez' : 'devolver el texto de antes',
+      };
+    }
+
+    case 'set_block_gloss': {
+      const before = glossBefore(operations, change.block, operation.sequence);
+      return {
+        change: { kind: 'set_block_gloss', block: change.block, content: before },
+        says: before.trim() === '' ? 'vaciar la glosa otra vez' : 'devolver la glosa de antes',
       };
     }
 

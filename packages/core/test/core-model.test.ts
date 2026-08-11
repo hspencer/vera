@@ -29,6 +29,7 @@ describe('enumerations', () => {
       'remove_page',
       'remove_property',
       'rename_page',
+      'set_block_gloss',
       'set_page_visibility',
       'set_property',
     ]);

@@ -134,6 +134,18 @@ describe('persistencia', () => {
     store.close();
   });
 
+  it('materializa, busca y reproduce la glosa canónica de un bloque', () => {
+    const { store, write } = freshStore();
+    const page = write({ kind: 'create_page', title: 'Lectura', visibility: 'private' });
+    const block = write({ kind: 'create_block', page, parent: null, position: 0, content: 'pasaje' });
+    write({ kind: 'set_block_gloss', block, content: 'correspondencia hospitalaria' });
+
+    assert.equal(count(store, 'block_glosses'), 1);
+    assert.equal(searchStore(store, 'hospitalaria')[0]?.field, 'gloss_content');
+    assert.equal(loadGraph(store).gloss(block)?.content, 'correspondencia hospitalaria');
+    store.close();
+  });
+
   it('reproduce una operación que hoy estaría prohibida', () => {
     // rule ADayKeepsItsKind llegó después de que alguien ya hubiera quitado el
     // tipo a un día. Si la prohibición se aplicara también al reproducir, esa

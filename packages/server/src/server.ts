@@ -3288,6 +3288,16 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 },
               ]),
           ),
+          glosses: Object.fromEntries(
+            graph
+              .blocksOf(page.id)
+              .map((block) => graph.gloss(block.stableId))
+              .filter((gloss) => gloss !== undefined)
+              .map((gloss) => [
+                gloss.block,
+                { content: gloss.content, createdAt: gloss.createdAt, updatedAt: gloss.updatedAt },
+              ]),
+          ),
           // @invariant FoldingIsNotAChange: qué tiene plegado ESTE participante.
           // No sale del registro de operaciones porque nunca entró en él.
           folded: foldedOnPage(store, participant, page.id),
@@ -3421,6 +3431,28 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           subject: asked,
           delivered: outcome.hits.map((hit) => hit.block ?? hit.page),
         });
+        return;
+      }
+
+      if (path === '/glosses') {
+        const asked = url.searchParams.get('q') ?? '';
+        const matches = graph
+          .glosses()
+          .filter((gloss) => asked === '' || gloss.content.toLocaleLowerCase().includes(asked.toLocaleLowerCase()))
+          .map((gloss) => ({
+            block: gloss.block,
+            page: graph.block(gloss.block)?.page ?? null,
+            content: gloss.content,
+            updatedAt: gloss.updatedAt,
+          }));
+        deliver(
+          { count: graph.glosses().length, matches },
+          {
+            surface: 'GET /glosses',
+            subject: asked,
+            delivered: matches.flatMap((match) => [match.block, ...(match.page === null ? [] : [match.page])]),
+          },
+        );
         return;
       }
 

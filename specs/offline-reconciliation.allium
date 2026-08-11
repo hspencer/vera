@@ -1,0 +1,385 @@
+-- allium: 3
+-- offline-reconciliation.allium
+
+-- Scope: The local-first path between a participant's gesture and Vera's canonical log
+-- Includes: Immediate local application, durable pending work, observable synchronisation,
+--   ordered push and pull, restart recovery, incremental projection and explicit conflicts
+-- Excludes:
+--   - The browser database, worker, transport and rendering libraries
+--   - The meaning and canonical application of changes (see change-application.allium)
+--   - Authentication and authorization policy (see identity-access.allium)
+--   - Automatic semantic merging of divergent prose
+--
+-- North star: the hand never waits for the network. Reading, writing, splitting,
+-- moving and navigating are local acts. Connectivity changes how soon other devices
+-- learn about them, never how soon this device lets the participant continue thinking.
+
+use "./core.allium" as core
+use "./change-application.allium" as application
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract MaximallyFluidLocalFirstWorkspace {
+    accept_locally: (replica: LocalReplica, change: core/Change) -> PendingChange
+    synchronise: (replica: LocalReplica) -> SynchronisationState
+    resolve: (conflict: Conflict, resolution: ConflictResolution) -> PendingChange
+
+    @invariant TheHandNeverWaitsForTheNetwork
+        -- An available local replica applies an accepted gesture and presents its
+        -- consequence without waiting for a request, acknowledgement or server render.
+        -- Network latency, loss and server unavailability cannot delay the next gesture.
+
+    @invariant LocalDurabilityPrecedesSavedFeedback
+        -- Vera says that a local change is saved only after the change and its origin
+        -- identity can survive closing and reopening the application on this device.
+
+    @invariant TheCanonicalLogRemainsCanonical
+        -- Local immediacy does not create a second authority. The server's ordered,
+        -- idempotent operation log remains the shared history; the replica converges
+        -- toward it and makes every departure from it observable.
+
+    @invariant SynchronisationIsBackgroundWork
+        -- Push, pull, retry and projection continue independently of reading and
+        -- editing. No synchronisation cycle locks the page, caret or navigation.
+
+    @invariant RenderingFollowsChangedMeaning
+        -- A text edit updates text immediately. Derived maps, links, tags, queries and
+        -- Markdown are recomputed only when their inputs changed, and an acknowledgement
+        -- that changes no meaning does not redraw the whole page.
+
+    @invariant SilenceNeverPretendsToBeSuccess
+        -- The participant can distinguish local, synchronising, synchronised, offline,
+        -- rejected and conflicted work without inspecting logs or guessing from delay.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum ReplicaAvailability { empty | hydrating | available }
+enum ConnectionState { online | offline }
+enum PendingStatus { local | sending | acknowledged | rejected | conflicted }
+enum SynchronisationStatus { local | synchronising | synchronised | offline | attention_required }
+enum ConflictResolution { keep_local | keep_canonical | replace_with_participant_edit }
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity LocalReplica {
+    graph: core/Graph
+    participant: core/Participant
+    availability: ReplicaAvailability
+    connection: ConnectionState
+    canonical_cursor: Integer
+    pending_changes: PendingChange with replica = this
+    conflicts: Conflict with replica = this
+}
+
+entity PendingChange {
+    replica: LocalReplica
+    origin_id: String
+    change: core/Change
+    channel: core/ContributionChannel
+    evidence: core/OriginEvidence?
+    status: PendingStatus
+    canonical_sequence: Integer?
+    rejection_reason: String?
+}
+
+entity Conflict {
+    replica: LocalReplica
+    pending: PendingChange
+    canonical_operation: application/Operation
+    resolved: Boolean
+}
+
+entity SynchronisationState {
+    replica: LocalReplica
+    status: SynchronisationStatus
+    pending_count: Integer
+    conflict_count: Integer
+}
+
+------------------------------------------------------------
+-- Phase 1 — Immediate response and truthful feedback
+------------------------------------------------------------
+
+rule AcceptChangeIntoAvailableReplica {
+    when: ApplyLocally(replica, origin_id, change, channel, evidence?)
+
+    requires: replica.availability = available
+    requires: core/Membership{graph: replica.graph, participant: replica.participant}.status = active
+    requires: not exists PendingChange{replica: replica, origin_id: origin_id}
+
+    ensures:
+        let pending = PendingChange.created(
+            replica: replica,
+            origin_id: origin_id,
+            change: change,
+            channel: channel,
+            evidence: evidence,
+            status: local,
+            canonical_sequence: null,
+            rejection_reason: null
+        )
+        LocalProjectionApplied(replica: replica, pending: pending)
+        LocalChangeBecameDurable(pending: pending)
+
+    @guidance
+        -- The event is complete before any submission begins. Structural gestures such
+        -- as splitting, moving and creating blocks follow this same path; they are not
+        -- decomposed into a chain of blocking server round trips.
+}
+
+rule PresentSynchronisationState {
+    when: SynchronisationStateRequested(replica)
+
+    requires: replica.availability = available
+
+    ensures: SynchronisationState.created(
+        replica: replica,
+        status: visible_status(replica),
+        pending_count: count(replica.pending_changes where status != acknowledged),
+        conflict_count: count(replica.conflicts where resolved = false)
+    )
+}
+
+------------------------------------------------------------
+-- Phase 2 — Durable outbox and useful local memory
+------------------------------------------------------------
+
+rule RestoreDurableLocalWork {
+    when: ReplicaOpened(replica)
+
+    ensures:
+        replica.availability = hydrating
+        DurableReplicaLoaded(replica: replica)
+        replica.availability = available
+
+    @guidance
+        -- Opening first restores locally held content, cursor and pending changes.
+        -- Contact with the server may begin afterwards and never gates availability.
+}
+
+rule ReturnPendingChangeAfterRestart {
+    when: DurableReplicaLoaded(replica)
+
+    ensures:
+        for pending in durable_pending_changes(replica):
+            pending.status = local
+
+    @guidance
+        -- A change interrupted while sending is safe to retry because origin_id is
+        -- idempotent. Restarting never turns uncertainty into loss or duplication.
+}
+
+------------------------------------------------------------
+-- Phase 3 — Replica, cursor and automatic reconciliation
+------------------------------------------------------------
+
+rule SubmitNextLocalChange {
+    when: BackgroundSynchronisationBegins(replica)
+
+    let pending = first_sendable_pending_change(replica)
+
+    requires: replica.availability = available
+    requires: replica.connection = online
+    requires: exists pending
+    requires: not exists unresolved_conflict_for(pending)
+
+    ensures:
+        pending.status = sending
+        core/ParticipantSubmits(
+            participant: replica.participant,
+            graph: replica.graph,
+            origin_id: pending.origin_id,
+            change: pending.change,
+            channel: pending.channel,
+            evidence: pending.evidence
+        )
+
+    @guidance
+        -- Pending changes leave the device in their local order. Repeated edits may be
+        -- compacted before this point only when the observable final graph, provenance
+        -- and undoable participant intent remain identical.
+}
+
+rule AcknowledgeCanonicalOperation {
+    when: operation: application/Operation.created
+
+    let pending = PendingChange{origin_id: operation.origin_id}
+
+    requires: exists pending
+    requires: pending.replica.graph = operation.log.graph
+
+    ensures:
+        pending.status = acknowledged
+        pending.canonical_sequence = operation.sequence
+        pending.replica.canonical_cursor = max(pending.replica.canonical_cursor, operation.sequence)
+        CanonicalAcknowledgementAppliedWithoutFullReload(replica: pending.replica, operation: operation)
+}
+
+rule PullOperationsAfterCursor {
+    when: BackgroundSynchronisationBegins(replica)
+
+    requires: replica.availability = available
+    requires: replica.connection = online
+
+    ensures:
+        for operation in canonical_operations(replica.graph, after: replica.canonical_cursor):
+            RemoteOperationReceived(replica: replica, operation: operation)
+}
+
+rule ApplyConflictFreeRemoteOperation {
+    when: RemoteOperationReceived(replica, operation)
+
+    requires: not conflicts_with_pending_change(replica, operation)
+
+    ensures:
+        CanonicalOperationAppliedLocally(replica: replica, operation: operation)
+        replica.canonical_cursor = operation.sequence
+        IncrementalProjectionUpdated(replica: replica, operation: operation)
+}
+
+rule ContinueWhenConnectionReturns {
+    when: ConnectionRestored(replica)
+
+    ensures:
+        replica.connection = online
+        BackgroundSynchronisationBegins(replica: replica)
+}
+
+------------------------------------------------------------
+-- Phase 4 — Exceptional divergence without silent loss
+------------------------------------------------------------
+
+rule ExposeConcurrentConflict {
+    when: RemoteOperationReceived(replica, operation)
+
+    let pending = conflicting_pending_change(replica, operation)
+
+    requires: exists pending
+
+    ensures:
+        pending.status = conflicted
+        Conflict.created(
+            replica: replica,
+            pending: pending,
+            canonical_operation: operation,
+            resolved: false
+        )
+        ConflictRequiresParticipantAttention(replica: replica, pending: pending)
+
+    @guidance
+        -- Vera may automatically reconcile independent subjects and idempotent repeats.
+        -- It never silently chooses between two incompatible versions of the same prose.
+}
+
+rule ResolveConcurrentConflict {
+    when: ParticipantResolvesConflict(participant, conflict, resolution, replacement?)
+
+    requires: conflict.replica.participant = participant
+    requires: conflict.resolved = false
+    requires: resolution != replace_with_participant_edit or replacement != null
+
+    ensures:
+        conflict.resolved = true
+        let pending = resolved_pending_change(conflict, resolution, replacement?)
+        pending.status = local
+}
+
+rule PreserveRejectedLocalChange {
+    when: SubmissionRejected(replica, origin_id, reason)
+
+    let pending = PendingChange{replica: replica, origin_id: origin_id}
+
+    requires: exists pending
+
+    ensures:
+        pending.status = rejected
+        pending.rejection_reason = reason
+        RejectedChangeRemainsRecoverable(pending: pending)
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant PendingOriginIsUniqueWithinReplica {
+    for a in PendingChanges:
+        for b in PendingChanges:
+            a != b implies a.replica != b.replica or a.origin_id != b.origin_id
+}
+
+invariant AcknowledgementNamesCanonicalPosition {
+    for pending in PendingChanges:
+        pending.status = acknowledged implies pending.canonical_sequence != null
+}
+
+invariant UnresolvedConflictIsNeverReportedAsSynchronised {
+    for state in SynchronisationStates:
+        state.conflict_count > 0 implies state.status = attention_required
+}
+
+invariant OfflineWorkIsNotReportedAsCanonical {
+    for pending in PendingChanges:
+        pending.status = local or pending.status = sending implies pending.canonical_sequence = null
+}
+
+invariant CursorAdvancesOnlyThroughCanonicalOperations {
+    for replica in LocalReplicas:
+        replica.canonical_cursor >= 0
+}
+
+------------------------------------------------------------
+-- Actors and surfaces
+------------------------------------------------------------
+
+actor LocalParticipant {
+    within: LocalReplica
+    identified_by: core/Participant where this = within.participant
+}
+
+surface LocalFirstWorkspace {
+    facing participant: LocalParticipant
+    context replica: LocalReplica
+
+    exposes:
+        replica.availability
+        replica.connection
+        replica.canonical_cursor
+        replica.pending_changes
+        replica.conflicts
+
+    provides:
+        ApplyLocally(replica, origin_id, change, channel, evidence?)
+        SynchronisationStateRequested(replica)
+        ParticipantResolvesConflict(participant, conflict, resolution, replacement?)
+
+    contracts:
+        fulfils MaximallyFluidLocalFirstWorkspace
+
+    @guarantee LocalFirstMeansFirst
+        -- The local replica is not a cache consulted when the server is slow. It is the
+        -- workspace the participant uses. The network reconciles work already done.
+
+    @guarantee FluencyIsEndToEnd
+        -- Fast keystrokes are insufficient if Enter, navigation, Markdown, a map redraw
+        -- or a synchronisation acknowledgement can freeze the same hand afterwards.
+        -- Every phase is complete only when the whole gesture-to-next-gesture path stays
+        -- responsive under latency, packet loss and temporary server absence.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "What device-level latency budgets will define perceptual immediacy for text, structural gestures, navigation and derived projections?"
+open question "How much of a large graph must be replicated initially on storage-constrained devices, and what remains available before full hydration?"
+open question "What happens to pending work when authentication expires while a device is offline?"
+open question "Which local data is retained or erased on sign-out, device transfer and participant removal?"
+open question "What recovery path preserves pending work when durable local storage is full, unavailable or corrupted?"
+open question "Which same-subject changes are provably safe to merge automatically beyond idempotent repeats and changes to independent subjects?"

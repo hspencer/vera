@@ -267,6 +267,35 @@ const addExposureLog: Migration = {
   },
 };
 
+const addBlockGlosses: Migration = {
+  version: 7,
+  name: 'glosas canónicas de bloques',
+  apply(db) {
+    db.exec(`CREATE TABLE IF NOT EXISTS block_glosses (
+      block_id    TEXT PRIMARY KEY REFERENCES blocks (id) ON DELETE CASCADE,
+      content     TEXT NOT NULL,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    ) STRICT`);
+    db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS glosses_fts USING fts5 (
+      content,
+      content = 'block_glosses',
+      content_rowid = 'rowid',
+      tokenize = 'unicode61 remove_diacritics 2'
+    )`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS glosses_fts_insert AFTER INSERT ON block_glosses BEGIN
+      INSERT INTO glosses_fts (rowid, content) VALUES (new.rowid, new.content);
+    END`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS glosses_fts_delete AFTER DELETE ON block_glosses BEGIN
+      INSERT INTO glosses_fts (glosses_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+    END`);
+    db.exec(`CREATE TRIGGER IF NOT EXISTS glosses_fts_update AFTER UPDATE OF content ON block_glosses BEGIN
+      INSERT INTO glosses_fts (glosses_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+      INSERT INTO glosses_fts (rowid, content) VALUES (new.rowid, new.content);
+    END`);
+  },
+};
+
 /*
  * El cerco de una credencial: qué clase puede plantar y con qué se marca.
  *
@@ -312,6 +341,7 @@ export const MIGRATIONS: readonly Migration[] = [
   addDrawnChannel,
   addExposureLog,
   addConfinements,
+  addBlockGlosses,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

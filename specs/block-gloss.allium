@@ -1,0 +1,289 @@
+-- allium: 3
+-- block-gloss.allium
+
+-- Scope: A marginal gloss attached to a block and its responsive presentation
+-- Includes: One gloss per block, attributed revisions, wide marginal reading,
+--   compact access beside the block, editing from either presentation, and
+--   searching or counting the human marginalia as a distinct corpus
+-- Excludes:
+--   - Typography, colour values and breakpoint measurements
+--   - The storage representation of a gloss
+-- Dependencies: Block and Participant are governed by core.allium; Workspace and
+--   its text_only, split and graph_only layouts by workspace-interface.allium
+
+use "./core.allium" as core
+use "./workspace-interface.allium" as workspace
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract BlockGlossing {
+    read: (block: core/Block) -> Gloss?
+    write: (participant: core/Participant, block: core/Block, content: String) -> Gloss
+    open: (participant: core/Participant, block: core/Block) -> GlossDisclosure
+
+    @invariant AGlossBelongsToOneStableBlock
+        -- A gloss is attached to the stable identity of its block, not to the
+        -- block's position or current wording. Moving or editing the block does
+        -- not detach the marginal thought from what it annotates.
+
+    @invariant TheGlossIsNotBlockContent
+        -- A gloss neither changes the text it accompanies nor becomes a child
+        -- block. It can be read and revised separately without altering the
+        -- outline, references or Markdown of the block.
+
+    @invariant GlossWritingHasHistoryAndProvenance
+        -- Creating or revising a gloss uses Vera's authenticated operation path
+        -- and leaves an attributed revision. A marginal annotation is writing,
+        -- not disposable interface state.
+
+    @invariant OneSharedGlossCanHaveManyEditors
+        -- Each block has one canonical gloss belonging to its memory and,
+        -- ultimately, to that memory's human owner. Active participants may
+        -- revise it as they may revise the block; revisions preserve who wrote
+        -- what and when rather than creating private parallel glosses.
+
+    @invariant TheGlossIsTheHumanOwnersMarginalia
+        -- The gloss exists principally for the memory's human owner, who reads,
+        -- studies and responds to a text. An agent may assist or contribute an
+        -- attributed revision, but it acquires neither a separate gloss nor
+        -- ownership of this one. Search, indexing and machine processing are
+        -- secondary uses: they may make the human's marginalia discoverable,
+        -- but do not redefine it as machine metadata or source content.
+
+    @invariant TheSameGlossMovesBetweenPresentations
+        -- The marginal column and the compact disclosure are two presentations
+        -- of the same gloss. Changing layout or available width never copies,
+        -- truncates or forks its content.
+}
+
+contract GlossDiscovery {
+    search: (participant: core/Participant, graph: core/Graph, query: String) -> Set<Gloss>
+    count: (participant: core/Participant, graph: core/Graph) -> Integer
+
+    @invariant GlossesAreHumanMarginalia
+        -- Glosses are participant-authored notes about source text. Search and
+        -- processing preserve that provenance and never present a gloss as if
+        -- it were part of the annotated source or its authorial voice.
+
+    @invariant GlossSearchIsASelectableCorpus
+        -- A participant can search only within glosses, independently of page
+        -- and block content, while ordinary discovery can still include gloss
+        -- matches and identify them explicitly as marginalia.
+
+    @invariant GlossCountsAreQueryable
+        -- Vera can report how many glosses exist in the participant's visible
+        -- graph without requiring the participant to enumerate their content.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum GlossPresentationMode { margin | compact }
+enum DisclosureState { closed | open }
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity Gloss {
+    block: core/Block
+    content: String
+    revisions: GlossRevision with gloss = this
+}
+
+entity GlossRevision {
+    gloss: Gloss
+    content: String
+    authored_by: core/Participant
+    recorded_at: Timestamp
+}
+
+entity GlossDisclosure {
+    workspace: workspace/Workspace
+    block: core/Block
+    mode: GlossPresentationMode
+    state: DisclosureState
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule ParticipantCreatesGloss {
+    when: WriteBlockGloss(participant, block, content)
+
+    requires: not exists Gloss{block: block}
+    requires: core/Membership{graph: block.page.graph, participant: participant}.status = active
+
+    ensures:
+        let gloss = Gloss.created(block: block, content: content)
+        GlossRevision.created(
+            gloss: gloss,
+            content: content,
+            authored_by: participant,
+            recorded_at: now
+        )
+}
+
+rule ParticipantRevisesGloss {
+    when: WriteBlockGloss(participant, block, content)
+
+    let gloss = Gloss{block: block}
+
+    requires: exists gloss
+    requires: core/Membership{graph: block.page.graph, participant: participant}.status = active
+    requires: content != gloss.content
+
+    ensures:
+        gloss.content = content
+        GlossRevision.created(
+            gloss: gloss,
+            content: content,
+            authored_by: participant,
+            recorded_at: now
+        )
+}
+
+rule ParticipantOpensCompactGloss {
+    when: OpenBlockGloss(participant, disclosure)
+
+    requires: disclosure.workspace.participant = participant
+    requires: disclosure.mode = compact
+    requires: disclosure.state = closed
+
+    ensures: disclosure.state = open
+}
+
+rule ParticipantClosesCompactGloss {
+    when: CloseBlockGloss(participant, disclosure)
+
+    requires: disclosure.workspace.participant = participant
+    requires: disclosure.mode = compact
+    requires: disclosure.state = open
+
+    ensures: disclosure.state = closed
+}
+
+rule ParticipantSearchesGlosses {
+    when: SearchGlosses(participant, graph, query)
+
+    requires: core/Membership{graph: graph, participant: participant}.status = active
+
+    ensures: GlossMatchesReturned(
+        to: participant,
+        matches: search_glosses(Glosses, graph, query)
+    )
+}
+
+rule ParticipantCountsGlosses {
+    when: CountGlosses(participant, graph)
+
+    requires: core/Membership{graph: graph, participant: participant}.status = active
+
+    ensures: GlossCountReturned(
+        to: participant,
+        count: count_glosses(Glosses, graph)
+    )
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant OneGlossPerBlock {
+    for a in Glosses:
+        for b in Glosses:
+            a != b implies a.block != b.block
+}
+
+invariant GlossRevisionBelongsToBlockGraphParticipant {
+    for revision in GlossRevisions:
+        exists core/Membership{
+            graph: revision.gloss.block.page.graph,
+            participant: revision.authored_by
+        }
+}
+
+invariant DisclosureBelongsToVisibleGraph {
+    for disclosure in GlossDisclosures:
+        disclosure.block.page.graph = disclosure.workspace.graph
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor GlossingParticipant {
+    within: workspace/Workspace
+    identified_by: core/Participant where this = within.participant
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface BlockGloss {
+    facing participant: GlossingParticipant
+    context workspace: workspace/Workspace
+
+    provides:
+        WriteBlockGloss(participant, block, content) when block.page.graph = workspace.graph
+        OpenBlockGloss(participant, disclosure) when disclosure.workspace = workspace
+        CloseBlockGloss(participant, disclosure) when disclosure.workspace = workspace
+        SearchGlosses(participant, workspace.graph, query)
+        CountGlosses(participant, workspace.graph)
+
+    contracts:
+        fulfils BlockGlossing
+        fulfils GlossDiscovery
+
+    @guarantee TheWideTextViewHasAMarginForThought
+        -- When Vera shows only text and the screen leaves sufficient room, each
+        -- gloss is a second column immediately beside the text column. It begins
+        -- at the vertical position of its block, follows the text's line rhythm
+        -- and uses a quieter colour so the annotation accompanies without being
+        -- mistaken for the text.
+
+    @guarantee ConstrainedTextKeepsTheGlossAtItsBlock
+        -- In split text-and-map layout, and on a narrow mobile presentation, the
+        -- marginal column withdraws. When the block has a gloss, a small
+        -- floating `align-left` mark from the Feather icon vocabulary remains
+        -- attached beside it; activating the mark reveals the gloss without
+        -- navigating away or changing the outline.
+
+    @guarantee AGlossCanBeginWhereItWillBeRead
+        -- A block that has no gloss offers `Add gloss` among that block's own
+        -- actions. Choosing it opens an empty annotation at the block, so
+        -- creation requires neither a persistent empty control nor a separate
+        -- index or settings surface.
+
+    @guarantee TheGlossTextIsItsEditingAffordance
+        -- An existing gloss is ordinarily presented as readable marginal text,
+        -- not as a permanently visible form field. Activating that same text
+        -- changes it into its editor at the block without navigating elsewhere.
+
+    @guarantee GraphOnlyHasNoOrphanedGlossControls
+        -- A graph-only view presents neither blocks nor free-floating gloss
+        -- controls. The affordance returns with the text and remains attached to
+        -- the same stable block.
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred GlossPersistence.record -- see: change-application.allium
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Does clearing the last character remove the gloss or preserve an empty gloss and its revision history?"
+open question "Which keyboard gesture moves between a block and its gloss without leaving the writing flow?"
+open question "Should ordinary whole-graph search include gloss matches by default, or only when the participant explicitly includes marginalia?"
+open question "Which text-processing activities may consume glosses -- full-text indexing, concept extraction, embeddings, summaries or agent context -- and which must exclude them unless explicitly requested?"
+open question "When processing combines source text and glosses, how must results preserve the boundary between the source author's words and the participant's marginalia?"
+open question "When a gloss is revised, which derived artefacts must be refreshed, and may historical revisions ever participate in search or processing?"

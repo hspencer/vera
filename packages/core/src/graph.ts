@@ -42,6 +42,7 @@ import type {
   ParticipantId,
   ParticipantKind,
   PropertyAssignment,
+  Gloss,
   Publication,
   Revision,
   SearchHit,
@@ -58,6 +59,7 @@ const FIELD_ORDER: Record<SearchableField, number> = {
   block_content: 1,
   property_value: 2,
   audio_transcript: 3,
+  gloss_content: 4,
 };
 
 export class VeraGraph {
@@ -95,6 +97,7 @@ export class VeraGraph {
   /** Cuándo se tocó por última vez cada página. Ver #apply. */
   #updatedAt = new Map<PageId, number>();
   #blocks = new Map<BlockId, Block>();
+  #glosses = new Map<BlockId, Gloss>();
   #tags = new Map<BlockId, string[]>();
 
   // Índices. Sin ellos cada bloque nuevo recorre todos los enlaces existentes,
@@ -218,6 +221,14 @@ export class VeraGraph {
 
   block(id: BlockId): Block | undefined {
     return this.#blocks.get(id);
+  }
+
+  gloss(block: BlockId): Gloss | undefined {
+    return this.#glosses.get(block);
+  }
+
+  glosses(): Gloss[] {
+    return [...this.#glosses.values()];
   }
 
   blocksOf(page: PageId): Block[] {
@@ -541,7 +552,8 @@ export class VeraGraph {
       change.kind === 'create_block' ||
       change.kind === 'edit_block' ||
       change.kind === 'move_block' ||
-      change.kind === 'remove_block';
+      change.kind === 'remove_block' ||
+      change.kind === 'set_block_gloss';
 
     let page: PageId | null = null;
     let block: BlockId | null = null;
@@ -643,6 +655,10 @@ export class VeraGraph {
         }
         return null;
       }
+      case 'set_block_gloss':
+        if (!this.#blocks.has(change.block)) return 'no such block';
+        if (change.content === this.#glosses.get(change.block)?.content) return 'the gloss is unchanged';
+        return null;
       case 'set_property': {
         const refusal = this.#validateSubject(change.page, change.block);
         if (refusal !== null) return refusal;
@@ -906,9 +922,25 @@ export class VeraGraph {
         this.#clearLinksOf(change.block);
         this.#tags.delete(change.block);
         this.#unportedByBlock.delete(change.block);
+        this.#glosses.delete(change.block);
         // El grupo cierra el hueco: las posiciones de un grupo de hermanos son
         // densas, y un hueco haría que el siguiente índice pedido cayera mal.
         if (page !== undefined) this.#renumber(page, parent);
+        return change.block;
+      }
+      case 'set_block_gloss': {
+        const held = this.#glosses.get(change.block);
+        if (held === undefined) {
+          this.#glosses.set(change.block, {
+            block: change.block,
+            content: change.content,
+            createdAt: at,
+            updatedAt: at,
+          });
+        } else {
+          held.content = change.content;
+          held.updatedAt = at;
+        }
         return change.block;
       }
       case 'set_property': {
@@ -1175,6 +1207,17 @@ export class VeraGraph {
           block: property.block,
           field: 'property_value',
           excerpt: `${property.key}: ${property.value}`,
+        });
+      }
+      for (const gloss of this.glosses()) {
+        if (!matches(gloss.content, input.text)) continue;
+        const page = this.#blocks.get(gloss.block)?.page;
+        if (page === undefined) continue;
+        found.push({
+          page,
+          block: gloss.block,
+          field: 'gloss_content',
+          excerpt: excerpt(gloss.content, input.text),
         });
       }
     }

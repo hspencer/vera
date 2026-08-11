@@ -171,6 +171,27 @@ describe('lecturas', () => {
     assert.equal(hits[0]?.field, 'page_title');
   });
 
+  it('escribe, entrega y busca una glosa por la vía canónica', async () => {
+    const page = await write({ kind: 'create_page', title: 'Glosada', visibility: 'private' });
+    const block = await write({ kind: 'create_block', page, parent: null, position: 0, content: 'pasaje' });
+    await write({ kind: 'set_block_gloss', block, content: 'hilván hospitalario' });
+
+    const detail = (await get(`/pages/${encodeURIComponent(page)}`)) as {
+      glosses: Record<string, { content: string }>;
+    };
+    assert.equal(detail.glosses[block]?.content, 'hilván hospitalario');
+
+    const hits = (await get('/search?q=hospitalario')) as { block: string; field: string }[];
+    assert.ok(hits.some((hit) => hit.block === block && hit.field === 'gloss_content'));
+
+    const onlyGlosses = (await get('/glosses?q=hilv%C3%A1n')) as {
+      count: number;
+      matches: { block: string }[];
+    };
+    assert.ok(onlyGlosses.count >= 1);
+    assert.ok(onlyGlosses.matches.some((match) => match.block === block));
+  });
+
   it('entrega el grafo en la forma que consume constel', async () => {
     const a = await write({ kind: 'create_page', title: 'NodoA', visibility: 'private' });
     await write({ kind: 'create_page', title: 'NodoB', visibility: 'private' });

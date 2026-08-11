@@ -98,6 +98,8 @@ export interface PageView {
     string,
     { participant: string; kind: 'human' | 'agent' | null; channel: string; writtenAt: number }
   >;
+  /** La única glosa canónica de cada bloque que la tenga. */
+  glosses?: Record<string, { content: string; createdAt: number; updatedAt: number }>;
   backlinks: Backlink[];
   /** A quién nombra esta página: una fila por página nombrada, no por mención. */
   references: Reference[];
@@ -316,6 +318,7 @@ export type Change =
   // todos el mismo cambio: el bloque pasa a colgar de otro padre, en un índice.
   | { kind: 'move_block'; block: string; page: string; parent: string | null; position: number }
   | { kind: 'remove_block'; block: string }
+  | { kind: 'set_block_gloss'; block: string; content: string }
   // El front matter de una página son propiedades, y se editan como todo lo
   // demás: enviando una operación.
   | { kind: 'set_property'; page?: string; block?: string; propertyKey: string; propertyValue: string }

@@ -975,6 +975,114 @@ input {
   display: flex;
   gap: var(--rail-gap);
   align-items: baseline;
+  position: relative;
+}
+
+/* La glosa acompaña el bloque sin entrar en su outline. En una lectura ancha
+   vive en el margen; en vistas compactas se abre desde su marca. */
+.gloss-toggle {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0.18rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0.72;
+  flex: 0 0 auto;
+}
+
+.gloss-toggle.empty {
+  display: none;
+}
+
+.gloss-toggle:hover,
+.gloss-toggle:focus-visible,
+.gloss-toggle[aria-expanded='true'] {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.block-gloss {
+  display: none;
+  flex: 1 1 100%;
+  min-width: 0;
+  margin: 0.2rem 0 0 calc(var(--rail) + var(--rail-gap));
+}
+
+.block-gloss.open {
+  display: block;
+}
+
+.gloss-text {
+  min-height: 1.55rem;
+  border-left: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
+  padding-left: 0.65rem;
+  color: var(--muted);
+  font-size: 0.9em;
+  line-height: inherit;
+  white-space: pre-wrap;
+  cursor: text;
+}
+
+.gloss-text:hover,
+.gloss-text:focus-visible {
+  border-left-color: var(--accent);
+  color: var(--text);
+  outline: none;
+}
+
+.block:has(> .block-gloss.open) {
+  flex-wrap: wrap;
+}
+
+.gloss-editor {
+  display: none;
+  width: 100%;
+  min-height: 1.55rem;
+  resize: vertical;
+  overflow: hidden;
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
+  padding: 0 0 0 0.65rem;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9em;
+  line-height: inherit;
+}
+
+.block-gloss.editing .gloss-text {
+  display: none;
+}
+
+.block-gloss.editing .gloss-editor {
+  display: block;
+}
+
+.gloss-editor:focus {
+  outline: none;
+  border-left-color: var(--accent);
+  color: var(--text);
+}
+
+@media (min-width: 70rem) {
+  #vera-root[data-layout='text_only'] .block-gloss:not(.empty) {
+    display: block;
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    left: calc(100% + 2rem);
+    width: clamp(15rem, 25vw, 24rem);
+    margin: 0;
+  }
+
+  #vera-root[data-layout='text_only'] .gloss-toggle {
+    display: none;
+  }
+
+  #vera-root[data-layout='text_only'] .block-gloss.empty.open {
+    display: block;
+  }
 }
 
 /*

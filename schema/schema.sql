@@ -103,6 +103,15 @@ CREATE TABLE IF NOT EXISTS blocks (
 CREATE INDEX IF NOT EXISTS blocks_by_page ON blocks (page_id, parent_id, position);
 CREATE INDEX IF NOT EXISTS blocks_by_parent ON blocks (parent_id);
 
+-- Una sola marginalia canónica por bloque. Su historia vive en operations y
+-- revisions; esta tabla materializa únicamente la versión visible actual.
+CREATE TABLE IF NOT EXISTS block_glosses (
+    block_id    TEXT PRIMARY KEY REFERENCES blocks (id) ON DELETE CASCADE,
+    content     TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+) STRICT;
+
 -- invariant PropertyTargetsOneSubject y PropertyKeyIsUniquePerSubject
 CREATE TABLE IF NOT EXISTS property_assignments (
     id        TEXT PRIMARY KEY,
@@ -230,6 +239,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5 (
     tokenize = 'unicode61 remove_diacritics 2'
 );
 
+CREATE VIRTUAL TABLE IF NOT EXISTS glosses_fts USING fts5 (
+    content,
+    content = 'block_glosses',
+    content_rowid = 'rowid',
+    tokenize = 'unicode61 remove_diacritics 2'
+);
+
 CREATE TRIGGER IF NOT EXISTS blocks_fts_insert AFTER INSERT ON blocks BEGIN
     INSERT INTO blocks_fts (rowid, content) VALUES (new.rowid, new.content);
 END;
@@ -254,6 +270,19 @@ END;
 CREATE TRIGGER IF NOT EXISTS pages_fts_update AFTER UPDATE OF title ON pages BEGIN
     INSERT INTO pages_fts (pages_fts, rowid, title) VALUES ('delete', old.rowid, old.title);
     INSERT INTO pages_fts (rowid, title) VALUES (new.rowid, new.title);
+END;
+
+CREATE TRIGGER IF NOT EXISTS glosses_fts_insert AFTER INSERT ON block_glosses BEGIN
+    INSERT INTO glosses_fts (rowid, content) VALUES (new.rowid, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS glosses_fts_delete AFTER DELETE ON block_glosses BEGIN
+    INSERT INTO glosses_fts (glosses_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS glosses_fts_update AFTER UPDATE OF content ON block_glosses BEGIN
+    INSERT INTO glosses_fts (glosses_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+    INSERT INTO glosses_fts (rowid, content) VALUES (new.rowid, new.content);
 END;
 
 ------------------------------------------------------------

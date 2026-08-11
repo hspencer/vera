@@ -965,6 +965,7 @@ surface VeraWorkspace {
 deferred GraphRendering.present -- see: graph-rendering.allium
 deferred QueryLanguage.execute   -- see: query-language.allium
 deferred SearchIndex.find        -- see: search-index.allium
+deferred BlockGloss.present       -- see: block-gloss.allium
 
 ------------------------------------------------------------
 -- Open Questions

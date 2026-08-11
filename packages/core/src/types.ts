@@ -6,6 +6,7 @@ export type ParticipantId = string;
 export type GraphId = string;
 export type PageId = string;
 export type BlockId = string;
+export type GlossId = string;
 export type OperationId = string;
 
 export const PARTICIPANT_KINDS = ['human', 'agent'] as const;
@@ -59,6 +60,7 @@ export const CHANGE_KINDS = [
   'edit_block',
   'move_block',
   'remove_block',
+  'set_block_gloss',
   'set_property',
   'remove_property',
 ] as const;
@@ -105,6 +107,7 @@ export type Change =
       readonly position: number;
     }
   | { readonly kind: 'remove_block'; readonly block: BlockId }
+  | { readonly kind: 'set_block_gloss'; readonly block: BlockId; readonly content: string }
   | {
       readonly kind: 'set_property';
       readonly page?: PageId | undefined;
@@ -143,6 +146,14 @@ export interface Block {
   position: number;
   content: string;
   readonly createdAt: number;
+}
+
+/** La única marginalia canónica que acompaña a un bloque. */
+export interface Gloss {
+  readonly block: BlockId;
+  content: string;
+  readonly createdAt: number;
+  updatedAt: number;
 }
 
 export interface PropertyAssignment {
@@ -280,7 +291,8 @@ export type SearchableField =
   | 'page_title'
   | 'block_content'
   | 'property_value'
-  | 'audio_transcript';
+  | 'audio_transcript'
+  | 'gloss_content';
 
 export interface SearchHit {
   readonly page: PageId;

@@ -151,6 +151,12 @@ const SHAPES = {
     '<line x1="6.6" y1="10.58" x2="14.51" y2="10.58"/>' +
     '<line x1="6.6" y1="13.43" x2="17.4" y2="13.43"/>' +
     '<line x1="6.6" y1="16.31" x2="14.51" y2="16.31"/>',
+
+  'align-left':
+    '<line x1="5" y1="6" x2="19" y2="6"/>' +
+    '<line x1="5" y1="10" x2="15" y2="10"/>' +
+    '<line x1="5" y1="14" x2="19" y2="14"/>' +
+    '<line x1="5" y1="18" x2="13" y2="18"/>',
 } as const;
 
 export type IconName = keyof typeof SHAPES;
