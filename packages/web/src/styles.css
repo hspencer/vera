@@ -2255,6 +2255,26 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* Volver es parte de leer una nota, no una acción secundaria escondida. La
+   flecha queda al final de su texto, pequeña pero alcanzable, y usa el mismo
+   acento que la llamada desde la que se llegó. */
+.footnote-back {
+  display: inline-block;
+  margin-left: 0.4em;
+  padding: 0 0.2em;
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 0.9em;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.footnote-back:hover,
+.footnote-back:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
 /* El salto desde una referencia deja la nota justo bajo la barra
    superior; sin esto queda tapada por ella. */
 .footnote:target,

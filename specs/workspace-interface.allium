@@ -57,6 +57,11 @@ contract NativeMarkdownEditing {
         -- Footnote references and definitions can be authored and revised as
         -- part of the page's Markdown source.
 
+    @invariant FootnotesAreARoundTrip
+        -- Following a footnote reference reaches its definition, whose return
+        -- mark leads back to the precise reference occurrence from which the
+        -- reader arrived, including when one note is cited more than once.
+
     @invariant RenderedPresentationIsFaithful
         -- Content not currently being edited is presented as rendered Markdown:
         -- headings, lists, quotations, code, tables, images, horizontal rules and

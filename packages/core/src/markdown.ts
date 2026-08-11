@@ -279,10 +279,14 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
     },
   );
 
-  // Referencia a nota al pie. Sólo el destino lleva id, así que dos bloques que
-  // citen la misma nota no producen ids repetidos en la página.
+  // Referencia a nota al pie. La identidad única de cada aparición se asigna
+  // cuando la página completa está dibujada: inlineMarkdown sólo conoce este
+  // fragmento y no puede saber cuántas veces se citó la misma nota fuera de él.
   html = html.replace(/\[\^([^\]\s]+)\]/g, (_whole, id: string) =>
-    hold(`<sup class="fnref"><a class="fnref-link" href="#fn-${encodeURIComponent(id)}">${id}</a></sup>`),
+    hold(
+      `<sup class="fnref"><a class="fnref-link" data-footnote="${quoteAttribute(id)}" ` +
+        `href="#fn-${encodeURIComponent(id)}">${id}</a></sup>`,
+    ),
   );
 
   // Referencia a bloque. El identificador no lleva espacios ni paréntesis, de
@@ -531,9 +535,12 @@ export function renderMarkdown(source: string, options: RenderOptions = {}): str
       flushParagraph(paragraph);
       const id = footnote[1] ?? '';
       html +=
-        `<div class="footnote" id="fn-${encodeURIComponent(id)}">` +
+        `<div class="footnote" id="fn-${encodeURIComponent(id)}" data-footnote="${quoteAttribute(id)}">` +
         `<span class="footnote-id">${escapeHtml(id)}</span>` +
-        `<span class="footnote-body">${inlineMarkdown(footnote[2] ?? '', options)}</span></div>`;
+        `<span class="footnote-body">${inlineMarkdown(footnote[2] ?? '', options)}` +
+        `<a class="footnote-back" data-footnote-back="${quoteAttribute(id)}" ` +
+        `href="#fnref-${encodeURIComponent(id)}" aria-label="volver a la referencia ${quoteAttribute(id)}">↩</a>` +
+        `</span></div>`;
       at += 1;
       continue;
     }

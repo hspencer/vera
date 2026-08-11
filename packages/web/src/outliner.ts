@@ -1775,6 +1775,40 @@ export function renderOutliner(
   const pending = new Set(page.pendingLinks ?? []);
   if (pending.size > 0) options.pageExists = (title) => !pending.has(title);
 
+  /**
+   * Cierra el viaje de cada nota al pie sobre la página ya compuesta.
+   *
+   * El renderizador de un fragmento no sabe si otro bloque citó la misma nota.
+   * Aquí sí están todas las apariciones: reciben anclas únicas, y cada salto de
+   * ida prepara la flecha para volver exactamente a la aparición pulsada.
+   */
+  const wireFootnotes = (root: ParentNode): void => {
+    const backs = new Map<string, HTMLAnchorElement[]>();
+    for (const back of root.querySelectorAll<HTMLAnchorElement>('.footnote-back[data-footnote-back]')) {
+      const id = back.dataset['footnoteBack'] ?? '';
+      const held = backs.get(id) ?? [];
+      held.push(back);
+      backs.set(id, held);
+    }
+
+    const occurrences = new Map<string, number>();
+    for (const reference of root.querySelectorAll<HTMLAnchorElement>('.fnref-link[data-footnote]')) {
+      const id = reference.dataset['footnote'] ?? '';
+      const occurrence = (occurrences.get(id) ?? 0) + 1;
+      occurrences.set(id, occurrence);
+      const anchor = `fnref-${encodeURIComponent(id)}-${occurrence}`;
+      reference.id = anchor;
+
+      const returns = backs.get(id) ?? [];
+      if (occurrence === 1) {
+        for (const back of returns) back.href = `#${anchor}`;
+      }
+      reference.addEventListener('click', () => {
+        for (const back of returns) back.href = `#${anchor}`;
+      });
+    }
+  };
+
   const glosses = page.glosses ?? {};
 
   /** Contenido que, a diferencia de la prosa, usa el ancho entero del bloque. */
@@ -3478,6 +3512,7 @@ export function renderOutliner(
   }
 
   for (const root of tree) drawBlock(root, 0);
+  wireFootnotes(list);
 
   // Una página sin bloques no tenía dónde pulsar, así que crearla dejaba a
   // quien la creó mirando una página en la que no podía escribir.

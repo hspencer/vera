@@ -225,7 +225,7 @@ describe('inlineMarkdown', () => {
     it('convierte la referencia en un salto al destino', () => {
       assert.equal(
         inlineMarkdown('afirmación[^3]'),
-        'afirmación<sup class="fnref"><a class="fnref-link" href="#fn-3">3</a></sup>',
+        'afirmación<sup class="fnref"><a class="fnref-link" data-footnote="3" href="#fn-3">3</a></sup>',
       );
     });
 
@@ -235,7 +235,7 @@ describe('inlineMarkdown', () => {
       assert.match(html, /href="#fn-5"/);
     });
 
-    it('no le pone id a la referencia, para no repetirlo entre bloques', () => {
+    it('deja la identidad única para cuando se componga la página completa', () => {
       assert.ok(!inlineMarkdown('x[^1]').includes('id='));
     });
   });
@@ -375,6 +375,13 @@ describe('renderMarkdown', () => {
       const html = renderMarkdown('[^3]: Gaver y Bowers, 2012.');
       assert.match(html, /id="fn-3"/);
       assert.match(html, /Gaver y Bowers, 2012\./);
+    });
+
+    it('la definición ofrece volver a la referencia', () => {
+      const html = renderMarkdown('[^3]: Gaver y Bowers, 2012.');
+      assert.match(html, /class="footnote-back"/);
+      assert.match(html, /href="#fnref-3"/);
+      assert.match(html, /aria-label="volver a la referencia 3"/);
     });
 
     it('referencia y definición se encuentran en la misma página', () => {
