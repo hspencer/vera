@@ -1,0 +1,43 @@
+Required Notice: Vera — Copyright 2026 MediaFranca (https://mediafranca.net/). Autor / Author: Herbert Spencer González. https://github.com/hspencer/vera
+
+================================================================================
+
+Vera
+Memoria personal soberana: corpus versionado, editable, replicable y auditable.
+
+  Autoría          Herbert Spencer González <hspencer@ead.cl>
+  Custodia         MediaFranca — https://mediafranca.net/
+  Origen           https://github.com/hspencer/vera
+  Licencia         PolyForm Noncommercial License 1.0.0
+                   + Concesión de Replicación del Servicio (LICENSE-REPLICACION.md)
+
+La autoría es de Herbert Spencer González y no se transfiere. La ley chilena
+sobre propiedad intelectual (Ley 17.336) enumera en su artículo 14 las facultades
+morales del autor —entre ellas reivindicar la paternidad de la obra y oponerse a
+su deformación— y en su artículo 16 las declara inalienables, siendo nulo
+cualquier pacto en contrario. La custodia y administración de los derechos
+patrimoniales corresponde a MediaFranca. Nada en esta licencia, ni en ninguna
+concesión hecha bajo ella, permite omitir, reemplazar o disputar la autoría.
+
+Este archivo contiene los avisos que la sección «Notices» de la licencia obliga
+a conservar. Toda copia, total o parcial, y toda obra derivada, deben llevarlo.
+La línea que empieza por «Required Notice:» es la que la licencia nombra: debe
+viajar íntegra, sin recortarla ni reformatearla.
+
+El registro de autoría, cómo se incorporan nuevos autores y cómo se reparte lo
+que la concesión de replicación recaude está en AUTHORS.md.
+
+--------------------------------------------------------------------------------
+Obras de terceros incluidas en este repositorio
+--------------------------------------------------------------------------------
+
+Puño alzado — packages/web/public/assets/raised-fist.svg
+  Eugenio Hansen, OFS. CC BY-SA 4.0.
+  https://commons.wikimedia.org/w/index.php?curid=65787095
+
+Logo PWA — packages/web/public/assets/pwa-logo.svg
+  Diego González-Zúñiga. CC0 1.0 (dominio público).
+  https://commons.wikimedia.org/wiki/File:Progressive_Web_Apps_Logo.svg
+
+Las dependencias de npm conservan cada una su propia licencia y no se
+redistribuyen en este repositorio: `node_modules/` está fuera de git.
