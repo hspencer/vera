@@ -67,6 +67,71 @@ describe('sembrar la réplica', () => {
     assert.equal(blocksOf(replica).find((one) => one.stableId === 'block:hijo')?.parent, 'block:padre');
   });
 
+  it('conserva el orden de los hermanos', () => {
+    /*
+     * La que faltaba, y no por descuido inocente: la prueba de arriba compara los
+     * identificadores **ordenados**, así que pasaba en verde con la réplica
+     * entregando la página en otro orden del que el servidor mandó.
+     *
+     * Sentar un bloque acota su índice al número de hermanos que ya hay —no se
+     * puede entrar cuarto en una fila de uno—, así que plantarlos al revés los
+     * dejaba barajados: el manual de Vera, de 197 bloques, se leía en un orden
+     * que nadie escribió.
+     */
+    const replica = seed(
+      view({
+        blocks: [
+          { stableId: 'block:1', parent: null, position: 0, content: 'primero' },
+          { stableId: 'block:2', parent: null, position: 1, content: 'segundo' },
+          { stableId: 'block:3', parent: null, position: 2, content: 'tercero' },
+          { stableId: 'block:4', parent: null, position: 3, content: 'cuarto' },
+          { stableId: 'block:5', parent: null, position: 4, content: 'quinto' },
+        ],
+      }),
+    );
+    assert.deepEqual(
+      blocksOf(replica).map((one) => one.content),
+      ['primero', 'segundo', 'tercero', 'cuarto', 'quinto'],
+    );
+  });
+
+  it('y lo conserva aunque el servidor los mande en cualquier orden', () => {
+    // No se supone nada de cómo vengan: lo que manda es la posición que traen.
+    const replica = seed(
+      view({
+        blocks: [
+          { stableId: 'block:3', parent: null, position: 2, content: 'tercero' },
+          { stableId: 'block:1', parent: null, position: 0, content: 'primero' },
+          { stableId: 'block:2', parent: null, position: 1, content: 'segundo' },
+        ],
+      }),
+    );
+    assert.deepEqual(
+      blocksOf(replica).map((one) => one.content),
+      ['primero', 'segundo', 'tercero'],
+    );
+  });
+
+  it('y también entre hermanos que cuelgan de un padre', () => {
+    const replica = seed(
+      view({
+        blocks: [
+          { stableId: 'block:p', parent: null, position: 0, content: 'padre' },
+          { stableId: 'block:c', parent: 'block:p', position: 2, content: 'tercero' },
+          { stableId: 'block:a', parent: 'block:p', position: 0, content: 'primero' },
+          { stableId: 'block:b', parent: 'block:p', position: 1, content: 'segundo' },
+        ],
+      }),
+    );
+    assert.deepEqual(
+      blocksOf(replica)
+        .filter((one) => one.parent === 'block:p')
+        .sort((a, b) => a.position - b.position)
+        .map((one) => one.content),
+      ['primero', 'segundo', 'tercero'],
+    );
+  });
+
   it('trae lo que cuelga de cada bloque', () => {
     const replica = seed(
       view({ blockProperties: { 'block:a': [{ key: 'plazo', value: 'mañana' }] } }),

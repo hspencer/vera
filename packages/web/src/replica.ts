@@ -58,22 +58,35 @@ export function seed(page: PageView): Replica {
   submit({ kind: 'create_page', title: page.title, visibility: page.visibility, stableId: page.id });
 
   /*
-   * Los padres antes que los hijos.
+   * Los padres antes que los hijos, y cada hermano después del que va antes.
    *
    * `create_block` rechaza un padre que todavía no existe, y el servidor manda
    * los bloques en el orden del árbol pero nada lo promete. Se recorre por
    * niveles: primero los que cuelgan de la página, después los que cuelgan de
    * los ya plantados, hasta que no quede ninguno que se pueda plantar.
+   *
+   * Y **por posición ascendente**, que no es un detalle de estilo. Sentar un
+   * bloque acota su índice al número de hermanos que ya hay —no se puede entrar
+   * cuarto en una fila de uno—, así que plantarlos al revés los deja en un orden
+   * que no es el que traían: la página que se lee deja de ser la que se escribió.
+   * Plantados de menor a mayor, cada bloque llega cuando su sitio existe y la
+   * acotación no hace nada.
+   *
+   * Se ordena aquí en vez de confiar en cómo vengan: dentro de un mismo padre lo
+   * único que importa es su orden relativo, y ordenar la lista entera por
+   * posición lo garantiza sin suponer nada del servidor.
    */
-  const pending = [...page.blocks];
+  const pending = [...page.blocks].sort((a, b) => a.position - b.position);
   const planted = new Set<string>();
   let growing = true;
   while (growing && pending.length > 0) {
     growing = false;
-    for (let index = pending.length - 1; index >= 0; index -= 1) {
-      const block = pending[index];
-      if (block === undefined) continue;
-      if (block.parent !== null && !planted.has(block.parent)) continue;
+    const later: BlockView[] = [];
+    for (const block of pending) {
+      if (block.parent !== null && !planted.has(block.parent)) {
+        later.push(block);
+        continue;
+      }
       submit({
         kind: 'create_block',
         page: page.id,
@@ -83,9 +96,10 @@ export function seed(page: PageView): Replica {
         stableId: block.stableId,
       });
       planted.add(block.stableId);
-      pending.splice(index, 1);
       growing = true;
     }
+    pending.length = 0;
+    pending.push(...later);
   }
 
   // Lo que cuelga de cada bloque, que el corpus trae de Logseq y sostiene el
