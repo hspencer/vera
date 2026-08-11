@@ -1071,8 +1071,11 @@ input {
     display: block;
     position: absolute;
     z-index: 1;
-    top: 0;
-    left: calc(var(--rail) + var(--rail-gap) + 0.25rem + var(--content-width, 45em) + 1.25rem);
+    top: var(--gloss-top, 0px);
+    left: calc(
+      var(--block-indent, 0px) + var(--rail) + var(--rail-gap) + 0.25rem
+      + var(--content-width, 45em) + 1.25rem
+    );
     width: calc(var(--content-width, 45em) * 0.6);
     max-width: calc(100vw - var(--rail) - var(--rail-gap) - var(--content-width, 45em) - 4rem);
     margin: 0;

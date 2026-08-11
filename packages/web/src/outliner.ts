@@ -1791,7 +1791,7 @@ export function renderOutliner(
    * desde el menú del bloque. Si existe, se lee como texto y se edita pulsando
    * ese mismo texto. En poco ancho la marca sólo revela lo que ya existe.
    */
-  const renderGloss = (row: HTMLElement, block: string): (() => void) => {
+  const renderGloss = (row: HTMLElement, body: HTMLElement, block: string): (() => void) => {
     const held = glosses[block]?.content ?? '';
 
     const toggle = document.createElement('button');
@@ -1829,6 +1829,60 @@ export function renderOutliner(
       void renderMermaid(text);
     };
     paint(held);
+
+    /**
+     * Dónde cae realmente la línea base de una caja de texto.
+     *
+     * No se deduce del tamaño de letra: IBM Plex reserva ascenso y descenso, y
+     * al reducir la glosa al 85% cambia también el reparto del leading. El
+     * marcador de altura cero pregunta al propio motor tipográfico dónde puso
+     * la baseline con esas métricas exactas. Así funciona igual en Safari y no
+     * deja un número afinado para un solo tamaño de lectura.
+     */
+    const baseline = (style: CSSStyleDeclaration): number => {
+      const probe = document.createElement('span');
+      probe.setAttribute('aria-hidden', 'true');
+      Object.assign(probe.style, {
+        position: 'fixed',
+        left: '-10000px',
+        top: '0',
+        visibility: 'hidden',
+        whiteSpace: 'nowrap',
+        fontFamily: style.fontFamily,
+        fontSize: style.fontSize,
+        fontStyle: style.fontStyle,
+        fontWeight: style.fontWeight,
+        lineHeight: style.lineHeight,
+      });
+      probe.textContent = 'Hg';
+      const mark = document.createElement('i');
+      Object.assign(mark.style, {
+        display: 'inline-block',
+        width: '0',
+        height: '0',
+        padding: '0',
+        margin: '0',
+        verticalAlign: 'baseline',
+      });
+      probe.append(mark);
+      document.body.append(probe);
+      const offset = mark.getBoundingClientRect().top - probe.getBoundingClientRect().top;
+      probe.remove();
+      return offset;
+    };
+
+    /** La primera línea de ambas voces comparte una baseline, no sólo un top. */
+    const alignBaseline = (): void => {
+      const source = body.querySelector<HTMLElement>('.body-text > :first-child')
+        ?? body.querySelector<HTMLElement>('.body-text')
+        ?? body;
+      const gloss = text.firstElementChild instanceof HTMLElement ? text.firstElementChild : text;
+      const sourceTop = source.getBoundingClientRect().top - row.getBoundingClientRect().top;
+      const shift = sourceTop + baseline(getComputedStyle(source)) - baseline(getComputedStyle(gloss));
+      panel.style.setProperty('--gloss-top', `${shift}px`);
+    };
+    alignBaseline();
+    void document.fonts.ready.then(alignBaseline);
 
     // El ancho pertenece a la columna; el alto pertenece a lo escrito. Medir
     // scrollHeight incluye también las líneas blandas producidas al envolver,
@@ -2695,7 +2749,11 @@ export function renderOutliner(
     row.className = 'block';
     // La sangría sale de un token, y la hoja la encoge en pantallas estrechas.
     // Ver `--indent` en tokens.ts y `--indent-scale` en styles.css.
-    row.style.paddingLeft = `calc(var(--indent, 1.25rem) * var(--indent-scale, 1) * ${depth})`;
+    row.style.setProperty(
+      '--block-indent',
+      `calc(var(--indent, 1.25rem) * var(--indent-scale, 1) * ${depth})`,
+    );
+    row.style.paddingLeft = 'var(--block-indent)';
     row.dataset['id'] = node.block.stableId;
 
     // @invariant OnlyParentsFold: el control sólo aparece donde hay algo que
@@ -2878,7 +2936,7 @@ export function renderOutliner(
       }
     }
 
-    const editGloss = renderGloss(row, node.block.stableId);
+    const editGloss = renderGloss(row, body, node.block.stableId);
 
     bullet.addEventListener('click', (event) => {
       event.stopPropagation();
