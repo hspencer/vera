@@ -3140,7 +3140,12 @@ export function renderOutliner(
     }
 
     row.classList.toggle('wide-content', hasWideContent(body));
-    row.prepend(bullet, body);
+    // El carril estructural siempre queda a la izquierda del contenido.
+    // `.fold` ya fue añadido primero —o su hueco equivalente—, así que añadir
+    // ahora la viñeta y el cuerpo conserva el orden chevron · viñeta · texto.
+    // `prepend` los ponía delante del chevron y lo expulsaba al extremo derecho
+    // de la fila en cuanto la glosa ensanchaba su geometría.
+    row.append(bullet, body);
     list.append(row);
     editors.set(node.block.stableId, { node, body });
     // El orden de lectura, que es este y no el del arbol guardado.

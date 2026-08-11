@@ -1499,7 +1499,15 @@ input {
 .bullet:hover,
 .bullet:focus-visible {
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  /* El botón conserva el alto del primer renglón, que no siempre coincide con
+     el ancho del carril. Un color de fondo plano convertía ese rectángulo en
+     una elipse vertical. El gradiente pinta un disco inscrito en la dimensión
+     menor: el carril y el área táctil no cambian, pero la señal visible es 1:1. */
+  background: radial-gradient(
+    circle closest-side at center,
+    color-mix(in srgb, var(--accent) 18%, transparent) 99%,
+    transparent 100%
+  );
   outline: none;
 }
 
