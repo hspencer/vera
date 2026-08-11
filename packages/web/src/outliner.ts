@@ -36,7 +36,7 @@ import { governingKind, kindSays, renderGoverning } from './governing-table.ts';
 import { answerQueryBlock } from './query-block.ts';
 import { renderMermaid } from './mermaid.ts';
 import { is } from './bindings.ts';
-import { icon } from './icons.ts';
+import { icon, type IconName } from './icons.ts';
 import { when } from './dates.ts';
 import { isMCPPage, renderMCP } from './mcp-page.ts';
 import { isServicePage, pickBibliography, renderService } from './service-page.ts';
@@ -199,12 +199,29 @@ function bindDismissal(): void {
 
 interface MenuAction {
   label: string;
+  /**
+   * El dibujo de la acción, cuando la acción es una acción.
+   *
+   * Opcional porque no todo lo que se abre así es un verbo: el selector de
+   * valores de una propiedad lista palabras del corpus, y ponerle un icono a
+   * cada una diría que son botones de la interfaz cuando son vocabulario de
+   * quien escribe.
+   */
+  icon?: IconName;
   /** Por qué no se puede, cuando no se puede. La acción se muestra igual. */
   blocked?: string;
   run(): void | Promise<void>;
 }
 
-function openBlockMenu(anchor: HTMLElement, actions: MenuAction[]): void {
+/**
+ * Un menú, por grupos.
+ *
+ * Los grupos son la firma y no una lista con separadores metidos dentro: así lo
+ * que hay que decidir al añadir una acción es a qué se parece, y no en qué
+ * renglón cae. Un grupo vacío no dibuja nada —una raya suelta al final es peor
+ * que no agrupar— y por eso se filtran antes de contar.
+ */
+function openBlockMenu(anchor: HTMLElement, groups: MenuAction[][]): void {
   bindDismissal();
   closeMenu();
 
@@ -212,21 +229,38 @@ function openBlockMenu(anchor: HTMLElement, actions: MenuAction[]): void {
   menu.className = 'block-menu';
   menu.setAttribute('role', 'menu');
 
-  for (const action of actions) {
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.className = 'block-menu-item';
-    item.textContent = action.label;
-    item.setAttribute('role', 'menuitem');
-    if (action.blocked !== undefined) {
-      item.disabled = true;
-      item.title = action.blocked;
+  for (const group of groups.filter((one) => one.length > 0)) {
+    if (menu.childElementCount > 0) {
+      const rule = document.createElement('div');
+      rule.className = 'block-menu-rule';
+      // Decorativa: lo que separa los grupos ya se lee en el orden y en las
+      // etiquetas. Anunciarla sería un renglón vacío cada tres.
+      rule.setAttribute('role', 'presentation');
+      menu.append(rule);
     }
-    item.addEventListener('click', () => {
-      closeMenu();
-      void action.run();
-    });
-    menu.append(item);
+
+    for (const action of group) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'block-menu-item';
+      item.setAttribute('role', 'menuitem');
+      // El icono va como marcado y la etiqueta como texto: lo segundo puede
+      // venir del corpus —los valores de una propiedad los escribió alguien— y
+      // ahí no entra marcado.
+      if (action.icon !== undefined) item.insertAdjacentHTML('afterbegin', icon(action.icon));
+      const said = document.createElement('span');
+      said.textContent = action.label;
+      item.append(said);
+      if (action.blocked !== undefined) {
+        item.disabled = true;
+        item.title = action.blocked;
+      }
+      item.addEventListener('click', () => {
+        closeMenu();
+        void action.run();
+      });
+      menu.append(item);
+    }
   }
 
   // Se mide puesto y escondido, y se coloca después. Ver `placeNear`.
@@ -2460,17 +2494,25 @@ export function renderOutliner(
         choose.title = `elegir ${property.key}`;
         choose.addEventListener('click', (event) => {
           event.stopPropagation();
+          // Dos grupos, porque son dos cosas: arriba el vocabulario que este
+          // corpus ya usa, y debajo, separado, lo único que es un gesto de la
+          // interfaz. Sin la raya, «escribir otro…» se lee como un valor más.
           openBlockMenu(choose, [
             // Los más dichos, y sólo esos. La cola larga de una propiedad son sus
             // erratas; ofrecerlas al mismo nivel que los términos las volvería a
             // sembrar, que es cómo se llegó a tener treinta y ocho tipos.
-            ...offered.slice(0, OFFERED_AT_MOST).map((option) => ({
+            offered.slice(0, OFFERED_AT_MOST).map((option) => ({
               label: option.value === property.value ? `${option.value} ·` : option.value,
               run: () => void answer(option.value),
             })),
             // Un vocabulario que no crece donde se usa deja de crecer, y con él
             // deja de etiquetarse. Ver @guarantee AVocabularyGrowsAtThePointOfUse.
-            { label: 'escribir otro…', run: () => editInPlace(value, property.value, `valor de ${property.key}`, answer) },
+            [
+              {
+                label: 'escribir otro…',
+                run: () => editInPlace(value, property.value, `valor de ${property.key}`, answer),
+              },
+            ],
           ]);
         });
         value.append(choose);
@@ -2709,7 +2751,10 @@ export function renderOutliner(
   more.innerHTML = icon('more-vertical');
   more.addEventListener('click', (event) => {
     event.stopPropagation();
+    // Un solo grupo, todavía: el de la página no se ha ordenado ni se le han
+    // puesto iconos, y media reforma se ve peor que ninguna.
     openBlockMenu(more, [
+      [
       /*
        * Deshacer lo último, también desde aquí.
        *
@@ -2787,6 +2832,7 @@ export function renderOutliner(
         label: 'Eliminar la página',
         run: () => void deletePage(page, callbacks),
       },
+      ],
     ]);
   });
   header.append(more);
@@ -3106,112 +3152,151 @@ export function renderOutliner(
       // muestra igual, con el motivo: ocultarla dejaría al participante sin
       // saber por qué no puede borrar esto y sí lo de al lado.
       const leaf = node.children.length === 0;
+      /*
+       * Cinco grupos, y el orden de los cinco es un argumento.
+       *
+       * Primero lo que cambia lo que el bloque *dice* —glosarlo, explicar a qué
+       * se ata, dárselo al modelo—, porque es lo que este menú ofrece y no
+       * ofrece ningún otro sitio. Después lo que cambia dónde está. Después lo
+       * que se lleva una copia y lo que sólo mira, que no tocan nada. Y al
+       * final, solo y detrás de una raya, lo único que quita.
+       *
+       * El arco es ese: escribe, mueve, lee, borra. Quien abre el menú sin
+       * saber qué busca baja por él y el riesgo crece hacia abajo, en vez de
+       * repartirse por la lista.
+       *
+       * Y el primero es «glosa» también por una razón de teclado: al abrirse, el
+       * foco cae en el primer renglón, así que un Enter distraído tiene que dar
+       * en algo que se deshace solo cerrando el editor.
+       */
       openBlockMenu(bullet, [
-        {
-          label: 'Copiar referencia',
-          run: () => copyText(`((${node.block.stableId}))`, toast),
-        },
-        {
-          label: 'Copiar identificador',
-          run: () => copyText(node.block.stableId, toast),
-        },
-        {
-          label: 'Copiar el Markdown del bloque',
-          run: () => copyText(node.block.content, toast),
-        },
-        /*
-         * Todo lo que este bloque dijo alguna vez.
-         *
-         * El registro lo tenía desde siempre y no había forma de mirarlo sin
-         * abrir la base de datos. Un corpus que promete que nada se pierde tiene
-         * que poder enseñarlo, o la promesa hay que creérsela; y cuando algo
-         * parece perdido, éste es el sitio donde se comprueba que no.
-         */
-        {
-          label: 'Ver la historia del bloque',
-          run: () => void showHistory(node.block.stableId, row, toast),
-        },
-        {
-          label: glosses[node.block.stableId]?.content ? 'Editar glosa' : 'Agregar glosa',
-          run: editGloss,
-        },
-        /*
-         * Explicar por qué esta página y aquélla se tocan.
-         *
-         * Desde aquí y no desde otro sitio: el momento en que alguien sabe por
-         * qué dos páginas se tocan es el momento en que las está mirando
-         * juntas. Lo que sale es un bloque hijo —la conectiva— que se escribe
-         * como cualquier otro; lo que Vera pone es a dónde apunta y con qué
-         * término, que es lo que hace que la relación se pueda leer desde el
-         * otro extremo.
-         */
-        /*
-         * El bloque como pedido: lo escrito se le da al modelo local y la
-         * respuesta ocupa su sitio, con sus ítems colgando.
-         *
-         * El pedido no se pierde —queda en las revisiones del bloque— pero deja
-         * de estar a la vista, porque lo que uno vuelve a leer es la lista y no
-         * lo que pidió. Lo que sale queda firmado por el modelo y se dibuja como
-         * lo que es: no lo escribió quien escribió el pedido.
-         */
-        {
-          label: 'Procesar el bloque',
-          ...(node.block.content.trim() === ''
-            ? { blocked: 'un bloque vacío no pide nada' }
-            : {}),
-          run: () => void processBlock(node.block, row, toast, callbacks),
-        },
-        {
-          label: 'Explicar relación…',
-          run: () => explainFrom(body, node.block, page.id, toast, callbacks),
-        },
-        {
-          label: 'Subir',
-          ...(neighbourhoods.get(node.block.stableId)?.index === 0
-            ? { blocked: 'el bloque ya es el primero de su nivel' }
-            : {}),
-          run: () => {
-            const near = neighbourhoods.get(node.block.stableId);
-            if (near !== undefined) void moveBlock(node.block, page.id, near, true, callbacks);
+        [
+          {
+            label: glosses[node.block.stableId]?.content ? 'Editar glosa' : 'Agregar glosa',
+            icon: 'message-square',
+            run: editGloss,
           },
-        },
-        {
-          label: 'Bajar',
-          run: () => {
-            const near = neighbourhoods.get(node.block.stableId);
-            if (near !== undefined) void moveBlock(node.block, page.id, near, false, callbacks);
+          /*
+           * Explicar por qué esta página y aquélla se tocan.
+           *
+           * Desde aquí y no desde otro sitio: el momento en que alguien sabe por
+           * qué dos páginas se tocan es el momento en que las está mirando
+           * juntas. Lo que sale es un bloque hijo —la conectiva— que se escribe
+           * como cualquier otro; lo que Vera pone es a dónde apunta y con qué
+           * término, que es lo que hace que la relación se pueda leer desde el
+           * otro extremo.
+           */
+          {
+            label: 'Explicar relación…',
+            icon: 'feather',
+            run: () => explainFrom(body, node.block, page.id, toast, callbacks),
           },
-        },
-        /*
-         * Que los hijos se lean numerados, o vuelvan a la viñeta.
-         *
-         * Desde el padre y no desde cada hijo: la lista es el padre y sus ítems
-         * son sus hijos, así que hay un solo sitio donde decirlo y uno solo donde
-         * está dicho. Ver rule NumberTheChildren.
-         */
-        {
-          label: numbering ? 'Volver a viñetas' : 'Numerar los hijos',
-          // @invariant nothing_to_mark: se ofrece igual y bloqueada, con el
-          // motivo. Esconderla dejaría sin saber por qué aquí no y al lado sí.
-          ...(parent ? {} : { blocked: 'este bloque no tiene hijos que numerar' }),
-          run: () =>
-            void markChildren(
-              node.block,
-              node.children.map((child) => child.block),
-              !numbering,
-              callbacks,
-            ),
-        },
-        {
-          label: 'Enfocar en este bloque',
-          ...(parent ? {} : { blocked: 'un bloque sin hijos no tiene en qué enfocar' }),
-          run: () => callbacks.onFocusBlock?.(node.block.stableId),
-        },
-        {
-          label: 'Eliminar bloque',
-          ...(leaf ? {} : { blocked: 'un bloque con hijos no se puede eliminar todavía' }),
-          run: () => removeBlock(node.block, row, callbacks),
-        },
+          /*
+           * El bloque como pedido: lo escrito se le da al modelo local y la
+           * respuesta ocupa su sitio, con sus ítems colgando.
+           *
+           * El pedido no se pierde —queda en las revisiones del bloque— pero deja
+           * de estar a la vista, porque lo que uno vuelve a leer es la lista y no
+           * lo que pidió. Lo que sale queda firmado por el modelo y se dibuja como
+           * lo que es: no lo escribió quien escribió el pedido.
+           */
+          {
+            label: 'Procesar el bloque',
+            icon: 'cpu',
+            ...(node.block.content.trim() === ''
+              ? { blocked: 'un bloque vacío no pide nada' }
+              : {}),
+            run: () => void processBlock(node.block, row, toast, callbacks),
+          },
+        ],
+        [
+          {
+            label: 'Subir',
+            icon: 'arrow-up',
+            ...(neighbourhoods.get(node.block.stableId)?.index === 0
+              ? { blocked: 'el bloque ya es el primero de su nivel' }
+              : {}),
+            run: () => {
+              const near = neighbourhoods.get(node.block.stableId);
+              if (near !== undefined) void moveBlock(node.block, page.id, near, true, callbacks);
+            },
+          },
+          {
+            label: 'Bajar',
+            icon: 'arrow-down',
+            run: () => {
+              const near = neighbourhoods.get(node.block.stableId);
+              if (near !== undefined) void moveBlock(node.block, page.id, near, false, callbacks);
+            },
+          },
+          /*
+           * Que los hijos se lean numerados, o vuelvan a la viñeta.
+           *
+           * Desde el padre y no desde cada hijo: la lista es el padre y sus ítems
+           * son sus hijos, así que hay un solo sitio donde decirlo y uno solo donde
+           * está dicho. Ver rule NumberTheChildren.
+           */
+          {
+            label: numbering ? 'Volver a viñetas' : 'Numerar los hijos',
+            icon: 'list',
+            // @invariant nothing_to_mark: se ofrece igual y bloqueada, con el
+            // motivo. Esconderla dejaría sin saber por qué aquí no y al lado sí.
+            ...(parent ? {} : { blocked: 'este bloque no tiene hijos que numerar' }),
+            run: () =>
+              void markChildren(
+                node.block,
+                node.children.map((child) => child.block),
+                !numbering,
+                callbacks,
+              ),
+          },
+        ],
+        [
+          {
+            label: 'Copiar referencia',
+            icon: 'link-2',
+            run: () => copyText(`((${node.block.stableId}))`, toast),
+          },
+          {
+            label: 'Copiar identificador',
+            icon: 'hash',
+            run: () => copyText(node.block.stableId, toast),
+          },
+          {
+            label: 'Copiar el Markdown del bloque',
+            icon: 'copy',
+            run: () => copyText(node.block.content, toast),
+          },
+        ],
+        [
+          {
+            label: 'Enfocar en este bloque',
+            icon: 'crosshair',
+            ...(parent ? {} : { blocked: 'un bloque sin hijos no tiene en qué enfocar' }),
+            run: () => callbacks.onFocusBlock?.(node.block.stableId),
+          },
+          /*
+           * Todo lo que este bloque dijo alguna vez.
+           *
+           * El registro lo tenía desde siempre y no había forma de mirarlo sin
+           * abrir la base de datos. Un corpus que promete que nada se pierde tiene
+           * que poder enseñarlo, o la promesa hay que creérsela; y cuando algo
+           * parece perdido, éste es el sitio donde se comprueba que no.
+           */
+          {
+            label: 'Ver la historia del bloque',
+            icon: 'clock',
+            run: () => void showHistory(node.block.stableId, row, toast),
+          },
+        ],
+        [
+          {
+            label: 'Eliminar bloque',
+            icon: 'trash-2',
+            ...(leaf ? {} : { blocked: 'un bloque con hijos no se puede eliminar todavía' }),
+            run: () => removeBlock(node.block, row, callbacks),
+          },
+        ],
       ]);
     });
 

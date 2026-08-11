@@ -1837,12 +1837,39 @@ input {
   padding: 0.35rem 0.6rem;
   border-radius: 3px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+/* El icono, apagado hasta que el renglón se señala.
+   A plena tinta compite con la etiqueta y el menú se lee como una parrilla de
+   dibujos; atenuado hace lo que tiene que hacer, que es agrupar de reojo y
+   dejar leer la palabra. */
+.block-menu-item .icon {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  color: var(--text-dim);
 }
 
 .block-menu-item:hover:not(:disabled),
 .block-menu-item:focus-visible:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
   outline: none;
+}
+
+.block-menu-item:hover:not(:disabled) .icon,
+.block-menu-item:focus-visible:not(:disabled) .icon {
+  color: inherit;
+}
+
+/* La raya entre grupos. Con sangría a los lados para que separe los renglones
+   sin partir la caja del menú en dos. */
+.block-menu-rule {
+  height: 1px;
+  margin: 0.25rem 0.45rem;
+  background: var(--rule);
 }
 
 /* Una acción imposible se muestra igual, atenuada y con su motivo en el título:
