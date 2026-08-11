@@ -726,6 +726,17 @@ input {
   cursor: pointer;
 }
 
+/* Las paradas y el gesto que convierte el rastro en recorrido pertenecen a la
+   misma hilera de breadcrumbs. Comparten caja y estados; sólo cambia que el
+   último es cuadrado porque contiene un icono en vez de un título. */
+.trail-pill,
+.trail-keep {
+  box-sizing: border-box;
+  height: 1.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+}
+
 .trail-pill:hover {
   color: var(--accent);
   border-color: var(--accent);
@@ -5440,9 +5451,9 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.15rem;
-  border: none;
-  background: none;
+  width: 1.4rem;
+  padding: 0;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
   color: var(--text-dim);
   cursor: pointer;
 }
@@ -5454,6 +5465,7 @@ code {
 
 .trail-keep:hover {
   color: var(--accent);
+  border-color: var(--accent);
 }
 
 .thread-stop {
