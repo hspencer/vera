@@ -523,6 +523,9 @@ Para escribir o modificar especificaciones hace falta **allium** — ver
 ## Pasos futuros
 
 Las cuatro direcciones abiertas, en el orden en que se condicionan unas a otras.
+Los tres horizontes que mandan sobre la experiencia —que la mano no espere, que
+la espera se vea, y la federación— están en **[ROADMAP.md](ROADMAP.md)**, con sus
+dependencias y sus preguntas abiertas.
 
 ### 1. Instanciación para múltiples usuarios
 
@@ -582,6 +585,23 @@ precondiciones de edición que impidan pisar lo que otro escribió mientras tant
 y reconciliación entre instancias, que hoy no existe en ninguna forma. Depende de
 los puntos 1 y 3.
 
+## Documentación
+
+El **manual de uso** —cada tecla, cada comando, cada gesto— está en
+[docs/manual.md](docs/manual.md). El índice de todo lo demás, en
+[docs/](docs/README.md).
+
+| | |
+| --- | --- |
+| [Manual](docs/manual.md) | Cómo se usa Vera. |
+| [Portabilidad](docs/portabilidad.md) | Levantar una instancia propia. |
+| [Arquitectura](docs/architecture.md) | La forma técnica, con lo construido y lo propuesto marcados aparte. |
+| [Interfaz](docs/interfaz.md) | Inventario de lo que hay hoy en pantalla. |
+| [Obligaciones de prueba](docs/test-obligations.md) | Qué cubre la suite y qué no. |
+| [Benchmark](docs/benchmark.md) | Vera frente a otros PKM, comparando diseños. |
+| [ROADMAP](ROADMAP.md) | Qué viene, en qué orden y qué sigue sin decidirse. |
+| [CONTRIBUTING](CONTRIBUTING.md) | Cómo se trabaja aquí. |
+
 ## Método
 
 Primero se especifica comportamiento y casos límite en Allium. Después se elige
@@ -633,6 +653,56 @@ y no se depende de ese código en tiempo de ejecución.
 
 El instructivo completo, incluido qué reemplazar para hacer propio el
 repositorio, está en [docs/portabilidad.md](docs/portabilidad.md).
+
+## Cómo se contribuye
+
+Las ramas, los commits, la revisión, la etiqueta y cómo se reporta un fallo de
+seguridad están en **[CONTRIBUTING.md](CONTRIBUTING.md)**. Lo esencial:
+
+1. **Primero la spec, después el código.** Si no hay spec que lo cubra, se
+   escribe la spec.
+2. **Cada tarea en su rama.** Nunca se trabaja sobre `main` ni sobre la rama de
+   integración.
+3. **Nadie hace merge a `main`.** Está protegida y la mueve sólo la custodia.
+4. **`make check` en verde antes de proponer.**
+
+Un defecto de seguridad **no se abre como issue público**: se escribe a
+hspencer@ead.cl.
+
+## Licencia y autoría
+
+Vera es **fuente disponible, no open source**, y conviene decirlo con todas las
+letras.
+
+- **Sin fines de lucro: libre.** Usarla, leerla, estudiarla, modificarla,
+  compartirla y publicar un fork. Incluidas escuelas, universidades, ONG,
+  organismos públicos y proyectos de investigación, expresamente.
+- **Con fines de lucro: no**, salvo una excepción.
+- **La excepción es replicar el servicio.** Cualquiera puede levantar máquinas y
+  cobrar por alojar Vera para otras personas, con cuatro condiciones: atribución
+  visible, publicar el código de lo que opera, garantizar a cada usuario la
+  exportación completa de su corpus en cualquier momento, y un **5% de royalty**
+  a los autores, exento bajo USD 10.000 anuales.
+
+| | |
+| --- | --- |
+| [LICENSE](LICENSE) | PolyForm Noncommercial License 1.0.0, sin modificar. |
+| [LICENSE-REPLICACION.md](LICENSE-REPLICACION.md) | La concesión de replicación del servicio, con sus condiciones y su royalty. |
+| [LICENCIA.md](LICENCIA.md) | Qué se puede y qué no, y por qué esta licencia y no otra. |
+| [AUTHORS.md](AUTHORS.md) | El registro de autoría y cómo se entra a él. |
+| [NOTICE](NOTICE) | Los avisos que toda copia debe conservar. |
+
+**Autoría:** Herbert Spencer González. Es inalienable: la Ley 17.336 chilena
+enumera las facultades morales del autor en su artículo 14 y las declara
+inalienables en el 16, siendo nulo cualquier pacto en contrario.
+
+**Custodia:** [MediaFranca](https://mediafranca.net/) administra los derechos
+patrimoniales, la licencia y el fondo de autoría. No es autora y no participa del
+fondo.
+
+**El corpus no es del repositorio.** `data/`, `objects/` y `.env` están fuera de
+git desde el primer commit. Clonar Vera da el programa, no la memoria de nadie, y
+esta licencia no dice nada sobre lo que cada persona escriba en la suya.
 
 ## Créditos gráficos
 
