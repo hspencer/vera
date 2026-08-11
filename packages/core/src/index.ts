@@ -178,6 +178,15 @@ export {
 } from './trail.ts';
 
 export {
+  LIST_KEY,
+  NUMBERED,
+  hasTypedOrdinal,
+  readChildListStyle,
+  withoutTypedOrdinal,
+  type ChildListStyle,
+} from './list.ts';
+
+export {
   DEADLINE_KEY,
   MARKS,
   TASK_STATES,

@@ -8,11 +8,12 @@
 --   between blocks without leaving the editor, delimiter autopairing, the
 --   autocomplete state machine for references, tags and commands, and the outline
 --   manipulation that surrounds them: moving a block among its siblings, folding a
---   subtree, and focusing the view on one block
+--   subtree, focusing the view on one block, and saying whether a block's children
+--   read as a bulleted or a numbered list
 -- Excludes:
 --   - Which operation each change becomes, and its ordering (see change-application.allium)
 --   - How a saved block is presented (see workspace-interface.allium)
---   - Block types, headings and numbered lists, which Vera does not model yet
+--   - Block types and headings, which Vera does not model yet
 --   - Properties, their types and their cardinality, which the corpus already carries
 --     and no interface yet edits
 --   - Undo and redo
@@ -67,6 +68,30 @@ contract OutlineManipulation {
     move: (block: core/Block, up: Boolean) -> core/Block
     collapse: (participant: core/Participant, block: core/Block, folded: Boolean) -> FoldState
     focus: (block: core/Block?) -> OutlineView
+    mark: (block: core/Block, style: ChildListStyle) -> ChildListMarking
+
+    @invariant TheNumberBelongsToTheTreeAndNotToTheText
+        -- The ordinal a participant reads beside a numbered child is its position
+        -- among its siblings, computed when the list is drawn. It is never stored,
+        -- so inserting, moving or removing an item renumbers the rest with no
+        -- further change to any of them.
+
+    @invariant MarkingIsOneFactOnTheParent
+        -- That children read as a numbered list is one fact, held by the parent
+        -- and not repeated on each child. A child created afterwards is numbered
+        -- without being told, which is what makes the list a list rather than a
+        -- set of blocks that happen to agree.
+
+    @invariant NumberingAbsorbsATypedOrdinal
+        -- Numbering children whose text already begins with an ordinal removes
+        -- that ordinal from the text. It is an ordinary edit of each child, with
+        -- its revision and its undo. Leaving it would render the number twice;
+        -- hiding it while keeping it stored would leave the text and the list
+        -- disagreeing about which number is real.
+
+    @invariant BulletsAreWhatABlockIsWithoutBeingTold
+        -- The absence of a marking is a bulleted list, so nothing has to be
+        -- declared for the ordinary case and no migration exists.
 
     @invariant SubtreesTravelWithTheirRoot
         -- Moving a block moves everything under it. A block never overtakes its
@@ -103,6 +128,8 @@ contract EditorAutocomplete {
 -- Enumerations
 ------------------------------------------------------------
 
+enum ChildListStyle { bulleted | numbered }
+
 enum EditorMode { idle | editing }
 
 -- What the editor is doing beyond plain typing. Only one can be open at a time,
@@ -111,6 +138,7 @@ enum EditorAction { none | node_search | tag_search | block_search | commands }
 
 enum RefusalReason {
     no_block_above | ambiguous_child_order | block_has_children | nothing_to_merge
+    | nothing_to_mark
 }
 
 ------------------------------------------------------------
@@ -148,6 +176,19 @@ entity FoldState {
     participant: core/Participant
     block: core/Block
     folded: Boolean
+}
+
+-- Cómo se leen los hijos de un bloque. Es del padre, no de cada hijo: ver
+-- @invariant MarkingIsOneFactOnTheParent.
+--
+-- Va como propiedad del bloque y no como marca en el texto, que es al revés de
+-- como se dice una tarea (`[x]`, ver tasks.allium). No es una excepción: la marca
+-- de una tarea es un hecho de ese ítem y sobrevive a moverlo; el número de una
+-- lista es una consecuencia de dónde está, y escribirlo en el texto es
+-- exactamente lo que lo vuelve mentira en cuanto algo se mueve.
+entity ChildListMarking {
+    parent: core/Block
+    style: ChildListStyle
 }
 
 -- Where the view is rooted. With no root the whole page is in view.
@@ -558,6 +599,57 @@ rule ParticipantFoldsBlock {
     )
 }
 
+rule NumberTheChildren {
+    when: MarkChildren(participant, block, numbered)
+
+    requires: block.children.count > 0
+
+    ensures:
+        ChildListMarking.created(parent: block, style: numbered)
+        for child in block.children:
+            child.content = without_typed_ordinal(child.content)
+
+    @guidance
+        -- Dos cosas a la vez y en el mismo gesto: la lista pasa a estar numerada y
+        -- los números que alguien escribió a mano dejan de estar en el texto. Lo
+        -- segundo es una edición corriente de cada hijo, con su revisión, así que
+        -- se puede deshacer y se puede ver qué decía antes.
+        --
+        -- Sólo el ordinal de cabeza y sólo si de verdad lo es: un bloque que
+        -- empieza «1984 fue el año» no lleva un número de lista delante, lleva una
+        -- fecha, y quitársela sería destruir texto para arreglar un dibujo.
+}
+
+rule BulletTheChildren {
+    when: MarkChildren(participant, block, bulleted)
+
+    requires: block.children.count > 0
+
+    ensures: not exists ChildListMarking{parent: block}
+
+    @guidance
+        -- Volver a viñetas quita la marca y no devuelve los números al texto. No
+        -- es una omisión: lo que se quitó al numerar era la copia congelada de una
+        -- posición, y reponerla escribiría de nuevo el problema que numerar vino a
+        -- resolver. Lo que se escribió está en las revisiones de cada hijo.
+}
+
+rule RefuseMarkingWithoutChildren {
+    when: MarkChildren(participant, block, style)
+
+    requires: block.children.count = 0
+
+    ensures: StructuralRefusal.created(
+        block: block,
+        reason: nothing_to_mark
+    )
+
+    @guidance
+        -- Se ofrece igual y bloqueada, con el motivo, como el resto de las
+        -- negativas de este esquema: esconder el control deja a quien mira sin
+        -- saber por qué esto no se puede y lo de al lado sí.
+}
+
 rule ParticipantFocusesOnBlock {
     when: FocusOutline(participant, block)
 
@@ -674,6 +766,15 @@ rule AcceptingAChoiceClosesAutocomplete {
 invariant OneAutocompleteAtATime {
     for s in EditSessions:
         s.action != none implies s.query_start != null
+}
+
+-- @invariant TheNumberBelongsToTheTreeAndNotToTheText, dicho como propiedad
+-- comprobable: en una lista numerada no hay un solo número guardado. El que se
+-- lee sale de la posición, y por eso insertar en el medio no toca a nadie.
+invariant ANumberedChildStoresNoNumber {
+    for marking in ChildListMarkings:
+        for child in marking.parent.children:
+            marking.style = numbered implies child.content = without_typed_ordinal(child.content)
 }
 
 invariant AnIdleSessionHoldsNothing {

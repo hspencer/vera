@@ -40,7 +40,17 @@ import { icon } from './icons.ts';
 import { when } from './dates.ts';
 import { isMCPPage, renderMCP } from './mcp-page.ts';
 import { isServicePage, pickBibliography, renderService } from './service-page.ts';
-import { DEADLINE_KEY, TRAIL_KIND, nextState, readTask, writeTask } from '@vera/core';
+import {
+  DEADLINE_KEY,
+  LIST_KEY,
+  NUMBERED,
+  TRAIL_KIND,
+  nextState,
+  readChildListStyle,
+  readTask,
+  withoutTypedOrdinal,
+  writeTask,
+} from '@vera/core';
 import { renderTrailBand, trailMarks, type TrailMark } from './trail-page.ts';
 import { pendingLine, saySeconds } from './waiting.ts';
 import { createPage } from './pages.ts';
@@ -330,6 +340,94 @@ async function removeBlock(
    * dibujo no sabe producir es un atajo que va a divergir.
    */
   row.remove();
+  callbacks.onReload(null);
+  callbacks.onChanged();
+}
+
+/**
+ * Dice si los hijos de un bloque se leen numerados o con viñeta.
+ *
+ * Ver specs/block-editing.allium, rule NumberTheChildren. Un hecho en el padre y
+ * ninguno en los hijos, así que un hijo que nazca después ya está numerado.
+ *
+ * El orden importa y no es arbitrario. Primero la propiedad, después limpiar los
+ * números escritos a mano. Al revés, un fallo a mitad dejaría el texto de alguien
+ * sin sus números y la lista sin numerar —una pérdida, aunque sea recuperable—;
+ * así, un fallo a mitad deja un «1. 1.» a la vista, que es feo, no pierde nada y
+ * se arregla repitiendo el gesto.
+ */
+async function markChildren(
+  block: BlockView,
+  children: readonly BlockView[],
+  numbered: boolean,
+  callbacks: OutlinerCallbacks,
+): Promise<void> {
+  const said = async (change: Change): Promise<boolean> => {
+    let result;
+    try {
+      result = await api.submit(change);
+    } catch {
+      toast('no se pudo: sin conexión con el servidor');
+      return false;
+    }
+    if (result.status === 'rejected') {
+      toast(`rechazado: ${result.reason}`);
+      return false;
+    }
+    return true;
+  };
+
+  if (!numbered) {
+    /*
+     * Volver a viñetas quita la marca y no repone los números en el texto.
+     *
+     * Lo que se quitó al numerar era la copia congelada de una posición, y
+     * reponerla escribiría otra vez el problema que numerar vino a resolver. Lo
+     * que decía cada bloque está en sus revisiones.
+     */
+    if (!(await said({ kind: 'remove_property', block: block.stableId, propertyKey: LIST_KEY }))) {
+      return;
+    }
+    callbacks.onReload(null);
+    callbacks.onChanged();
+    return;
+  }
+
+  if (!(await said({
+    kind: 'set_property',
+    block: block.stableId,
+    propertyKey: LIST_KEY,
+    propertyValue: NUMBERED,
+  }))) {
+    return;
+  }
+
+  /*
+   * Y los números que alguien escribió a mano dejan de estar en el texto.
+   *
+   * @invariant NumberingAbsorbsATypedOrdinal. Una edición corriente por hijo, con
+   * su revisión y su deshacer: dejarlos dibujaría el número dos veces, y
+   * esconderlos sin quitarlos dejaría al texto y a la lista discrepando sobre
+   * cuál de los dos números es el de verdad.
+   *
+   * Sólo los que de verdad lo llevan. `withoutTypedOrdinal` devuelve el texto
+   * idéntico cuando no hay nada que quitar, así que numerar una lista limpia no
+   * genera una sola operación.
+   */
+  let cleaned = 0;
+  for (const child of children) {
+    const without = withoutTypedOrdinal(child.content);
+    if (without === child.content) continue;
+    if (await said({ kind: 'edit_block', block: child.stableId, content: without })) cleaned += 1;
+  }
+  if (cleaned > 0) {
+    toast(
+      cleaned === 1
+        ? 'el número que estaba escrito pasó a ser de la lista'
+        : `los ${cleaned} números que estaban escritos pasaron a ser de la lista`,
+    );
+  }
+
   callbacks.onReload(null);
   callbacks.onChanged();
 }
@@ -2788,7 +2886,11 @@ export function renderOutliner(
     });
   }
 
-  const drawBlock = (node: Node, depth: number): void => {
+  /**
+   * Dibuja un bloque. `ordinal` es su número cuando su padre dice que sus hijos
+   * van numerados, y nulo cuando van con viñeta — que es casi siempre.
+   */
+  const drawBlock = (node: Node, depth: number, ordinal: number | null = null): void => {
     const row = document.createElement('div');
     row.className = 'block';
     // La sangría sale de un token, y la hoja la encoge en pantallas estrechas.
@@ -2804,6 +2906,9 @@ export function renderOutliner(
     // plegar. Ofrecerlo en una hoja prometería algo que no puede pasar.
     const parent = node.children.length > 0;
     const shut = folded.has(node.block.stableId);
+    /** Si este bloque dice que sus hijos van numerados. Gobierna su menú. */
+    const numbering =
+      readChildListStyle(page.blockProperties?.[node.block.stableId]) === 'numbered';
 
     if (parent) {
       const fold = document.createElement('button');
@@ -2865,6 +2970,19 @@ export function renderOutliner(
         if (mark.connective) row.classList.add('trail-connective');
         if (mark.silent) row.classList.add('trail-silent');
       }
+    }
+
+    /*
+     * Y si es un ítem de una lista numerada, su número ocupa el sitio del punto.
+     *
+     * Después de la marca de recorrido y sólo si aquélla no puso ninguna: las dos
+     * escriben en el mismo sitio, y entre «parada 4 de un argumento» y «cuarto de
+     * una lista» manda la primera, que es la que alguien afirmó. Coinciden casi
+     * nunca y en silencio quedaría un número que no se sabe de qué es.
+     */
+    if (ordinal !== null && mark?.ordinal == null) {
+      row.classList.add('numbered');
+      bullet.dataset['ordinal'] = String(ordinal);
     }
 
     // Un bloque puede llevar las dos marcas y no se contradicen: dictado por
@@ -3064,6 +3182,26 @@ export function renderOutliner(
             if (near !== undefined) void moveBlock(node.block, page.id, near, false, callbacks);
           },
         },
+        /*
+         * Que los hijos se lean numerados, o vuelvan a la viñeta.
+         *
+         * Desde el padre y no desde cada hijo: la lista es el padre y sus ítems
+         * son sus hijos, así que hay un solo sitio donde decirlo y uno solo donde
+         * está dicho. Ver rule NumberTheChildren.
+         */
+        {
+          label: numbering ? 'Volver a viñetas' : 'Numerar los hijos',
+          // @invariant nothing_to_mark: se ofrece igual y bloqueada, con el
+          // motivo. Esconderla dejaría sin saber por qué aquí no y al lado sí.
+          ...(parent ? {} : { blocked: 'este bloque no tiene hijos que numerar' }),
+          run: () =>
+            void markChildren(
+              node.block,
+              node.children.map((child) => child.block),
+              !numbering,
+              callbacks,
+            ),
+        },
         {
           label: 'Enfocar en este bloque',
           ...(parent ? {} : { blocked: 'un bloque sin hijos no tiene en qué enfocar' }),
@@ -3260,7 +3398,21 @@ export function renderOutliner(
     // árbol visible, las teclas que recorren bloques lo saltan sin saber nada
     // del plegado: no hay dos ideas de qué está a la vista.
     if (!folded.has(node.block.stableId)) {
-      for (const child of node.children) drawBlock(child, depth + 1);
+      /*
+       * El número de un hijo es su sitio entre sus hermanos, y se calcula aquí.
+       *
+       * @invariant TheNumberBelongsToTheTreeAndNotToTheText: no hay ningún número
+       * guardado. Insertar, mover o borrar un ítem renumera el resto sin tocar a
+       * nadie, porque el que se lee se cuenta al dibujar.
+       *
+       * Se cuentan todos los hijos y no sólo los visibles: plegar es lo que una
+       * persona está mirando y no lo que dice el grafo (@invariant
+       * FoldingIsNotAChange), así que un subárbol plegado no puede cambiar la
+       * numeración de la lista en la que está.
+       */
+      node.children.forEach((child, index) =>
+        drawBlock(child, depth + 1, numbering ? index + 1 : null),
+      );
     }
   };
 
@@ -3521,6 +3673,13 @@ export function renderOutliner(
     );
   }
 
+  /*
+   * Los bloques de primer nivel van siempre con viñeta.
+   *
+   * Numerarlos sería una propiedad de la página y no de un bloque, y el gesto que
+   * existe es sobre un bloque. Queda anotado en la spec como pregunta abierta en
+   * vez de resuelto a medias aquí.
+   */
   for (const root of tree) drawBlock(root, 0);
   wireFootnotes(list);
 

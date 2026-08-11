@@ -1612,6 +1612,40 @@ input {
   -webkit-print-color-adjust: exact;
 }
 
+/*
+ * El ítem de una lista numerada lleva su número donde iría el punto.
+ *
+ * El número lo escribe el atributo y el atributo lo pone el dibujo contando
+ * hermanos: no hay ningún ordinal guardado, así que insertar en el medio
+ * renumera solo. Ver `drawBlock` en outliner.ts y @invariant
+ * TheNumberBelongsToTheTreeAndNotToTheText.
+ *
+ * A la derecha del carril y no centrado: un «10» centrado y un «1» centrado
+ * empiezan en columnas distintas, y una lista de once ítems se lee entonces con
+ * el borde izquierdo picado. Alineados por la derecha, todos terminan donde
+ * empieza el texto, que es como se compone una lista numerada desde siempre.
+ */
+.block.numbered > .bullet::before {
+  content: attr(data-ordinal);
+  width: auto;
+  height: auto;
+  background: none;
+  border-radius: 0;
+  position: absolute;
+  right: 0.3em;
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+/* El punto se enciende al pasar por encima; el número también, y por el mismo
+   motivo: es el asa del bloque y tiene que decir que se puede pulsar. */
+.block.numbered > .bullet:hover::before,
+.block.numbered > .bullet:focus-visible::before {
+  color: var(--accent);
+}
+
 .bullet::after {
   content: '';
   position: absolute;
