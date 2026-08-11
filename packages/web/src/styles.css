@@ -10,8 +10,9 @@
  *
  * No dependen de que el cliente las tenga instaladas —lo que dejaría la
  * tipografía a merced de cada aparato— ni de una CDN, que sería una petición a
- * un tercero cada vez que alguien abre su memoria privada. Son 104 KB, están
- * bajo la SIL Open Font License, y su texto viaja junto a los archivos.
+ * un tercero cada vez que alguien abre su memoria privada. Están bajo la SIL
+ * Open Font License y su texto viaja junto a los archivos. Plex Sans usa su eje
+ * variable de peso; Plex Mono conserva los cortes discretos que necesita.
  *
  * El intercambio al cargar deja el texto legible desde el primer momento: una
  * memoria que tarda en mostrar sus propias palabras no sirve de nada.
@@ -22,25 +23,17 @@
  */
 @font-face {
   font-family: 'IBM Plex Sans';
-  src: url('/fonts/plex-sans-400.woff2') format('woff2');
-  font-weight: 400;
+  src: url('/fonts/plex-sans-variable.woff2') format('woff2-variations');
+  font-weight: 100 700;
   font-style: normal;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'IBM Plex Sans';
-  src: url('/fonts/plex-sans-400-italic.woff2') format('woff2');
-  font-weight: 400;
+  src: url('/fonts/plex-sans-variable-italic.woff2') format('woff2-variations');
+  font-weight: 100 700;
   font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'IBM Plex Sans';
-  src: url('/fonts/plex-sans-600.woff2') format('woff2');
-  font-weight: 600;
-  font-style: normal;
   font-display: swap;
 }
 
@@ -1017,13 +1010,14 @@ input {
   display: block;
   flex: none;
   width: 100%;
-  min-height: calc(1em * var(--line-height));
-  border-left: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  padding: 0 0 0 0.65rem;
+  min-height: calc(var(--text-size, 16px) * var(--line-height));
+  border: 0;
+  padding: 0;
   background: transparent;
   color: var(--accent);
-  font-size: inherit;
-  line-height: inherit;
+  font-size: 0.85em;
+  font-weight: 350;
+  line-height: calc(var(--text-size, 16px) * var(--line-height));
   cursor: text;
   overflow-wrap: anywhere;
 }
@@ -1036,7 +1030,6 @@ input {
 .block-gloss .gloss-text:hover,
 .block-gloss .gloss-text:focus-visible {
   background: transparent;
-  border-left-color: var(--accent);
   outline: none;
 }
 
@@ -1048,16 +1041,16 @@ input {
   display: none;
   width: 100%;
   min-height: 1.55rem;
-  resize: vertical;
+  resize: none;
   overflow: hidden;
   border: 0;
-  border-left: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  padding: 0 0 0 0.65rem;
+  padding: 0;
   background: transparent;
   color: var(--accent);
   font: inherit;
-  font-size: inherit;
-  line-height: inherit;
+  font-size: 0.85em;
+  font-weight: 350;
+  line-height: calc(var(--text-size, 16px) * var(--line-height));
 }
 
 .block-gloss.editing .gloss-text {
@@ -1070,7 +1063,6 @@ input {
 
 .gloss-editor:focus {
   outline: none;
-  border-left-color: var(--accent);
 }
 
 @media (min-width: 80rem) {

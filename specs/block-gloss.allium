@@ -271,6 +271,14 @@ surface BlockGloss {
         -- Readable gloss text, its compact mark and its editing focus use the
         -- workspace accent colour. The distinction remains legible and does not
         -- make the marginalia look disabled or merge it with the source voice.
+        -- Its type is eighty-five percent of the source body with a slightly
+        -- lighter variable-font weight, while retaining the source line-grid
+        -- interval. No border is needed to separate the two voices.
+
+    @guarantee GlossWidthIsBoundedButGlossHeightIsNot
+        -- The chosen presentation bounds the gloss horizontally so it wraps
+        -- predictably. Reading and editing grow to reveal the complete wrapped
+        -- content vertically; neither clips it nor introduces an inner scroll.
 
     @guarantee AGlossReadsAsRenderedWriting
         -- Outside its editor a gloss is rendered as Markdown with the same

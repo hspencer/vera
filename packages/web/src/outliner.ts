@@ -1830,11 +1830,19 @@ export function renderOutliner(
     };
     paint(held);
 
+    // El ancho pertenece a la columna; el alto pertenece a lo escrito. Medir
+    // scrollHeight incluye también las líneas blandas producidas al envolver,
+    // que contar saltos de línea no ve.
+    const sizeEditor = (): void => {
+      editor.style.height = 'auto';
+      editor.style.height = `${editor.scrollHeight}px`;
+    };
+
     const edit = (): void => {
       panel.classList.add('open', 'editing');
       toggle.setAttribute('aria-expanded', 'true');
       editor.value = glosses[block]?.content ?? '';
-      editor.rows = Math.max(1, editor.value.split('\n').length);
+      sizeEditor();
       editor.focus();
       editor.setSelectionRange(editor.value.length, editor.value.length);
     };
@@ -1873,7 +1881,7 @@ export function renderOutliner(
     };
 
     editor.addEventListener('input', () => {
-      editor.rows = Math.max(1, editor.value.split('\n').length);
+      sizeEditor();
     });
     editor.addEventListener('blur', () => void save());
     editor.addEventListener('keydown', (event) => {
