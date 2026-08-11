@@ -135,10 +135,24 @@ crea**. Sin eso la réplica y el servidor le ponen nombres distintos al mismo
 bloque y lo que se escriba después se pierde. No lo encontró ninguna prueba: lo
 encontró abrir el navegador.
 
-### Paso 3 — la bandeja durable
+### Paso 3 — la bandeja durable — **hecho**
 
-Lo pendiente cae en IndexedDB antes de decir «guardado», y se drena en orden.
-Sobrevive a cerrar la pestaña. Es lo que hace verdad el indicador.
+Lo pendiente cae en IndexedDB antes de que se anuncie como guardado, y se drena
+en orden, de uno en uno. Sobrevive a cerrar la pestaña; lo que se quedó a medio
+mandar vuelve a estar sólo aplicado aquí, porque reenviarlo es inocuo. Lo
+rechazado se queda con su motivo en vez de desaparecer.
+
+Comprobado en el navegador: escrito sin servidor, guardado en IndexedDB,
+recuperado al volver la red y aplicado al corpus en su orden.
+
+**Dos límites que este paso no levanta, y conviene tenerlos escritos:**
+
+- **Sin servidor, la aplicación no abre.** Lo escrito está a salvo, pero leer
+  sigue siendo server-first: al recargar sin red se ve «no se pudo hablar con el
+  servidor» y nada más. Eso es el paso 4.
+- **La primera escritura de un día necesita red.** Nace con un `create_page`, que
+  la réplica difiere porque toca enlaces que una página sola no tiene. Sin
+  servidor, ese primer gesto no ocurre.
 
 ### Paso 4 — el cursor y lo que llega
 

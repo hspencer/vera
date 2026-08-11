@@ -6,6 +6,7 @@
 import type { Trail } from '@vera/core';
 import type { GraphData } from './graph/types.ts';
 import type { Recording } from './voice.ts';
+import { nextToSend, type Outbox, type Pending } from './outbox.ts';
 
 export interface PageSummary {
   id: string;
@@ -472,6 +473,66 @@ function setLocalWriter(writer: LocalWrite | null): void {
   writeLocally = writer;
 }
 
+/**
+ * La bandeja durable, cuando el espacio de trabajo la instala.
+ *
+ * Sin bandeja todo sigue funcionando: se aplica en casa y se manda, y lo que no
+ * llegue se pierde al cerrar. Con bandeja, no. Ver outbox.ts.
+ */
+let outbox: Outbox | null = null;
+let draining = false;
+
+function usesOutbox(box: Outbox | null): void {
+  outbox = box;
+}
+
+/**
+ * Manda lo pendiente, de uno en uno y en su orden.
+ *
+ * De uno en uno porque el orden es parte de lo que se está mandando: crear un
+ * bloque y escribir dentro sólo tienen sentido juntos, y en paralelo el segundo
+ * llegaría a un sitio que todavía no existe.
+ *
+ * Sin red se para y se queda todo donde está. No hay reintento con espera
+ * creciente ni nada parecido: quien vuelve a intentarlo es el navegador cuando
+ * avisa de que hay red otra vez, y mientras tanto insistir sólo gastaría batería.
+ */
+async function drain(): Promise<void> {
+  if (draining || outbox === null) return;
+  draining = true;
+  try {
+    for (;;) {
+      const box = outbox;
+      if (box === null) return;
+      const next = nextToSend(box.pending());
+      if (next === null) return;
+
+      await box.mark(next.originId, 'sending');
+      let said: SubmitResult;
+      try {
+        // `api` todavía no está construido cuando esto se define, y sí lo está
+        // cuando esto corre: el drenaje siempre ocurre después de una escritura.
+        said = await api.send(next.change, next.channel, next.originId);
+      } catch {
+        // No llegó. Vuelve a estar sólo aplicado aquí, que es la verdad, y
+        // reenviarlo después es inocuo porque el origen es la llave.
+        await box.mark(next.originId, 'local');
+        return;
+      }
+
+      if (said.status === 'rejected') {
+        // @invariant PreserveRejectedLocalChange: se queda con su motivo. Y se
+        // sigue con el resto: un rechazo no detiene lo que no depende de él.
+        await box.mark(next.originId, 'rejected', said.reason);
+        continue;
+      }
+      await box.settle(next.originId);
+    }
+  } finally {
+    draining = false;
+  }
+}
+
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(
     path,
@@ -801,6 +862,11 @@ export const api = {
    */
   writesLocally: setLocalWriter,
 
+  /** Dónde queda lo pendiente para que sobreviva a cerrar. Ver outbox.ts. */
+  usesOutbox,
+  /** Manda lo que quede pendiente. Lo llama el arranque y la vuelta de la red. */
+  drain,
+
   async submit(
     change: Change,
     /*
@@ -846,11 +912,36 @@ export const api = {
       return { status: 'rejected', reason: local.reason };
     }
     if (local !== null) {
-      reportSubmission({ phase: 'local', originId: origin });
-      void this.send(change, channel, origin).catch(() => {
-        // La red ya avisó por su cuenta —fase `offline`— y quien llamó no está
-        // esperando esto. Tragarlo aquí evita un rechazo sin dueño en la consola.
-      });
+      /*
+       * Guardado antes de decir que está guardado.
+       *
+       * @invariant LocalDurabilityPrecedesSavedFeedback: la fase `local` no se
+       * anuncia hasta que el cambio y su origen han quedado escritos donde
+       * sobreviven a cerrar. Aplicar no espera a eso —la mano ya siguió—; lo que
+       * espera es la afirmación de que está a salvo, que es lo que no puede
+       * adelantarse.
+       */
+      const pending: Pending = {
+        originId: origin,
+        change,
+        channel,
+        at: Date.now(),
+        status: 'local',
+      };
+      const kept = outbox === null ? Promise.resolve() : outbox.remember(pending);
+      void kept
+        .catch(() => {
+          // Sin sitio donde guardar, lo aplicado sigue aplicado y deja de estar a
+          // salvo. Se dice como lo que es en vez de anunciarlo como guardado.
+        })
+        .then(() => {
+          reportSubmission({ phase: 'local', originId: origin });
+          if (outbox !== null) return drain();
+          return this.send(change, channel, origin).then(
+            () => undefined,
+            () => undefined,
+          );
+        });
       return { status: 'applied', sequence: 0, subjectId: local.subjectId };
     }
 

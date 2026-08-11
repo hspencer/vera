@@ -7,6 +7,7 @@ import './styles.css';
 
 import { api, onSubmissionActivity, type PageSummary, type PageView } from './api.ts';
 import { applyLocally, blockPropertiesOf, blocksOf, seed, type Replica } from './replica.ts';
+import { createOutbox, durableOrNot, inOrder, type Outbox } from './outbox.ts';
 import {
   allowEmbedsFrom,
   nameProperties,
@@ -667,6 +668,23 @@ async function openPage(
    */
   openView = page;
   replica = seed(page);
+  /*
+   * Y encima, lo que quedó pendiente y todavía no es canónico.
+   *
+   * rule RestoreDurableLocalWork: abrir restituye primero lo que hay guardado
+   * aquí. Sin esto, volver a abrir con algo sin mandar enseñaría la versión del
+   * servidor —sin lo escrito— y la bandeja lo aplicaría después: un parpadeo
+   * que se lee como que el trabajo se había perdido.
+   *
+   * Lo que no sea de esta página se difiere solo, así que no hay que filtrar.
+   */
+  for (const one of inOrder(outbox?.pending() ?? [])) {
+    if (one.status === 'rejected') continue;
+    applyLocally(replica, one.change, one.originId);
+  }
+  page.blocks = blocksOf(replica);
+  page.blockProperties = blockPropertiesOf(replica);
+
   derivedStale = false;
   window.clearTimeout(catchUpTimer);
 
@@ -1102,6 +1120,8 @@ let openView: PageView | null = null;
  */
 let derivedStale = false;
 let catchUpTimer: number | undefined;
+/** Lo pendiente que sobrevive a cerrar. Ver outbox.ts y el paso 3 del plan. */
+let outbox: Outbox | null = null;
 
 let openTrail: ThreadSettings | null = null;
 
@@ -1932,6 +1952,30 @@ async function start(): Promise<void> {
    * se le dice a quién preguntar, y la respuesta gobierna si el gesto espera.
    * Ver specs/offline-reconciliation.allium, rule AcceptChangeIntoAvailableReplica.
    */
+  /*
+   * La bandeja durable, antes que nada.
+   *
+   * Se abre y se restituye lo que hubiera quedado: lo que se estaba mandando
+   * vuelve a estar sólo aplicado aquí, porque reenviarlo es inocuo. Después se
+   * drena. Ver rule ReturnPendingChangeAfterRestart.
+   *
+   * Si no hay dónde guardar —navegación privada, permiso denegado— se sigue con
+   * un almacén de memoria: perder lo pendiente al cerrar es peor que hoy, pero
+   * no poder escribir sería mucho peor que eso.
+   */
+  void durableOrNot().then(async ({ store, durable }) => {
+    outbox = createOutbox(store);
+    await outbox.restore();
+    api.usesOutbox(outbox);
+    if (!durable) {
+      notice('Este navegador no deja guardar lo pendiente, así que lo que se escriba sin red se pierde al cerrar.');
+    }
+    await api.drain();
+  });
+
+  // Y cuando vuelve la red, lo que quedó sale solo.
+  window.addEventListener('online', () => void api.drain());
+
   api.writesLocally((change, origin) => {
     if (replica === null) return null;
     const said = applyLocally(replica, change, origin);
