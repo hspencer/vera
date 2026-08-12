@@ -1,156 +1,346 @@
-# Benchmark de diseño: Vera y otros PKM
+# Benchmark estratégico: Vera y el ecosistema que ya existe
 
-## Alcance y honestidad
+## Propósito
 
-Este documento compara el **diseño especificado** de Vera con capacidades
-documentadas de Logseq, Obsidian, Roam Research y SilverBullet. Vera todavía no
-está implementada; por tanto, no hay base honesta para afirmar que hoy sea más
-rápida, estable o fácil de usar. Aquí “mejor” significa **mejor ajustada al caso
-de una memoria personal soberana** si cumple sus contratos.
+Este documento no intenta demostrar que Vera tiene más funciones. Pregunta algo
+más útil: **qué parte de Vera debe ser propia, qué parte conviene incorporar de
+proyectos abiertos y qué dependencias comprometerían su promesa**.
 
-No intentamos ganar una tabla marcando más casillas. Los cuatro productos de
-referencia están maduros en áreas donde Vera aún es sólo una intención formal.
+La comparación se ordena por cinco criterios rectores:
 
-## Resumen comparativo
+1. **Convivencialidad:** la herramienta aumenta la capacidad de actuar de
+   personas y comunidades, y puede ser inspeccionada, apropiada y transformada.
+2. **Soberanía:** quien produce una memoria gobierna dónde vive, quién entra, qué
+   sale y cómo abandona el sistema.
+3. **Integración de IA:** los agentes operan con identidad, autoridad, contexto y
+   procedencia explícitos; la IA no es sólo un chat lateral.
+4. **Portabilidad:** textos, identidades, relaciones, objetos e historial pueden
+   reconstruirse sin el proveedor original.
+5. **Extensibilidad:** una comunidad puede añadir capacidades sin bifurcar el
+   núcleo ni convertir cada extensión en una puerta trasera.
 
-| Criterio | Vera (objetivo) | Logseq | Obsidian | Roam | SilverBullet |
-| --- | --- | --- | --- | --- | --- |
-| Modelo principal | Grafo de páginas y bloques | Outliner/gráfico por bloques | Archivos Markdown y enlaces | Grafo alojado por bloques | Páginas Markdown + índice de objetos |
-| Backlinks, tags, propiedades y queries | Núcleo especificado | Sí | Sí, con diferencias entre núcleo y plugins | Sí, centrado en bloques | Sí, mediante objetos y Space Lua |
-| Identidad estable de bloque sin ensuciar Markdown | Sí; base canónica + proyección limpia | Sí en el modelo DB moderno | No es el modelo central | Sí dentro del grafo alojado | Los refs estables explícitos se representan en Markdown |
-| Audio como entidad con original, transcripción y procedencia | Nativo y fundacional | Admite medios; no es el centro del modelo | Admite adjuntos y plugins | Admite adjuntos | Admite archivos; no es el centro del modelo |
-| Ontología controlada y curada | Tipos componibles, sugerencias pendientes y migraciones | Propiedades/tags flexibles | Properties y ecosistema de plugins | Atributos y convenciones del grafo | Objetos, tags, esquemas y código |
-| Integración bibliográfica | Zotero como autoridad; proyección enlazable | Integración Zotero/PDF | Principalmente plugins y flujos externos | Integraciones vía extensiones/API | Programable mediante Space Lua/plugs |
-| Humanos y agentes bajo el mismo contrato | Fundacional, con procedencia y permisos | No es su modelo central | No es su modelo central | API y colaboradores, sin este contrato editorial | Programable, pero no con este modelo de participación |
-| PKM y sitio personal desde un corpus | Proyección pública selectiva con URLs históricas | Publicación disponible | Obsidian Publish es un servicio separado | Grafos públicos | Puede publicarse/programarse, requiere composición |
-| Autoalojamiento soberano | Objetivo principal | Local/open source | Datos locales; aplicación propietaria | Servicio propietario | Sí, abierto y autoalojado |
-| Madurez actual | Especificación | Producto usable | Producto usable y gran ecosistema | Servicio usable | Producto usable y programable |
+Se distinguen tres estados de Vera:
 
-## Dónde Vera pretende ser mejor
+- **Construido:** está en el árbol, tiene pruebas y corre sobre el corpus real.
+- **Parcial:** existe un camino completo limitado o falta una superficie.
+- **Visión:** está argumentado o especificado, pero todavía no existe.
 
-### 1. Un solo grafo aglutinador, sin fingir que todo debe nacer dentro de él
+## Veredicto
 
-Vera distingue entre la autoridad especializada y la memoria integrada. Zotero
-puede seguir siendo la autoridad bibliográfica mientras Vera incorpora obras,
-anotaciones y fragmentos citables con su identidad de origen. El valor no está
-en reemplazar cada herramienta, sino en relacionar sus objetos con ideas,
-proyectos, tareas, audios y publicaciones.
+No hay una herramienta que reúna exactamente el contrato de Vera, pero casi
+ninguna pieza es única por separado. La diferencia defendible no es «PKM local
+con IA». Es esta:
 
-### 2. La voz no es un adjunto de segunda clase
+> **Una memoria intelectual donde personas, comunidades y agentes operan bajo
+> un contrato editorial verificable, y donde compartir conocimiento conserva
+> procedencia, vocabulario y soberanía.**
 
-En Vera, el audio original, su transcripción, las correcciones y la procedencia
-forman una unidad trazable. Esto permite buscar y enlazar lo dicho sin perder la
-evidencia que permite corregir errores como una palabra mal transcrita. Los
-competidores pueden adjuntar o reproducir audio; la diferencia propuesta es que
-Vera lo incorpora al contrato semántico del grafo desde el comienzo.
+Hoy Anytype supera ampliamente a Vera en sincronización soberana y colaboración;
+SilverBullet, en extensibilidad convivial y transparencia del soporte; Obsidian,
+en madurez y ecosistema; Logseq y Roam, en fluidez del gesto por bloques; AFFiNE,
+en colaboración visual; Tana, en experiencia de agentes. Solid ofrece la base
+protocolar más seria para una federación de datos soberanos.
 
-### 3. Agentes con responsabilidad editorial explícita
+La estrategia correcta no es imitarlos todos. Es **adoptar protocolos y
+componentes abiertos allí donde ya son bienes comunes, y conservar como núcleo
+propio el contrato editorial de Vera**.
 
-Vera no agrega “IA” como caja de texto lateral. Un agente es un participante
-identificado: propone o realiza operaciones autorizadas, deja procedencia y no
-puede publicar por una vía privilegiada. Las clasificaciones automáticas quedan
-pendientes hasta confirmación. Esto vuelve auditables tanto la asistencia como
-sus errores.
+## Matriz estratégica
 
-### 4. Ontología evolutiva sin abandonar los tags libres
+| Proyecto | Convivial | Soberano | IA | Portable | Extensible | Decisión para Vera |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Anytype** | alta para uso; media para transformar el producto | muy alta: local-first, E2EE, P2P, claves propias | API y MCP; procedencia editorial limitada | exportable, pero modelo interno complejo | API; clientes con licencia restrictiva | estudiar `any-sync`; no incorporar el cliente |
+| **SilverBullet** | muy alta: herramienta programable por quien la habita | alta: Markdown y autoalojamiento | integrable mediante APIs y scripts, no fundacional | excelente para texto; menor riqueza de historial | excelente: Space Lua, plugs, widgets, Runtime API | incorporar patrones y evaluar componentes MIT |
+| **Solid** | alta como infraestructura habilitante | muy alta: Pods, identidad y permisos separados de las apps | agentes como sujetos autorizables | alta por protocolos web y Linked Data | alta entre implementaciones interoperables | candidato principal para federación y autorizaciones |
+| **Logseq** | alta en apropiación cotidiana y plugins | alta en grafos locales; sincronización variable | añadida, no contrato central | muy alta en versión Markdown; menor en DB | alta por plugins | mantener compatibilidad e importar gestos probados |
+| **Obsidian** | alta para usuarios expertos; núcleo propietario | alta sobre archivos locales | ecosistema amplio, gobierno desigual | excelente para contenido Markdown | excepcional por plugins | referencia de UX y formato; no base arquitectónica |
+| **AFFiNE** | alta como espacio creativo compartido | alta en modo local/self-hosted | Copilot integrado | razonable; debe probarse pérdida real | código y plugins, licencias por componente | evaluar editor/canvas y CRDT; auditar licencias primero |
+| **Tana** | alta capacidad, baja apropiación del sistema | baja: servicio centralizado | muy alta: agentes, herramientas, voz y horarios | limitada por exportación y servicio | configurabilidad alta; plataforma cerrada | referencia de interacción con agentes, no dependencia |
+| **Capacities** | buena composición por objetos | baja-media: servicio y APIs externas | integrada, opt-in y con herramientas de escritura | exportación disponible, no independencia operativa | media | referencia de objetos y consentimiento de IA |
+| **Roam** | alta fluidez intelectual | baja: servicio propietario | extensiones y APIs | menor que sistemas basados en archivos | media-alta | referencia histórica del gesto, no infraestructura |
 
-Los tags sirven para asociación ligera; los tipos controlados sirven cuando se
-necesitan propiedades, relaciones y validación. Los tipos pueden componerse y
-su curaduría es central, visible, versionada y reversible. Vera pretende evitar
-dos extremos: un grafo sin estructura y una taxonomía universal diseñada antes
-de conocer el corpus.
+La tabla no usa «open source» como adjetivo publicitario. Anytype publica y deja
+compilar sus clientes, pero estos usan **Any Source Available License 1.0**:
+permiten uso personal, académico y de I+D, y restringen usos comerciales fuera
+de redes autorizadas. `any-sync` y varios nodos sí son MIT. SilverBullet es MIT.
+Solid es una familia de estándares e implementaciones abiertas. Logseq declara
+AGPL-3.0. AFFiNE necesita revisión por paquete antes de reutilizar código.
 
-### 5. PKM y publicación son vistas del mismo corpus
+## Lo que Vera ya hace de manera singular
 
-Una página privada puede preparar una proyección pública sin copiarse a otro
-repositorio editorial. La publicación requiere autorización humana y conserva
-las URLs acumuladas por el sitio histórico. Esta continuidad editorial es más
-específica que “publicar notas”: busca reemplazar gradualmente un sitio Jekyll
-sin romper veinte años de enlaces.
+### Un contrato de edición y procedencia
 
-### 6. Fuentes preservadas, representaciones reemplazables
+Los bloques tienen identidad estable sin ensuciar la proyección Markdown. Toda
+escritura entra por `POST /operations`, recibe secuencia canónica y conserva
+participante, canal, instante y evidencia de origen. Una credencial prueba quién
+intervino y con qué autoridad; no convierte su afirmación en verdad.
 
-El audio no se reduce a texto, Mermaid no se reduce a una imagen y un sketch no
-se reduce a una captura. Vera conserva la fuente y genera representaciones. Eso
-permite reindexar, rerenderizar, corregir y migrar sin pérdida destructiva.
+Ningún competidor examinado reúne esta granularidad de procedencia con un modelo
+de participación humano-agente y una única puerta de escritura.
 
-## Lo que Vera aprende de cada sistema
+### Recorridos que se vuelven argumentos
 
-### Logseq
+Vera no reduce el grafo a visualización. El rastro personal puede promoverse a
+un recorrido auditable, con cruces y conectivas, legible como texto y mapa. Es la
+continuidad más explícita con el *trail* del Memex y con con§tel: compartir no es
+entregar sólo una conclusión, sino un camino intelectual.
 
-Es la referencia más cercana para edición por bloques, backlinks, propiedades,
-queries, journals, PDF y Zotero. Vera adopta especialmente la identidad estable
-de bloque en una base canónica con una proyección Markdown limpia. No necesita
-copiar toda su interfaz ni heredar cada decisión histórica.
+### Hipermedia con fuentes preservadas
 
-### Obsidian
+Audio y transcripción, Mermaid y SVG, dibujo y representación, Markdown y papel
+mantienen distinguibles fuente y derivado. La posibilidad de volver a procesar
+sin destruir el original es parte del contrato, no una convención de plugins.
 
-Demuestra el valor de archivos locales, una experiencia pulida y un ecosistema
-amplio. Vera debe igualar su sensación de propiedad y extensibilidad antes de
-presumir superioridad. Su diferencia buscada es integrar bloques estables,
-ontología curada, audio semántico y agentes dentro del modelo central.
+### Gobierno desde el corpus
 
-### Roam Research
+La ontología, las conexiones externas, los permisos y las decisiones revisables
+viven en páginas legibles del mismo corpus. Los secretos son la excepción porque
+un secreto debe poder borrarse. Esta coincidencia entre memoria y constitución es
+una de las apuestas más propias de Vera.
 
-Mostró que el bloque, la referencia y la escritura diaria podían ser una unidad
-de pensamiento fluida. Vera conserva esa lección, pero busca una infraestructura
-autoalojable, formatos exportables y una relación explícita entre grafo privado,
-fuentes externas y publicación personal.
+## Lo que otros resuelven mejor y Vera no debe reinventar
 
-### SilverBullet
+### Sincronización local-first y cifrada — Anytype / any-sync
 
-Es el competidor conceptual más incómodo —y por eso el más útil—: soberano,
-autoalojado, basado en Markdown, con backlinks, objetos y queries programables.
-Vera sólo será claramente mejor para este caso si materializa sus diferencias:
-identidad estable sin marcas técnicas en el texto, audio nativo con procedencia,
-ontología asistida, participación humano–agente y publicación histórica desde
-el mismo corpus.
+Anytype demuestra que una aplicación de conocimiento puede ser local-first,
+offline, P2P, cifrada de extremo a extremo y colaborativa. Vera tiene registro
+monotónico, cambios idempotentes y réplica retenida en navegador, pero no replica
+todavía un corpus entre dos instancias ni resuelve escrituras concurrentes.
 
-## Riesgos que pueden invalidar la ventaja
+**Decisión:** estudiar `any-sync` como protocolo MIT y separar sus ideas de los
+clientes Anytype, cuya licencia no sirve como cimiento de una tecnología
+transferible sin negociación. Antes de incorporar código hay que probar si su
+modelo DAG cifrado puede transportar las operaciones, identidades y conflictos
+de Vera sin convertir el registro canónico en una segunda verdad.
 
-- Si la base canónica dificulta recuperar o migrar el corpus, SilverBullet u
-  Obsidian serán opciones más transparentes.
-- Si la proyección Markdown no es fiel, Vera habrá sacrificado soberanía por una
-  abstracción elegante.
-- Si la ontología exige demasiada administración, los tags libres ganarán por
-  simple fricción.
-- Si los agentes producen cambios opacos o ruidosos, serán peores que plugins
-  manuales previsibles.
-- Si Vera no importa `mind` con alta fidelidad, ninguna ventaja futura compensa
-  el costo de migración.
-- Si el audio no ofrece una experiencia inmediata, seguirá siendo un adjunto
-  con una spec grandilocuente.
+No se debe adoptar P2P por prestigio. Para una universidad, identidad,
+recuperación, borrado, auditoría y dispositivos perdidos importan tanto como la
+ausencia de servidor.
 
-## Cómo convertir esta comparación en un benchmark real
+### Extensibilidad para usuarios — SilverBullet
 
-La primera versión medible debe probar el mismo corpus y las mismas tareas en
-los cinco sistemas:
+SilverBullet es la referencia convivial más incómoda. Su espacio son archivos
+Markdown; Space Lua permite consultas y automatizaciones; plugs, widgets,
+bibliotecas y Runtime API dejan que quien habita el sistema lo transforme. Todo
+ello bajo MIT.
 
-1. importar una muestra representativa de `mind`;
-2. medir pérdidas de páginas, bloques, propiedades, links y medios;
-3. editar y mover un bloque referenciado, verificando si conserva identidad;
-4. encontrar una idea por backlink, tag, propiedad y query;
-5. ingresar un audio, corregir una transcripción y recuperar el fragmento;
-6. enlazar una anotación de Zotero con una idea y una publicación;
-7. publicar una página preservando su URL histórica;
-8. exportar y reconstruir el corpus sin depender del servicio original.
+**Decisión:** adoptar el principio de extensiones con capacidades declaradas y
+evaluar reutilización de componentes concretos, no incrustar SilverBullet entero.
+Vera necesita un API de extensión pequeño que sólo pueda leer o proponer las
+operaciones autorizadas. Una extensión no obtiene SQLite ni identidad implícita.
 
-Para cada tarea se medirán: éxito funcional, pérdida de información, tiempo,
-número de acciones, trabajo de configuración, recuperabilidad y trazabilidad.
-Sólo después de ejecutar esas pruebas tendrá sentido decir que Vera es mejor en
-vez de decir que su intención es mejor.
+Space Lua sugiere un buen reparto: el corpus contiene programas pequeños y
+legibles, mientras un runtime limitado les concede funciones explícitas. Vera
+debe añadir procedencia, presupuesto y permisos a ese patrón.
 
-## Fuentes de referencia
+### Federación de datos — Solid
 
-- [Logseq Docs](https://docs.logseq.com/) — funciones de páginas y bloques,
-  backlinks, propiedades, queries, medios, Zotero y publicación.
-- [Obsidian Help](https://help.obsidian.md/) — archivos locales, backlinks,
-  properties, graph, Sync y Publish.
-- [Roam Research](https://roamresearch.com/) — propuesta de grafo por bloques,
-  colaboración, API y modelo de servicio.
-- [SilverBullet](https://silverbullet.md/) — autoalojamiento, Markdown,
-  objetos, linked mentions, queries y programación con Space Lua.
-- [SilverBullet Objects](https://silverbullet.md/Object) — relación entre
-  Markdown, objetos, tags, atributos y referencias.
+Solid separa almacenamiento, identidad y aplicación. Cada persona u organización
+puede gobernar uno o varios Pods; aplicaciones y agentes solicitan accesos
+granulares mediante protocolos abiertos. Es conceptualmente más cercano a una
+federación soberana que ActivityPub, cuyo centro es distribuir actividades y
+copias sociales.
 
-Consulta de fuentes: 1 de agosto de 2026.
+**Decisión:** no inventar todavía `vera://` como mundo cerrado. Prototipar una
+proyección de páginas, ramas y recorridos públicos como recursos Linked Data;
+mapear participantes a WebID/Solid-OIDC; y contrastar los permisos de Vera con
+Data Grants. Vera seguiría siendo el editor y registro intelectual; Solid podría
+ser la membrana federada.
+
+Solid no resuelve por sí solo procedencia, semántica de bifurcación, retractación
+ni experiencia de escritura. Tampoco impide que un receptor copie lo que pudo
+leer. Por eso es sustrato, no producto sustituto.
+
+### Edición colaborativa y superficies visuales — AFFiNE
+
+AFFiNE prueba la integración de documentos por bloques, bases y canvas con
+colaboración local-first. Su experiencia visual es mucho más madura que Vera.
+
+**Decisión:** estudiar su modelado de documentos/canvas y su uso de CRDT sólo
+para superficies que realmente exijan coedición carácter a carácter. Vera no
+debe convertir todo el grafo en un CRDT: su unidad de responsabilidad es la
+operación editorial y muchos conflictos merecen resolución humana visible.
+Además, cada paquete debe pasar una auditoría de licencia antes de reutilizarse.
+
+### Gesto por bloques y compatibilidad — Logseq
+
+Logseq sigue siendo la referencia para outliner, diario, referencias de bloque,
+PDF, Zotero y ecosistema. Vera nació al destilar ese comportamiento sobre un
+corpus real.
+
+**Decisión:** conservar importación y proyección fieles, y tratar la
+compatibilidad Logseq como prueba de portabilidad. No importar su arquitectura
+completa ni perseguir cada plugin. El criterio es que alguien pueda abandonar
+Vera sin perder su texto y pueda llegar desde Logseq sin perder su historia
+intelectual esencial.
+
+### Experiencia de agentes — Tana
+
+Tana convierte agentes en objetos configurables con capacidades, contexto, voz y
+horarios. La experiencia es más avanzada que la de Vera, pero ocurre dentro de
+un servicio centralizado.
+
+**Decisión:** aprender de la superficie, no de la dependencia. En Vera un agente
+debe ser participante, mandato y credencial: quién es, qué puede leer, qué puede
+proponer o escribir, con qué presupuesto y por cuánto tiempo. Su configuración
+debe ser portable y auditable; su secreto, revocable.
+
+## Arquitectura de incorporación propuesta
+
+```text
+                         PROTOCOLOS ABIERTOS
+             Solid / WebID / permisos / HTTP / Markdown
+                                   │
+                    membrana de publicación y federación
+                                   │
+┌──────────────────────────────────▼──────────────────────────────────┐
+│                         NÚCLEO PROPIO DE VERA                       │
+│ identidad estable · operaciones · procedencia · autoridad          │
+│ ontología gobernada · recorridos · fuentes preservadas             │
+└──────────────┬───────────────────┬───────────────────┬──────────────┘
+               │                   │                   │
+       RÉPLICA Y CIFRADO      EXTENSIONES          SUPERFICIES
+       evaluar any-sync       patrón Space Lua     editor/outliner
+       sin ceder el log       + capacidades        canvas/medios
+               │                   │                   │
+       componentes MIT        runtime cercado      componentes auditados
+```
+
+### El núcleo que no se delega
+
+- tipos de operación y sus invariantes;
+- identidad de participantes y bloques;
+- procedencia y registro de exposición;
+- autorización y única puerta de escritura;
+- semántica de recorridos, cruces y conectivas;
+- distinción entre fuente, derivado y afirmación;
+- reglas de publicación, bifurcación y retractación.
+
+Delegar cualquiera de estas piezas a una biblioteca cuyo modelo no las expresa
+haría que Vera fuese sólo una interfaz ética sobre una infraestructura que decide
+otra cosa.
+
+### Las piezas que sí deben componerse
+
+- protocolos de identidad y autorización federada;
+- transporte y cifrado de réplicas;
+- editor Markdown y motores de diagramas;
+- runtimes confinados para extensiones;
+- parsers, exportadores e importadores;
+- almacenamiento de objetos por contenido;
+- motores locales de transcripción e inferencia;
+- componentes accesibles de interfaz y canvas.
+
+La incorporación exige cuatro pruebas: licencia compatible, modelo de amenaza,
+capacidad de exportación y correspondencia con las invariantes de Vera.
+
+## Cinco pruebas duras
+
+### 1. Convivencialidad
+
+Una persona sin permiso del proveedor debe poder:
+
+- inspeccionar cómo se representa su trabajo;
+- cambiar comportamientos mediante extensiones cercadas;
+- corregir o sustituir un agente;
+- comprender qué autoridad tiene cada automatización;
+- organizarse con otros sin que la plataforma imponga un vocabulario único.
+
+### 2. Soberanía
+
+Se prueba apagando al proveedor. El corpus debe seguir abriendo, editando y
+exportando; las claves deben estar bajo control de la persona o institución; una
+credencial perdida debe poder revocarse; ninguna función esencial debe depender
+de una red autorizada por un tercero.
+
+### 3. IA
+
+Se conecta el mismo agente a un corpus controlado y se verifica:
+
+- qué contexto salió y quién lo autorizó;
+- qué operaciones realizó;
+- si sus bloques siguen distinguibles;
+- si puede sustituirse el modelo sin migrar la memoria;
+- si leer, escribir, publicar y entrenar son permisos independientes.
+
+### 4. Portabilidad
+
+Una exportación debe reconstruir páginas, bloques, relaciones, propiedades,
+objetos, procedencia y recorridos en una instancia vacía. Markdown solo es una
+excelente salida editorial, pero no prueba por sí mismo la portabilidad completa
+de una memoria con historia.
+
+### 5. Extensibilidad
+
+Una extensión de prueba debe añadir una consulta y una superficie sin acceder a
+SQLite, falsificar participante ni escribir fuera de `POST /operations`. Al
+retirarla, el corpus debe seguir siendo legible y sus cambios deben conservar
+procedencia.
+
+## Benchmark ejecutable
+
+La comparación real debe usar el mismo corpus de muestra y medir tareas, no
+promesas. Candidatos mínimos: Vera, Anytype, SilverBullet, Logseq, Obsidian,
+AFFiNE, Tana y Capacities. Solid se evalúa como infraestructura mediante un
+prototipo de publicación federada, no como editor.
+
+1. Importar páginas, bloques, links, propiedades, medios y referencias.
+2. Editar y mover un bloque citado, conservando o perdiendo identidad.
+3. Trabajar sin red en dos dispositivos y reconciliar cambios incompatibles.
+4. Dar acceso limitado a otra persona y retirarlo.
+5. Hacer que un agente lea y escriba, auditando contexto y procedencia.
+6. Sustituir el proveedor de IA sin migrar el corpus.
+7. Crear una extensión pequeña y auditar sus capacidades.
+8. Publicar una página, una rama y un recorrido con licencia y versión.
+9. Bifurcar contenido remoto sin suplantar el original.
+10. Exportar y reconstruir el sistema sin el servicio de origen.
+
+Se miden éxito, pérdida de información, tiempo, acciones, configuración,
+recuperabilidad, trazabilidad, superficie de confianza y dependencia jurídica.
+
+## Prioridades resultantes
+
+1. **Especificar portabilidad completa** y probar restauración automática.
+2. **Prototipar Solid** para publicación y federación antes de diseñar un
+   protocolo exclusivo.
+3. **Evaluar any-sync** en un spike aislado contra el registro de operaciones.
+4. **Diseñar el contrato de extensiones** inspirado en Space Lua, con capacidades
+   y procedencia obligatorias.
+5. **Mantener Logseq/Markdown como ruta de entrada y salida**, no como base
+   canónica paralela.
+6. **No incorporar clientes source-available** al núcleo transferible.
+7. **Construir identidad y mandatos de agentes** antes de sumar más funciones de
+   generación.
+
+## Riesgo estratégico
+
+Vera podría terminar como un collage de buenas ideas ajenas envuelto en un
+discurso humanista. La defensa contra ese riesgo no es reclamar originalidad,
+sino sostener una coherencia que los demás no ofrecen juntos: cada componente
+adoptado debe obedecer el mismo contrato de dignidad, procedencia, soberanía y
+responsabilidad.
+
+También existe el riesgo contrario: inventarlo todo para preservar una pureza
+imaginaria. Eso produciría una herramienta soberana pero aislada, costosa y
+frágil. La arquitectura correcta es porosa hacia los bienes comunes y estricta
+en su constitución.
+
+## Fuentes primarias
+
+- [Anytype](https://anytype.io/) — local-first, E2EE y colaboración.
+- [Licencia Anytype](https://raw.githubusercontent.com/anyproto/anytype-ts/main/LICENSE.md)
+  — código disponible con restricción comercial.
+- [`any-sync`](https://github.com/anyproto/any-sync) — protocolo P2P MIT.
+- [SilverBullet](https://github.com/silverbulletmd/silverbullet) — PKM Markdown,
+  Space Lua y extensiones bajo MIT.
+- [Solid](https://solidproject.org/about) — Pods y control de datos.
+- [Solid Application Interoperability](https://solidproject.org/TR/sai) —
+  registros, necesidades de acceso y autorizaciones.
+- [Logseq](https://github.com/logseq/logseq) — plataforma por bloques AGPL-3.0.
+- [AFFiNE](https://github.com/toeverything/AFFiNE) y
+  [autoalojamiento](https://affine.pro/self-host).
+- [Tana Agents](https://tana.inc/learn/features/agents).
+- [Capacities: tipos](https://docs.capacities.io/reference/content-types) y
+  [privacidad de IA](https://docs.capacities.io/more/ai-privacy).
+
+Consulta de fuentes: 11 de agosto de 2026.
