@@ -62,6 +62,32 @@ contract FluidBlockEditing {
     @invariant RefusalsAreVisible
         -- A structural keystroke that cannot be honoured says so. Silence would be
         -- indistinguishable from a key that did not register.
+
+    -- Empezar a escribir señalando una palabra pone el cursor en esa palabra.
+    --
+    -- Lo dibujado y su fuente Markdown son dos vistas de un solo texto, así que
+    -- una posición escogida sobre una es una posición en la otra. Mandar el
+    -- cursor al final descarta lo único que el gesto dijo: dónde. En un bloque
+    -- de un renglón la diferencia es un salto; en un párrafo de veinte líneas
+    -- —que es el bloque más común del corpus— es tener que volver a buscar a
+    -- mano el sitio que ya se había señalado.
+    @invariant TheCaretBeginsWhereItWasPut
+        -- Beginning to edit by pointing at a word places the caret at that word.
+        -- Where the gesture names no position — arriving with a key, or landing
+        -- past the end of the text — the caret goes where that gesture means.
+
+    -- Y sigue a la vista mientras se escribe, con sitio por debajo.
+    --
+    -- Un bloque más alto que la ventana es un caso corriente aquí: el editor
+    -- crece con su contenido y no se desplaza por dentro, así que la línea en la
+    -- que se escribe puede quedar debajo del borde sin que nada la traiga de
+    -- vuelta. Dejar la línea pegada al canto inferior cumple la letra —se ve— y
+    -- no la intención: escribir es mirar lo que viene, y lo que viene está
+    -- debajo.
+    @invariant WhatIsBeingWrittenStaysInSight
+        -- The line being written remains visible, with room below it. A block
+        -- taller than the view is brought to the caret and not to its own edge,
+        -- and no keystroke leaves the caret where it cannot be seen.
 }
 
 contract OutlineManipulation {

@@ -31,6 +31,7 @@ import {
   type SubmitResult,
 } from './api.ts';
 
+import { scrollDeltaFor, sourceOffsetFor } from './caret.ts';
 import { completeInPlace, editInPlace, placeNear, type Choice } from './fields.ts';
 import { governingKind, kindSays, renderGoverning } from './governing-table.ts';
 import { answerQueryBlock } from './query-block.ts';
@@ -3394,7 +3395,7 @@ export function renderOutliner(
       if (picked.size > 0) clearPicked();
       pickedOn = node.block.stableId;
       pickedTo = node.block.stableId;
-      openEditor(node, body);
+      openEditor(node, body, caretFromClick(node.block, body, event));
     });
 
     /*
@@ -4757,6 +4758,188 @@ async function candidatesFor(open: Open, query: string): Promise<Candidate[]> {
 /** Cuánto silencio hace falta para que lo escrito baje al grafo. */
 const EDITING_PAUSE = 900;
 
+/**
+ * Qué carácter del texto dibujado hay debajo del punto que se pulsó.
+ *
+ * El navegador sabe contestarlo por dos nombres: `caretPositionFromPoint` es el
+ * estándar y `caretRangeFromPoint` es como lo llama WebKit. Con el nodo y su
+ * desplazamiento, un rango desde el principio del bloque hasta ahí cuenta los
+ * caracteres visibles que quedan detrás, que es lo único que hace falta saber.
+ *
+ * @invariant TheCaretBeginsWhereItWasPut.
+ */
+function visibleOffsetAt(root: HTMLElement, x: number, y: number): number | null {
+  const doc = root.ownerDocument;
+  const legacy = doc as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+
+  // `globalThis.Node` y no `Node` a secas: aquí dentro ese nombre es el nodo del
+  // árbol de bloques, que es lo que este archivo dibuja.
+  let node: globalThis.Node | null = null;
+  let offset = 0;
+  const position = doc.caretPositionFromPoint?.(x, y) ?? null;
+  if (position !== null) {
+    node = position.offsetNode;
+    offset = position.offset;
+  } else {
+    const range = legacy.caretRangeFromPoint?.(x, y) ?? null;
+    if (range !== null) {
+      node = range.startContainer;
+      offset = range.startOffset;
+    }
+  }
+
+  // Fuera del bloque no hay nada que contestar: pulsar el margen no es señalar
+  // una palabra, y contestar cero mandaría el cursor al principio del texto.
+  if (node === null || !root.contains(node)) return null;
+
+  const counted = doc.createRange();
+  counted.selectNodeContents(root);
+  try {
+    counted.setEnd(node, offset);
+  } catch {
+    return null;
+  }
+  return counted.toString().length;
+}
+
+/**
+ * Dónde poner el cursor al empezar a escribir por haber señalado una palabra.
+ *
+ * Devuelve `undefined` cuando el gesto no nombra una posición —se pulsó el
+ * margen, el bloque no dibuja texto, o lo dibujado no viene de este fuente— y
+ * entonces el cursor va al final, que es lo que hacía siempre.
+ *
+ * @invariant TheCaretBeginsWhereItWasPut.
+ */
+function caretFromClick(block: BlockView, body: HTMLElement, event: MouseEvent): number | undefined {
+  const text = body.querySelector<HTMLElement>('.body-text');
+  if (text === null) return undefined;
+
+  const at = visibleOffsetAt(text, event.clientX, event.clientY);
+  if (at === null) return undefined;
+
+  /*
+   * Lo dibujado y el fuente no son el mismo texto.
+   *
+   * La marca de una tarea, los asteriscos de una negrita, los corchetes de una
+   * referencia y la dirección de un enlace están en uno y no en el otro, así que
+   * la posición hay que traducirla. Ver caret.ts.
+   */
+  return sourceOffsetFor(block.content, text.textContent ?? '', at) ?? undefined;
+}
+
+/** Las teclas que llevan el cursor a otro sitio sin cambiar el texto. */
+const MOVES_CARET = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'PageUp',
+  'PageDown',
+  'Home',
+  'End',
+]);
+
+/** El ancestro que se desplaza. En Vera es `#text`, pero no se da por sabido. */
+function scrollerOf(element: HTMLElement): HTMLElement | null {
+  let node = element.parentElement;
+  while (node !== null) {
+    const flow = getComputedStyle(node).overflowY;
+    if (flow === 'auto' || flow === 'scroll') return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/** Lo que mide una línea de este campo, con un respaldo si el estilo no lo dice. */
+function lineHeightOf(editor: HTMLTextAreaElement): number {
+  const style = getComputedStyle(editor);
+  const declared = Number.parseFloat(style.lineHeight);
+  if (Number.isFinite(declared)) return declared;
+  const size = Number.parseFloat(style.fontSize);
+  return Number.isFinite(size) ? size * 1.5 : 24;
+}
+
+/**
+ * A qué altura, dentro del campo, cae la línea donde está el cursor.
+ *
+ * Un `textarea` no lo dice: no hay manera de preguntarle dónde dibujó una
+ * posición. Se compone un espejo —un elemento con sus mismas medidas y su mismo
+ * texto hasta el cursor— y se mide dónde termina. Es la técnica de siempre para
+ * esto, y es exacta mientras el espejo herede lo que decide el reparto de
+ * líneas: la fuente, el ancho, el relleno y cómo se parten las palabras.
+ *
+ * Se paga un reflujo, así que sólo se llama cuando hace falta: un bloque que
+ * cabe entero en el visor se resuelve con sus medidas y sin espejo.
+ */
+function caretTopIn(editor: HTMLTextAreaElement, at: number): number {
+  const style = getComputedStyle(editor);
+  const mirror = document.createElement('div');
+  const copied = [
+    'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontVariant',
+    'letterSpacing', 'wordSpacing', 'lineHeight', 'textIndent', 'textTransform',
+    'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+    'whiteSpace', 'overflowWrap', 'wordBreak', 'tabSize',
+  ] as const;
+  for (const property of copied) mirror.style[property] = style[property];
+  mirror.style.boxSizing = 'border-box';
+  mirror.style.width = `${editor.offsetWidth}px`;
+  mirror.style.position = 'absolute';
+  mirror.style.top = '0';
+  mirror.style.left = '-9999px';
+  mirror.style.height = 'auto';
+  mirror.style.visibility = 'hidden';
+  // Un `textarea` reparte así aunque el estilo calculado diga otra cosa.
+  if (mirror.style.whiteSpace === '' || mirror.style.whiteSpace === 'normal') {
+    mirror.style.whiteSpace = 'pre-wrap';
+  }
+
+  mirror.textContent = editor.value.slice(0, at);
+  const mark = document.createElement('span');
+  // Un carácter sin ancho: marca la línea sin poder empujarla a la siguiente.
+  mark.textContent = '​';
+  mirror.append(mark);
+
+  document.body.append(mirror);
+  const top = mark.offsetTop;
+  mirror.remove();
+  return top;
+}
+
+/**
+ * Trae a la vista la línea que se está escribiendo, y sólo si hace falta.
+ *
+ * @invariant WhatIsBeingWrittenStaysInSight. La decisión —si se mueve y cuánto—
+ * está en caret.ts y se prueba sin navegador; aquí se toman las medidas y se
+ * aplica.
+ */
+function keepCaretInSight(editor: HTMLTextAreaElement, at: number): void {
+  const scroller = scrollerOf(editor);
+  if (scroller === null) return;
+
+  const view = scroller.clientHeight;
+  if (view === 0) return;
+
+  const box = editor.getBoundingClientRect();
+  const frame = scroller.getBoundingClientRect();
+  const line = lineHeightOf(editor);
+  const margin = Math.max(16, line);
+  const tall = box.height + margin * 2 > view;
+
+  const delta = scrollDeltaFor({
+    top: box.top - frame.top,
+    height: box.height,
+    caret: tall ? caretTopIn(editor, at) : 0,
+    line,
+    view,
+    margin,
+  });
+  if (delta !== 0) scroller.scrollTop += delta;
+}
+
 function startEditing(
   block: BlockView,
   body: HTMLElement,
@@ -4821,8 +5004,17 @@ function startEditing(
   autosize();
 
   const at = Math.min(caret, editor.value.length);
-  editor.focus();
+  /*
+   * El foco no desplaza; desplazar es cosa nuestra.
+   *
+   * El navegador, al enfocar, trae el campo a la vista por su cuenta y por su
+   * criterio: el borde más cercano. En un bloque más alto que la ventana eso
+   * deja el cursor justo donde no está, y además da un salto antes del nuestro.
+   * Con `preventScroll` hay un solo movimiento y lo decide `keepCaretInSight`.
+   */
+  editor.focus({ preventScroll: true });
   editor.setSelectionRange(at, at);
+  keepCaretInSight(editor, at);
 
   /** Volver a la vista de lectura, conservando la grabación por el mismo motivo. */
   const render = (content: string): void => {
@@ -5149,8 +5341,23 @@ function startEditing(
   editor.addEventListener('input', () => {
     session.type(editor.value);
     autosize();
+    // El campo acaba de crecer o menguar, así que la línea en la que se escribe
+    // se movió con él. @invariant WhatIsBeingWrittenStaysInSight.
+    keepCaretInSight(editor, editor.selectionStart);
     scheduleSave();
     refreshList();
+  });
+
+  /*
+   * Y también cuando el cursor se mueve sin escribir nada.
+   *
+   * Bajar con la flecha por un bloque largo lo saca de la vista igual que
+   * escribir, y aquí no hay `input` que lo avise. Se mira al soltar la tecla:
+   * al pulsarla el cursor todavía no ha llegado a donde va.
+   */
+  editor.addEventListener('keyup', (event) => {
+    if (!MOVES_CARET.has(event.key)) return;
+    keepCaretInSight(editor, editor.selectionStart);
   });
 
   editor.addEventListener('blur', () => {
