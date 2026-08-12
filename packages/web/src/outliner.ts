@@ -1791,6 +1791,27 @@ export interface Node {
 }
 
 /**
+ * Markdown portable de un bloque completo.
+ *
+ * Copiar un bloque padre sin sus hijos amputa la unidad que se ve plegada bajo
+ * él. El bloque escogido sale como raíz y cada descendiente como viñeta
+ * sangrada; así pegarlo conserva tanto el texto como la estructura, sin filtrar
+ * identidades internas al portapapeles.
+ */
+export function nodeMarkdown(node: Node): string {
+  const lines: string[] = [node.block.content];
+  const descend = (children: Node[], depth: number): void => {
+    for (const child of children) {
+      const content = child.block.content.replace(/\n/g, `\n${'  '.repeat(depth)}  `);
+      lines.push(`${'  '.repeat(depth)}- ${content}`);
+      descend(child.children, depth + 1);
+    }
+  };
+  descend(node.children, 0);
+  return lines.join('\n');
+}
+
+/**
  * Los bloques escogidos ahora mismo, y desde donde se empezo a escoger.
  *
  * @invariant NothingIsSelectedWhileWriting. Un cursor y una seleccion son dos
@@ -2782,10 +2803,12 @@ export function renderOutliner(
        */
       {
         label: 'Deshacer lo último',
+        icon: 'corner-up-left',
         run: () => void callbacks.onUndo?.('deshacer'),
       },
       {
         label: 'Rehacer',
+        icon: 'corner-up-right',
         run: () => void callbacks.onUndo?.('rehacer'),
       },
       {
@@ -2806,6 +2829,7 @@ export function renderOutliner(
          * @invariant RetiringDestroysNothing.
          */
         label: trail === null ? 'Leer su orden como un recorrido' : 'Dejar de leerlo como recorrido',
+        icon: 'steps-1',
         run: () => {
           void submitQuietly(
             trail === null
@@ -2826,14 +2850,17 @@ export function renderOutliner(
         // preguntarle al servidor que lo tiene, y eso le dice que aquí alguien
         // está leyendo sobre esto.
         label: 'Procesar la página',
+        icon: 'cpu',
         run: () => void processPage(page, toast, callbacks),
       },
       {
         label: 'Copiar el Markdown de la página',
+        icon: 'copy',
         run: () => void copyPageMarkdown(page.id),
       },
       {
         label: 'Descargar como .md',
+        icon: 'download',
         run: () => void downloadPage(page),
       },
       {
@@ -2844,10 +2871,12 @@ export function renderOutliner(
          * lo pidiera. Lo que se guarda tiene que ser siempre el mismo documento.
          */
         label: 'Exportar a PDF',
+        icon: 'file-text',
         run: () => void downloadPdf(page, toast),
       },
       {
         label: 'Eliminar la página',
+        icon: 'trash-2',
         run: () => void deletePage(page, callbacks),
       },
       ],
@@ -3281,9 +3310,9 @@ export function renderOutliner(
             run: () => copyText(node.block.stableId, toast),
           },
           {
-            label: 'Copiar el Markdown del bloque',
+            label: parent ? 'Copiar bloque y sus hijos' : 'Copiar el Markdown del bloque',
             icon: 'copy',
-            run: () => copyText(node.block.content, toast),
+            run: () => copyText(nodeMarkdown(node), toast),
           },
         ],
         [

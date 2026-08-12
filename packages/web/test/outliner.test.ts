@@ -6,14 +6,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildNeighbourhoods, buildTree } from '../src/outliner.ts';
+import { buildNeighbourhoods, buildTree, nodeMarkdown } from '../src/outliner.ts';
 import type { BlockView } from '../src/api.ts';
 
-const block = (stableId: string, parent: string | null, position: number): BlockView => ({
+const block = (stableId: string, parent: string | null, position: number, content = stableId): BlockView => ({
   stableId,
   parent,
   position,
-  content: stableId,
+  content,
 });
 
 describe('buildTree', () => {
@@ -45,6 +45,26 @@ describe('buildTree', () => {
     const count = (nodes: ReturnType<typeof buildTree>): number =>
       nodes.reduce((n, node) => n + 1 + count(node.children), 0);
     assert.equal(count(buildTree(blocks)), blocks.length);
+  });
+});
+
+describe('nodeMarkdown', () => {
+  it('copia el bloque completo con todos sus descendientes', () => {
+    const tree = buildTree([
+      block('raíz', null, 0, 'Idea'),
+      block('hijo', 'raíz', 0, 'Primer punto'),
+      block('nieto', 'hijo', 0, 'Detalle'),
+      block('otro', 'raíz', 1, 'Segundo punto'),
+    ]);
+    assert.equal(
+      nodeMarkdown(tree[0]!),
+      ['Idea', '- Primer punto', '  - Detalle', '- Segundo punto'].join('\n'),
+    );
+  });
+
+  it('una hoja copia sólo su Markdown', () => {
+    const tree = buildTree([block('hoja', null, 0, 'Texto **limpio**')]);
+    assert.equal(nodeMarkdown(tree[0]!), 'Texto **limpio**');
   });
 });
 
