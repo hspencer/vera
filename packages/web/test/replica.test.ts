@@ -8,7 +8,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { applyLocally, blockPropertiesOf, blocksOf, seed } from '../src/replica.ts';
+import { applyLocally, blockPropertiesOf, blocksOf, pagePropertiesOf, seed } from '../src/replica.ts';
 import type { PageView } from '../src/api.ts';
 
 const view = (overrides: Partial<PageView> = {}): PageView =>
@@ -172,6 +172,17 @@ describe('aplicar en casa', () => {
     assert.equal(blocks.find((one) => one.stableId === 'block:a')?.content, 'uno corregido');
     // La identidad sobrevive a editar: es la promesa central de Vera.
     assert.equal(blocks.length, 3);
+  });
+
+  it('una propiedad de página aplicada aquí se proyecta de inmediato', () => {
+    const replica = seed(view());
+    const said = applyLocally(
+      replica,
+      { kind: 'set_property', page: 'page:1', propertyKey: 'concepto', propertyValue: 'Vera' },
+      'local:property',
+    );
+    assert.equal(said.kind, 'applied');
+    assert.deepEqual(pagePropertiesOf(replica), [{ key: 'concepto', value: 'Vera' }]);
   });
 
   it('la negativa es la del dominio, y llega sin salir de casa', () => {

@@ -14,7 +14,14 @@ import {
 } from './api.ts';
 import { heldHere, holdsNothing, type Held } from './held.ts';
 import { countInto, type Counting } from './waiting.ts';
-import { applyLocally, blockPropertiesOf, blocksOf, seed, type Replica } from './replica.ts';
+import {
+  applyLocally,
+  blockPropertiesOf,
+  blocksOf,
+  pagePropertiesOf,
+  seed,
+  type Replica,
+} from './replica.ts';
 import { createOutbox, durableOrNot, inOrder, type Outbox } from './outbox.ts';
 import {
   allowEmbedsFrom,
@@ -863,6 +870,7 @@ async function openPage(
   }
   page.blocks = blocksOf(replica);
   page.blockProperties = blockPropertiesOf(replica);
+  page.properties = pagePropertiesOf(replica);
 
   derivedStale = false;
   window.clearTimeout(catchUpTimer);
@@ -1098,6 +1106,7 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
       if (replica !== null && openView !== null && workspace.activePage === replica.page) {
         openView.blocks = blocksOf(replica);
         openView.blockProperties = blockPropertiesOf(replica);
+        openView.properties = pagePropertiesOf(replica);
         renderOutliner($('#text'), openView, callbacksFor(openView), focus, workspace.focusRoot);
         catchUp();
         return;

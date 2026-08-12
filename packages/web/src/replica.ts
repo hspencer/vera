@@ -265,3 +265,10 @@ export function blockPropertiesOf(replica: Replica): Record<string, { key: strin
   }
   return said;
 }
+
+/** Y las propiedades de la página, para que un visto bueno se vea al instante. */
+export function pagePropertiesOf(replica: Replica): { key: string; value: string }[] {
+  return replica.graph
+    .propertiesOf(replica.page)
+    .map((one) => ({ key: one.key, value: one.value }));
+}
