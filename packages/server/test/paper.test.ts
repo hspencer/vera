@@ -110,3 +110,88 @@ describe('paperHtml', () => {
     assert.match(html, /&lt;script&gt;/);
   });
 });
+
+/*
+ * Las citas de bloque.
+ *
+ * @invariant AQuotedBlockTravelsAsItsWords. En pantalla una cita es un enlace que
+ * se pulsa para ir a leer la frase; en papel no hay adónde ir, así que o viaja la
+ * frase o no viaja nada.
+ */
+describe('un bloque citado', () => {
+  const citado = {
+    page: 'Amereida',
+    excerpt: 'no se llega a América, se llega a un mar que no tiene nombre todavía',
+  };
+
+  it('va con su texto entero y no con su identificador', () => {
+    const html = paperHtml({
+      title: 'Con cita',
+      blocks: [bloque('block:1', null, 0, 'Como se dijo: ((block:lejano))')],
+      resolveBlock: (id) => (id === 'block:lejano' ? citado : null),
+    });
+    assert.match(html, /no tiene nombre todav[íi]a/);
+    assert.ok(!html.includes('block:lejano'), 'el identificador no se imprime');
+  });
+
+  it('y no como enlace: en un PDF no hay adónde ir', () => {
+    const html = paperHtml({
+      title: 'Con cita',
+      blocks: [bloque('block:1', null, 0, '((block:lejano))')],
+      resolveBlock: () => citado,
+    });
+    assert.ok(!/<a class="block-ref"/.test(html), 'sigue siendo un enlace');
+    assert.match(html, /<span class="quoted">/);
+  });
+
+  it('dice de qué página salió: un texto ajeno sin procedencia se lee como propio', () => {
+    const html = paperHtml({
+      title: 'Con cita',
+      blocks: [bloque('block:1', null, 0, '((block:lejano))')],
+      resolveBlock: () => citado,
+    });
+    assert.match(html, /<span class="quoted-from">Amereida<\/span>/);
+  });
+
+  it('va entera y no recortada, aunque sea larga', () => {
+    // En pantalla el extracto basta porque es la etiqueta de algo que se abre; en
+    // papel es todo lo que el lector va a tener nunca de esa frase.
+    const larga = 'palabra '.repeat(80).trim();
+    const html = paperHtml({
+      title: 'Con cita larga',
+      blocks: [bloque('block:1', null, 0, '((block:lejano))')],
+      resolveBlock: () => ({ page: 'Otra', excerpt: larga }),
+    });
+    assert.ok(html.includes(larga), 'la cita llegó recortada');
+  });
+
+  it('una cita cuyo bloque ya no existe se dice, no se inventa', () => {
+    const html = paperHtml({
+      title: 'Con cita rota',
+      blocks: [bloque('block:1', null, 0, '((block:fantasma))')],
+      resolveBlock: () => null,
+    });
+    assert.match(html, /ya no est[áa] en el corpus/);
+    assert.ok(!html.includes('block:fantasma'), 'el identificador no se imprime');
+  });
+
+  it('sin resolvedor no se finge: no hay cita que imprimir', () => {
+    // Es el estado anterior a esto, y se deja fijado para que no vuelva por
+    // descuido: sin quien resuelva, lo que salía era el identificador.
+    const html = paperHtml({
+      title: 'Sin resolvedor',
+      blocks: [bloque('block:1', null, 0, '((block:lejano))')],
+    });
+    assert.match(html, /ya no est[áa] en el corpus/);
+  });
+
+  it('el texto citado se escapa: un bloque puede decir lo que quiera', () => {
+    const html = paperHtml({
+      title: 'Con cita hostil',
+      blocks: [bloque('block:1', null, 0, '((block:lejano))')],
+      resolveBlock: () => ({ page: 'Otra', excerpt: '<script>alert(1)</script>' }),
+    });
+    assert.ok(!html.includes('<script>alert'));
+    assert.match(html, /&lt;script&gt;/);
+  });
+});

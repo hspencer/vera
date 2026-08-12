@@ -49,6 +49,16 @@ export interface PaperOptions {
   /** De qué servidores se aceptan incrustaciones, para decir de dónde venían. */
   embedHosts?: readonly string[];
   /**
+   * Qué dice cada bloque que la página cite, entero, y de qué página salió.
+   *
+   * @invariant AQuotedBlockTravelsAsItsWords. Sin esto, una cita `((…))` se
+   * imprimía como su identificador —`block:1f3a…`— que es lo peor de las dos
+   * cosas: ocupa el sitio de una frase, no dice lo que ella decía, y no lleva a
+   * ninguna parte. El papel no tiene adónde ir, así que o viaja la frase o no
+   * viaja nada.
+   */
+  resolveBlock?: (stableId: string) => { page: string; excerpt: string } | null;
+  /**
    * Con sangría, para poder compararlo.
    *
    * El papel va sin ella: un esquema sangrado en pantalla se lee como jerarquía
@@ -183,6 +193,24 @@ h1.paper-title {
   border-left: 1px solid #999;
 }
 
+/* Una cita de bloque. En pantalla es un enlace; aquí es la frase, y se dibuja
+   como una frase de otro: entre comillas y con su procedencia detrás. Va en
+   línea y no aparte porque pertenece a la oración que la trajo. */
+.b .quoted::before { content: '\\201C'; }
+.b .quoted::after { content: '\\201D'; }
+.b .quoted-from::before { content: ' \\2014\\00a0'; }
+.b .quoted-from {
+  font-size: 0.85em;
+  font-style: italic;
+  color: #444;
+}
+.b .quoted-from::after { content: ''; }
+.b .quoted.gone {
+  font-style: italic;
+  color: #666;
+}
+.b .quoted.gone::before, .b .quoted.gone::after { content: ''; }
+
 .b code, .b pre {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.88em;
@@ -239,6 +267,40 @@ h1.paper-title {
  * `file://` habría obligado a copiar cada objeto al lado del HTML y a reescribir
  * las rutas, y a que las dos formas de mirar la misma página no fueran la misma.
  */
+/**
+ * Lo que en pantalla era un enlace, en papel es una cita.
+ *
+ * @invariant AQuotedBlockTravelsAsItsWords. La misma función dibuja el papel y la
+ * pantalla —@invariant TheTextIsRenderedByTheSameHandAsTheScreen— y eso está bien
+ * para el texto y no para lo que se pulsa: una cita sale como `<a href="#">`, que
+ * en un PDF es un enlace a ninguna parte. Se le quita el enlace, se le deja el
+ * texto, y se le añade de qué página salió, que en pantalla se sabe yendo y aquí
+ * no se sabría de ninguna manera.
+ *
+ * Una cita cuyo bloque ya no existe se marca como lo que es en vez de imprimir su
+ * identificador como si fuera una frase.
+ */
+function onPaper(html: string, source: ReadonlyMap<string, string>): string {
+  return html.replace(
+    /<a class="block-ref" data-block="([^"]*)" href="#"( data-dangling="true")?>([\s\S]*?)<\/a>/g,
+    (whole, id: string, dangling: string | undefined, text: string) => {
+      if (dangling !== undefined) {
+        return '<span class="quoted gone">[la frase citada ya no está en el corpus]</span>';
+      }
+      const from = source.get(unquoteAttribute(id));
+      // Hermanos y no anidados: la comilla de cierre va antes de la procedencia,
+      // que es de quien cita y no de lo citado.
+      const said = from === undefined ? '' : `<span class="quoted-from">${escapeHtml(from)}</span>`;
+      return `<span class="quoted">${text}</span>${said}`;
+    },
+  );
+}
+
+/** Deshace lo que `quoteAttribute` hizo, para volver a preguntar por el mismo id. */
+function unquoteAttribute(value: string): string {
+  return value.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+}
+
 export function paperHtml(options: PaperOptions): string {
   const render: RenderOptions = {};
   if (options.embedHosts !== undefined) render.embedHosts = options.embedHosts;
@@ -256,12 +318,28 @@ export function paperHtml(options: PaperOptions): string {
     };
   }
 
+  /*
+   * Las citas: el texto entero, y de dónde salió.
+   *
+   * El de dónde no lo sabe el renderizador —le basta con el rótulo— así que se
+   * anota aquí, al resolver, y se pega al pie de la cita más abajo.
+   */
+  const source = new Map<string, string>();
+  if (options.resolveBlock !== undefined) {
+    const ask = options.resolveBlock;
+    render.resolveBlock = (stableId) => {
+      const found = ask(stableId);
+      if (found !== null) source.set(stableId, found.page);
+      return found;
+    };
+  }
+
   const body = inReadingOrder(options.blocks)
     .filter(({ block }) => block.content.trim() !== '')
     .map(({ block, depth }) => {
       const sangría =
         options.indent === true && depth > 0 ? ` style="margin-left:${depth * 1.2}rem"` : '';
-      return `<div class="b"${sangría}>${renderMarkdown(block.content, render)}</div>`;
+      return `<div class="b"${sangría}>${onPaper(renderMarkdown(block.content, render), source)}</div>`;
     })
     .join('\n');
 

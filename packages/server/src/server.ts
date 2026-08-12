@@ -3099,6 +3099,19 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             assets: assetsOf(page.id),
             embedHosts: embedHosts(),
             indent: url.searchParams.get('sangria') !== null,
+            /*
+             * Lo que dice cada bloque citado, entero.
+             *
+             * @invariant AQuotedBlockTravelsAsItsWords. Se resuelve aquí porque
+             * aquí está el grafo: una cita puede nombrar un bloque de cualquier
+             * página, y el papel sólo trae los de ésta.
+             */
+            resolveBlock: (stableId) => {
+              const cited = graph.block(stableId);
+              if (cited === undefined) return null;
+              const from = graph.page(cited.page);
+              return { page: from?.title ?? cited.page, excerpt: cited.content };
+            },
           });
           const body = Buffer.from(html, 'utf8');
           response.writeHead(200, {

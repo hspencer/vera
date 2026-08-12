@@ -59,6 +59,28 @@ contract APageBecomesADocument {
         -- es exactamente lo que un cuaderno soberano no hace. Donde no haya con
         -- qué componerlo se dice que no lo hay.
 
+    @invariant AQuotedBlockTravelsAsItsWords
+        -- Una cita de bloque —`((…))`— va al papel con el texto entero del bloque
+        -- que nombra, y no con su identificador ni con un enlace.
+        --
+        -- Es el mismo principio que WhatIsNavigatedDoesNotTravel llevado hasta el
+        -- final, y por eso no lo contradice: en pantalla una cita es un enlace que
+        -- se pulsa para ir a leer la frase; en papel no hay adónde ir, así que o
+        -- viaja la frase o no viaja nada. Un identificador impreso —`block:1f3a…`—
+        -- es lo peor de las dos cosas: ocupa el sitio de una frase, no dice lo que
+        -- ella decía, y no lleva a ninguna parte.
+        --
+        -- Y va entera, no recortada. En pantalla el extracto basta porque es una
+        -- etiqueta de algo que se puede abrir; en papel el extracto es todo lo que
+        -- el lector va a tener nunca de esa frase, y una cita cortada a la mitad
+        -- afirma menos de lo que su autor afirmó.
+        --
+        -- Con su procedencia: una cita dice de qué página salió. Un texto ajeno
+        -- impreso sin decir de quién es se lee como propio, y en un corpus donde
+        -- también escribe una máquina eso no es un descuido de estilo.
+        --
+        -- Una cita cuyo bloque ya no existe no se inventa: se dice que no está.
+
     @invariant WhatRunsDoesNotRunOnPaper
         -- Una incrustación impresa es un rectángulo en blanco. En su sitio va su
         -- dirección, dicha corta —de dónde viene, no su carga—, que es lo único

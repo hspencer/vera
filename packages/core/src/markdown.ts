@@ -293,7 +293,16 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
   // modo que un texto con paréntesis anidados no se confunde con una.
   html = html.replace(/\(\(([^()\s]+)\)\)/g, (whole, id: string) => {
     const target = options.resolveBlock?.(id) ?? null;
-    const label = target === null ? id : target.excerpt;
+    /*
+     * El rótulo se escapa, y hasta ahora no.
+     *
+     * Todo el texto de un bloque pasa por `escapeHtml` al empezar; esto entra
+     * después, así que un bloque citado cuyo texto llevara un `<` salía crudo al
+     * HTML. Se notaba poco mientras el rótulo era un extracto corto de la propia
+     * memoria de uno; con el bloque entero —que es lo que el papel necesita, ver
+     * @invariant AQuotedBlockTravelsAsItsWords— deja de notarse poco.
+     */
+    const label = escapeHtml(target === null ? id : target.excerpt);
     return hold(
       `<a class="block-ref" data-block="${quoteAttribute(id)}" href="#"` +
         `${target === null ? ' data-dangling="true"' : ''}>${label}</a>`,
