@@ -1,8 +1,15 @@
 # Vera en diagramas
 
-> **Estado al escribirlo:** rama `v0.4-local-first`, 11 de agosto de 2026. 33
-> especificaciones Allium con 0 errores y 10 avisos; 1.008 pruebas en 211 suites,
-> todas en verde; corpus de 1.981 páginas, 48.179 bloques y 72.496 operaciones.
+> **Estado al escribirlo:** rama `v0.4-local-first`, 12 de agosto de 2026. 33
+> especificaciones Allium con 0 errores y 10 avisos; 1.082 pruebas en 224 suites,
+> todas en verde; corpus de 1.984 páginas, 48.430 bloques y 72.763 operaciones.
+>
+> **Qué cambió desde la primera versión de esta página.** Lo retenido dejó de ser
+> el plan B y pasó a dibujarse siempre; detrás va una pregunta barata al registro;
+> lo que otra mano escribió se anuncia y espera a que lo pulsen; y un desacuerdo
+> entre dos manos se resuelve bloque a bloque. Ver
+> [15](#15-leer-lo-retenido-primero), [16](#16-lo-que-espera-y-quién-decide-traerlo)
+> y [17](#17-el-desacuerdo).
 >
 > **Qué manda y qué no.** Las especificaciones de [`specs/`](../specs/) son la
 > fuente de verdad sobre el comportamiento; esta página **describe la forma que
@@ -45,26 +52,28 @@ que este documento se puede pegar en el corpus y seguir leyéndose igual.
 
 13. [El camino de una escritura](#13-el-camino-de-una-escritura)
 14. [Estados de un cambio pendiente](#14-estados-de-un-cambio-pendiente)
-15. [Leer sin servidor](#15-leer-sin-servidor)
-16. [La espera, cuando la hay](#16-la-espera-cuando-la-hay)
-17. [Deshacer](#17-deshacer)
-18. [La puerta MCP](#18-la-puerta-mcp)
-19. [El cerco de una credencial](#19-el-cerco-de-una-credencial)
-20. [Importación y proyección](#20-importación-y-proyección)
-21. [Búsqueda y consultas](#21-búsqueda-y-consultas)
-22. [Procesar una página](#22-procesar-una-página)
-23. [La voz](#23-la-voz)
-24. [Servicios de fuera](#24-servicios-de-fuera)
+15. [Leer: lo retenido primero](#15-leer-lo-retenido-primero)
+16. [Lo que espera, y quién decide traerlo](#16-lo-que-espera-y-quién-decide-traerlo)
+17. [El desacuerdo](#17-el-desacuerdo)
+18. [La espera, cuando la hay](#18-la-espera-cuando-la-hay)
+19. [Deshacer](#19-deshacer)
+20. [La puerta MCP](#20-la-puerta-mcp)
+21. [El cerco de una credencial](#21-el-cerco-de-una-credencial)
+22. [Importación y proyección](#22-importación-y-proyección)
+23. [Búsqueda y consultas](#23-búsqueda-y-consultas)
+24. [Procesar una página](#24-procesar-una-página)
+25. [La voz](#25-la-voz)
+26. [Servicios de fuera](#26-servicios-de-fuera)
 
 **La superficie**
 
-25. [La PWA por dentro](#25-la-pwa-por-dentro)
-26. [Las rutas HTTP](#26-las-rutas-http)
+27. [La PWA por dentro](#27-la-pwa-por-dentro)
+28. [Las rutas HTTP](#28-las-rutas-http)
 
 **El método**
 
-27. [De la spec al código](#27-de-la-spec-al-código)
-28. [Lo que todavía no existe](#lo-que-todavía-no-existe)
+29. [De la spec al código](#29-de-la-spec-al-código)
+30. [Lo que todavía no existe](#lo-que-todavía-no-existe)
 
 ---
 
@@ -209,9 +218,16 @@ flowchart LR
         u17("Exportar la página a papel o PDF")
     end
 
+    subgraph aldia["Ponerse al día"]
+        u18("Ver qué escribió otra mano")
+        u19("Traerlo cuando convenga")
+        u20("Decidir un desacuerdo, bloque a bloque")
+    end
+
     p --> escribir
     p --> navegar
     p --> gobernar
+    p --> aldia
 ```
 
 ### El dueño del corpus
@@ -277,6 +293,8 @@ propuestas.
 | Escribir un bloque | `block-editing.allium` | `BlockEditor` |
 | Aplicar un cambio | `change-application.allium` | `GraphChangeHistory` |
 | Trabajar sin red | `offline-reconciliation.allium` | `LocalFirstWorkspace` |
+| Ponerse al día | `offline-reconciliation.allium` | `LocalFirstWorkspace` |
+| Decidir un desacuerdo | `offline-reconciliation.allium` | `LocalFirstWorkspace` |
 | Buscar | `search-index.allium` | `GraphSearchAccess` |
 | Preguntar | `query-language.allium` | `GraphQuerying` |
 | Recorrer el grafo | `graph-navigation.allium` | `GraphNavigation` |
@@ -1047,11 +1065,19 @@ stateDiagram-v2
     sending --> rejected : 422 del dominio
     sending --> local : no llegó — se reintenta al volver la red
     rejected --> [*] : una persona decide qué hacer
+    local --> retenido : hay un desacuerdo sin resolver
+    retenido --> local : resuelto — y ahora sí sale
 
     note right of local
         Sobrevive a cerrar la pestaña.
         Al abrir, lo que quedó en "sending"
         vuelve a "local": reenviar es inocuo.
+    end note
+
+    note right of retenido
+        No se descarta ni se marca rechazado:
+        se queda intacto donde está.
+        Retener no es perder.
     end note
 
     note right of rejected
@@ -1069,14 +1095,17 @@ flowchart LR
     p["Lo pendiente"] --> r{"¿Hay algo rechazado?"}
     r -->|"sí"| att["attention_required"]
     r -->|"no"| w{"¿Queda algo esperando?"}
-    w -->|"no"| sync["synchronised"]
     w -->|"sí"| c{"¿Hay red?"}
     c -->|"sí"| loc["local"]
     c -->|"no"| off["offline"]
+    w -->|"no"| u{"¿Espera trabajo ajeno?"}
+    u -->|"sí"| upd["updates_waiting"]
+    u -->|"no"| sync["synchronised"]
 ```
 
 Se mira el rechazo primero: pide atención aunque todo lo demás esté al día.
-`@invariant SilenceNeverPretendsToBeSuccess`.
+`@invariant SilenceNeverPretendsToBeSuccess`. Y `updates_waiting` va después de lo
+propio, porque lo que uno tiene sin mandar pesa más que lo que otro ya mandó.
 
 Lo pendiente sale **de uno en uno y en su orden**, porque el orden es parte de
 lo que se está mandando: crear un bloque y escribir dentro sólo tienen sentido
@@ -1087,42 +1116,58 @@ batería.
 
 ---
 
-## 15. Leer sin servidor
+## 15. Leer: lo retenido primero
 
 La doctrina de retención: **nada se replica por adelantado, lo que se leyó se
 queda**. Acotado a 240 páginas, y se suelta la que hace más que no se lee.
+
+Lo que cambió, y es el cambio de fondo de esta versión: **lo retenido ya no es el
+plan B**. Se dibuja siempre que exista, con servidor o sin él, y la red va detrás.
+`@guarantee LocalFirstMeansFirst` estaba escrita desde el principio y el código no
+la cumplía: `openPage()` pedía la página entera cada vez —la hubiera visitado una
+o cincuenta— y lo retenido sólo se consultaba en el `catch`, es decir nunca,
+porque un `catch` no se dispara porque algo tarde.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor p as Quien lee
     participant app as PWA
-    participant held as Retención<br/>(IndexedDB "vera-held")
+    participant held as Retención<br/>IndexedDB "vera-held"
     participant srv as Servidor
 
-    p->>app: abre Vera
-    app->>held: heldHere()
-    app->>srv: GET /health
+    p->>app: abre una página
+    app->>held: ¿la tienes?
 
-    alt hay servidor
-        srv-->>app: corpus
-        app->>held: keepCorpus(corpus)
-        p->>app: abre una página
+    alt está retenida
+        held-->>app: la vista que se guardó
+        app-->>p: dibujada al instante, marcada como retenida
+        app->>held: toca la fecha de lectura
+    else no está
         app->>srv: GET /pages/:id
         srv-->>app: la página
-        app->>held: keepPage(vista)
+        app->>held: keepPage — leerla es lo que la retiene
         held->>held: si son más de 240,<br/>suelta las menos recientes
-    else no hay servidor
-        app->>held: corpus retenido
-        held-->>app: lo que se supo la última vez
-        app-->>p: se abre igual, marcado como retenido
-        p->>app: abre una página
-        app->>held: page(id) o page(título)
-        held-->>app: la vista que se guardó
-        app->>held: toca la fecha de lectura
-        app-->>p: la página, marcada
+        app-->>p: dibujada
     end
+
+    Note over app,srv: y detrás, la pregunta barata
+    app->>held: ¿hasta dónde sé del registro?
+    held-->>app: el cursor
+    app->>srv: GET /ops?since=cursor
+    srv-->>app: qué pasó, y a qué página tocó
+    app-->>p: si algo espera, el aviso lo dice
 ```
+
+Dos cifras, medidas sobre el corpus real, que explican por qué la pregunta puede
+ser continua y la respuesta no:
+
+| | Cuesta | Pesa |
+| --- | --- | --- |
+| «¿qué ha pasado desde mi cursor?» | 0,003 s | 3,8 KB |
+| una página muy escrita | 0,81 s | 512 KB |
+
+Ciento treinta veces más ligero. `@guarantee KnowingIsCheapAndTakingIsNot`.
 
 Lo que se retiene se **marca**. Una página servida de retención dice que lo es,
 porque leer algo viejo creyéndolo actual es peor que no leerlo. El mapa del
@@ -1130,7 +1175,125 @@ grafo, que no se retiene, se dibuja con lo último que tuvo y lo dice.
 
 ---
 
-## 16. La espera, cuando la hay
+## 16. Lo que espera, y quién decide traerlo
+
+En este corpus escribe más de una mano —ver [la puerta MCP](#20-la-puerta-mcp) y
+las credenciales de agente—, así que una página puede moverse mientras se la lee.
+Ante eso sólo caben tres cosas, y dos son inaceptables:
+
+```mermaid
+flowchart TB
+    hecho["Otra mano escribió<br/>mientras alguien leía"] --> q{"¿Qué hace Vera?"}
+    q -->|"cambiar el texto<br/>bajo los ojos de quien lee"| a["No es sincronizar:<br/>es interrumpir"]
+    q -->|"callarlo"| b["Lo único que<br/>SilenceNeverPretendsToBeSuccess<br/>prohíbe"]
+    q -->|"decirlo y dejar<br/>que el dueño elija cuándo"| c["Cuesta un botón"]
+
+    c --> d["Y de ahí se sigue algo:<br/>una página se puede leer<br/>sabiéndola desactualizada"]
+
+    classDef malo stroke-dasharray: 5 5,color:#888
+    class a,b malo
+```
+
+El aviso no cuenta lo mismo según dónde haya pasado, porque no es la misma
+pregunta: lo que se movió en otra parte del corpus puede esperar callado; lo que
+se movió aquí es lo que se está mirando.
+
+```mermaid
+stateDiagram-v2
+    [*] --> synchronised : nada espera
+    synchronised --> updates_waiting : GET /ops trajo trabajo ajeno
+    updates_waiting --> updates_waiting : "algo nuevo · 3"<br/>nada de esta página cambió
+    updates_waiting --> aqui : una de ellas tocó la página abierta
+    aqui --> aqui : "cambió aquí · 1"<br/>y el aviso pregunta
+    aqui --> trayendo : lo pulsan
+    updates_waiting --> trayendo : lo pulsan
+    trayendo --> synchronised : sin desacuerdo
+    trayendo --> desacuerdo : dos manos, un bloque
+    desacuerdo --> synchronised : resuelto
+    desacuerdo --> updates_waiting : se dejó para después
+```
+
+Traerlo es un camino con orden, y el orden importa:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor p as Quien lee
+    participant app as PWA
+    participant ban as Bandeja
+    participant held as Retención
+    participant srv as Servidor
+
+    p->>app: pulsa el aviso
+    app->>held: suelta las retenidas que dejaron de valer
+    app->>srv: GET /pages/:id — la abierta, con plazo de 10 s
+    srv-->>app: cómo está ahora
+    app->>ban: ¿qué hay pendiente sobre estos bloques?
+    ban-->>app: lo que aún no ha salido
+
+    alt las dos manos tocaron el mismo bloque
+        app-->>p: el diálogo del desacuerdo
+        p-->>app: qué se queda
+        app->>ban: lo decidido
+    end
+
+    app->>held: avanza el cursor
+    app->>srv: y ahora sí, sale lo pendiente
+```
+
+**Lo propio no se anuncia a sí mismo.** El registro canónico es uno solo, así que
+lo que este aparato mandó vuelve en la misma respuesta; se reconoce por su
+`originId` —la misma llave de idempotencia de siempre— y se descarta. Sin eso,
+Vera avisaría de que la página cambió cada vez que uno escribe en ella.
+
+**Y lo pendiente no sale mientras haya una decisión pendiente.** `api.holdsBack`
+retiene la bandeja hasta que el desacuerdo se resuelva. Se vio en el navegador y
+no en una prueba: al volver la red, el drenaje le ganaba la carrera a la pregunta
+y una edición propia pisaba en silencio la ajena.
+
+---
+
+## 17. El desacuerdo
+
+Dos manos escribieron el mismo bloque y ninguna está equivocada.
+
+```mermaid
+flowchart LR
+    d["Un bloque<br/>que las dos tocaron"] --> v1["Lo de aquí,<br/>todavía sin mandar"]
+    d --> v2["Lo que el corpus<br/>dice ahora"]
+    v1 --> muestra["Las líneas que difieren,<br/>marcadas"]
+    v2 --> muestra
+    muestra --> elige{"Se elige por bloque"}
+    elige --> k1["quedarse con lo de uno"]
+    elige --> k2["tomar lo del corpus"]
+    elige --> k3["escribir una tercera cosa"]
+    elige --> k4["dejarlo para después"]
+
+    k4 --> nada["No se aplica nada.<br/>Lo pendiente sigue pendiente<br/>y el aviso sigue encendido"]
+```
+
+**La unidad es el bloque, y eso no es una decisión de dibujo.** El bloque es lo
+único de lo que Vera tiene identidad: una línea no tiene nombre, ni autor, ni
+historia. Una resolución escogida línea a línea dejaría un texto que no escribió
+ninguna de las dos manos, en un bloque cuya autoría ya no se puede afirmar — y en
+un corpus donde también escribe una máquina, «quién dijo esto» tiene que
+sobrevivir a resolver un desacuerdo.
+
+Las líneas que difieren **se enseñan**, porque elegir entre dos versiones sin ver
+en qué difieren es elegir a ciegas. Se enseñan; no se eligen.
+
+La tercera salida —escribir otra cosa— no es un lujo: cuando cada versión dice
+algo que la otra no dice, quedarse con una es perder texto, y perder texto en
+silencio es lo que todo esto existe para impedir.
+
+Y no todo lo que cambió es un desacuerdo: **sólo lo que está pendiente aquí y
+además se movió allá**. Lo demás es simplemente lo nuevo y se toma sin preguntar,
+porque preguntar por cada bloque que otra mano tocó convertiría una decisión en
+cincuenta.
+
+---
+
+## 18. La espera, cuando la hay
 
 `specs/waiting.allium`. La doctrina, en cinco frases: **nunca se anima; se
 cuenta el tiempo transcurrido; nunca un porcentaje; se recuerda la mediana de
@@ -1160,7 +1323,7 @@ stateDiagram-v2
 
 ---
 
-## 17. Deshacer
+## 19. Deshacer
 
 Vera no lleva una pila de deshacer, y no le hace falta: el registro ya tiene
 todos los estados anteriores de todo. Deshacer es **calcular la operación
@@ -1206,7 +1369,7 @@ las separa se mide y no se declara: es lo que separa dos intenciones.
 
 ---
 
-## 18. La puerta MCP
+## 20. La puerta MCP
 
 Un proceso por cliente, lanzado por el cliente, hablando por tuberías. Sin
 puerto, sin red y sin nada escuchando: mientras la puerta sea ésta, el problema
@@ -1256,7 +1419,7 @@ contraria —Vera sale a buscar— y ahí sí una página por servicio.
 
 ---
 
-## 19. El cerco de una credencial
+## 21. El cerco de una credencial
 
 Una credencial cercada escribe **sin que nadie revise**, a cambio de no poder
 salir de casa. Es el trato: autonomía a cambio de alcance.
@@ -1301,7 +1464,7 @@ flowchart TB
 
 ---
 
-## 20. Importación y proyección
+## 22. Importación y proyección
 
 Dos direcciones que no son simétricas, y conviene que se vea.
 
@@ -1349,7 +1512,7 @@ flowchart LR
 
 ---
 
-## 21. Búsqueda y consultas
+## 23. Búsqueda y consultas
 
 Dos preguntas distintas con dos caminos distintos.
 
@@ -1381,7 +1544,7 @@ flowchart TB
 
 ---
 
-## 22. Procesar una página
+## 24. Procesar una página
 
 Lo que un modelo local puede decir de una página, y lo que no puede hacer con
 ella.
@@ -1417,7 +1580,7 @@ flowchart TB
 
 ---
 
-## 23. La voz
+## 25. La voz
 
 ```mermaid
 stateDiagram-v2
@@ -1448,7 +1611,7 @@ dictado por una persona, reescrito por un agente.
 
 ---
 
-## 24. Servicios de fuera
+## 26. Servicios de fuera
 
 Una conexión con algo de fuera no vive en un archivo de configuración: vive en
 una página especial, que se lee y se edita como cualquier otra.
@@ -1479,7 +1642,7 @@ flowchart LR
 
 ---
 
-## 25. La PWA por dentro
+## 27. La PWA por dentro
 
 TypeScript sobre el DOM, sin framework. No hay estado de componente que
 justifique uno: la interfaz es un outliner y dos lienzos.
@@ -1491,13 +1654,16 @@ flowchart TB
     main --> api["api.ts<br/><small>submit, send, drain</small>"]
     main --> rep["replica.ts<br/><small>VeraGraph local</small>"]
     main --> box["outbox.ts<br/><small>bandeja durable</small>"]
-    main --> held["held.ts<br/><small>lo leído, retenido</small>"]
+    main --> held["held.ts<br/><small>lo leído, el cursor,<br/>lo que salió de aquí</small>"]
+    main --> beh["behind.ts<br/><small>qué espera y qué toca<br/>la página abierta</small>"]
+    main --> rec["reconcile.ts<br/><small>el diálogo del desacuerdo</small>"]
     main --> wait["waiting.ts<br/><small>contar, no animar</small>"]
     main --> ol["outliner.ts<br/><small>el árbol de bloques</small>"]
     main --> g2["graph/render.ts<br/><small>mapa 2D — d3</small>"]
     main --> g3["graph/render3d.ts<br/><small>mapa 3D</small>"]
     main --> tok["tokens.ts<br/><small>tema, editable</small>"]
 
+    ol --> car["caret.ts<br/><small>dónde cae el cursor<br/>y qué se mueve para verlo</small>"]
     ol --> keys["keys.ts"]
     ol --> ac["autocomplete.ts"]
     ol --> qb["query-block.ts"]
@@ -1518,12 +1684,18 @@ flowchart TB
 La decisión explícita del service worker: **no cachea respuestas de
 `/operations` ni lecturas del grafo**. Servir grafo viejo sin poder escribir
 sería peor que declarar que no hay red. Lo que sí sobrevive sin red es la
-retención, que es otra cosa: se guarda deliberadamente, se marca al servirse y se
-suelta por antigüedad de lectura.
+retención, que es otra cosa: se guarda deliberadamente, se marca al servirse, se
+suelta por antigüedad de lectura —y también en cuanto se sabe que dejó de valer,
+que es lo que un caché sin nadie a quien preguntarle no puede hacer.
+
+Tres módulos de lógica pura, sin DOM y sin red, que por eso se prueban sin
+navegador: `keys.ts` decide qué hace una tecla, `behind.ts` decide qué espera y
+qué de ello toca lo que está en pantalla, y `caret.ts` decide dónde cae el cursor
+y cuánto hay que desplazar para verlo. La medición y el dibujo se quedan fuera.
 
 ---
 
-## 26. Las rutas HTTP
+## 28. Las rutas HTTP
 
 Sin generador de esquemas y con validación explícita en el borde. Toda ruta
 resuelve **antes de enrutar** quién llega: una credencial muerta no abre ni una
@@ -1552,7 +1724,7 @@ flowchart TB
 | `GET /blocks/:id/history` | la historia de un bloque |
 | `GET /glosses` | la marginalia |
 | `POST /operations` | **la única puerta de escritura** |
-| `GET /ops?since=` | el registro desde un cursor |
+| `GET /ops?since=` | el registro desde un cursor, **y a qué página tocó cada cambio** |
 | `GET /invariants` | los invariantes de las specs, sobre el grafo real |
 | `GET /ontology` | de qué está hecho este corpus |
 | `GET`/`POST /undo` | qué se desharía · deshacerlo |
@@ -1575,7 +1747,7 @@ flowchart TB
 
 ---
 
-## 27. De la spec al código
+## 29. De la spec al código
 
 El método: **la spec primero, y las preguntas abiertas se dejan visibles**. Una
 spec no es documentación de lo hecho; es lo que hay que cumplir, y el código se
@@ -1655,7 +1827,9 @@ flowchart TB
     subgraph hecho["Construido"]
         h1["Registro de operaciones<br/>con clave de origen"]
         h2["Réplica local y bandeja durable"]
-        h3["Retención de lo leído"]
+        h3["Retención de lo leído,<br/>y se dibuja primero"]
+        h8["Cursor por aparato<br/>y lectura de lo que pasó"]
+        h9["El desacuerdo, por bloque<br/>y con las dos versiones a la vista"]
         h4["Credenciales de agente y cercos"]
         h5["Puerta MCP de lectura"]
         h6["Proyección Markdown determinista"]
@@ -1663,8 +1837,7 @@ flowchart TB
     end
 
     subgraph falta["Propuesto"]
-        f1["Cursor por dispositivo<br/>y replicación entre aparatos"]
-        f2["Presentación de conflictos<br/>entre dos ediciones offline"]
+        f1["Que un aparato empuje<br/>en vez de preguntar cada minuto"]
         f3["Passkeys para humanos<br/>— hoy nadie autentica al dueño"]
         f4["Autorización de lectura<br/>por alcance"]
         f5["Camino de propuestas<br/>escribir desde MCP"]
@@ -1673,15 +1846,17 @@ flowchart TB
         f8["Canal de eventos"]
     end
 
-    h1 --> f1
-    f1 --> f2
+    h1 --> h8
+    h8 --> h9
+    h8 --> f1
+    f8 --> f1
     h4 --> f3
     f3 --> f4
     h5 --> f5
     h6 --> f6
 
     classDef propuesta stroke-dasharray: 5 5
-    class f1,f2,f3,f4,f5,f6,f7,f8 propuesta
+    class f1,f3,f4,f5,f6,f7,f8 propuesta
 ```
 
 El que más pesa, y por eso va primero: **v0 no autentica al dueño**. Quien llega
