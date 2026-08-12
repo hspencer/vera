@@ -28,6 +28,7 @@ import * as d3 from "d3";
 import { forceCenter, forceLink, forceManyBody, forceSimulation } from "d3-force-3d";
 import type { GraphData, GraphNode } from "./types.ts";
 import type { RenderSettings } from "./render";
+import { type Moving, runs, spineForce } from "./spine.ts";
 import { icon } from "../icons.ts";
 import {
   clampElevation,
@@ -566,6 +567,13 @@ export function renderGraph3D(
    * falta en la cadena dice que faltaba.
    */
   const thread = settings.thread ?? null;
+  /*
+   * Si es la primera vez que se dibuja este recorrido.
+   *
+   * Se mira aquí y no abajo, junto a las fuerzas, porque `framed` lo escribe
+   * `fit()` en cuanto encuadra, y para entonces la respuesta ya sería que no.
+   */
+  const opening = thread !== null && thread.page !== framed;
   const threads: { line: SVGLineElement; a: Point; b: Point }[] = [];
   /*
    * El número va sobre el nombre y no sobre el punto donde está.
@@ -1070,6 +1078,37 @@ export function renderGraph3D(
     .force("charge", forceManyBody().strength(settings.chargeStrength ?? -260));
 
   /*
+   * Y los dos resortes del hilo, mientras el recorrido está abierto.
+   *
+   * Ver `spine.ts`. @guarantee TheThreadStraightensWhileItIsRead.
+   *
+   * Aquí hay que hacer algo que la vista plana no necesita: **soltar las paradas**.
+   * Un nodo que ya tenía sitio va clavado con `fx/fy/fz` para que abrir una página
+   * vecina no rehaga el mapa, y un nodo clavado no lo mueve ninguna fuerza. Se
+   * sueltan las del recorrido y sólo ésas: el barrio se queda donde estaba, y lo
+   * que se acomoda es el argumento.
+   */
+  const chains: Moving[][] =
+    thread === null
+      ? []
+      : runs(thread.stops.map((one) => one.page)).map((ids) =>
+          ids
+            .map((id) => nodes.find((one) => one.id === id))
+            .filter((one): one is (typeof nodes)[number] => one !== undefined)
+            .map((one) => one as unknown as Moving),
+        );
+  if (chains.some((chain) => chain.length >= 3)) {
+    for (const chain of chains) {
+      for (const one of chain as unknown as Record<string, unknown>[]) {
+        one["fx"] = null;
+        one["fy"] = null;
+        one["fz"] = null;
+      }
+    }
+    sim.force("spine", spineForce(chains) as never);
+  }
+
+  /*
    * La fuerza de centrado, solo cuando no hay nada que recordar.
    *
    * Tira de todos los nodos hacia el origen del mundo, y eso esta bien para un
@@ -1091,7 +1130,28 @@ export function renderGraph3D(
    * que lo hacía crecer un poco más en cada dibujo, hasta dejarlo del tamaño de
    * una mancha tras unas cuantas idas y vueltas.
    */
-  if (allPlaced) sim.alpha(0).stop();
+  /*
+   * Salvo cuando el recorrido acaba de abrirse: entonces se calienta poco y se ve
+   * el argumento acomodarse. 0,35 sobre un mapa ya asentado deja a los enlaces y a
+   * la repulsión cerca de su equilibrio, así que lo que se mueve es lo que piden
+   * los resortes nuevos y no una redistribución entera.
+   */
+  const settling = allPlaced && opening && chains.some((chain) => chain.length >= 3);
+  if (!settling) {
+    if (allPlaced) sim.alpha(0).stop();
+  } else if (document.hidden) {
+    /*
+     * Con la pestaña de fondo no hay animación que valga, y aquí además no hay
+     * *nada*: el reloj de d3 pide cuadros al navegador, y a lo que nadie mira no
+     * se los dan. Sin esto el mapa se quedaba sin pintar hasta que alguien
+     * volviera. Se resuelve de una vez y al volver ya está puesto.
+     */
+    sim.alpha(0.55).alphaDecay(0.018);
+    while (sim.alpha() > 0.02) sim.tick();
+    sim.alpha(0).stop();
+  } else {
+    sim.alpha(0.55).alphaDecay(0.018).restart();
+  }
 
   const rememberPlaces = (): void => {
     for (const n of nodes as (GraphNode & Partial<Point>)[]) {
@@ -1111,7 +1171,14 @@ export function renderGraph3D(
     sortByDepth();
   });
 
-  // Con todo colocado la simulación no va a emitir nada: se dibuja aquí.
+  /*
+   * Con todo colocado la simulación no va a emitir nada: se dibuja aquí.
+   *
+   * También cuando se está acomodando un recorrido, aunque parezca que sobra: si
+   * el reloj no llega a arrancar —la pestaña de fondo, un acomodo que se resolvió
+   * de una vez— nadie más pinta, y el mapa se quedaba en blanco. Un cuadro de más
+   * no se ve; ninguno, sí.
+   */
   if (allPlaced) {
     fit();
     paint();

@@ -2,6 +2,7 @@ import * as d3 from "d3";
 import type { GraphData, GraphLink, GraphNode } from "./types.ts";
 import { is } from "../bindings.ts";
 import { icon } from "../icons.ts";
+import { type Moving, runs, spineForce } from "./spine.ts";
 
 export type NodeStyle = "circular" | "title";
 
@@ -18,6 +19,12 @@ export type NodeStyle = "circular" | "title";
  * caen dentro de un vecindario. Afirmar algo sobre dos sitios y acercarlos son
  * dos cosas, y sólo la segunda cambiaría el mapa de quien no leyó el argumento.
  * @guarantee AThreadIsNotAnEdge.
+ *
+ * Con una excepción que dura lo que dura la lectura: mientras el recorrido está
+ * abierto, sus paradas llevan encima dos resortes flojos que las enderezan un
+ * poco —ver `spine.ts`—. Es una fuerza de la vista y no del grafo: no toca el
+ * vecindario de nadie, y no está puesta cuando el recorrido no lo está.
+ * @guarantee TheThreadStraightensWhileItIsRead.
  */
 export interface ThreadSettings {
   /** La página del recorrido, que es la que se esconde. */
@@ -106,13 +113,36 @@ const positions = new Map<string, { x: number; y: number }>();
 /** El encuadre. Se conserva por lo mismo: volver no debe reencuadrar. */
 let heldTransform: d3.ZoomTransform | null = null;
 
+/**
+ * Qué acomodo está corriendo, para que sólo corra el último.
+ *
+ * El mapa se vacía y se vuelve a dibujar entero en cada repintado, y un bucle de
+ * animación no sabe que el SVG que estaba moviendo ya no está en el documento.
+ * Cada acomodo se queda con su número al empezar y se calla en cuanto deja de ser
+ * el vigente.
+ */
+let relaxing = 0;
+
+/**
+ * Y qué recorrido quedó ya acomodado.
+ *
+ * Aparte de `framed`, y la distinción costó una prueba en el navegador: encuadrar
+ * ocurre en el primer dibujo y acomodarse tarda un segundo y medio, durante el
+ * cual el mapa se vuelve a dibujar —llega lo derivado, llega la tipografía—. Si el
+ * acomodo se diera por hecho al encuadrar, el repintado siguiente lo cancelaría y
+ * el que viniera después se creería que ya pasó: el hilo se quedaba tal cual y no
+ * se movía nada. Se anota al terminar, así que un repintado en medio lo reanuda.
+ */
+let straightened: string | null = null;
+
 /** Olvida lo colocado. Para cuando el grafo cambia de centro de verdad. */
 export function forgetPositions(): void {
   positions.clear();
   heldTransform = null;
   // Y el encuadre del recorrido: si las posiciones son otras, el que había ya no
-  // encuadraba nada.
+  // encuadraba nada. Ni el acomodo, por lo mismo.
   framed = null;
+  straightened = null;
 }
 
 /** Señala un nodo desde fuera, para que abrir una página lo marque en el mapa. */
@@ -669,6 +699,25 @@ export function renderGraph(
     .force("collide", collisionForce as any);
 
   /*
+   * Y, mientras hay un recorrido abierto, los dos resortes del hilo.
+   *
+   * Sólo entonces: la fuerza se pone aquí y no existe cuando `thread` es nulo, así
+   * que el mapa de quien no está leyendo un argumento es exactamente el de antes.
+   * @guarantee TheThreadStraightensWhileItIsRead.
+   */
+  const chains: Moving[][] =
+    thread === null
+      ? []
+      : runs(thread.stops.map((one) => one.page)).map((ids) =>
+          ids
+            .map((id) => (data.nodes as (GraphNode & Partial<Moving>)[]).find((n) => n.id === id))
+            .filter((one): one is GraphNode & Moving => one !== undefined),
+        );
+  if (chains.some((chain) => chain.length >= 3)) {
+    sim.force("spine", spineForce(chains) as any);
+  }
+
+  /*
    * Los nombres no se traslapan. Punto.
    *
    * La simulación se detiene cuando su alpha baja, no cuando los choques están
@@ -787,6 +836,57 @@ export function renderGraph(
     }
   };
 
+  /**
+   * El mapa se acomoda a la vista, y sólo al abrir el recorrido.
+   *
+   * Todo lo demás en esta vista se resuelve de una vez y sin animar, a propósito:
+   * un mapa que se mueve solo no se puede recordar. Esto es la excepción, y lo es
+   * porque aquí el movimiento *es* lo que hay que ver — es el argumento
+   * ordenándose, y verlo ordenarse dice qué paradas tira de dónde mejor de lo que
+   * lo diría el resultado ya puesto.
+   *
+   * Se calienta a media máquina: sobre un mapa ya asentado, los enlaces y la
+   * repulsión están cerca de su equilibrio, así que lo que se mueve es lo que
+   * piden los resortes nuevos y no una redistribución entera. La caída lenta no es
+   * estética: acortarla dejaba el hilo sin cruces pero con los tramos desiguales
+   * —el codo desenreda rápido y el paso empareja despacio—, y son unos tres
+   * segundos, que es lo que tarda en verse una forma.
+   */
+  const relax = (): void => {
+    const mine = (relaxing += 1);
+    sim.alpha(0.55).alphaDecay(0.018);
+
+    /*
+     * Con la pestaña de fondo no hay animación que valga: el navegador no da
+     * cuadros a lo que nadie está mirando, y esperarlos dejaba el recorrido
+     * abierto y sin acomodar hasta que alguien volviera. Se resuelve de una vez,
+     * como todo lo demás en esta vista, y al volver ya está puesto.
+     */
+    if (document.hidden) {
+      while (sim.alpha() > 0.02) sim.tick();
+      settle();
+      straightened = thread?.page ?? null;
+      return;
+    }
+    const frame = (): void => {
+      if (mine !== relaxing || !container.isConnected) return;
+      sim.tick();
+      place();
+      if (sim.alpha() > 0.02) {
+        requestAnimationFrame(frame);
+        return;
+      }
+      // Y al parar, los nombres se separan y el sitio queda anotado: lo que se
+      // vio moverse es donde el mapa se queda.
+      settle();
+      straightened = thread?.page ?? null;
+    };
+    requestAnimationFrame(frame);
+  };
+
+  // Un dibujo nuevo deja sin efecto el acomodo que estuviera corriendo.
+  relaxing += 1;
+
   sim.stop();
   if (!allPlaced) {
     // Trescientos pasos es lo que d3 haría por su cuenta antes de detenerse. En
@@ -796,6 +896,25 @@ export function renderGraph(
   }
   settle();
   draw();
+
+  /*
+   * Y si el recorrido se acaba de abrir sobre un mapa que ya estaba puesto, se
+   * ve acomodarse.
+   *
+   * Sólo entonces. Con nodos nuevos la simulación ya corrió entera con los
+   * resortes dentro y el mapa llega hecho: no hay nada que mirar moverse porque
+   * no había nada antes. Y en los repintados siguientes del mismo recorrido las
+   * paradas ya están donde los resortes las querían, así que animar sería mover
+   * el mapa por moverlo.
+   */
+  if (
+    thread !== null &&
+    straightened !== thread.page &&
+    allPlaced &&
+    chains.some((one) => one.length >= 3)
+  ) {
+    relax();
+  }
 
   /*
    * Queda anotado que ya se centró en este nodo.
@@ -826,7 +945,11 @@ export function renderGraph(
   // ver moverse el mapa, porque lo está moviendo.
   sim.on("tick", place);
 
-  node.call(drag(sim, remember) as any);
+  node.call(
+    drag(sim, remember, () => {
+      relaxing += 1;
+    }) as any,
+  );
 }
 
 // ── Circular mode ──
@@ -1034,10 +1157,17 @@ function rectCollide(
 }
 
 // ── Drag behavior ──
-function drag(simulation: d3.Simulation<GraphNode, undefined>, remember: () => void) {
+function drag(
+  simulation: d3.Simulation<GraphNode, undefined>,
+  remember: () => void,
+  interrupt: () => void,
+) {
   return d3
     .drag<SVGGElement, GraphNode>()
     .on("start", (event, d: any) => {
+      // Una mano encima manda más que el hilo acomodándose: si el recorrido se
+      // estaba enderezando, deja de hacerlo aquí.
+      interrupt();
       if (!event.active) simulation.alphaTarget(0.3).restart();
       d.fx = d.x;
       d.fy = d.y;
