@@ -21,6 +21,7 @@ Si es la primera vez, el orden es: **[README](../README.md)** → **[Manual](man
 | | |
 | --- | --- |
 | **[Arquitectura](architecture.md)** | La forma técnica, con lo construido y lo propuesto marcados por separado. No convierte decisiones técnicas en garantías de producto. |
+| **[Vera en diagramas](diagramas.md)** | La misma arquitectura dibujada: clases del dominio, casos de uso por actor, esquema por regiones, los caminos de una escritura y de una lectura sin red. 36 diagramas Mermaid en una página con índice. |
 | **[Anatomía de la interfaz](interfaz.md)** | Inventario de lo que hay hoy en pantalla, levantado del código y no de la memoria. Para reestructurar sabiendo qué se mueve y qué arrastra consigo. |
 | **[Obligaciones de prueba](test-obligations.md)** | Qué cubre la suite y, sobre todo, qué **no**. Derivadas con `allium plan` desde las specs. |
 | **[Benchmark de diseño](benchmark.md)** | Vera frente a Logseq, Obsidian, Roam y SilverBullet. Compara diseños, no productos, y lo dice. |
