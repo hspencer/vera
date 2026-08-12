@@ -94,6 +94,23 @@ export function saveTrace(trace: readonly TraceStep[]): void {
  * persista, y eso es una pregunta abierta de trail.allium, no un tope.
  */
 export function walked(trace: readonly TraceStep[], step: TraceStep): TraceStep[] {
+  /*
+   * Lo que sí se descarta: llegar donde ya se estaba.
+   *
+   * @invariant RedrawingAPageIsNotWalkingToIt, dicho donde no se puede olvidar.
+   * Lo estaba sólo por convención —quien redibuja no pasa gesto— y bastó un
+   * camino que sí lo pasara para romperlo: pulsar un enlace a un ancla cambiaba
+   * el fragmento de la dirección, el enrutador lo leía como una llegada, y el
+   * rastro se llenaba de la misma página tantas veces como clics hubo.
+   *
+   * No contradice lo de arriba y es la otra mitad de lo mismo. Un bucle son dos
+   * llegadas con algo en medio; esto es no haberse movido. La pregunta no es si
+   * la página cambió, sino si alguien anduvo.
+   */
+  if (step.from === step.page) return [...trace];
+  // Y sin `from` —una dirección pegada, el botón de atrás— lo dice el rastro:
+  // si el último paso ya estaba ahí, nadie se movió.
+  if (step.from === null && trace[trace.length - 1]?.page === step.page) return [...trace];
   return [...trace, step];
 }
 

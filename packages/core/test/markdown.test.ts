@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { inlineMarkdown, renderMarkdown } from '../src/markdown.ts';
+import { headingAnchor, inlineMarkdown, renderMarkdown, uniqueAnchors } from '../src/markdown.ts';
 
 describe('inlineMarkdown', () => {
   it('escapa el HTML antes de cualquier otra cosa', () => {
@@ -546,5 +546,65 @@ describe('incrustaciones', () => {
       { embedHosts: ['eadpucv.github.io'] },
     );
     assert.ok(!html.includes('<figure class="embed"'));
+  });
+});
+
+/*
+ * Las anclas: cómo se llama un encabezado para que un índice pueda nombrarlo.
+ *
+ * Ver specs/workspace-interface.allium, @invariant AnchorsReachTheirHeading. Las
+ * reglas son las de GitHub y no por deferencia: los documentos que traen índices
+ * con anclas se escribieron para ese lector, así que cualquier otra convención
+ * rompería justamente los enlaces que ya venían escritos.
+ */
+describe('el nombre de un encabezado', () => {
+  it('son sus palabras en minúsculas, unidas por guiones', () => {
+    assert.equal(headingAnchor('El camino de una escritura'), 'el-camino-de-una-escritura');
+  });
+
+  it('conserva los acentos y la eñe, que son letras', () => {
+    assert.equal(headingAnchor('Registro canónico'), 'registro-canónico');
+    assert.equal(headingAnchor('El año que viene'), 'el-año-que-viene');
+  });
+
+  it('se lleva la puntuación y conserva el número', () => {
+    assert.equal(headingAnchor('3. Casos de uso, por actor'), '3-casos-de-uso-por-actor');
+    assert.equal(
+      headingAnchor('6. Procedencia: quién, por dónde y con qué prueba'),
+      '6-procedencia-quién-por-dónde-y-con-qué-prueba',
+    );
+  });
+
+  it('y el guion se queda, porque ya era un guion', () => {
+    assert.equal(headingAnchor('Local-first'), 'local-first');
+  });
+
+  it('dos encabezados iguales no llevan al mismo sitio', () => {
+    // El segundo «Notas» de un documento no puede llevar al primero.
+    assert.deepEqual(uniqueAnchors(['Notas', 'Otra cosa', 'Notas', 'Notas']), [
+      'notas',
+      'otra-cosa',
+      'notas-1',
+      'notas-2',
+    ]);
+  });
+});
+
+describe('un enlace a un ancla', () => {
+  it('no viaja como dirección, porque no lo es', () => {
+    /*
+     * En Vera el fragmento de la dirección ya significa un bloque, así que
+     * emitirlo tal cual no sólo no llevaba a ninguna parte: el enrutador lo leía
+     * como una llegada, volvía a pedir la página y dejaba un paso en el rastro.
+     * Un índice de treinta entradas dejaba treinta veces la misma página.
+     */
+    assert.equal(
+      inlineMarkdown('[El camino](#13-el-camino-de-una-escritura)'),
+      '<a class="anchor" data-anchor="13-el-camino-de-una-escritura" href="#">El camino</a>',
+    );
+  });
+
+  it('y un enlace de fuera sigue siendo un enlace de fuera', () => {
+    assert.match(inlineMarkdown('[ver](https://example.org)'), /href="https:\/\/example.org"/);
   });
 });

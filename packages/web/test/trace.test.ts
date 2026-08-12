@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { dropped, loadTrace, movedTo, saveTrace, type TraceStep } from '../src/trace.ts';
+import { dropped, loadTrace, movedTo, saveTrace, walked, type TraceStep } from '../src/trace.ts';
 
 const originalStorage = globalThis.localStorage;
 
@@ -44,5 +44,38 @@ describe('rastro durable y componible', () => {
     storage.setItem('vera.navigationTrace', '{no');
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
     assert.deepEqual(loadTrace(), []);
+  });
+});
+
+describe('lo que es andar y lo que no', () => {
+  it('un bucle son dos llegadas y las dos cuentan', () => {
+    // La razón de que esto no deduplique: volver a una página por otro camino
+    // dice algo, y colapsar las dos llegadas en una lo borraría justo ahí.
+    const walking = walked(steps, { page: 'b', from: 'a', gesture: 'followed_reference', at: 4 });
+    assert.deepEqual(walking.map((step) => step.page), ['a', 'b', 'a', 'b']);
+  });
+
+  it('pero llegar donde ya se estaba no es llegar', () => {
+    /*
+     * @invariant RedrawingAPageIsNotWalkingToIt. Estaba sostenido por convención
+     * —quien redibuja no pasa gesto— y bastó un camino que sí lo pasara para
+     * romperlo: pulsar un enlace a un ancla movía el fragmento de la dirección,
+     * el enrutador lo leía como una llegada, y el rastro terminaba con la misma
+     * página repetida una vez por clic.
+     */
+    const still = walked(steps, { page: 'a', from: 'a', gesture: 'followed_reference', at: 4 });
+    assert.deepEqual(still, steps);
+  });
+
+  it('ni volver a abrir por la dirección la que ya estaba abierta', () => {
+    // Sin `from` no hay de dónde venir, así que lo dice el rastro: si el último
+    // paso ya estaba ahí, nadie anduvo.
+    const same = walked(steps, { page: 'a', from: null, gesture: 'opened_directly', at: 4 });
+    assert.deepEqual(same, steps);
+  });
+
+  it('y llegar de fuera a otra página sigue siendo llegar', () => {
+    const arrived = walked(steps, { page: 'c', from: null, gesture: 'opened_directly', at: 4 });
+    assert.equal(arrived.length, 4);
   });
 });

@@ -62,6 +62,16 @@ contract NativeMarkdownEditing {
         -- mark leads back to the precise reference occurrence from which the
         -- reader arrived, including when one note is cited more than once.
 
+    -- Un índice al principio de una página larga es Markdown corriente, y hasta
+    -- ahora no llevaba a ninguna parte: el enlace se dibujaba, se pulsaba y no
+    -- pasaba nada. Los encabezados de Vera son bloques, no elementos con nombre,
+    -- así que el destino de un ancla hay que ponerlo; y donde el destino no
+    -- exista, el enlace no debe fingir que existe.
+    @invariant AnchorsReachTheirHeading
+        -- A link to an anchor within the page reaches the heading whose text
+        -- produces that anchor, including when two headings produce the same one.
+        -- An anchor that no heading produces is not presented as a link.
+
     @invariant RenderedPresentationIsFaithful
         -- Content not currently being edited is presented as rendered Markdown:
         -- headings, lists, quotations, code, tables, images, horizontal rules and

@@ -69,7 +69,13 @@ export type {
  * Está en el dominio porque lo necesitan dos superficies —la pantalla y el
  * papel— y una segunda copia habría acabado diciendo otra cosa del mismo texto.
  */
-export { embedIn, inlineMarkdown, renderMarkdown } from './markdown.ts';
+export {
+  embedIn,
+  headingAnchor,
+  inlineMarkdown,
+  renderMarkdown,
+  uniqueAnchors,
+} from './markdown.ts';
 
 /*
  * Lo dibujado a mano: sus trazos son el texto de su bloque. Ver drawing.ts y

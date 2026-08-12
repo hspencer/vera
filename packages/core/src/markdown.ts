@@ -175,6 +175,42 @@ function safeUrl(raw: string): string | null {
 }
 
 /**
+ * El nombre con el que un encabezado se deja enlazar desde el índice.
+ *
+ * Las reglas son las de GitHub, y no por deferencia: los documentos que traen
+ * índices con anclas se escribieron para ese lector, así que cualquier otra
+ * convención rompería justamente los enlaces que ya venían escritos. Minúsculas,
+ * fuera todo lo que no sea letra, número, guion o blanco, y los blancos a
+ * guiones. Los acentos y la eñe se quedan: son letras.
+ *
+ * Ver specs/workspace-interface.allium, @invariant AnchorsReachTheirHeading.
+ */
+export function headingAnchor(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N} \t_-]/gu, '')
+    .replace(/[ \t]+/g, '-');
+}
+
+/**
+ * Y los de una página entera, donde dos encabezados pueden decir lo mismo.
+ *
+ * El segundo «Notas» de un documento no puede llevar al primero, así que se
+ * numera: `notas`, `notas-1`, `notas-2`. Es lo que hace GitHub y es lo que los
+ * índices ya escritos esperan.
+ */
+export function uniqueAnchors(headings: readonly string[]): string[] {
+  const seen = new Map<string, number>();
+  return headings.map((heading) => {
+    const base = headingAnchor(heading);
+    const times = seen.get(base) ?? 0;
+    seen.set(base, times + 1);
+    return times === 0 ? base : `${base}-${times}`;
+  });
+}
+
+/**
  * Marcas que no emiten atributos y por lo tanto pueden correr sobre cualquier
  * texto ya escapado sin poder romper nada.
  */
@@ -343,6 +379,26 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
         return hold(
           `<a class="media-file" href="${quoteAttribute(resolved.url)}" ` +
             `data-media-type="${quoteAttribute(resolved.mediaType)}">${decorate(label)}</a>`,
+        );
+      }
+
+      /*
+       * Un ancla no es una dirección: es un sitio de esta misma página.
+       *
+       * Y en Vera el fragmento de la dirección ya significa otra cosa —un
+       * bloque, ver router.ts—, así que emitirlo tal cual no sólo no llevaba a
+       * ninguna parte: el enrutador leía el fragmento como una llegada, volvía a
+       * pedir la página al servidor y dejaba un paso en el rastro. Un índice de
+       * treinta entradas dejaba treinta veces la misma página.
+       *
+       * Viaja como los otros enlaces internos de Vera —una referencia a página,
+       * una cita de bloque—: sin dirección, con el destino en un atributo, y lo
+       * resuelve quien conoce la página entera. @invariant AnchorsReachTheirHeading.
+       */
+      if (href.startsWith('#') && href.length > 1) {
+        return hold(
+          `<a class="anchor" data-anchor="${quoteAttribute(escapeHtml(href.slice(1)))}" ` +
+            `href="#">${decorate(label)}</a>`,
         );
       }
 

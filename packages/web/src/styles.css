@@ -1942,6 +1942,26 @@ input {
   padding: 0 0.2em;
 }
 
+/* Un enlace a un sitio de esta misma página: el índice de un documento largo.
+   Se lee como enlace y no lleva dirección — el destino es un encabezado de aquí,
+   y quién es lo resuelve el outliner con la página entera delante. */
+.anchor {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  cursor: pointer;
+}
+
+/* Y el que nombra una sección que esta página no tiene deja de ser enlace: en un
+   documento traído de fuera es lo más probable que haya, y un enlace que no
+   lleva a ninguna parte es un enlace que miente. */
+.anchor[data-dangling='true'] {
+  color: var(--text-dim);
+  border-bottom-style: dashed;
+  border-bottom-color: var(--rule);
+  cursor: default;
+}
+
 /* Una referencia que no nombra ningún bloque del grafo lo declara en vez de
    parecer un enlace que simplemente no lleva a ninguna parte. */
 .block-ref[data-dangling='true'] {

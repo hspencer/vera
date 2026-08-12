@@ -20,6 +20,7 @@ import {
   readDrawing,
   renderMarkdown,
   titleKey,
+  uniqueAnchors,
   type RenderOptions,
 } from '@vera/core';
 import {
@@ -1991,6 +1992,76 @@ export function renderOutliner(
     }
   };
 
+  /**
+   * Cierra los enlaces a anclas sobre la página ya compuesta.
+   *
+   * Como las notas al pie, y por la misma razón: el renderizador de un fragmento
+   * no sabe qué encabezados tiene la página, y hacen falta todos —en orden— para
+   * numerar los que se repiten. Aquí están.
+   *
+   * Un ancla que ningún encabezado produce no se deja como enlace. @invariant
+   * AnchorsReachTheirHeading: un enlace que no lleva a ninguna parte es un
+   * enlace que miente, y en un documento importado de fuera es lo más probable
+   * que haya —índices que nombran secciones que no vinieron—.
+   */
+  const wireAnchors = (root: ParentNode): void => {
+    const headings = [...root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')];
+    const named = new Map<string, HTMLElement>();
+    const anchors = uniqueAnchors(headings.map((heading) => heading.textContent ?? ''));
+    for (const [index, anchor] of anchors.entries()) {
+      const heading = headings[index];
+      if (heading === undefined || anchor === '') continue;
+      // El nombre queda también en el DOM: es lo que permite que un `id` sirva
+      // para lo de siempre —copiar, inspeccionar, imprimir— sin depender de esto.
+      heading.id = anchor;
+      named.set(anchor, heading);
+    }
+
+    for (const link of root.querySelectorAll<HTMLAnchorElement>('a.anchor[data-anchor]')) {
+      const raw = link.dataset['anchor'] ?? '';
+      let wanted = raw;
+      try {
+        // Un índice escrito fuera puede traer el ancla con los acentos cifrados.
+        wanted = decodeURIComponent(raw);
+      } catch {
+        wanted = raw;
+      }
+      const heading = named.get(wanted) ?? named.get(raw) ?? null;
+      if (heading === null) {
+        // Se queda a la vista y deja de ser enlace: dice que ese sitio no está
+        // en esta página, que es más de lo que decía llevando a ninguna parte.
+        link.dataset['dangling'] = 'true';
+        link.title = `«${wanted}» no nombra ningún encabezado de esta página`;
+        continue;
+      }
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        /*
+         * Arriba y no en el centro, que es como llega una referencia a un
+         * bloque. Un encabezado no es el sitio al que se va: es el sitio por
+         * donde empieza lo que se va a leer, y eso está debajo de él.
+         */
+        /*
+         * De golpe y no deslizándose. Un índice salta, y la distancia entre la
+         * primera entrada y la última sección de un documento largo son decenas
+         * de miles de píxeles: deslizarse por ellos es un viaje de varios
+         * segundos por un texto que nadie está leyendo. Medido aquí, además,
+         * Chrome directamente no lo hace —un `behavior: smooth` de 23.000
+         * píxeles se queda donde estaba— así que el índice no llevaba a ninguna
+         * parte por una razón distinta de la que se acababa de arreglar.
+         */
+        heading.scrollIntoView({ block: 'start' });
+        // Y el mismo destello con que se señala un bloque al llegar a él: sin
+        // esto se llega y no se sabe a qué de lo que hay en pantalla se llegó.
+        const row = heading.closest('.block');
+        if (row === null) return;
+        row.classList.add('landed');
+        window.setTimeout(() => row.classList.remove('landed'), 2000);
+      });
+    }
+  };
+
   const glosses = page.glosses ?? {};
 
   /** Contenido que, a diferencia de la prosa, usa el ancho entero del bloque. */
@@ -3815,6 +3886,7 @@ export function renderOutliner(
    */
   for (const root of tree) drawBlock(root, 0);
   wireFootnotes(list);
+  wireAnchors(list);
 
   // Una página sin bloques no tenía dónde pulsar, así que crearla dejaba a
   // quien la creó mirando una página en la que no podía escribir.
