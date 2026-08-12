@@ -1197,7 +1197,19 @@ async function applyRoute(): Promise<void> {
 function revealBlock(stableId: string): void {
   const row = document.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(stableId)}"]`);
   if (row === null) return;
-  row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  /*
+   * Deslizándose sólo si hay poco que recorrer.
+   *
+   * Un `behavior: smooth` de decenas de miles de píxeles Chrome no lo hace: se
+   * queda donde estaba, y quien pulsó una referencia a un bloque del final de
+   * una página larga no llegaba a ninguna parte. Medido con un índice de treinta
+   * entradas sobre un documento de cuarenta y cinco mil píxeles de alto.
+   *
+   * Y por debajo de una pantalla de distancia el deslizamiento sigue diciendo
+   * algo que un salto no dice: hacia dónde se fue.
+   */
+  const cerca = Math.abs(row.getBoundingClientRect().top) < window.innerHeight * 2;
+  row.scrollIntoView({ block: 'center', ...(cerca ? { behavior: 'smooth' as const } : {}) });
   row.classList.add('landed');
   window.setTimeout(() => row.classList.remove('landed'), 2000);
 }
