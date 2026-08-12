@@ -235,9 +235,12 @@ h1.paper-title {
   break-inside: avoid;
   page-break-inside: avoid;
 }
+/* Las medidas ya vienen puestas desde el servidor, ajustadas a la caja de la
+   página. Aquí no se acota nada más: un ancho máximo encogería el ancho sin
+   tocar el alto, que es exactamente el hueco en blanco que esto vino a quitar. */
 .b .diagram svg {
-  max-width: 100%;
-  height: auto;
+  display: block;
+  margin: 0 auto;
 }
 /* Uno que no compiló: la fuente sigue a la vista, que es lo único con lo que se
    arregla, y el porqué encima en vez de un hueco sin explicar. */
@@ -348,6 +351,62 @@ function unescapeHtml(text: string): string {
   return text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 }
 
+/*
+ * La caja donde tiene que caber una figura, en píxeles de CSS.
+ *
+ * Sale de `@page`: carta —215,9 × 279,4 mm— menos los márgenes de 25 y 22, que
+ * dejan 171,9 × 229,4 mm de papel escribible; a 3,7795 px por milímetro, 649 ×
+ * 867. De ese alto se descuenta el margen propio de la figura y un dedo de
+ * holgura: quien decide si algo cabe en la página es el paginador de Chrome, y
+ * apurar el último punto es cómo se consigue que una figura del alto exacto se
+ * vaya sola a la página siguiente y deje media hoja en blanco detrás.
+ *
+ * Si cambian los márgenes de `@page`, cambian estos dos números. Van juntos y con
+ * la cuenta escrita para que se vea que dependen de allí.
+ */
+const PAGE_FIT = { width: 649, height: 820 };
+
+/**
+ * Encoge un dibujo hasta que quepa en la página, guardando su proporción.
+ *
+ * @invariant ADiagramFitsOnOnePage. En pantalla la única restricción es el ancho
+ * de la columna, porque hacia abajo se sigue leyendo. En papel no: hacia abajo se
+ * acaba la hoja, y una figura más alta que la caja o se parte —y deja de decir lo
+ * que decía— o se va entera a la página siguiente dejando media hoja en blanco.
+ * Así que aquí manda la más chica de las dos medidas, y suele ser el alto.
+ *
+ * Se calcula aquí y no se deja en CSS a propósito. Un `max-height` sobre un SVG
+ * en línea depende de que el motor le reconozca proporción intrínseca, y Mermaid
+ * le escribe encima su propio `width` y su `max-width` en línea; el resultado
+ * depende de a quién le gane cuál. La aritmética es la misma en todas partes.
+ *
+ * Sólo encoge. Un dibujo que ya cabe se queda como está: agrandarlo para llenar
+ * la caja lo dejaría desenfocado de la escala del resto del documento.
+ */
+function fitToPage(svg: string): string {
+  const box = /viewBox="\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)/.exec(svg);
+  if (box === null) return svg;
+  const width = Number(box[1]);
+  const height = Number(box[2]);
+  if (!(width > 0) || !(height > 0)) return svg;
+
+  const scale = Math.min(1, PAGE_FIT.width / width, PAGE_FIT.height / height);
+  const w = Math.floor(width * scale);
+  const h = Math.floor(height * scale);
+
+  // Se le quitan a la etiqueta las medidas que traía —incluido el `max-width` en
+  // línea, que es el que en pantalla lo encogía a la columna— y se le ponen las
+  // dos de la cuenta. Sólo la etiqueta de apertura: dentro puede haber otros
+  // `width` que son del dibujo y no del marco.
+  const open = /^<svg\b[^>]*>/.exec(svg);
+  if (open === null) return svg;
+  const attrs = open[0]
+    .replace(/\s(?:width|height)="[^"]*"/g, '')
+    .replace(/\sstyle="[^"]*"/g, '')
+    .replace(/^<svg/, `<svg width="${w}" height="${h}" style="width:${w}px;height:${h}px"`);
+  return attrs + svg.slice(open[0].length);
+}
+
 /**
  * Dónde está cada diagrama en el HTML del papel, y qué dice.
  *
@@ -399,7 +458,7 @@ function drawn(
         `Este diagrama no se pudo dibujar: ${escapeHtml(made.error)}</p>${whole}</div>`
       );
     }
-    return `<div class="diagram">${made.svg}</div>`;
+    return `<div class="diagram">${fitToPage(made.svg)}</div>`;
   });
 }
 

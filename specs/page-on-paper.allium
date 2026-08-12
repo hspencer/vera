@@ -121,6 +121,34 @@ contract APageBecomesADocument {
         -- que no lo hay, igual que con el PDF entero. No se compone fuera de
         -- casa: mandar el diagrama a un servicio que lo dibuje sería mandar el
         -- texto de la página a que lo lea otro.
+
+    @invariant ADiagramFitsOnOnePage
+        -- Un diagrama impreso cabe entero en una página, y guarda su proporción.
+        --
+        -- En pantalla la única medida que aprieta es el ancho de la columna,
+        -- porque hacia abajo se sigue leyendo y una figura alta sólo pide seguir
+        -- bajando. En papel hacia abajo se acaba la hoja, y entonces aparece una
+        -- segunda restricción que no existía y que además suele mandar sobre la
+        -- primera: el alto de la caja escribible.
+        --
+        -- Sin ella sólo hay dos finales, y los dos pierden la figura. O se parte
+        -- por el salto de página —y media figura no dice la mitad de lo que decía,
+        -- dice otra cosa—, o se va entera a la hoja siguiente y deja detrás media
+        -- página en blanco que el lector lee como un final de capítulo.
+        --
+        -- La proporción no se negocia para que quepa. Estirar un diagrama hasta
+        -- llenar la caja cambia los ángulos, y en un diagrama los ángulos son
+        -- parte de lo que se afirma: dos flechas que salían paralelas dejan de
+        -- salir paralelas. Se encoge por igual en las dos medidas o no se encoge.
+        --
+        -- Y sólo se encoge. Un dibujo que ya cabe se queda como está: agrandarlo
+        -- para llenar la caja lo sacaría de la escala del resto del documento,
+        -- donde una figura pequeña es una figura pequeña y eso también dice algo.
+        --
+        -- Es una regla del papel y no del corpus: en pantalla la misma figura se
+        -- ajusta sólo al ancho. Ver TheTextIsRenderedByTheSameHandAsTheScreen, que
+        -- habla del texto; el sitio donde el texto cae sí es distinto en cada uno,
+        -- y esto es una consecuencia de eso y no una excepción.
 }
 
 ------------------------------------------------------------

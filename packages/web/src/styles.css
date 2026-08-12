@@ -2330,9 +2330,13 @@ code {
   margin: 0.5em 0;
 }
 
-/* Diagramas Mermaid. Se dibujan dentro de un iframe aislado, así que el alto lo
-   fija la propia biblioteca y aquí sólo se le da sitio y un margen por donde
-   alcanzar el bloque. */
+/* Diagramas Mermaid. Se dibujan dentro de un iframe aislado, y las dos medidas
+   del marco las pone `fitFrame` ajustando el dibujo al ancho de la columna: aquí
+   sólo se le da sitio y un margen por donde alcanzar el bloque.
+
+   El `overflow-x` es una red y no el plan. Ajustado al ancho no desborda nunca;
+   queda por si no se pudo averiguar el tamaño natural del dibujo, que es el caso
+   en que `fitFrame` no toca nada y el marco se queda como Mermaid lo dejó. */
 .mermaid-figure {
   margin: 0.6em 0;
   padding: 0.4rem 0;
@@ -2343,6 +2347,7 @@ code {
 .mermaid-figure iframe {
   border: none;
   max-width: 100%;
+  display: block;
   /* El diagrama es una imagen del texto, no un control. Sin esto los clics se
      quedarían dentro del iframe y el bloque no se podría abrir para editarlo,
      que es justamente lo que hace falta para corregir un diagrama. */

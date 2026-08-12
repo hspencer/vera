@@ -298,3 +298,77 @@ describe('un diagrama en el papel', () => {
     assert.match(html, /const a = 1;/);
   });
 });
+
+/*
+ * Que la figura quepa en la hoja.
+ *
+ * @invariant ADiagramFitsOnOnePage. En pantalla sólo aprieta el ancho, porque
+ * hacia abajo se sigue leyendo. En papel hacia abajo se acaba la hoja, y esa
+ * segunda restricción suele mandar sobre la primera.
+ */
+describe('un diagrama que no cabe en la página', () => {
+  const cercado = '```mermaid\nflowchart LR\n  a --> b\n```';
+  const fuente = 'flowchart LR\n  a --> b';
+  const conSvg = (svg: string) =>
+    paperHtml({
+      title: 'T',
+      blocks: [bloque('block:1', null, 0, cercado)],
+      diagrams: new Map([[fuente, { svg }]]),
+    });
+  const medidas = (html: string) => {
+    const w = /<svg[^>]*\swidth="(\d+)"/.exec(html);
+    const h = /<svg[^>]*\sheight="(\d+)"/.exec(html);
+    return w === null || h === null ? null : { w: Number(w[1]), h: Number(h[1]) };
+  };
+
+  it('uno muy alto se encoge hasta caber en la hoja', () => {
+    // 400 de ancho y 3.000 de alto: cabe de sobra a lo ancho y no de alto.
+    const html = conSvg('<svg viewBox="0 0 400 3000" width="400" height="3000"></svg>');
+    const m = medidas(html);
+    assert.ok(m !== null, 'no quedó con medidas');
+    assert.ok(m.h <= 820, `sigue midiendo ${m.h} de alto`);
+  });
+
+  it('y guarda la proporción: encogerlo sólo de alto cambiaría los ángulos', () => {
+    const html = conSvg('<svg viewBox="0 0 400 3000" width="400" height="3000"></svg>');
+    const m = medidas(html);
+    assert.ok(m !== null);
+    assert.ok(Math.abs(m.w / m.h - 400 / 3000) < 0.01, `proporción ${(m.w / m.h).toFixed(3)}`);
+  });
+
+  it('uno muy ancho se encoge por el ancho, como antes', () => {
+    const html = conSvg('<svg viewBox="0 0 2000 300" width="2000" height="300"></svg>');
+    const m = medidas(html);
+    assert.ok(m !== null);
+    assert.ok(m.w <= 649, `sigue midiendo ${m.w} de ancho`);
+    assert.ok(Math.abs(m.w / m.h - 2000 / 300) < 0.05);
+  });
+
+  it('manda la más chica de las dos, cuando las dos aprietan', () => {
+    // 2.000 × 2.000: por ancho el factor sería 0,32; por alto, 0,41. Gana el ancho.
+    const html = conSvg('<svg viewBox="0 0 2000 2000" width="2000" height="2000"></svg>');
+    const m = medidas(html);
+    assert.ok(m !== null);
+    assert.ok(m.w <= 649 && m.h <= 820, `${m.w}x${m.h} no cabe`);
+  });
+
+  it('uno que ya cabe no se agranda para llenar la caja', () => {
+    const html = conSvg('<svg viewBox="0 0 200 150" width="200" height="150"></svg>');
+    assert.deepEqual(medidas(html), { w: 200, h: 150 });
+  });
+
+  it('se le quita el max-width que Mermaid le escribe encima', () => {
+    // Es el que en pantalla lo encoge a la columna. Aquí desharía la cuenta:
+    // encogería el ancho sin tocar el alto, que es el hueco que esto vino a quitar.
+    const html = conSvg(
+      '<svg viewBox="0 0 2000 300" width="2000" height="300" style="max-width: 2000px;"></svg>',
+    );
+    assert.ok(!html.includes('max-width: 2000px'));
+  });
+
+  it('sin viewBox no se inventa una medida', () => {
+    // La proporción es lo único de lo que se puede deducir cuánto encoger.
+    const html = conSvg('<svg id="sinCaja"></svg>');
+    assert.match(html, /<svg id="sinCaja">/);
+  });
+});
