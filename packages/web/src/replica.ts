@@ -133,6 +133,7 @@ export type LocalOutcome =
  * fingirse: una respuesta local que no puede ser correcta es peor que esperar.
  */
 const AT_HOME = new Set([
+  'create_page',
   'create_block',
   'edit_block',
   'move_block',
@@ -150,7 +151,14 @@ const AT_HOME = new Set([
  * derivado se recalcula cuando cambiaron sus entradas, y no porque algo pasara.
  */
 function touchesDerived(change: Change): boolean {
-  return change.kind === 'edit_block' || change.kind === 'create_block' || change.kind === 'remove_block';
+  return (
+    change.kind === 'edit_block' ||
+    change.kind === 'create_block' ||
+    change.kind === 'remove_block' ||
+    // Crear una página resuelve los `[[nombres]]` que la esperaban: lo que la
+    // página abierta dice sobre ella deja de estar pendiente.
+    change.kind === 'create_page'
+  );
 }
 
 /**
@@ -169,6 +177,23 @@ function touchesDerived(change: Change): boolean {
 function holds(replica: Replica, change: Change): boolean {
   const { graph, page } = replica;
   switch (change.kind) {
+    /*
+     * Una página nueva no necesita nada de lo que ya hay: nace vacía.
+     *
+     * Era el único gesto que obligaba a esperar a la red, y se notaba en el peor
+     * sitio: pulsar un `[[nombre]]` recién escrito en la bitácora para ir a
+     * escribir ahí. Ir a escribir es el gesto más local-first que existe y era el
+     * más lento de todos.
+     *
+     * Lo que esta réplica no puede contestar es si el título está libre en el
+     * corpus entero —sólo tiene lo suyo— y lo contesta el índice retenido antes de
+     * llegar aquí, que es lo mejor que este aparato sabe. Si el corpus dice que no
+     * porque alguien lo tomó hace un minuto en otro aparato, lo dice al enviarlo y
+     * el rechazo se queda a la vista con su motivo.
+     * @invariant PreserveRejectedLocalChange.
+     */
+    case 'create_page':
+      return true;
     case 'create_block':
       return change.page === page && (change.parent === null || graph.block(change.parent) !== undefined);
     case 'edit_block':
@@ -180,9 +205,11 @@ function holds(replica: Replica, change: Change): boolean {
       return graph.block(change.block) !== undefined && change.page === page;
     case 'set_property':
     case 'remove_property':
+      // Cualquier página que esta réplica sostenga, no sólo la abierta: al crear
+      // una, la propiedad que dice cuándo nació cuelga de la recién nacida.
       return change.block !== undefined
         ? graph.block(change.block) !== undefined
-        : change.page === page;
+        : change.page !== undefined && graph.page(change.page) !== undefined;
     default:
       return false;
   }

@@ -290,6 +290,46 @@ function excerpt(content: string): string {
 }
 
 /** Valida la forma del cuerpo antes de dejarlo entrar al dominio. */
+/**
+ * A qué página tocó un cambio.
+ *
+ * Lo pregunta `GET /ops`, y es lo que convierte una lista de identificadores en
+ * una respuesta útil: quien lleva un cursor quiere saber si lo que pasó le pasó a
+ * la página que tiene delante. @guarantee KnowingIsCheapAndTakingIsNot.
+ *
+ * `pageOf` resuelve un bloque a su página, y puede no saber: un `remove_block` se
+ * pregunta cuando el bloque ya no está. Se contesta nulo, que quien pregunta sabe
+ * leer como «no se puede saber» y no como «ninguna».
+ */
+export function pageTouchedBy(
+  change: Change,
+  subjectId: string | null,
+  pageOf: (block: string) => string | undefined,
+): string | null {
+  switch (change.kind) {
+    case 'create_page':
+      return subjectId;
+    case 'rename_page':
+    case 'set_page_visibility':
+    case 'recover_page_origin':
+    case 'remove_page':
+      return change.page;
+    case 'create_block':
+    case 'move_block':
+      return change.page;
+    case 'edit_block':
+    case 'remove_block':
+    case 'set_block_gloss':
+      return pageOf(change.block) ?? null;
+    case 'set_property':
+    case 'remove_property':
+      // Una propiedad cuelga de una página o de un bloque, y sólo de uno de los dos.
+      return change.page ?? (change.block === undefined ? null : (pageOf(change.block) ?? null));
+    default:
+      return null;
+  }
+}
+
 function readOperation(body: SubmitBody): { error: string } | {
   originId: string;
   channel: ContributionChannel;
@@ -3530,6 +3570,20 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               originId: op.originId,
               kind: op.submission.change.kind,
               subjectId: op.subjectId,
+              /*
+               * A qué página tocó.
+               *
+               * Sin esto, quien pregunta «¿qué ha pasado desde mi cursor?» recibe
+               * identificadores de bloque sueltos y no puede contestar la única
+               * pregunta que le importa —«¿tocaron lo que estoy leyendo?»— sin
+               * pedir las páginas, que es justamente lo que preguntar por
+               * operaciones venía a evitar. @guarantee KnowingIsCheapAndTakingIsNot.
+               *
+               * Nulo cuando la operación borró aquello por lo que se preguntaría:
+               * de un bloque que ya no está no se puede averiguar dónde vivía, y
+               * decirlo es más honesto que callar la operación entera.
+               */
+              page: pageTouchedBy(op.submission.change, op.subjectId, (id) => graph.block(id)?.page),
               authoredBy: op.submission.submittedBy,
               channel: op.submission.channel,
             })),

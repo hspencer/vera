@@ -34,6 +34,14 @@ import type { CorpusHealth, PageSummary, PageView } from './api.ts';
  */
 export const RETAINED = 240;
 
+/**
+ * Cuántos orígenes propios se recuerdan.
+ *
+ * Bastantes más de los que una sesión escribe entre dos preguntas al corpus, y
+ * bastantes menos de los que harían de esto un segundo registro.
+ */
+export const SENT = 500;
+
 /** Una página tal como queda retenida. */
 export interface KeptPage {
   id: string;
@@ -52,6 +60,8 @@ export interface Keeps {
   count(): Promise<number>;
   /** Los `n` que se leyeron hace más tiempo, del más antiguo en adelante. */
   oldest(n: number): Promise<string[]>;
+  /** Qué páginas hay, por identidad. */
+  ids(): Promise<string[]>;
   drop(ids: readonly string[]): Promise<void>;
   clear(): Promise<void>;
   meta<T>(name: string): Promise<T | null>;
@@ -68,6 +78,42 @@ export interface Held {
 
   corpus(): Promise<CorpusHealth | null>;
   keepCorpus(health: CorpusHealth): Promise<void>;
+
+  /**
+   * Hasta dónde del registro canónico sabe este aparato.
+   *
+   * `canonical_cursor` de la spec. Sobrevive a cerrar porque si no, cada arranque
+   * volvería a preguntar por el corpus entero o no preguntaría nada.
+   * @invariant CursorAdvancesOnlyThroughCanonicalOperations.
+   */
+  cursor(): Promise<number | null>;
+  keepCursor(sequence: number): Promise<void>;
+
+  /**
+   * Los orígenes que salieron de este aparato, para no anunciárselos a sí mismo.
+   *
+   * El registro canónico es uno solo, así que lo que se manda vuelve en la misma
+   * respuesta a «¿qué ha pasado desde mi cursor?». Sin esta lista, Vera avisaría de
+   * que la página cambió cada vez que uno escribe en ella.
+   *
+   * Es durable y acotada: en memoria se perdería al recargar y lo escrito ayer se
+   * anunciaría hoy como ajeno, y sin tope crecería con el corpus para contestar una
+   * pregunta que sólo mira hacia atrás unas pocas operaciones.
+   */
+  sent(): Promise<string[]>;
+  noteSent(originId: string): Promise<void>;
+
+  /**
+   * Suelta una página retenida que dejó de estar al día.
+   *
+   * Soltar no es perder: lo canónico está en el corpus. Es lo que se hace con una
+   * página que otra mano tocó y aquí no se está mirando — enseñarla al instante y
+   * equivocada sería lo único peor que tardar en enseñarla.
+   */
+  forgetPage(id: string): Promise<void>;
+
+  /** Qué páginas hay retenidas. Se pregunta para saber cuáles dejaron de valer. */
+  retained(): Promise<string[]>;
 
   /** Cuántas páginas hay retenidas. Se enseña en Memoria; no se decide con ello. */
   count(): Promise<number>;
@@ -137,6 +183,20 @@ export function heldOn(keeps: Keeps, now: () => number = Date.now): Held {
 
     corpus: () => quietly(() => keeps.meta<CorpusHealth>('corpus'), null),
     keepCorpus: (health) => quietly(() => keeps.setMeta('corpus', health), undefined),
+
+    cursor: () => quietly(() => keeps.meta<number>('cursor'), null),
+    keepCursor: (sequence) => quietly(() => keeps.setMeta('cursor', sequence), undefined),
+
+    sent: () => quietly(async () => (await keeps.meta<string[]>('sent')) ?? [], []),
+    noteSent: (originId) =>
+      quietly(async () => {
+        const held = (await keeps.meta<string[]>('sent')) ?? [];
+        if (held.includes(originId)) return;
+        await keeps.setMeta('sent', [...held, originId].slice(-SENT));
+      }, undefined),
+
+    forgetPage: (id) => quietly(() => keeps.drop([id]), undefined),
+    retained: () => quietly(() => keeps.ids(), []),
 
     count: () => quietly(() => keeps.count(), 0),
 
@@ -208,6 +268,9 @@ export function indexedDbKeeps(): Keeps {
         ? Promise.resolve([])
         : within<string[]>('pages', 'readonly', (s) => s.index('at').getAllKeys(null, n)),
 
+    // Sólo las llaves, por lo mismo: saber qué hay no puede costar traerlo todo.
+    ids: () => within<string[]>('pages', 'readonly', (s) => s.getAllKeys()),
+
     drop: async (ids) => {
       for (const id of ids) await within<void>('pages', 'readwrite', (store) => store.delete(id));
     },
@@ -233,6 +296,7 @@ export function inMemoryKeeps(): Keeps {
     count: async () => pages.size,
     oldest: async (n) =>
       n <= 0 ? [] : [...pages.values()].sort((a, b) => a.at - b.at).slice(0, n).map((one) => one.id),
+    ids: async () => [...pages.keys()],
     drop: async (ids) => {
       for (const id of ids) pages.delete(id);
     },
@@ -264,6 +328,12 @@ export function holdsNothing(): Held {
     keepIndex: async () => {},
     corpus: async () => null,
     keepCorpus: async () => {},
+    cursor: async () => null,
+    keepCursor: async () => {},
+    sent: async () => [],
+    noteSent: async () => {},
+    forgetPage: async () => {},
+    retained: async () => [],
     count: async () => 0,
     forget: async () => {},
   };

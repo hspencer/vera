@@ -6,6 +6,7 @@
 import type { Trail } from '@vera/core';
 import type { GraphData } from './graph/types.ts';
 import type { Recording } from './voice.ts';
+import type { CanonicalOp } from './behind.ts';
 import { nextToSend, type Outbox, type Pending } from './outbox.ts';
 
 export interface PageSummary {
@@ -497,6 +498,24 @@ function usesOutbox(box: Outbox | null): void {
  * creciente ni nada parecido: quien vuelve a intentarlo es el navegador cuando
  * avisa de que hay red otra vez, y mientras tanto insistir sólo gastaría batería.
  */
+/**
+ * Lo que no puede salir todavía porque hay una decisión pendiente.
+ *
+ * Lo instala el espacio de trabajo. Sin esto, al volver la red lo pendiente se
+ * mandaba antes de que nadie preguntara nada, y una edición propia pisaba en
+ * silencio la que otra mano había hecho entretanto — que es exactamente la pérdida
+ * que rule ExposeConcurrentConflict existe para impedir. Se vio en el navegador y
+ * no en una prueba: el drenaje le ganaba a la pregunta por una carrera.
+ *
+ * No se descarta ni se marca como rechazado: se queda donde está, intacto, hasta
+ * que el desacuerdo se resuelva. Retener no es perder.
+ */
+let heldBack: (pending: Pending) => boolean = () => false;
+
+function holdsBack(fn: (pending: Pending) => boolean): void {
+  heldBack = fn;
+}
+
 async function drain(): Promise<void> {
   if (draining || outbox === null) return;
   draining = true;
@@ -504,7 +523,7 @@ async function drain(): Promise<void> {
     for (;;) {
       const box = outbox;
       if (box === null) return;
-      const next = nextToSend(box.pending());
+      const next = nextToSend(box.pending().filter((one) => !heldBack(one)));
       if (next === null) return;
 
       await box.mark(next.originId, 'sending');
@@ -538,7 +557,9 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
     path,
     init === undefined
       ? undefined
-      : { headers: { 'content-type': 'application/json' }, ...init },
+      : init.method === undefined
+        ? init
+        : { headers: { 'content-type': 'application/json' }, ...init },
   );
   /*
    * Un error del servidor viaja con su explicación, y la explicación importa.
@@ -780,7 +801,19 @@ export const api = {
     return answer.ok ? said : { error: said.error ?? 'no se pudo traer' };
   },
 
-  page: (id: string) => json<PageView>(`/pages/${encodeURIComponent(id)}`),
+  /**
+   * Una página del corpus.
+   *
+   * `within` acota la espera cuando quien pregunta no puede quedarse colgado. Un
+   * `fetch` no tiene plazo por omisión: sobre un túnel, una conexión que se queda a
+   * medias no falla ni contesta, y quien la espera se queda esperando para siempre.
+   * Eso convertía «traer lo que cambió» en un botón que se apagaba y no volvía.
+   */
+  page: (id: string, within?: number) =>
+    json<PageView>(
+      `/pages/${encodeURIComponent(id)}`,
+      within === undefined ? undefined : { signal: AbortSignal.timeout(within) },
+    ),
 
   /** Las páginas que gobiernan a Vera, por lo que declaran gobernar. */
   specialPages: () => json<{ id: string; title: string; kind: string }[]>('/special-pages'),
@@ -855,6 +888,17 @@ export const api = {
     json<GraphData>(`/graph/${encodeURIComponent(centre)}?depth=${depth}`),
 
   /**
+   * Qué ha pasado en el corpus desde una posición del registro.
+   *
+   * La pregunta barata, y la única que se hace sola. Contesta con las operaciones
+   * —pequeñas: las últimas veinte del corpus real son 3,8 KB— y no con las páginas
+   * que tocaron, que no lo son: una muy escrita son 512 KB.
+   * @guarantee KnowingIsCheapAndTakingIsNot. Ver behind.ts.
+   */
+  ops: (since: number) =>
+    json<CanonicalOp[]>(`/ops?since=${since}`, { signal: AbortSignal.timeout(8_000) }),
+
+  /**
    * Escribe un cambio.
    *
    * El canal dice cómo se produjo lo que va dentro, y casi siempre es tecleado.
@@ -872,6 +916,8 @@ export const api = {
 
   /** Dónde queda lo pendiente para que sobreviva a cerrar. Ver outbox.ts. */
   usesOutbox,
+  /** Qué no puede salir mientras haya un desacuerdo que resolver. */
+  holdsBack,
   /** Manda lo que quede pendiente. Lo llama el arranque y la vuelta de la red. */
   drain,
 

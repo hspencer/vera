@@ -34,6 +34,8 @@ import { is } from './bindings.ts';
 import { suggestTitles } from '@vera/core';
 import { createPage } from './pages.ts';
 import { changesGraphMeaning } from './invalidation.ts';
+import { behind, disagreements, said, type Behind, type Disagreement } from './behind.ts';
+import { askAboutDisagreements, type Resolved } from './reconcile.ts';
 import { forgetPositions, renderGraph, selectNode, type ThreadSettings } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D, forgetCamera, selectNode3D } from './graph/render3d.ts';
 import {
@@ -105,6 +107,17 @@ let mapPanelOpen = false;
 let tokens = loadTokens();
 let pages: PageSummary[] = [];
 
+/**
+ * Lo que la barra dice cuando no está mandando nada.
+ *
+ * Vive fuera de `wireSubmissionState` porque quien lo escribe es la puesta al día
+ * y quien lo pinta es la barra, y son dos cosas que ocurren en momentos distintos.
+ */
+let announcing: { state: string; message: string; title: string } | null = null;
+
+/** Repinta la barra. Lo instala `wireSubmissionState`, que es quien tiene el nodo. */
+let paintSync: () => void = () => {};
+
 function wireSubmissionState(): void {
   const indicator = $('#sync-state');
   const pending = new Set<string>();
@@ -112,11 +125,45 @@ function wireSubmissionState(): void {
   const here = new Set<string>();
   let clearTimer: number | undefined;
 
+  /*
+   * El mismo sitio dice dos cosas, y hay que repartirlo.
+   *
+   * Lo que este aparato está mandando es efímero y se apaga solo; lo que espera a
+   * ser traído no se apaga hasta que alguien lo trae. Mandar manda mientras dura, y
+   * al terminar no se esconde la barra: se deja ver lo que esperaba debajo. Sin
+   * esto, guardar una letra borraba el aviso de que Cotito había reescrito la
+   * página. @invariant WaitingWorkIsNeverReportedAsSynchronised.
+   */
+  paintSync = (): void => {
+    if (announcing === null) {
+      indicator.hidden = true;
+      indicator.onclick = null;
+      indicator.classList.remove('pressable');
+      return;
+    }
+    indicator.dataset['state'] = announcing.state;
+    indicator.textContent = announcing.message;
+    indicator.title = announcing.title;
+    indicator.hidden = false;
+    indicator.classList.add('pressable');
+    indicator.onclick = () => {
+      if (takingNow) return;
+      indicator.dataset['state'] = 'synchronising';
+      indicator.textContent = 'trayendo…';
+      indicator.onclick = null;
+      void takeWaitingWork();
+    };
+  };
+
   const say = (state: string, message: string, title = ''): void => {
     indicator.dataset['state'] = state;
     indicator.textContent = message;
     indicator.title = title;
     indicator.hidden = false;
+    // Mientras algo se manda, la barra no es un botón: pulsarla traería el corpus
+    // encima de lo que todavía está saliendo.
+    indicator.onclick = null;
+    indicator.classList.remove('pressable');
   };
 
   onSubmissionActivity((activity) => {
@@ -131,6 +178,15 @@ function wireSubmissionState(): void {
      * —la bandeja es durable— y todavía no lo saben los demás aparatos.
      * @invariant SilenceNeverPretendsToBeSuccess.
      */
+    /*
+     * Y queda anotado que este origen salió de aquí.
+     *
+     * El registro canónico es uno solo, así que lo propio vuelve en la respuesta a
+     * «¿qué ha pasado desde mi cursor?». Sin anotarlo, escribir una letra encendería
+     * el aviso de que la página cambió — y tendría razón, y sería inútil.
+     */
+    void held.noteSent(activity.originId);
+
     if (activity.phase === 'local') {
       pending.add(activity.originId);
       here.add(activity.originId);
@@ -179,9 +235,7 @@ function wireSubmissionState(): void {
     }
 
     say('synchronised', 'sincronizado', `Confirmado por el servidor en ${Math.round(activity.durationMs)} ms`);
-    clearTimer = window.setTimeout(() => {
-      indicator.hidden = true;
-    }, 1800);
+    clearTimer = window.setTimeout(paintSync, 1800);
   });
 }
 /** Cierra los ajustes. Vive aquí porque Memoria también necesita cerrarlos: una
@@ -580,14 +634,30 @@ function awaiting(title: string | null, since: number): Counting {
  * Va debajo del título, que es donde empieza la lectura, y no en el rincón del
  * estado: no es una noticia sobre la máquina, es una advertencia sobre el texto.
  */
+/**
+ * De dónde salió lo que se está leyendo. `replica.showing` de la spec.
+ *
+ * Se dice y no se deduce: quien lee tiene que poder saberlo, y «se ve igual» es
+ * exactamente la razón por la que no puede.
+ *
+ * Dos textos y no uno, y la distinción es nueva. Antes leer de lo retenido sólo
+ * pasaba sin red, así que el cartel decía «sin conexión con el corpus» y era cierto.
+ * Ahora es el camino normal —rule ShowRetainedPageAtOnce— y decir eso con la red
+ * puesta sería mentir sobre el estado de la máquina para explicar de dónde salió un
+ * texto.
+ */
 function markShowing(text: HTMLElement, kept: boolean): void {
   text.querySelector('.page-kept')?.remove();
   if (!kept) return;
+  const offline = !navigator.onLine;
   const said = document.createElement('p');
-  said.className = 'page-kept';
-  said.textContent = 'de lo guardado en este aparato · sin conexión con el corpus';
-  said.title =
-    'Se puede escribir igual. Lo que se escriba sale solo cuando vuelva la red, y entonces la página se pone al día.';
+  said.className = offline ? 'page-kept offline' : 'page-kept';
+  said.textContent = offline
+    ? 'de lo guardado en este aparato · sin conexión con el corpus'
+    : 'de lo guardado en este aparato';
+  said.title = offline
+    ? 'Se puede escribir igual. Lo que se escriba sale solo cuando vuelva la red, y entonces la página se pone al día.'
+    : 'Se lee desde aquí, sin esperar al corpus. Si algo cambió allá, la barra lo dice y lo traes tú.';
   (text.querySelector('.page-header') ?? text.firstElementChild)?.append(said);
 }
 
@@ -649,17 +719,47 @@ async function openPage(
       }, PATIENCE);
   /** Si esta página salió de lo retenido y no del corpus. */
   let fromKept = false;
+
+  /*
+   * Lo que este aparato ya tenía, antes de preguntar nada.
+   *
+   * rule ShowRetainedPageAtOnce. Y es un cambio de fondo respecto de lo que había:
+   * lo retenido se consultaba en el `catch`, o sea sólo cuando la red *fallaba*, y
+   * un `catch` no se dispara porque algo tarde. Vera tenía la página guardada y se
+   * quedaba mirando la red igual.
+   *
+   * El costo no era teórico. Abrir una página muy escrita del corpus real son 0,81 s
+   * y 512 KB, pagados otra vez en cada visita, porque no hay lectura condicional en
+   * ninguna parte: nadie pregunta si la copia que ya se tiene sigue valiendo. Una
+   * página del rastro, abierta por quincuagésima vez, los pagaba cincuenta veces.
+   *
+   * Lo que va detrás no es volver a pedir la página: es la pregunta barata de qué
+   * ha pasado desde el cursor. Ver `catchUpWithCorpus`.
+   */
+  const kept = here ? null : await held.page(id);
+  if (kept !== null) {
+    if (slow !== null) clearTimeout(slow);
+    fromKept = true;
+    page = kept;
+  }
+
   try {
-    page = await api.page(id);
-    // Leerla es lo que hace que se retenga. rule RetainDeliveredPage.
-    void held.keepPage(page);
+    if (page === undefined) {
+      page = await api.page(id);
+      // Leerla es lo que hace que se retenga. rule RetainDeliveredPage.
+      void held.keepPage(page);
+    }
   } catch (error) {
     /*
      * Sin servidor, lo que este aparato guardó de esta página.
      *
      * Y con ella se siembra la réplica igual que con una recién entregada, así que
      * se puede escribir dentro: lo que se escriba cae en la bandeja y sale cuando
-     * vuelva la red. rule ReadRetainedPageWithoutTheServer.
+     * vuelva la red. rule ShowRetainedPageAtOnce.
+     *
+     * Se vuelve a preguntar aquí y no sólo arriba porque `here` —redibujar la misma
+     * página— salta el atajo a propósito: al guardar hay que volver a mirar el
+     * corpus, y si el corpus no está, lo retenido sigue siendo la respuesta.
      */
     const remembered = await held.page(id);
     if (remembered === null) {
@@ -787,6 +887,10 @@ async function openPage(
   }
 
   if (!isPhone() && workspace.layout !== 'text_only') void drawGraph();
+
+  // Y detrás, la pregunta barata. rule PullOperationsAfterCursor: no pide la
+  // página otra vez, pregunta qué pasó desde el cursor.
+  void catchUpWithCorpus();
 }
 
 /**
@@ -1107,11 +1211,40 @@ function notice(message: string): void {
  * vacío. Se vuelve a pedir cuando nace una página, o el autocompletado seguiría
  * sin conocerla el resto de la sesión.
  */
+/** Ordena el índice como se usa: lo más enlazado y lo más escrito primero. */
+const byWeight = (all: PageSummary[]): PageSummary[] =>
+  [...all].sort((a, b) => b.linkCount - a.linkCount || b.blockCount - a.blockCount);
+
 async function loadPages(): Promise<void> {
+  /*
+   * El índice de la última vez, y sin esperar a nadie.
+   *
+   * Son 197 KB sobre un corpus de dos mil páginas —el doble de lo que pesa una
+   * página larga— y se pedían **antes de dibujar nada**, en cada arranque. De los
+   * ~694 KB que hay que bajar para ver el primer bloque de una página nueva, éste
+   * es el trozo más grande, y es el único que este aparato ya tiene entero.
+   *
+   * Lo que se pierde es que una página creada en otro aparato hace un minuto no
+   * esté en la lista todavía: el autocompletado no la ofrece hasta que llegue la
+   * lista de verdad, unos segundos después. Abrirla por su título sigue
+   * funcionando, porque eso lo resuelve el servidor y no la lista.
+   */
+  const remembered = await held.index();
+  if (remembered !== null) {
+    pages = byWeight(remembered);
+    // Y detrás, la de verdad, sin que nadie la espere.
+    void api
+      .pages()
+      .then((fresh) => {
+        pages = byWeight(fresh);
+        void held.keepIndex(fresh);
+      })
+      .catch(() => undefined);
+    return;
+  }
+
   try {
-    pages = (await api.pages()).sort(
-      (a, b) => b.linkCount - a.linkCount || b.blockCount - a.blockCount,
-    );
+    pages = byWeight(await api.pages());
     void held.keepIndex(pages);
     return;
   } catch (error) {
@@ -1123,9 +1256,9 @@ async function loadPages(): Promise<void> {
      * crearla. Sin lista, abrir sin red dejaría a Vera sabiendo leer una página y
      * sin saber cómo se llama ninguna otra.
      */
-    const remembered = await held.index();
-    if (remembered === null) throw error;
-    pages = remembered;
+    const otra = await held.index();
+    if (otra === null) throw error;
+    pages = byWeight(otra);
   }
 }
 
@@ -1165,10 +1298,55 @@ async function openTitle(title: string, gesture: NavigationGesture): Promise<voi
     return;
   }
 
-  // El índice de títulos vive en memoria y lo usa el autocompletado: sin esto,
-  // la página recién creada seguiría sin existir para el resto de la sesión.
-  await loadPages();
+  /*
+   * El índice se corrige aquí mismo, sin volver a pedirlo.
+   *
+   * Pedía `/pages` entero —197 KB sobre un corpus de dos mil páginas— para añadir
+   * una fila que ya se conoce: el título es el que se acaba de escribir y la
+   * identidad la acuñó este aparato. Era el tramo más largo de un gesto que
+   * debería no tener ninguno.
+   */
+  pages = [
+    { id: created.subjectId, title, visibility: 'private', blockCount: 0, linkCount: 0 },
+    ...pages,
+  ];
+  void held.keepIndex(pages);
+
+  /*
+   * Y se retiene vacía, para que abrirla no vuelva a viajar.
+   *
+   * Una página que acaba de nacer aquí está vacía, y eso no es una suposición:
+   * es lo que este aparato acaba de hacer. Retenerla es decir la verdad, y hace
+   * que `openPage` la dibuje al instante en vez de ir a preguntar por una página
+   * cuyo contenido conoce entero. rule ShowRetainedPageAtOnce.
+   */
+  await held.keepPage(blankPage(created.subjectId, title));
   await openPage(created.subjectId, null, { gesture });
+}
+
+/** Una página recién nacida: su nombre, y nada más. */
+function blankPage(id: string, title: string): PageView {
+  const now = Date.now();
+  return {
+    id,
+    title,
+    visibility: 'private',
+    createdAt: now,
+    originCreatedAt: null,
+    lastEditedAt: null,
+    properties: [],
+    domains: {},
+    blocks: [],
+    assets: [],
+    blockRefs: [],
+    folded: [],
+    spokenOrigins: [],
+    authorship: {},
+    backlinks: [],
+    references: [],
+    crossingsOut: [],
+    crossingsIn: [],
+  };
 }
 
 /*
@@ -1221,6 +1399,267 @@ let catchUpTimer: number | undefined;
 let outbox: Outbox | null = null;
 
 let openTrail: ThreadSettings | null = null;
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Lo que pasó en el corpus mientras se leía.
+ *
+ * Ver specs/offline-reconciliation.allium, fases 3 y 4, y behind.ts para la
+ * aritmética. Aquí está lo que la aritmética no puede tener: el cursor durable, la
+ * barra, y el acto de tomar.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+/** Lo que se sabe y no se ha tomado. Nulo mientras no se haya preguntado. */
+let waiting: Behind | null = null;
+
+/**
+ * Los bloques donde ya se sabe que hay dos versiones.
+ *
+ * Lo pendiente sobre ellos no sale hasta que alguien decida. Es lo que impide que
+ * volver la red mande lo mío por encima de lo que otra mano escribió, sin que nadie
+ * haya elegido — que es la pérdida silenciosa que rule ExposeConcurrentConflict
+ * viene a evitar, y que ocurría por una carrera entre el drenaje y la pregunta.
+ */
+let contested = new Set<string>();
+
+/**
+ * Pregunta qué ha pasado desde el cursor, y no aplica nada.
+ *
+ * rule PullOperationsAfterCursor. Es la única petición que se hace sola, y es
+ * barata a propósito: las últimas veinte operaciones del corpus real son 3,8 KB;
+ * volver a pedir una página muy escrita son 512 KB.
+ * @guarantee KnowingIsCheapAndTakingIsNot.
+ */
+async function catchUpWithCorpus(): Promise<void> {
+  if (!navigator.onLine) return;
+
+  const cursor = await held.cursor();
+  /*
+   * La primera vez no se anuncia nada.
+   *
+   * Sin cursor, «lo que ha pasado» es el corpus entero, y decirle a alguien que
+   * acaba de instalar Vera que tiene setenta mil operaciones esperando sería cierto
+   * y absurdo. Se toma la posición de ahora como punto de partida.
+   */
+  if (cursor === null) {
+    if (corpus?.lastSequence !== undefined) await held.keepCursor(corpus.lastSequence);
+    return;
+  }
+
+  let ops;
+  try {
+    ops = await api.ops(cursor);
+  } catch {
+    // Sin red no hay noticias, que no es lo mismo que no haberlas. El aviso que
+    // hubiera se queda como estaba.
+    return;
+  }
+
+  waiting = behind(ops, {
+    mine: new Set(await held.sent()),
+    openPage: workspace.activePage,
+    retained: new Set(await held.retained()),
+  });
+
+  /*
+   * Y se retiene lo que no puede salir todavía.
+   *
+   * Un bloque que este aparato tiene sin mandar y que el corpus ya cambió tiene dos
+   * versiones, y mandarlo sería elegir una sin preguntar. Se calcula aquí porque es
+   * donde se sabe qué llegó, y se aplica en el drenaje, que es donde saldría.
+   */
+  const touched = new Set(
+    waiting.waiting.map((one) => one.op.subjectId).filter((id): id is string => id !== null),
+  );
+  contested = new Set(
+    (outbox?.pending() ?? [])
+      .filter((one) => one.change.kind === 'edit_block' && touched.has(one.change.block as string))
+      .map((one) => (one.change as { block: string }).block),
+  );
+
+  /*
+   * Si sólo volvió lo propio, el cursor avanza y no se dice nada.
+   *
+   * Sin esto se preguntaría por lo mismo para siempre, y cada escritura propia
+   * dejaría un aviso encendido sobre algo que uno acaba de hacer.
+   */
+  if (waiting.waiting.length === 0) {
+    if (waiting.upTo > cursor) await held.keepCursor(waiting.upTo);
+    waiting = null;
+  }
+  announce();
+}
+
+/** Enciende —o apaga— el aviso de la barra. rule AnnounceWaitingCanonicalWork. */
+function announce(): void {
+  const dicho = waiting === null ? null : said(waiting);
+  announcing =
+    dicho === null
+      ? null
+      : {
+          state: (waiting?.here ?? 0) > 0 ? 'waiting-here' : 'waiting',
+          message: dicho.message,
+          title: dicho.title,
+        };
+  paintSync();
+}
+
+/**
+ * Trae lo que esperaba. rule TakeWaitingCanonicalWork.
+ *
+ * Es el único camino por el que algo del corpus entra en lo que hay en pantalla.
+ * @guarantee WhatArrivesIsAnnouncedAndNotImposed.
+ */
+/** Si hay una toma en marcha, para que pulsar dos veces no la duplique. */
+let takingNow = false;
+
+async function takeWaitingWork(): Promise<void> {
+  if (waiting === null || takingNow) return;
+  const taking = waiting;
+  takingNow = true;
+  /*
+   * Pase lo que pase, la barra vuelve a decir la verdad.
+   *
+   * Sin esto, cualquier salida que no fuera el éxito dejaba el botón en «trayendo…»
+   * para siempre: apagado, sin color, y sin forma de saber si había pasado algo. Un
+   * botón que se apaga y no vuelve es peor que no tenerlo, porque además de no
+   * traer nada convence de que ya se trajo.
+   */
+  try {
+    await bringItOver(taking);
+  } finally {
+    takingNow = false;
+    announce();
+  }
+}
+
+async function bringItOver(taking: Behind): Promise<void> {
+
+  /*
+   * Lo retenido de otras páginas que dejó de valer se suelta.
+   *
+   * Soltar no es perder —lo canónico está en el corpus— y es lo único honesto que
+   * se puede hacer con una copia que se sabe vieja: la próxima visita la traerá
+   * entera, una vez, en vez de enseñarla al instante y equivocada.
+   */
+  for (const page of taking.staleElsewhere) await held.forgetPage(page);
+
+  const open = workspace.activePage;
+  if (taking.here > 0 && open !== null) {
+    /*
+     * Con plazo. Un `fetch` sin él no falla nunca sobre un túnel a medias: se queda.
+     * Diez segundos son de sobra para la página más escrita de este corpus —0,81 s
+     * en bucle local— y poco para que alguien crea que se colgó.
+     */
+    let canonical;
+    try {
+      canonical = await api.page(open, 10_000);
+    } catch (error) {
+      const why = error instanceof Error && error.name === 'TimeoutError'
+        ? 'el corpus tardó demasiado'
+        : error instanceof Error
+          ? error.message
+          : 'no contestó';
+      notice(`No se pudo traer lo que cambió: ${why}. Lo que esperaba sigue esperando.`);
+      return;
+    }
+
+    /*
+     * Dónde las dos manos dicen cosas distintas del mismo bloque.
+     *
+     * Sólo cuenta lo que todavía no ha llegado al corpus: si lo mío ya está
+     * confirmado, lo que el corpus dice *es* lo mío y no hay nada que preguntar.
+     */
+    const pending = (outbox?.pending() ?? [])
+      .filter((one) => one.status !== 'rejected')
+      .flatMap((one) =>
+        one.change.kind === 'edit_block'
+          ? [{ block: one.change.block as string, content: one.change.content as string }]
+          : [],
+      );
+    const found = disagreements(
+      new Map(canonical.blocks.map((one) => [one.stableId, one.content])),
+      pending,
+      new Map(
+        Object.entries(canonical.authorship ?? {}).map(([block, who]) => [block, who.participant]),
+      ),
+    );
+
+    if (found.length > 0) {
+      const decided = await askAboutDisagreements(found);
+      // Dejarlo no es elegir: lo pendiente sigue pendiente y el aviso encendido.
+      if (decided === null) return;
+      if (!(await applyResolutions(found, decided))) return;
+    }
+  }
+
+  await held.keepCursor(taking.upTo);
+  waiting = null;
+  contested = new Set();
+  // Y ahora sí sale lo que estaba retenido: ya se decidió qué hacer con ello.
+  await api.drain();
+
+  // Y ahora sí se vuelve a abrir: lo que se paga una vez, cuando hubo motivo.
+  if (taking.here > 0 && open !== null) {
+    await openPage(open);
+    return;
+  }
+
+  /*
+   * Y si lo que cambió no era de esta página, se dice.
+   *
+   * Pulsar y que no pase nada visible es indistinguible de pulsar y que falle. Lo
+   * que ocurrió es real —el cursor avanzó, lo retenido que envejeció se soltó— y no
+   * tiene por qué verse en la página que se está mirando.
+   */
+  const cuantas = taking.staleElsewhere.length;
+  notice(
+    cuantas === 0
+      ? 'Al día. Lo que cambió no era de esta página.'
+      : cuantas === 1
+        ? 'Al día. Lo que cambió era de otra página, que se traerá entera al abrirla.'
+        : `Al día. Lo que cambió era de otras ${cuantas} páginas, que se traerán al abrirlas.`,
+  );
+}
+
+/**
+ * Lleva a cabo lo que se decidió en el diálogo.
+ *
+ * Las tres salidas de `enum ConflictResolution`. La que no hace nada es quedarse
+ * con lo de uno: ya está aplicado aquí y ya está en la bandeja, así que saldrá y
+ * ganará por ser posterior — que es exactamente lo que significa quedarse con ella.
+ */
+async function applyResolutions(
+  found: readonly Disagreement[],
+  decided: Resolved,
+): Promise<boolean> {
+  for (const one of found) {
+    const choice = decided.get(one.block);
+    if (choice === undefined || choice.kind === 'keep_local') continue;
+
+    /*
+     * Tomar la del corpus es retirar la mía de la bandeja.
+     *
+     * Y hay que hacerlo antes de traer la página: si se drenara después, lo que
+     * acabo de descartar volvería a mandarse y pisaría lo que elegí conservar.
+     */
+    for (const pending of outbox?.pending() ?? []) {
+      if (pending.change.kind === 'edit_block' && pending.change.block === one.block) {
+        await outbox?.settle(pending.originId);
+      }
+    }
+
+    if (choice.kind === 'replace') {
+      const said = await api.submit({ kind: 'edit_block', block: one.block, content: choice.content });
+      if (said.status === 'rejected') {
+        notice(`No se pudo escribir la versión nueva: ${said.reason}`);
+        return false;
+      }
+    }
+  }
+  return true;
+}
 
 let graphTurn = 0;
 
@@ -2096,7 +2535,15 @@ async function start(): Promise<void> {
     if (!durable) {
       notice('Este navegador no deja guardar lo pendiente, así que lo que se escriba sin red se pierde al cerrar.');
     }
-    await api.drain();
+    /*
+     * Y no se drena aquí.
+     *
+     * Lo pendiente sale al final del arranque, después de la primera pregunta al
+     * corpus. Drenar aquí era una carrera perdida: lo que este aparato tenía sin
+     * mandar salía antes de que nadie supiera que el corpus ya había cambiado ese
+     * mismo bloque, y ganaba por ser posterior. La otra versión se perdía sin que
+     * se dijera, que es lo que rule ExposeConcurrentConflict existe para impedir.
+     */
   });
 
   /*
@@ -2111,12 +2558,42 @@ async function start(): Promise<void> {
    * ya era canónica sería pedirle al servidor algo que no cambió, cada vez que un
    * túnel de metro devuelve la señal.
    */
+  /*
+   * Y cada tanto, mientras se lee.
+   *
+   * Un minuto, que es poco para una lectura y mucho para 4 KB. Es lo que hace que
+   * el aviso aparezca mientras se está mirando la página y no sólo al abrirla:
+   * otra mano puede escribir en cualquier momento, y enterarse al rato es la
+   * diferencia entre un aviso y un archivo.
+   */
+  window.setInterval(() => void catchUpWithCorpus(), 60_000);
+
+  /*
+   * Al volver la red: primero se pregunta, después se manda.
+   *
+   * En ese orden y no al revés. Drenando primero, una edición que este aparato tenía
+   * sin mandar salía antes de que nadie supiera que el corpus ya había cambiado ese
+   * mismo bloque, y ganaba por ser posterior: la otra versión se perdía sin que se
+   * dijera. Preguntando primero, el bloque queda retenido y el aviso se enciende.
+   */
   window.addEventListener('online', () => {
-    void api.drain().then(() => {
-      if (!showingKept || workspace.activePage === null) return;
-      void openPage(workspace.activePage);
-    });
+    void catchUpWithCorpus().then(() =>
+      api.drain().then(() => {
+        if (!showingKept || workspace.activePage === null) return;
+        void openPage(workspace.activePage);
+      }),
+    );
   });
+
+  /*
+   * Y qué no puede salir mientras haya un desacuerdo sin resolver.
+   *
+   * Ver `contested`. Se instala aquí, junto a lo demás que el espacio de trabajo le
+   * presta al transporte.
+   */
+  api.holdsBack(
+    (pending) => pending.change.kind === 'edit_block' && contested.has(pending.change.block as string),
+  );
 
   api.writesLocally((change, origin) => {
     if (replica === null) return null;
@@ -2203,6 +2680,16 @@ async function start(): Promise<void> {
 
   applyLayout();
   await applyRoute();
+
+  /*
+   * Y ahora sí: primero qué ha pasado, después lo que estaba por salir.
+   *
+   * En ese orden, y es la última pieza de lo mismo: preguntar es lo que descubre
+   * que un bloque tiene dos versiones, y descubrirlo es lo que retiene la mía en la
+   * bandeja hasta que alguien elija.
+   */
+  await catchUpWithCorpus();
+  await api.drain();
 }
 
 /**

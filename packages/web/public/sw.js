@@ -17,10 +17,12 @@
 
 // Subir este número tira el caché anterior entero al activarse. Hace falta
 // cuando lo guardado deja de ser válido, y no sólo cuando cambia esta lista.
+// v7 va con el plazo de la navegación: sin él, una conexión a medias dejaba a
+// Vera sin arrancar teniendo el armazón guardado aquí mismo.
 // v6 reemplaza también los iconos anteriores por la familia nocturna.
 // v5 tiraba lo guardado por v4, que incluía respuestas de `/ontology` y de las
 // demás lecturas que la regla de abajo dejaba caer en el caché por descuido.
-const SHELL = 'vera-shell-v6';
+const SHELL = 'vera-shell-v7';
 const ASSETS = [
   '/',
   '/index.html',
@@ -69,8 +71,28 @@ self.addEventListener('fetch', (event) => {
   // index.html viejo que pedía assets con hash ya inexistentes: la aplicación
   // quedaba en blanco después de cada build hasta borrar el caché a mano.
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
+    /*
+     * A la red primero, pero con plazo.
+     *
+     * Sin plazo, esto se colgaba entero: un `fetch` no falla porque tarde, y una
+     * conexión a medias —un túnel que se quedó a mitad, una red que dice estar
+     * puesta y no lo está— ni contesta ni rechaza. El `.catch()` de abajo no se
+     * dispara nunca y Vera no llega a arrancar, teniendo el armazón aquí guardado y
+     * las páginas en IndexedDB. Medido con un túnel que se traga la mitad de las
+     * peticiones: la navegación se quedaba esperando sin fin.
+     *
+     * Pasados dos segundos y medio se sirve el armazón guardado y la aplicación
+     * arranca; lo que se lea saldrá de lo retenido y la barra dirá si algo cambió.
+     * La petición sigue viva y actualiza el caché cuando llegue, así que la próxima
+     * vez el armazón es el nuevo.
+     *
+     * Sin nada guardado no hay atajo: se espera, porque un armazón que no se tiene
+     * no se puede servir.
+     */
+    const PLAZO = 2500;
+    /** El armazón guardado, sea cual sea la dirección que se pidió. */
+    const held = () => caches.match('/index.html').then((hit) => hit ?? caches.match('/'));
+    const fromNetwork = fetch(request)
         .then((response) => {
           // El armazón se guarda SIEMPRE bajo la misma clave. Guardarlo sólo
           // bajo la URL pedida dejaba `/index.html` con la copia del día de la
@@ -83,7 +105,23 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match('/index.html').then((hit) => hit ?? caches.match('/'))),
+        .catch(() => held());
+
+    event.respondWith(
+      (async () => {
+        const guardado = await held();
+        // Sin copia no hay atajo posible: se espera lo que haga falta.
+        if (guardado === undefined) return fromNetwork;
+
+        const tarde = new Promise((resolve) => setTimeout(() => resolve('tarde'), PLAZO));
+        const first = await Promise.race([fromNetwork, tarde]);
+        if (first !== 'tarde') return first;
+
+        // La red no llegó a tiempo. Se arranca con lo que hay; la petición sigue
+        // viva y deja el armazón nuevo guardado para la próxima.
+        void fromNetwork.catch(() => undefined);
+        return guardado;
+      })(),
     );
     return;
   }

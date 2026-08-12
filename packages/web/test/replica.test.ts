@@ -202,16 +202,61 @@ describe('aplicar en casa', () => {
     assert.equal(said.kind, 'defer');
   });
 
-  it('lo que no se sabe aplicar en casa se difiere en vez de fingirse', () => {
-    // Crear o renombrar una página toca los enlaces que la nombran desde otras,
-    // y esta réplica no los tiene. Una respuesta local que no puede ser correcta
-    // es peor que esperar.
+  it('una página nueva nace aquí, con el nombre que se le dio', () => {
+    /*
+     * Esto difería, y era el único gesto que obligaba a esperar a la red. Se
+     * notaba en el peor sitio: pulsar un `[[nombre]]` recién escrito para ir a
+     * escribir ahí, que es el gesto más local-first que hay.
+     *
+     * Lo que la réplica no puede contestar es si el título está libre en el corpus
+     * entero. Lo contesta el índice retenido antes de llegar aquí, y si el corpus
+     * dice que no, lo dice al enviarlo y el rechazo se queda con su motivo.
+     */
     const replica = seed(view());
-    assert.equal(
-      applyLocally(replica, { kind: 'create_page', title: 'Otra', visibility: 'private' }, 'local:1')
-        .kind,
-      'defer',
+    const said = applyLocally(
+      replica,
+      { kind: 'create_page', title: 'Otra', visibility: 'private', stableId: 'page:2' },
+      'local:1',
     );
+    assert.equal(said.kind, 'applied');
+    assert.equal(said.kind === 'applied' && said.subjectId, 'page:2');
+    // Y lo que se ve no cambia: la página abierta sigue siendo la que era.
+    assert.equal(said.kind === 'applied' && said.blocks.length, 3);
+  });
+
+  it('y lo que cuelga de ella también, aunque no sea la página abierta', () => {
+    // Al crear una página se le pone cuándo nació. Si eso esperara a la red, el
+    // gesto seguiría teniendo una espera dentro.
+    const replica = seed(view());
+    applyLocally(
+      replica,
+      { kind: 'create_page', title: 'Otra', visibility: 'private', stableId: 'page:2' },
+      'local:1',
+    );
+    assert.equal(
+      applyLocally(
+        replica,
+        { kind: 'set_property', page: 'page:2', propertyKey: 'creación', propertyValue: '2026-08-11' },
+        'local:2',
+      ).kind,
+      'applied',
+    );
+  });
+
+  it('crear una página deja lo derivado por rehacer', () => {
+    // Los `[[nombres]]` que la esperaban dejan de estar pendientes, y eso no lo
+    // sabe esta réplica: lo sabe el corpus. @invariant RenderingFollowsChangedMeaning.
+    const replica = seed(view());
+    const said = applyLocally(
+      replica,
+      { kind: 'create_page', title: 'Otra', visibility: 'private', stableId: 'page:2' },
+      'local:1',
+    );
+    assert.equal(said.kind === 'applied' && said.staleDerived, true);
+  });
+
+  it('renombrar una página sí se difiere: toca enlaces que ésta no tiene', () => {
+    const replica = seed(view());
     assert.equal(
       applyLocally(replica, { kind: 'rename_page', page: 'page:1', title: 'Otra' }, 'local:1').kind,
       'defer',
