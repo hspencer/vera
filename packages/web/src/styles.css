@@ -966,8 +966,23 @@ input {
   color: var(--accent);
 }
 
+/*
+ * El valor ocupa lo que dice, y no la columna entera.
+ *
+ * La segunda columna de la rejilla es `1fr`, así que sin esto el `dd` se estira
+ * hasta el margen derecho de la página aunque diga «sin valor». Eso tenía dos
+ * consecuencias, y ninguna se veía como un error de maquetación: la cruz de
+ * quitar —que se posiciona contra el borde derecho de su caja— aparecía a medio
+ * ancho de página de la palabra que quita, donde nadie la busca; y la banda que
+ * se realza al pasar por encima medía seiscientos píxeles de nada.
+ *
+ * `max-width: 100%` es la otra mitad: un valor largo —una lista de autores—
+ * sigue cabiendo en la columna y parte de línea ahí, en vez de desbordarla.
+ */
 .properties dd {
   margin: 0;
+  width: fit-content;
+  max-width: 100%;
 }
 
 /*
@@ -1432,6 +1447,9 @@ input {
   margin-left: 0.45rem;
 }
 
+/* El hueco de la derecha es donde vive la cruz: reservado siempre, para que
+   aparecer no empuje el valor. Ver `.properties dd` para por qué la caja mide
+   lo que dice y no lo que le cabe. */
 .property-value {
   position: relative;
   padding-right: 1.2rem;
