@@ -61,6 +61,94 @@ const MIN = 120; // y por debajo de esto no se cierra un trozo, para no picar
 const DEEPEST = 6; // no hay encabezado de nivel siete
 
 const HEADING = /^(#{1,6})\s+\S/;
+const LIST_ITEM = /^(\s*)(?:[-+*]|\d+[.)])\s+(.+)$/;
+
+interface WrittenUnit {
+  content: string;
+  parent: number | null;
+}
+
+/**
+ * La estructura que ya declara un bloque Markdown de varias líneas.
+ *
+ * Los marcadores de lista desaparecen porque el bloque es el marcador en Vera;
+ * su sangría, en cambio, se conserva como parentesco. Los encabezados conservan
+ * sus `#`: además de verse como títulos, gobiernan hasta dónde llega cada
+ * sección. La prosa contigua sigue junta y un blanco abre otro párrafo.
+ */
+export function writtenUnitsOf(content: string): WrittenUnit[] {
+  if (!content.includes('\n')) return [{ content: content.trim(), parent: null }];
+
+  const units: WrittenUnit[] = [];
+  const headings: { level: number; at: number }[] = [];
+  const bullets: { indent: number; at: number }[] = [];
+  let paragraph: string[] = [];
+  let paragraphParent: number | null = null;
+  let fenced = false;
+
+  const currentHeading = (): number | null => headings.at(-1)?.at ?? null;
+  const closeParagraph = (): void => {
+    const text = paragraph.join('\n').trim();
+    if (text !== '') units.push({ content: text, parent: paragraphParent });
+    paragraph = [];
+    paragraphParent = null;
+  };
+
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      if (!fenced) {
+        closeParagraph();
+        paragraphParent = currentHeading();
+      }
+      paragraph.push(line.trimEnd());
+      fenced = !fenced;
+      if (!fenced) closeParagraph();
+      continue;
+    }
+    if (fenced) {
+      paragraph.push(line.trimEnd());
+      continue;
+    }
+    if (trimmed === '') {
+      closeParagraph();
+      bullets.length = 0;
+      continue;
+    }
+
+    const heading = /^(#{1,6})\s+\S/.exec(trimmed);
+    if (heading !== null) {
+      closeParagraph();
+      const level = (heading[1] ?? '#').length;
+      while (headings.length > 0 && (headings.at(-1)?.level ?? 0) >= level) headings.pop();
+      const at = units.length;
+      units.push({ content: trimmed, parent: currentHeading() });
+      headings.push({ level, at });
+      bullets.length = 0;
+      continue;
+    }
+
+    const item = LIST_ITEM.exec(line);
+    if (item !== null) {
+      closeParagraph();
+      const indent = (item[1] ?? '').replace(/\t/g, '  ').length;
+      while (bullets.length > 0 && (bullets.at(-1)?.indent ?? 0) >= indent) bullets.pop();
+      const at = units.length;
+      units.push({ content: (item[2] ?? '').trim(), parent: bullets.at(-1)?.at ?? currentHeading() });
+      bullets.push({ indent, at });
+      continue;
+    }
+
+    // Una línea sangrada después de un ítem es su continuación; fuera de una
+    // lista, las líneas contiguas siguen siendo el mismo párrafo.
+    const parent = /^\s/.test(line) && bullets.length > 0 ? (bullets.at(-1)?.at ?? null) : currentHeading();
+    if (paragraph.length > 0 && paragraphParent !== parent) closeParagraph();
+    paragraphParent = parent;
+    paragraph.push(trimmed);
+  }
+  closeParagraph();
+  return units;
+}
 
 /*
  * Lo que no se toca aunque tenga la pinta.
@@ -210,9 +298,6 @@ export function planTabularity(page: string, blocks: Block[], structure: PageStr
      * cuando vuelva a leerse la página tal como quedó.
      */
 
-    // Un bloque delicado se describe y no se toca: ver delicate().
-    if (delicate(content)) continue;
-
     // 1. Los huecos. Nunca el último bloque que le queda a la página: sin él no
     //    quedaría dónde escribir.
     if (has.has('empty_block') && unit.descendants === 0 && alive > 1) {
@@ -228,6 +313,41 @@ export function planTabularity(page: string, blocks: Block[], structure: PageStr
 
     // 2. Dos cosas en un bloque donde el documento tenía dos lugares.
     if (has.has('mixed_units')) {
+      const written = writtenUnitsOf(content);
+      if (written.length > 1) {
+        const originalParent = parent;
+        const originalPosition = indexIn(originalParent, id);
+        const ids = written.map((_, at) =>
+          at === 0 ? id : `block:processed:${id.replace(/[^a-zA-Z0-9_-]/g, '_')}:${at}`,
+        );
+        steps.push({
+          kind: 'separate',
+          change: { kind: 'edit_block', block: id, content: written[0]?.content ?? '' },
+        });
+        contentOf.set(id, written[0]?.content ?? '');
+        for (let at = 1; at < written.length; at += 1) {
+          const one = written[at];
+          if (one === undefined) continue;
+          const itsParent = one.parent === null ? originalParent : (ids[one.parent] ?? originalParent);
+          const before = written.slice(0, at).filter((other) => other.parent === one.parent).length;
+          const position = one.parent === null ? originalPosition + before : before;
+          steps.push({
+            kind: 'separate',
+            change: {
+              kind: 'create_block',
+              page,
+              parent: itsParent,
+              position,
+              content: one.content,
+              stableId: ids[at],
+            },
+          });
+          putAt(itsParent, ids[at] ?? `new:${at}`, position);
+          contentOf.set(ids[at] ?? `new:${at}`, one.content);
+        }
+        touched.add(id);
+        continue;
+      }
       const lines = content.split('\n');
       const first = lines[0] ?? '';
       const rest = lines.slice(1).join('\n').trim();
@@ -284,6 +404,11 @@ export function planTabularity(page: string, blocks: Block[], structure: PageStr
         continue;
       }
     }
+
+    // Un bloque delicado que no se pudo separar conservadoramente se describe y
+    // no se toca: ver delicate(). Una tabla o una valla no condenan, en cambio,
+    // a todos los encabezados y listas que las rodean dentro del mismo bloque.
+    if (delicate(content)) continue;
 
     // 3. Se comportaba como título; ahora lo dice.
     if (has.has('implicit_heading')) {

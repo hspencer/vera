@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import type { Block } from '@vera/core';
 
 import { readStructure } from '../src/structure.ts';
-import { describePlan, piecesOf, planTabularity } from '../src/tabularity.ts';
+import { describePlan, piecesOf, planTabularity, writtenUnitsOf } from '../src/tabularity.ts';
 
 let next = 0;
 function page(source: string): Block[] {
@@ -46,6 +46,52 @@ const frase = (n: number): string =>
   `Esta es la frase número ${n} y dice algo suficientemente largo como para que el párrafo entero pase de los setecientos caracteres que hacen falta.`;
 
 describe('planTabularity', () => {
+  it('convierte una lista Markdown en bloques y conserva su jerarquía', () => {
+    const blocks = page('# Acuerdos\\n- Revisar cifras\\n- Publicar\\n  - Avisar al equipo');
+    const { steps } = plan(blocks);
+    assert.deepEqual(steps.map((step) => step.change.kind), [
+      'edit_block',
+      'create_block',
+      'create_block',
+      'create_block',
+    ]);
+    const created = steps.slice(1).map((step) => step.change as Extract<import('@vera/core').Change, { kind: 'create_block' }>);
+    assert.deepEqual(created.map((one) => one.content), ['Revisar cifras', 'Publicar', 'Avisar al equipo']);
+    assert.equal(created[0]?.parent, 'block:1');
+    assert.equal(created[1]?.parent, 'block:1');
+    assert.equal(created[2]?.parent, created[1]?.stableId);
+  });
+
+  it('separa encabezados, párrafos y listas sin picar la prosa contigua', () => {
+    assert.deepEqual(writtenUnitsOf('# Título\nPrimera línea\nsegunda línea\n\n- Uno\n- Dos'), [
+      { content: '# Título', parent: null },
+      { content: 'Primera línea\nsegunda línea', parent: 0 },
+      { content: 'Uno', parent: 0 },
+      { content: 'Dos', parent: 0 },
+    ]);
+  });
+
+  it('segmenta alrededor de una tabla y la conserva entera', () => {
+    const blocks = page('# Datos\\n| A | B |\\n|---|---|\\n| 1 | 2 |\\n# Después\\n- Cierre');
+    const contents = plan(blocks).steps.map((step) =>
+      'content' in step.change ? step.change.content : '',
+    );
+    assert.deepEqual(contents, [
+      '# Datos',
+      '| A | B |\n|---|---|\n| 1 | 2 |',
+      '# Después',
+      'Cierre',
+    ]);
+  });
+
+  it('no interpreta títulos ni listas dentro de una valla de código', () => {
+    assert.deepEqual(writtenUnitsOf('# Ejemplo\n```md\n# no es título\n- no es lista\n```\n# Real'), [
+      { content: '# Ejemplo', parent: null },
+      { content: '```md\n# no es título\n- no es lista\n```', parent: 0 },
+      { content: '# Real', parent: null },
+    ]);
+  });
+
   it('borra los bloques vacíos', () => {
     const blocks = page(['algo', '', 'otra cosa'].join('\n'));
     blocks[1] = { ...(blocks[1] as Block), content: '   ' };
@@ -96,6 +142,7 @@ describe('planTabularity', () => {
       parent: 'block:1',
       position: 0,
       content: 'Ana lleva las cifras.',
+      stableId: 'block:processed:block_1:1',
     });
   });
 
@@ -217,7 +264,7 @@ describe('describePlan', () => {
   });
 });
 
-describe('lo delicado no se toca', () => {
+describe('lo delicado se conserva como unidad', () => {
   /*
    * Lo que afirman estas pruebas es que el bloque delicado no se rehace: no se
    * parte ni se separa. Antes lo decían exigiendo que el plan entero fuera vacío,
@@ -233,18 +280,23 @@ describe('lo delicado no se toca', () => {
     { stableId: 'block:2', page: 'page:1', parent: null, position: 1, content: 'otra cosa.', createdAt: 0 },
   ];
 
-  it('no parte un bloque con una valla de código', () => {
+  it('separa una valla del título pero no parte su interior', () => {
     const codigo = `# Cómo se corre\n\`\`\`bash\nnpm run dev\nnpm test\n\`\`\``;
-    assert.deepEqual(rehacen(con(codigo)), []);
+    const contents = rehacen(con(codigo)).map((step) => (step.change as { content: string }).content);
+    assert.deepEqual(contents, ['# Cómo se corre', '```bash\nnpm run dev\nnpm test\n```']);
   });
 
-  it('no parte una tabla', () => {
+  it('separa una tabla del título pero no parte sus filas', () => {
     const tabla = `# Precios\n| uno | dos |\n| --- | --- |\n| 1 | 2 |`;
-    assert.deepEqual(rehacen(con(tabla)), []);
+    const contents = rehacen(con(tabla)).map((step) => (step.change as { content: string }).content);
+    assert.deepEqual(contents, ['# Precios', '| uno | dos |\n| --- | --- |\n| 1 | 2 |']);
   });
 
-  it('no parte un bloque con propiedades dentro', () => {
-    assert.deepEqual(rehacen(con('# Ficha\nautor:: alguien')), []);
+  it('separa una propiedad del título sin reescribirla', () => {
+    const contents = rehacen(con('# Ficha\nautor:: alguien')).map(
+      (step) => (step.change as { content: string }).content,
+    );
+    assert.deepEqual(contents, ['# Ficha', 'autor:: alguien']);
   });
 
   it('pero el defecto se sigue viendo', () => {

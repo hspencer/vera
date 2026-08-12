@@ -1992,8 +1992,34 @@ export function createVeraServer(options: ServerOptions): VeraServer {
        * como quedó.
        */
       const remade = new Set(plan.touched);
-      const settled = blocks.filter((block) => !remade.has(block.stableId));
-      const mentions = mentionsOf(settled, known, { self: page.id });
+      const settled = blocks
+        .filter((block) => !remade.has(block.stableId))
+        .map((block) => ({ stableId: block.stableId, content: block.content }));
+
+      /*
+       * También se busca en la forma que el plan acaba de declarar.
+       *
+       * Antes, partir un bloque y proponer un enlace sobre él eran mutuamente
+       * excluyentes: la mención se callaba para no volver a escribir el texto
+       * monolítico encima de los bloques nuevos. Las unidades estructuradas ya
+       * nacen con identidad estable, así que se puede proponer sobre su destino
+       * verdadero en esta misma vuelta. El último `edit_block` gana y lo que el
+       * plan elimina no vuelve a entrar.
+       */
+      const projected = new Map<string, string>();
+      const removed = new Set<string>();
+      for (const step of plan.steps) {
+        const change = step.change;
+        if (change.kind === 'edit_block') projected.set(change.block, change.content);
+        if (change.kind === 'remove_block') removed.add(change.block);
+        if (change.kind === 'create_block' && change.stableId !== undefined) {
+          projected.set(change.stableId, change.content);
+        }
+      }
+      const afterPlan = [...projected]
+        .filter(([stableId]) => !removed.has(stableId))
+        .map(([stableId, content]) => ({ stableId, content }));
+      const mentions = mentionsOf([...settled, ...afterPlan], known, { self: page.id });
 
       say({
         step: 'mentions',

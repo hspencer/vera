@@ -236,12 +236,15 @@ function observe(
     const lines = content.split('\n');
     const insideHeadings = lines.filter((line) => HEADING.test(line)).length;
     const trailing = level !== null && lines.slice(1).some((line) => line.trim() !== '');
-    if (insideHeadings > 1 || (insideHeadings === 1 && level === null) || trailing) {
+    const listItems = lines.filter((line) => /^\s*(?:[-+*]|\d+[.)])\s+\S/.test(line)).length;
+    if (insideHeadings > 1 || (insideHeadings === 1 && level === null) || trailing || listItems > 0) {
       say(
         'mixed_units',
         block.stableId,
         insideHeadings > 1
           ? `lleva ${insideHeadings} encabezados dentro`
+          : listItems > 0
+            ? `lleva ${listItems} ítems de lista dentro`
           : level === null
             ? 'lleva un encabezado que no empieza el bloque'
             : 'es un encabezado con su desarrollo pegado detrás',
