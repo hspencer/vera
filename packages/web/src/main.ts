@@ -1577,6 +1577,26 @@ async function bringItOver(taking: Behind): Promise<void> {
     try {
       canonical = await api.page(open, 10_000);
     } catch (error) {
+      /*
+       * Que ya no esté es una respuesta, y hay que tratarla como tal.
+       *
+       * Otra mano puede haber borrado la página que se estaba leyendo. Aquí se
+       * seguía enseñando lo retenido de ella y el aviso volvía a encenderse con
+       * lo mismo cada vez, sin manera de traerlo ni de quitarlo: pedirla otra
+       * vez sólo podía volver a fallar. Se suelta lo que este aparato guardaba,
+       * se avanza el cursor —porque lo que esperaba ya se sabe— y se dice.
+       */
+      const gone = error instanceof Error && /no such page/i.test(error.message);
+      if (gone) {
+        await held.forgetPage(open);
+        await held.keepCursor(taking.upTo);
+        waiting = null;
+        notice(
+          'La página que estabas leyendo ya no está en el corpus. Se soltó lo que ' +
+            'este aparato guardaba de ella; lo que escribiste sigue en la bandeja.',
+        );
+        return;
+      }
       const why = error instanceof Error && error.name === 'TimeoutError'
         ? 'el corpus tardó demasiado'
         : error instanceof Error
