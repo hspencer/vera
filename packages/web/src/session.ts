@@ -52,8 +52,26 @@ export function createSession(original: string): EditSession {
   let buffer = original;
   let saved = original;
 
+  /*
+   * Y lo que no es un cambio tampoco se guarda.
+   *
+   * Estaba a medias: comparar ya ignoraba el blanco de los extremos, pero lo que
+   * viajaba al grafo era el buffer entero. Un bloque acababa guardado con su
+   * salto de línea final, y como el campo de edición enseña el fuente exacto
+   * —@invariant EditingRevealsTheSource— ese salto se dibujaba: al abrir el
+   * bloque le crecían dos renglones vacíos por debajo que no estaban al leerlo.
+   * En el corpus hay 55 bloques así, todos de páginas traídas de documentos.
+   *
+   * Sólo el final. Un blanco al principio de una línea puede significar algo en
+   * Markdown —una sangría de código—, y el del final no significa nada en
+   * ninguna parte.
+   *
+   * Escribir no se entera: el campo sigue conteniendo lo que se tecleó, incluido
+   * el Enter que se acaba de pulsar, y lo que se escriba después se guarda
+   * entero. Y no hay reenvíos, porque la comparación ya ignoraba ese blanco.
+   */
   const intent = (): SaveIntent =>
-    same(buffer, saved) ? { action: 'nada' } : { action: 'guardar', content: buffer };
+    same(buffer, saved) ? { action: 'nada' } : { action: 'guardar', content: buffer.trimEnd() };
 
   return {
     buffer: () => buffer,

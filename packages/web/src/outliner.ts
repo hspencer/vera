@@ -5025,7 +5025,22 @@ function startEditing(
 
   const editor = document.createElement('textarea');
   editor.className = 'editor';
-  editor.value = block.content;
+  /*
+   * El fuente, sin el blanco del final.
+   *
+   * @invariant EditingRevealsTheSource pide la fuente exacta que produjo lo que
+   * se estaba leyendo, y un salto de línea al final no produce nada: el texto
+   * dibujado es idéntico con él y sin él. Lo que sí produce es un campo dos
+   * renglones más alto que el párrafo que estaba en su sitio, así que abrir un
+   * bloque lo empujaba todo hacia abajo y al cerrarlo volvía. En el corpus hay
+   * 55 bloques así, traídos de documentos.
+   *
+   * Recortarlo aquí y no en el grafo: abrir un bloque no es escribir en él, y
+   * curar 55 bloques a base de operaciones que nadie pidió llenaría el registro
+   * de cambios sin autor. Se curan solos cuando alguien los edite de verdad —ver
+   * session.ts, que ya no guarda ese blanco—, y mientras tanto no se ven.
+   */
+  editor.value = block.content.trimEnd();
   editor.rows = 1;
 
   /*
