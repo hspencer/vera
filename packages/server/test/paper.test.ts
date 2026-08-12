@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { paperHtml } from '../src/paper.ts';
+import { diagramsIn, paperHtml } from '../src/paper.ts';
 
 const bloque = (stableId: string, parent: string | null, position: number, content: string) => ({
   stableId,
@@ -193,5 +193,108 @@ describe('un bloque citado', () => {
     });
     assert.ok(!html.includes('<script>alert'));
     assert.match(html, /&lt;script&gt;/);
+  });
+});
+
+/*
+ * Los diagramas.
+ *
+ * @invariant ADiagramIsDrawnOnPaper. Imprimir la fuente es el peor de los
+ * resultados: quien mira el papel no ve el diagrama y tampoco ve el texto, sino
+ * una declaración en un lenguaje que no es el suyo ocupando el sitio de la
+ * figura que el argumento necesitaba ahí.
+ *
+ * Aquí se prueba el pegado y no el dibujo: dibujar es arrancar un navegador, y
+ * lo que puede romperse por descuido es que la fuente que se manda a dibujar y
+ * la que después se busca para sustituir dejen de ser la misma.
+ */
+describe('un diagrama en el papel', () => {
+  const fuente = 'flowchart LR\n  a[Uno] --> b[Dos]';
+  const conDiagrama = (content: string) => [bloque('block:1', null, 0, content)];
+  const cercado = (source: string) => '```mermaid\n' + source + '\n```';
+
+  it('se encuentra en el papel dibujado, y tal como se escribió', () => {
+    const html = paperHtml({ title: 'Con figura', blocks: conDiagrama(cercado(fuente)) });
+    assert.deepEqual(diagramsIn(html), [fuente]);
+  });
+
+  it('con los caracteres que el HTML escapa, devueltos a lo que eran', () => {
+    // Si esto se rompe, el mapa que vuelve del navegador tiene claves que no
+    // casan con nada y la página dibuja la mitad de sus figuras.
+    const hostil = 'flowchart LR\n  a["Uno & <dos>"] --> b';
+    const html = paperHtml({ title: 'T', blocks: conDiagrama(cercado(hostil)) });
+    assert.deepEqual(diagramsIn(html), [hostil]);
+  });
+
+  it('el mismo diagrama dos veces se dibuja una sola vez', () => {
+    const html = paperHtml({
+      title: 'T',
+      blocks: [bloque('block:1', null, 0, cercado(fuente)), bloque('block:2', null, 1, cercado(fuente))],
+    });
+    assert.deepEqual(diagramsIn(html), [fuente]);
+  });
+
+  it('y se pega en los dos sitios donde estaba', () => {
+    const html = paperHtml({
+      title: 'T',
+      blocks: [bloque('block:1', null, 0, cercado(fuente)), bloque('block:2', null, 1, cercado(fuente))],
+      diagrams: new Map([[fuente, { svg: '<svg id="figura"></svg>' }]]),
+    });
+    assert.equal(html.match(/<svg id="figura">/g)?.length, 2);
+  });
+
+  it('dibujado, la fuente ya no se imprime', () => {
+    const html = paperHtml({
+      title: 'T',
+      blocks: conDiagrama(cercado(fuente)),
+      diagrams: new Map([[fuente, { svg: '<svg id="figura"></svg>' }]]),
+    });
+    assert.match(html, /<div class="diagram"><svg id="figura">/);
+    assert.ok(!html.includes('language-mermaid'), 'la fuente sigue impresa');
+    assert.ok(!html.includes('flowchart LR'), 'la fuente sigue impresa');
+  });
+
+  it('uno que no compila deja su fuente a la vista con el porqué encima', () => {
+    // Es lo único con lo que se arregla. Un hueco callado sería peor.
+    const html = paperHtml({
+      title: 'T',
+      blocks: conDiagrama(cercado(fuente)),
+      diagrams: new Map([[fuente, { error: 'no hay tal tipo de diagrama' }]]),
+    });
+    assert.match(html, /no se pudo dibujar: no hay tal tipo de diagrama/);
+    assert.match(html, /language-mermaid/);
+  });
+
+  it('el porqué se escapa: viene de una biblioteca y lleva el texto de quien escribe', () => {
+    const html = paperHtml({
+      title: 'T',
+      blocks: conDiagrama(cercado(fuente)),
+      diagrams: new Map([[fuente, { error: '<script>alert(1)</script>' }]]),
+    });
+    assert.ok(!html.includes('<script>alert'));
+    assert.match(html, /&lt;script&gt;/);
+  });
+
+  it('sin nadie que los dibuje, el papel sale igual con sus fuentes', () => {
+    // Es el estado anterior a esto. Se deja fijado: componer un papel no depende
+    // de que haya un Chrome, sólo dibujar sus figuras depende.
+    const html = paperHtml({ title: 'T', blocks: conDiagrama(cercado(fuente)) });
+    assert.match(html, /language-mermaid/);
+    assert.match(html, /flowchart LR/);
+  });
+
+  it('una página sin diagramas no tiene nada que dibujar', () => {
+    // Lo que hace que componerla no arranque ningún navegador.
+    const html = paperHtml({ title: 'T', blocks: conDiagrama('Un párrafo y `código en línea`.') });
+    assert.deepEqual(diagramsIn(html), []);
+  });
+
+  it('un bloque de código que no es mermaid se queda como está', () => {
+    const html = paperHtml({
+      title: 'T',
+      blocks: conDiagrama('```js\nconst a = 1;\n```'),
+    });
+    assert.deepEqual(diagramsIn(html), []);
+    assert.match(html, /const a = 1;/);
   });
 });

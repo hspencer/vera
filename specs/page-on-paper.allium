@@ -85,6 +85,42 @@ contract APageBecomesADocument {
         -- Una incrustación impresa es un rectángulo en blanco. En su sitio va su
         -- dirección, dicha corta —de dónde viene, no su carga—, que es lo único
         -- que un papel puede llevar de ella.
+
+    @invariant ADiagramIsDrawnOnPaper
+        -- Un diagrama del texto se imprime dibujado, no como su fuente.
+        --
+        -- No lo contradice lo de arriba, y la distinción es la que importa: una
+        -- incrustación es una dirección que apunta fuera —lo que llegue por ella
+        -- lo decide otro, y puede no llegar—, y un diagrama es texto de esta
+        -- página que describe una figura entera. Dibujarlo no trae nada de
+        -- ninguna parte: es la misma frase, leída como lo que dice.
+        --
+        -- Imprimir la fuente es lo que hacía, y es el peor de los resultados.
+        -- Quien mira el papel no ve el diagrama y tampoco ve el texto: ve una
+        -- declaración de treinta renglones en un lenguaje que no es el suyo,
+        -- ocupando el sitio de la figura que el argumento necesitaba ahí. Es la
+        -- misma falta que AQuotedBlockTravelsAsItsWords, cometida sobre otra
+        -- clase de cosa.
+        --
+        -- Se dibuja **con la misma mano que la pantalla**: la misma biblioteca y
+        -- la misma fuente, para que el papel no enseñe otra figura que la que se
+        -- estaba mirando. @invariant TheTextIsRenderedByTheSameHandAsTheScreen
+        -- dice esto del texto; un diagrama no es una excepción a eso, es un caso
+        -- más.
+        --
+        -- Y va como dibujo y no como retrato: vectorial, de modo que sus palabras
+        -- se puedan buscar y seleccionar, y que ampliarlo no lo deshaga. Un
+        -- diagrama impreso como imagen de mapa de bits sería legible en la
+        -- pantalla donde se compuso y en ninguna otra.
+        --
+        -- Un diagrama que no compila deja su fuente a la vista con el error al
+        -- lado, como en pantalla: es lo único que permite arreglarlo, y callarlo
+        -- dejaría un hueco donde iba una figura sin decir por qué.
+        --
+        -- Donde no haya con qué dibujarlo —no hay Chrome en esta máquina— se dice
+        -- que no lo hay, igual que con el PDF entero. No se compone fuera de
+        -- casa: mandar el diagrama a un servicio que lo dibuje sería mandar el
+        -- texto de la página a que lo lea otro.
 }
 
 ------------------------------------------------------------

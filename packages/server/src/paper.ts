@@ -20,9 +20,10 @@
 // documento es cuando deja de ser una herramienta.
 
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { renderMarkdown, type RenderOptions } from '@vera/core';
@@ -58,6 +59,19 @@ export interface PaperOptions {
    * viaja nada.
    */
   resolveBlock?: (stableId: string) => { page: string; excerpt: string } | null;
+  /**
+   * El dibujo de cada diagrama, por su fuente.
+   *
+   * @invariant ADiagramIsDrawnOnPaper. Va por la fuente y no por un índice
+   * porque la fuente es lo único que identifica a un diagrama sin depender de
+   * cuántos hubiera antes: una página que repite el mismo diagrama dos veces lo
+   * dibuja una y lo pega dos.
+   *
+   * Un valor nulo es un diagrama que no compila, y entonces se deja la fuente a
+   * la vista con el error al lado, como en pantalla. Una clave ausente es un
+   * diagrama que nadie intentó dibujar, y se deja como estaba.
+   */
+  diagrams?: ReadonlyMap<string, { svg: string } | { error: string }>;
   /**
    * Con sangría, para poder compararlo.
    *
@@ -211,6 +225,34 @@ h1.paper-title {
 }
 .b .quoted.gone::before, .b .quoted.gone::after { content: ''; }
 
+/* Un diagrama. Centrado y entero: se prohíbe partirlo porque una figura cortada
+   por el salto de página deja de decir lo que decía, y el navegador la cortaría
+   sin pensarlo. Y con ancho máximo, que es lo que hace que un diagrama ancho
+   quepa en la caja del texto en vez de salirse por el margen. */
+.b .diagram {
+  margin: 0.8rem 0;
+  text-align: center;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.b .diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+/* Uno que no compiló: la fuente sigue a la vista, que es lo único con lo que se
+   arregla, y el porqué encima en vez de un hueco sin explicar. */
+.b .diagram-failed {
+  margin: 0.8rem 0;
+  border-left: 2px solid #999;
+  padding-left: 0.8em;
+}
+.b .diagram-why {
+  font-size: 0.85em;
+  font-style: italic;
+  color: #444;
+  margin: 0 0 0.3rem;
+}
+
 .b code, .b pre {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.88em;
@@ -301,6 +343,66 @@ function unquoteAttribute(value: string): string {
   return value.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 }
 
+/** Y lo que `escapeHtml` hizo. El `&amp;` al final, o se desharía dos veces. */
+function unescapeHtml(text: string): string {
+  return text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
+
+/**
+ * Dónde está cada diagrama en el HTML del papel, y qué dice.
+ *
+ * Se busca sobre el HTML ya dibujado y no sobre el Markdown de los bloques a
+ * propósito: así lo que se manda a dibujar es exactamente lo mismo que después
+ * se va a sustituir. Buscarlo dos veces por caminos distintos —el cercado por un
+ * lado, el `<code>` por el otro— es cómo se llega a un mapa cuyas claves no
+ * casan con nada y a una página que dibuja la mitad de sus figuras.
+ */
+const DIAGRAM = /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g;
+
+/**
+ * Las fuentes de los diagramas de un papel, sin repetir y en orden de lectura.
+ *
+ * Exportada porque quien compone el papel necesita saber qué hay que dibujar
+ * antes de tener con qué dibujarlo: primero se pregunta, luego se dibuja, y sólo
+ * entonces se vuelve a componer con los dibujos puestos.
+ */
+export function diagramsIn(html: string): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const [, source] of html.matchAll(DIAGRAM)) {
+    const text = unescapeHtml(source ?? '');
+    if (seen.has(text)) continue;
+    seen.add(text);
+    found.push(text);
+  }
+  return found;
+}
+
+/**
+ * Cambia cada fuente por su dibujo.
+ *
+ * @invariant ADiagramIsDrawnOnPaper. Lo que no se pudo dibujar se queda como
+ * estaba —con su porqué encima, si lo hay—: un hueco callado sería peor que la
+ * fuente, porque la fuente al menos se puede arreglar.
+ */
+function drawn(
+  html: string,
+  diagrams: ReadonlyMap<string, { svg: string } | { error: string }>,
+): string {
+  if (diagrams.size === 0) return html;
+  return html.replace(DIAGRAM, (whole, source: string) => {
+    const made = diagrams.get(unescapeHtml(source));
+    if (made === undefined) return whole;
+    if ('error' in made) {
+      return (
+        `<div class="diagram-failed"><p class="diagram-why">` +
+        `Este diagrama no se pudo dibujar: ${escapeHtml(made.error)}</p>${whole}</div>`
+      );
+    }
+    return `<div class="diagram">${made.svg}</div>`;
+  });
+}
+
 export function paperHtml(options: PaperOptions): string {
   const render: RenderOptions = {};
   if (options.embedHosts !== undefined) render.embedHosts = options.embedHosts;
@@ -339,7 +441,8 @@ export function paperHtml(options: PaperOptions): string {
     .map(({ block, depth }) => {
       const sangría =
         options.indent === true && depth > 0 ? ` style="margin-left:${depth * 1.2}rem"` : '';
-      return `<div class="b"${sangría}>${onPaper(renderMarkdown(block.content, render), source)}</div>`;
+      const text = onPaper(renderMarkdown(block.content, render), source);
+      return `<div class="b"${sangría}>${drawn(text, options.diagrams ?? new Map())}</div>`;
     })
     .join('\n');
 
@@ -359,6 +462,179 @@ export interface PaperPresence {
 export function paperPresence(): PaperPresence {
   const binary = findTool(CHROMES, process.env['VERA_CHROME']);
   return { ready: binary !== null, binary };
+}
+
+/**
+ * La misma Mermaid que dibuja la pantalla, buscada en el árbol de paquetes.
+ *
+ * @invariant ADiagramIsDrawnOnPaper pide que sea la misma mano, y «la misma» aquí
+ * quiere decir la misma versión del mismo archivo: dos Mermaid distintas dibujan
+ * el mismo texto con formas distintas, y entonces el papel enseñaría otra figura
+ * que la que se estaba mirando. Se resuelve desde el paquete que la declara
+ * —`packages/web`— en vez de fijar una ruta, para que actualizarla ahí la
+ * actualice aquí.
+ */
+function mermaidLibrary(): string | null {
+  const ask = createRequire(import.meta.url);
+  for (const from of ['mermaid/dist/mermaid.min.js', 'mermaid']) {
+    try {
+      const found = ask.resolve(from);
+      return from.endsWith('.js') ? found : join(dirname(found), 'mermaid.min.js');
+    } catch {
+      // La siguiente forma de pedirla.
+    }
+  }
+  return null;
+}
+
+/**
+ * Dibuja los diagramas de una página, todos de una vez.
+ *
+ * @invariant ADiagramIsDrawnOnPaper.
+ *
+ * De una vez y no uno por uno porque el coste es arrancar el navegador y cargar
+ * la biblioteca, no dibujar: treinta y seis diagramas de la página más cargada
+ * del corpus tardan tres segundos y medio juntos, y arrancar Chrome treinta y
+ * seis veces tardaría un minuto largo.
+ *
+ * El resultado viaja como texto y no como DOM: la página se vacía al terminar y
+ * deja en su sitio un JSON con los dibujos, así que lo que hay que leer del
+ * volcado es una sola cosa y no hay que ir separando SVG a ojo. De paso el
+ * volcado deja de arrastrar los tres megas y medio de la biblioteca.
+ */
+export async function drawDiagrams(
+  sources: readonly string[],
+  options: { timeoutMs?: number; dark?: boolean } = {},
+): Promise<Map<string, { svg: string } | { error: string }>> {
+  const made = new Map<string, { svg: string } | { error: string }>();
+  if (sources.length === 0) return made;
+
+  const presence = paperPresence();
+  const library = mermaidLibrary();
+  /*
+   * Sin con qué dibujar se dice, y se dice una vez por diagrama.
+   *
+   * No se lanza: un papel sin diagramas dibujados sigue siendo un papel, y
+   * negarse a componerlo entero por esto dejaría a quien no tiene Chrome sin
+   * poder exportar nada. Cada figura lleva encima por qué no está.
+   */
+  if (!presence.ready || presence.binary === null || library === null) {
+    const why =
+      library === null
+        ? 'no se encontró la biblioteca de diagramas en esta instalación'
+        : 'no hay un Chrome en esta máquina con el que dibujarlo';
+    for (const source of sources) made.set(source, { error: why });
+    return made;
+  }
+
+  let workshop: string | null = null;
+  try {
+    workshop = await mkdtemp(join(tmpdir(), 'vera-diagramas-'));
+    const page = join(workshop, 'dibujo.html');
+    /*
+     * `strict` y no `sandbox`, que es lo que usa la pantalla.
+     *
+     * En pantalla el aislamiento lo da el iframe —ver ExecutableContentIsolation—
+     * y aquí no cabe: de un iframe no se saca el SVG, y un iframe no se imprime
+     * como una figura. `strict` desinfecta el marcado que el diagrama traiga
+     * dentro, que es la parte que importa cuando el texto lo escribió otro; y el
+     * resto del aislamiento lo da el sitio: un Chrome sin ventana, con perfil
+     * nuevo que se borra, leyendo un archivo local y sin nada que alcanzar.
+     */
+    await writeFile(
+      page,
+      `<!doctype html><meta charset="utf-8"><body><div id="donde"></div>\n` +
+        `<script>${await readFile(library, 'utf8')}</script>\n` +
+        `<script>\n` +
+        `const fuentes = ${JSON.stringify(sources)};\n` +
+        `mermaid.initialize({ startOnLoad: false, securityLevel: 'strict',` +
+        ` theme: ${options.dark === true ? "'dark'" : "'default'"},` +
+        ` fontFamily: 'IBM Plex Sans, sans-serif' });\n` +
+        `(async () => {\n` +
+        `  const hechos = [];\n` +
+        `  for (let i = 0; i < fuentes.length; i += 1) {\n` +
+        `    try {\n` +
+        `      const { svg } = await mermaid.render('vera-d' + i, fuentes[i], ` +
+        `document.getElementById('donde'));\n` +
+        `      hechos.push({ svg });\n` +
+        `    } catch (e) {\n` +
+        `      hechos.push({ error: (e && e.message) ? String(e.message) : 'no compila' });\n` +
+        `    }\n` +
+        `  }\n` +
+        `  document.head.innerHTML = '';\n` +
+        `  document.body.innerHTML = '';\n` +
+        `  document.body.textContent = JSON.stringify(hechos);\n` +
+        `})();\n` +
+        `</script></body>`,
+      'utf8',
+    );
+
+    const { stdout } = await run(
+      presence.binary,
+      [
+        '--headless=new',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-extensions',
+        `--user-data-dir=${join(workshop, 'perfil')}`,
+        // El reloj corre acelerado hasta agotarlo: así se espera a que Mermaid
+        // termine sin esperar el tiempo de verdad.
+        '--virtual-time-budget=30000',
+        '--dump-dom',
+        `file://${page}`,
+      ],
+      { timeout: options.timeoutMs ?? 120_000, maxBuffer: 256 * 1024 * 1024 },
+    );
+
+    const body = /<body[^>]*>([\s\S]*)<\/body>/.exec(stdout);
+    const said: unknown = body === null ? null : JSON.parse(unescapeHtml(body[1] ?? ''));
+    if (!Array.isArray(said)) throw new Error('el navegador no devolvió los dibujos');
+    sources.forEach((source, i) => {
+      const one: unknown = said[i];
+      if (one !== null && typeof one === 'object' && 'svg' in one && typeof one.svg === 'string') {
+        made.set(source, { svg: one.svg });
+      } else if (
+        one !== null &&
+        typeof one === 'object' &&
+        'error' in one &&
+        typeof one.error === 'string'
+      ) {
+        made.set(source, { error: one.error });
+      } else {
+        made.set(source, { error: 'el navegador no devolvió este dibujo' });
+      }
+    });
+    return made;
+  } catch (error) {
+    const why = error instanceof Error ? error.message : 'error desconocido';
+    for (const source of sources) made.set(source, { error: why });
+    return made;
+  } finally {
+    if (workshop !== null) await rm(workshop, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * El papel entero, con sus diagramas dibujados.
+ *
+ * Se compone dos veces y no es un descuido: la primera dice qué diagramas hay
+ * —que es algo que sólo se sabe después de dibujar el Markdown, porque un
+ * cercado puede venir dentro de una lista o de una cita— y la segunda los pone.
+ * Dibujar el Markdown cuesta milisegundos sobre la página más larga del corpus;
+ * adivinar qué hay que dibujar por otro camino costaría que los dos caminos se
+ * separaran.
+ *
+ * Una página sin diagramas no paga nada: no se arranca ningún navegador.
+ */
+export async function composePaper(
+  options: PaperOptions,
+  how: { timeoutMs?: number; dark?: boolean } = {},
+): Promise<string> {
+  const first = paperHtml(options);
+  const sources = diagramsIn(first);
+  if (sources.length === 0) return first;
+  return paperHtml({ ...options, diagrams: await drawDiagrams(sources, how) });
 }
 
 /**

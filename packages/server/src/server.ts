@@ -94,7 +94,7 @@ import {
 } from './model.ts';
 import { LOCAL_MODEL, LOCAL_MODEL_NAME, promptFor, readAnswer } from './answer.ts';
 import { mentionsOf } from './mentions.ts';
-import { paperHtml, toPdf } from './paper.ts';
+import { composePaper, toPdf } from './paper.ts';
 import { CLIENT_KEY, MCP_KIND, mcpPage } from './mcp-page.ts';
 import { mcpConnect } from './mcp-connect.ts';
 import {
@@ -3088,7 +3088,18 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         note(asPdf ? 'GET /pages/:id/pdf' : 'GET /pages/:id/paper', page.id, 0, [page.id]);
 
         if (!asPdf) {
-          const html = paperHtml({
+          /*
+           * Los diagramas se dibujan aquí, y por eso esto espera.
+           *
+           * @invariant ADiagramIsDrawnOnPaper. Componer el papel deja de ser
+           * inmediato en las páginas que traen figuras —hay que arrancar un
+           * navegador— y no en las demás: sin diagramas, `composePaper` no llama
+           * a nadie y contesta lo mismo que antes.
+           *
+           * El PDF no paga esto dos veces: se compone pidiéndose este mismo
+           * papel, que ya viene con las figuras puestas.
+           */
+          void composePaper({
             title: page.title,
             blocks: graph.blocksOf(page.id).map((block) => ({
               stableId: block.stableId,
@@ -3112,13 +3123,24 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               const from = graph.page(cited.page);
               return { page: from?.title ?? cited.page, excerpt: cited.content };
             },
-          });
-          const body = Buffer.from(html, 'utf8');
-          response.writeHead(200, {
-            'content-type': 'text/html; charset=utf-8',
-            'content-length': body.byteLength,
-          });
-          response.end(body);
+          }).then(
+            (html) => {
+              const body = Buffer.from(html, 'utf8');
+              response.writeHead(200, {
+                'content-type': 'text/html; charset=utf-8',
+                'content-length': body.byteLength,
+              });
+              response.end(body);
+            },
+            (error: unknown) => {
+              // Componer no debería fallar —lo que puede fallar es dibujar, y eso
+              // se contesta con la fuente a la vista— así que si llega aquí es
+              // otra cosa y se dice como lo que es.
+              send(response, 500, {
+                error: error instanceof Error ? error.message : 'no se pudo componer el papel',
+              });
+            },
+          );
           return;
         }
 
