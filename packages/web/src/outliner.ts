@@ -693,7 +693,25 @@ async function deletePage(
   const cuantos = page.blocks.filter((b) => b.content.trim() !== '').length;
   const dentro =
     cuantos === 0 ? '' : cuantos === 1 ? ' y el bloque que tiene escrito' : ` y sus ${cuantos} bloques escritos`;
-  const aviso = `Se va a eliminar «${page.title}»${dentro}. No se puede deshacer.`;
+
+  /*
+   * Un recorrido se avisa distinto, y no por cortesía.
+   *
+   * Sus bloques *son* sus paradas —cada uno nombra una página—, así que decir «y
+   * sus ocho bloques escritos» se lee como «y sus ocho paradas». No es lo que pasa
+   * y no puede pasar: una parada es una página del corpus, y borrar un bloque que
+   * la nombra no toca a la página nombrada más de lo que la tocaría borrar
+   * cualquier otra frase que la mencione. Lo que se pierde es el argumento —el
+   * orden y las conectivas—, que es bastante, y conviene que sea eso lo que se
+   * está decidiendo perder.
+   */
+  const paradas = page.trail?.route.length ?? 0;
+  const aviso =
+    page.trail != null && paradas > 0
+      ? `Se va a eliminar el recorrido «${page.title}»: su orden y lo que dice entre una parada y la siguiente.\n\n` +
+        `Sus ${paradas} ${paradas === 1 ? 'parada' : 'paradas'} no se tocan: son páginas del corpus y siguen donde están.\n\n` +
+        'No se puede deshacer.'
+      : `Se va a eliminar «${page.title}»${dentro}. No se puede deshacer.`;
   if (!window.confirm(aviso)) return;
 
   // Las hojas primero: un bloque con hijos no se puede quitar, asi que se ordena
