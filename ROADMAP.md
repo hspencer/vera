@@ -20,7 +20,8 @@ preguntas abiertas es una lista de deseos con formato de plan.
 ## Horizonte 1 — Que la mano no espere
 
 **Estado: en curso, rama `v0.4-local-first`. Pasos 0 a 3 hechos y leer sin
-servidor también; faltan el cursor (4) y los conflictos (5).**
+servidor también. Los pasos 4 y 5 están especificados y sin implementar: leer con
+un servidor *lento* todavía espera, que es lo que quedaba y no se había medido.**
 
 Es la prioridad y no es una optimización. Una memoria personal que hace esperar
 al pensamiento no es una memoria personal: es un formulario. La spec que lo
@@ -53,14 +54,26 @@ Lo único que no se puede leer sin corpus es el **mapa**: el vecindario a dos
 saltos se calcula sobre el grafo entero. Se queda el anterior, atenuado y con la
 razón escrita, en vez de fingir que es el de la página abierta.
 
-### 1.2 El cursor y lo que llega — *paso 4, pendiente*
+### 1.2 Lo retenido primero, y el botón que avisa — *paso 4, especificado*
 
-`canonical_cursor` por réplica, `GET /ops?since=` en segundo plano, y aplicar lo
-que llegue **sin recargar la página**. El transporte ya existe entero en
-`server.ts` y no tiene un cliente que lo llame.
+Está escrito en `offline-reconciliation.allium` y falta implementarlo.
 
-Hoy, al volver la red, la página abierta se vuelve a pedir entera. Funciona y es
-tosco: con el cursor bastaría con traer el tramo que falta.
+Lo que se descubrió al medir: **leer con un servidor lento sigue esperando**. No
+hay lectura condicional en ninguna parte —ni ETag, ni «¿sigue valiendo lo mío?»—
+así que `openPage()` pide la página entera cada vez, la haya visitado una vez o
+cincuenta, y lo retenido en IndexedDB sólo se consulta cuando la red *falla*. Un
+`catch` no se dispara porque algo tarde.
+
+| | tiempo | bytes |
+| --- | ---: | ---: |
+| abrir una página muy escrita (1.147 bloques) | 0,81 s | **512 KB** |
+| preguntar «¿qué cambió desde mi cursor?» | **0,003 s** | **3,8 KB** |
+
+Con eso, el diseño: la página se dibuja desde este aparato al instante; detrás se
+pregunta lo barato; si algo espera, **el indicador cambia y espera a que lo
+pulsen**; lo toma el dueño. Nada cruza al texto en pantalla sin que alguien lo
+pida — porque otra mano escribe en este corpus, y cambiar el texto bajo los ojos
+de quien lee no es sincronizar sino interrumpir.
 
 Y queda el otro límite que el paso 3 dejó escrito:
 
@@ -69,11 +82,17 @@ Y queda el otro límite que el paso 3 dejó escrito:
   cumpla. Es lo siguiente que hay que quitar: la lista de títulos ya está
   retenida, así que la réplica podría saber si el título está libre sin preguntar.
 
-### 1.3 Los conflictos — *paso 5*
+### 1.3 El desacuerdo, por bloque — *paso 5, especificado*
 
-Exponer la divergencia en vez de elegir en silencio, y las tres resoluciones que
-la spec nombra. Un local-first que resuelve conflictos callando es un
-local-first que pierde texto sin decirlo.
+Donde dos manos escribieron el mismo bloque, se enseñan las dos versiones con las
+líneas que difieren marcadas, y se elige una —o se escribe una tercera—. Un
+local-first que resuelve conflictos callando es un local-first que pierde texto
+sin decirlo.
+
+**El bloque y no la línea**: es lo único de lo que Vera tiene identidad. Mezclar
+línea a línea produce un texto que no escribió ninguna de las dos manos, en un
+bloque cuya autoría ya no se puede afirmar — y en este corpus también escribe una
+máquina.
 
 ### 1.4 Cuánto cabe en un teléfono
 

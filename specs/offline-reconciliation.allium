@@ -62,7 +62,9 @@ enum ReplicaAvailability { empty | hydrating | available }
 enum ContentOrigin { canonical | retained }
 enum ConnectionState { online | offline }
 enum PendingStatus { local | sending | acknowledged | rejected | conflicted }
-enum SynchronisationStatus { local | synchronising | synchronised | offline | attention_required }
+enum SynchronisationStatus {
+    local | synchronising | synchronised | offline | updates_waiting | attention_required
+}
 enum ConflictResolution { keep_local | keep_canonical | replace_with_participant_edit }
 
 ------------------------------------------------------------
@@ -82,6 +84,31 @@ entity LocalReplica {
     pending_changes: PendingChange with replica = this
     conflicts: Conflict with replica = this
     retained_pages: RetainedPage with replica = this
+
+    -- Canonical work that exists past the cursor and has not been taken.
+    --
+    -- It is counted and announced; it is not applied. Another hand writes into
+    -- this corpus — see agent-participation.allium — so a page being read can
+    -- have moved underneath while it is being read. Replacing the text under
+    -- someone's eyes is not synchronisation, it is interruption; leaving it
+    -- unsaid is worse. This number is what makes the third option possible: to
+    -- say so, and to let the participant choose when.
+    waiting: WaitingWork with replica = this
+}
+
+-- A canonical operation this device knows about and has not taken.
+--
+-- Knowing about it is cheap and taking it is not, and the difference is the whole
+-- point. Asking what has happened since the cursor costs a few kilobytes; fetching
+-- a page again costs the page. Measured on a real corpus: the last twenty
+-- operations, 3.8 KB; one heavily written page, 512 KB. The same answer, a hundred
+-- and thirty times lighter.
+entity WaitingWork {
+    replica: LocalReplica
+    operation: application/Operation
+    -- Whether it touches what is on screen. What moved elsewhere in the corpus
+    -- may wait quietly; what moved here is what the participant is looking at.
+    touches_open_page: Boolean
 }
 
 entity PendingChange {
@@ -95,10 +122,24 @@ entity PendingChange {
     rejection_reason: String?
 }
 
+-- Two hands wrote the same block and neither is wrong.
+--
+-- The block is the unit, and that is not a rendering choice: it is the only thing
+-- Vera has an identity for. A line has no name, no author and no history, so a
+-- resolution chosen line by line would leave a block whose text neither hand wrote
+-- and whose authorship cannot be stated. See core.allium, the stable identity of a
+-- block, and agent-participation.allium: in a corpus where a machine also writes,
+-- «who said this» has to survive the resolving of a disagreement.
+--
+-- The lines are shown, because choosing between two versions without seeing what
+-- differs is choosing blind. Shown, not chosen between.
 entity Conflict {
     replica: LocalReplica
     pending: PendingChange
     canonical_operation: application/Operation
+    -- The block both hands touched. It is what the dialogue is about, and what
+    -- either resolution ends up holding.
+    block: core/Block
     resolved: Boolean
 }
 
@@ -116,6 +157,10 @@ entity SynchronisationState {
     status: SynchronisationStatus
     pending_count: Integer
     conflict_count: Integer
+    -- What is waiting to be taken, and how much of it is on the open page. The
+    -- second number is what decides whether the indicator merely counts or asks.
+    waiting_count: Integer
+    waiting_here_count: Integer
 }
 
 ------------------------------------------------------------
@@ -227,10 +272,9 @@ rule ForgetTheLeastRecentlyRead {
         -- dropping anything would be.
 }
 
-rule ReadRetainedPageWithoutTheServer {
+rule ShowRetainedPageAtOnce {
     when: PageRequested(replica, page)
 
-    requires: canonical_delivery_unavailable(replica, page)
     requires: exists RetainedPage{replica: replica, page: page}
 
     ensures:
@@ -241,13 +285,42 @@ rule ReadRetainedPageWithoutTheServer {
             origin: retained
         )
         replica.showing = retained
+        BackgroundSynchronisationBegins(replica: replica)
 
     @guidance
-        -- This is not a cache consulted when the server is slow: it is the same page,
-        -- read from the device that already has it. The replica seeded from retained
-        -- content accepts gestures exactly as one seeded from a canonical delivery,
-        -- so a page read yesterday can be written into today with no connection at
-        -- all, and what is written leaves through the outbox like everything else.
+        -- A page this device has been given before is shown from this device, at once,
+        -- whether or not the server would have answered. That is what
+        -- @guarantee LocalFirstMeansFirst has said all along, and the rule that used to
+        -- stand here said the opposite: it required the delivery to have failed first,
+        -- so a reachable-but-slow server was waited for with the page already in hand.
+        --
+        -- The cost of that was not theoretical. Opening one heavily written page of a
+        -- real corpus is 0.81 s and 512 KB, paid again on every visit, because nothing
+        -- asks whether the copy already held is still good. A page in the breadcrumb,
+        -- opened for the fiftieth time, paid it fifty times. Over a tunnelled link that
+        -- is the difference between a workspace and a form.
+        --
+        -- What follows is not a fetch of the same page: it is the cheap question, asked
+        -- in the background, of what has happened since the cursor. See
+        -- PullOperationsAfterCursor.
+        --
+        -- The replica seeded from retained content accepts gestures exactly as one
+        -- seeded from a canonical delivery, so a page read yesterday can be written into
+        -- today with no connection at all, and what is written leaves through the outbox
+        -- like everything else.
+}
+
+rule DeliverCanonicallyWhatWasNeverRead {
+    when: PageRequested(replica, page)
+
+    requires: not exists RetainedPage{replica: replica, page: page}
+
+    ensures: CanonicalDeliveryRequested(replica: replica, page: page)
+
+    @guidance
+        -- A page this device has never held has to come from somewhere, and there is
+        -- only one somewhere. This is the ordinary first read, and it is the only one
+        -- that waits.
 }
 
 rule OpenWorkspaceWithoutTheServer {
@@ -321,7 +394,55 @@ rule PullOperationsAfterCursor {
 
     ensures:
         for operation in canonical_operations(replica.graph, after: replica.canonical_cursor):
-            RemoteOperationReceived(replica: replica, operation: operation)
+            WaitingWork.created(
+                replica: replica,
+                operation: operation,
+                touches_open_page: operation_touches(operation, replica)
+            )
+        CanonicalWorkWaits(replica: replica)
+
+    @guidance
+        -- The cheap question, and the only one asked on a timer: what has happened
+        -- since my cursor. It is answered with the operations themselves, which are
+        -- small — a few kilobytes for a day's work — and not with the pages they
+        -- touched, which are not.
+        --
+        -- Nothing is applied here. The operations are known about; taking them is a
+        -- separate act with a separate rule, because it is a decision and not a
+        -- consequence.
+}
+
+rule AnnounceWaitingCanonicalWork {
+    when: CanonicalWorkWaits(replica)
+
+    requires: count(replica.waiting) > 0
+
+    ensures: WaitingWorkIsVisible(replica: replica, here: count(replica.waiting where touches_open_page))
+
+    @guidance
+        -- The indicator changes and waits to be pressed. It does not count down, it
+        -- does not fade, and it does not eventually give up and apply anyway: a thing
+        -- that acts on its own after being ignored has not asked, it has warned.
+        --
+        -- Two states and not one, because they are two different pieces of news.
+        -- Something moved in the corpus is worth knowing; something moved in the page
+        -- on screen is worth deciding about now.
+}
+
+rule TakeWaitingCanonicalWork {
+    when: ParticipantTakesWaitingWork(participant, replica)
+
+    requires: replica.participant = participant
+    requires: replica.connection = online
+
+    ensures:
+        for waiting in replica.waiting:
+            RemoteOperationReceived(replica: replica, operation: waiting.operation)
+
+    @guidance
+        -- Taking is the participant's act, and it is the only thing that moves canonical
+        -- work into what is on screen. Everything downstream — applying what is
+        -- independent, exposing what collides — hangs from here.
 }
 
 rule ApplyConflictFreeRemoteOperation {
@@ -332,7 +453,13 @@ rule ApplyConflictFreeRemoteOperation {
     ensures:
         CanonicalOperationAppliedLocally(replica: replica, operation: operation)
         replica.canonical_cursor = operation.sequence
+        not exists WaitingWork{replica: replica, operation: operation}
         IncrementalProjectionUpdated(replica: replica, operation: operation)
+
+    @guidance
+        -- Once taken, what does not collide simply applies: the participant said yes to
+        -- the news, and asking again per operation would turn one decision into fifty.
+        -- The dialogue below is for the ones that cannot be applied without choosing.
 }
 
 rule ContinueWhenConnectionReturns {
@@ -360,6 +487,7 @@ rule ExposeConcurrentConflict {
             replica: replica,
             pending: pending,
             canonical_operation: operation,
+            block: contested_block(pending, operation),
             resolved: false
         )
         ConflictRequiresParticipantAttention(replica: replica, pending: pending)
@@ -367,6 +495,9 @@ rule ExposeConcurrentConflict {
     @guidance
         -- Vera may automatically reconcile independent subjects and idempotent repeats.
         -- It never silently chooses between two incompatible versions of the same prose.
+        --
+        -- This is reached only through taking, so a conflict is never news that arrives
+        -- on its own: it is what the participant found when they went to look.
 }
 
 rule ResolveConcurrentConflict {
@@ -430,6 +561,25 @@ invariant RetainedPageBelongsToTheReplicaGraph {
         retained.page.graph = retained.replica.graph
 }
 
+-- Nothing crosses from the corpus into what is on screen except by being taken.
+--
+-- It is the invariant form of WhatArrivesIsAnnouncedAndNotImposed, and it is worth
+-- stating separately because the failure it forbids is silent: an operation that
+-- applied itself would look exactly like one the participant took.
+invariant NothingArrivesUnasked {
+    for work in WaitingWork:
+        work.operation.sequence > work.replica.canonical_cursor
+}
+
+-- Waiting work is never reported as being up to date. It is the same promise
+-- UnresolvedConflictIsNeverReportedAsSynchronised makes about conflicts: an
+-- indicator that says «synchronised» while something waits has lied about the one
+-- thing it exists to say.
+invariant WaitingWorkIsNeverReportedAsSynchronised {
+    for state in SynchronisationStates:
+        state.waiting_count > 0 implies state.status != synchronised
+}
+
 invariant CursorAdvancesOnlyThroughCanonicalOperations {
     for replica in LocalReplicas:
         replica.canonical_cursor >= 0
@@ -456,10 +606,12 @@ surface LocalFirstWorkspace {
         replica.pending_changes
         replica.conflicts
         replica.retained_pages
+        replica.waiting
 
     provides:
         ApplyLocally(replica, origin_id, change, channel, evidence?)
         SynchronisationStateRequested(replica)
+        ParticipantTakesWaitingWork(participant, replica)
         ParticipantResolvesConflict(participant, conflict, resolution, replacement?)
         PageRequested(replica, page)
         PageDelivered(replica, page, origin)
@@ -476,6 +628,43 @@ surface LocalFirstWorkspace {
         -- server, and writable there too. Nothing is replicated in advance: reading
         -- is what selects, which is both the cheapest possible policy and the only
         -- one that follows a person's attention instead of guessing at it.
+
+    @guarantee WhatArrivesIsAnnouncedAndNotImposed
+        -- Canonical work that appeared after the cursor changes an indicator and waits
+        -- to be pressed. It is never applied to what is on screen on its own.
+        --
+        -- The reason is that another hand writes into this corpus. A librarian agent
+        -- can rewrite a page while it is being read, and there are exactly three things
+        -- a workspace can do about that. It can replace the text under the reader's
+        -- eyes, which is not synchronisation but interruption. It can say nothing,
+        -- which is the one thing @invariant SilenceNeverPretendsToBeSuccess forbids.
+        -- Or it can say so and let the owner choose when — which costs a button and is
+        -- the only one of the three that treats reading as something in progress.
+        --
+        -- It follows that a page may be read knowingly out of date, and that is a
+        -- feature and not a tolerated defect: the alternative is a text that moves while
+        -- it is being read.
+
+    @guarantee KnowingIsCheapAndTakingIsNot
+        -- What the indicator costs to keep true is the question «what has happened
+        -- since my cursor», not the page. Measured on a real corpus: the last twenty
+        -- operations, 3.8 KB and 3 ms; one heavily written page, 512 KB and 0.81 s.
+        --
+        -- This is why announcing can be continuous and taking has to be asked for. A
+        -- design that had to refetch pages to know whether anything changed would have
+        -- to choose between being current and being usable.
+
+    @guarantee ADisagreementIsResolvedOneBlockAtATime
+        -- Where two hands wrote the same block, the participant is shown both versions
+        -- with the differing lines marked, and chooses one — or writes a third.
+        --
+        -- The block and not the line, because the block is the only thing Vera has an
+        -- identity for. Merging line by line produces text that neither hand wrote,
+        -- attributed to a block whose authorship can then no longer be stated, in a
+        -- corpus where knowing which hand wrote what is the point.
+        --
+        -- The lines are shown because choosing between two versions without seeing
+        -- where they differ is choosing blind.
 
     @guarantee FluencyIsEndToEnd
         -- Fast keystrokes are insufficient if Enter, navigation, Markdown, a map redraw

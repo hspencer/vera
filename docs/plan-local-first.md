@@ -149,20 +149,71 @@ recuperado al volver la red y aplicado al corpus en su orden.
 
 - **Sin servidor, la aplicación no abre.** Lo escrito está a salvo, pero leer
   sigue siendo server-first: al recargar sin red se ve «no se pudo hablar con el
-  servidor» y nada más. Eso es el paso 4.
+  servidor» y nada más. *Levantado después: ver «Leer sin servidor» en el
+  ROADMAP. Lo que quedó en pie, y no se vio hasta medirlo, es que leer con un
+  servidor **lento** sigue esperando — el paso 3½.*
 - **La primera escritura de un día necesita red.** Nace con un `create_page`, que
   la réplica difiere porque toca enlaces que una página sola no tiene. Sin
   servidor, ese primer gesto no ocurre.
 
-### Paso 4 — el cursor y lo que llega
+### Paso 3½ — la medida que faltaba, tomada tarde
 
-`canonical_cursor` por réplica, `GET /ops?since=` en segundo plano, y aplicar lo
-que llegue sin recargar.
+Los pasos 1 a 3 quitaron la espera de **escribir** y la de **abrir sin
+servidor**. No quitaron la de **leer con un servidor lento**, y nadie lo había
+medido. Con el corpus real:
 
-### Paso 5 — los conflictos
+| | tiempo | bytes |
+| --- | ---: | ---: |
+| abrir *Magnifica Humanitas* (1.147 bloques) | 0,81 s | **512 KB** |
+| abrir *Lombardi — Grafo de Eventos Federado* | 0,71 s | 314 KB |
+| preguntar «¿qué cambió desde mi cursor?» (últimas 20 operaciones) | **0,003 s** | **3,8 KB** |
 
-Exponer la divergencia en vez de elegir en silencio, y las tres resoluciones que
-la spec nombra.
+Y el hallazgo: **no hay lectura condicional en ninguna parte**. Ni ETag, ni
+`If-None-Match`, ni «¿sigue valiendo lo mío?». `openPage()` pide la página entera
+cada vez. Haberla visitado cincuenta veces no ahorra un byte, y lo retenido en
+IndexedDB sólo se consulta en el `catch` — es decir, nunca, mientras el servidor
+conteste. Tres capas hacen lo mismo: `sw.js:71` para el documento, `loadPages()`
+para el índice, `openPage()` para la página.
+
+Lo cual contradice una garantía que llevaba escrita desde el principio:
+`@guarantee LocalFirstMeansFirst` — *«The local replica is not a cache consulted
+when the server is slow»*—. La implementación siguió a la regla de debajo, que
+exigía lo contrario.
+
+### Paso 4 — lo retenido primero, y el botón que avisa — *especificado*
+
+Decidido el 11 de agosto de 2026, y escrito en `offline-reconciliation.allium`:
+
+1. Una página que este aparato ya tuvo **se dibuja desde aquí, al instante**,
+   conteste o no el servidor. `rule ShowRetainedPageAtOnce`.
+2. Detrás, la pregunta barata: `GET /ops?since=<cursor>`.
+   `rule PullOperationsAfterCursor` — que ahora **no aplica nada**, sólo anota.
+3. Si hay algo esperando, **el indicador cambia y espera a que lo pulsen**.
+   `rule AnnounceWaitingCanonicalWork`, con dos estados: algo se movió en el
+   corpus, y algo se movió *en esta página*.
+4. Lo toma el dueño. `rule TakeWaitingCanonicalWork`. Lo que no choca se aplica;
+   lo que choca abre el diálogo.
+
+La razón de que no se aplique solo es que **otra mano escribe en este corpus**.
+Un agente bibliotecario puede reescribir una página mientras se lee, y sólo hay
+tres cosas que se pueden hacer: cambiar el texto bajo los ojos de quien lee —que
+no es sincronizar sino interrumpir—, callarlo —que es lo único que
+`SilenceNeverPretendsToBeSuccess` prohíbe—, o decirlo y dejar que el dueño elija
+cuándo. Cuesta un botón.
+
+De ahí se sigue que una página se pueda leer sabiéndola desactualizada, y eso es
+la función y no un defecto tolerado.
+
+### Paso 5 — el desacuerdo se resuelve por bloque — *especificado*
+
+Donde dos manos escribieron el mismo bloque, se enseñan las dos versiones con las
+líneas que difieren marcadas, y se elige una —o se escribe una tercera—.
+
+**El bloque y no la línea**: es lo único de lo que Vera tiene identidad. Mezclar
+línea a línea produce un texto que no escribió ninguna de las dos manos, en un
+bloque cuya autoría ya no se puede afirmar, en un corpus donde saber qué mano
+escribió qué es justamente el asunto. Las líneas se enseñan porque elegir entre
+dos versiones sin ver en qué difieren es elegir a ciegas.
 
 ## 7. Lo que este plan no decide
 
