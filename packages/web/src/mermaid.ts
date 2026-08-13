@@ -18,6 +18,56 @@ type MermaidModule = typeof import('mermaid');
 
 let loading: Promise<MermaidModule['default']> | null = null;
 
+/**
+ * Mermaid trae grises propios que no conocen la paleta de Vera. En particular,
+ * varios tipos de diagrama usan `secondaryTextColor` y `tertiaryTextColor` en
+ * vez de `textColor`; dejarlos en sus valores implícitos produce letras grises
+ * sobre nodos grises. La paleta se declara completa para que texto, nodos,
+ * grupos, notas y etiquetas de arista conserven contraste en ambos esquemas.
+ */
+export function mermaidTheme(dark: boolean) {
+  const text = dark ? '#f4f1eb' : '#171513';
+  const muted = dark ? '#ddd7ce' : '#302c28';
+  const surface = dark ? '#292724' : '#fffdfa';
+  const raised = dark ? '#38342f' : '#f1ece4';
+  const accent = dark ? '#9fc7ff' : '#245b9e';
+  const rule = dark ? '#aaa096' : '#756b62';
+
+  return {
+    theme: 'base' as const,
+    themeVariables: {
+      background: surface,
+      mainBkg: surface,
+      primaryColor: surface,
+      primaryTextColor: text,
+      primaryBorderColor: rule,
+      secondaryColor: raised,
+      secondaryTextColor: text,
+      secondaryBorderColor: rule,
+      tertiaryColor: dark ? '#202a35' : '#e8f1fb',
+      tertiaryTextColor: text,
+      tertiaryBorderColor: accent,
+      textColor: text,
+      lineColor: rule,
+      nodeBorder: rule,
+      clusterBkg: raised,
+      clusterBorder: rule,
+      titleColor: text,
+      edgeLabelBackground: surface,
+      labelTextColor: text,
+      actorTextColor: text,
+      actorBorder: rule,
+      actorBkg: surface,
+      signalTextColor: text,
+      noteTextColor: text,
+      noteBkgColor: raised,
+      noteBorderColor: rule,
+      loopTextColor: muted,
+      activationTextColor: text,
+    },
+  };
+}
+
 async function mermaidFor(dark: boolean): Promise<MermaidModule['default']> {
   if (loading === null) {
     loading = import('mermaid').then((module) => module.default);
@@ -26,7 +76,7 @@ async function mermaidFor(dark: boolean): Promise<MermaidModule['default']> {
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'sandbox',
-    theme: dark ? 'dark' : 'default',
+    ...mermaidTheme(dark),
     fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-ui') || 'sans-serif',
   });
   return mermaid;
