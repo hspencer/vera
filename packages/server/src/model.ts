@@ -17,6 +17,12 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { findTool } from './transcribe.ts';
+import { titleKey } from '@vera/core';
+import {
+  describeCandidates,
+  describeOntology,
+  type OntologyContext,
+} from './ontology-context.ts';
 
 const run = promisify(execFile);
 const home = homedir();
@@ -149,7 +155,10 @@ export const STARTER_TYPES = [
 
 export interface Reading {
   types: string[];
-  concepts: string[];
+  /** IDs de páginas que Vera ofreció y el modelo eligió. */
+  existingConcepts: string[];
+  /** Nombres que no corresponden a ninguno de los candidatos ofrecidos. */
+  newConcepts: string[];
 }
 
 /**
@@ -173,6 +182,59 @@ export const READABLE_CHARS = 3000;
 export const MOST_PASSES = 8;
 
 /**
+ * Presupuesto conservador para una ventana de 4.096 tokens.
+ *
+ * Los caracteres no son tokens, pero en castellano 8.500 deja holgura para la
+ * respuesta, el template interno de Qwen y palabras que se parten en varias
+ * piezas. Antes se presupuestaba sólo el texto de la página: ontología y 24
+ * candidatos podían empujar el prompt completo fuera de la ventana.
+ */
+export const READING_PROMPT_CHARS = 8_500;
+
+/** Arma el prompt completo y hace caber contexto, evidencia y texto juntos. */
+export function readingPrompt(
+  title: string,
+  text: string,
+  vocabulary: readonly string[],
+  context: OntologyContext,
+): string {
+  let extract = text.replace(/\s+/g, ' ').slice(0, READABLE_CHARS);
+  let candidates = [...context.candidates];
+  const compose = (): string => `Eres un bibliotecario que clasifica páginas de una memoria personal.
+
+${describeOntology(context)}
+
+Vocabulario de tipos permitido: ${vocabulary.join(', ')}.
+
+CONCEPTOS EXISTENTES RECUPERADOS POR VERA:
+${describeCandidates(candidates)}
+
+Responde SÓLO con JSON, sin explicar nada, con esta forma exacta:
+{"types": ["…"], "existingConcepts": ["page:…"], "newConcepts": ["…"]}
+
+- "types": normalmente un tipo. Devuelve dos sólo si la PÁGINA misma es
+  intrínsecamente ambas cosas, no porque su texto mencione personas, lugares o eventos.
+- "existingConcepts": IDs copiados EXACTAMENTE de la lista recuperada. Elige sólo
+  conceptos de los que la página trata realmente; una mera mención no basta.
+- "newConcepts": temas necesarios que no equivalen a ningún candidato recuperado.
+  Son asuntos durables que ayudarían a recuperar otras páginas relacionadas, no
+  tipos, fechas, cantidades, audiencias, cargos ni nombres propios incidentales.
+  En minúsculas.
+- Entre existentes y nuevos devuelve como máximo cinco. Si dudas, devuelve menos.
+
+Página: «${title}»
+Texto: ${extract}`;
+
+  // Primero se quita el candidato menos pertinente: `relevantConcepts` ya los
+  // entregó ordenados. El texto del pase se recorta sólo si la ontología y los
+  // candidatos verdaderamente pertinentes todavía no caben.
+  while (candidates.length > 0 && compose().length > READING_PROMPT_CHARS) candidates.pop();
+  const overflow = compose().length - READING_PROMPT_CHARS;
+  if (overflow > 0) extract = extract.slice(0, Math.max(0, extract.length - overflow));
+  return compose();
+}
+
+/**
  * Lee una página y propone qué es y de qué trata.
  *
  * Dos preguntas y no una, porque son dos: qué clase de cosa es algo y sobre qué
@@ -188,24 +250,11 @@ export async function readPage(
   title: string,
   text: string,
   vocabulary: string[] = STARTER_TYPES,
+  context: OntologyContext = { objects: [], properties: [], candidates: [] },
 ): Promise<Reading | { error: string }> {
-  const extract = text.replace(/\s+/g, ' ').slice(0, READABLE_CHARS);
-
   const answer = await ask(
-    `Eres un bibliotecario que clasifica páginas de una memoria personal.
-
-Vocabulario de tipos permitido: ${vocabulary.join(', ')}.
-
-Responde SÓLO con JSON, sin explicar nada, con esta forma exacta:
-{"types": ["…"], "concepts": ["…"]}
-
-- "types": uno o dos tipos del vocabulario. Qué CLASE DE COSA es la página.
-- "concepts": entre dos y cinco temas de los que la página TRATA, en minúsculas.
-  No son tipos: son asuntos. Si no estás seguro, pon menos.
-
-Página: «${title}»
-Texto: ${extract}`,
-    { maxTokens: 200 },
+    readingPrompt(title, text, vocabulary, context),
+    { maxTokens: 300 },
   );
 
   if ('error' in answer) return answer;
@@ -213,16 +262,66 @@ Texto: ${extract}`,
   const parsed = lastObjectIn(answer.text);
   if (parsed === null) return { error: 'el modelo no respondió en el formato pedido' };
 
-  const strings = (value: unknown): string[] =>
-    Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v !== '') : [];
+  return readingFrom(parsed, vocabulary, context);
+}
+
+const strings = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.filter((one): one is string => typeof one === 'string' && one.trim() !== '')
+    : [];
+
+/**
+ * Ata la salida probabilística a identidades verificables.
+ *
+ * Qwen 3B a veces comprende un candidato y, aun así, copia su título en
+ * `newConcepts` en vez de su ID. Una coincidencia exacta normalizada no es una
+ * inferencia: es la misma identidad escrita de otra forma, y Vera puede
+ * reconciliarla sin pedirle otra llamada al modelo. No se hace fuzzy matching;
+ * dos conceptos parecidos siguen siendo dos hasta que una persona los una.
+ */
+export function readingFrom(
+  parsed: {
+    types?: unknown;
+    concepts?: unknown;
+    existingConcepts?: unknown;
+    newConcepts?: unknown;
+  },
+  vocabulary: readonly string[],
+  context: OntologyContext,
+): Reading {
+  const byId = new Map(context.candidates.map((candidate) => [candidate.id, candidate]));
+  const byTitle = new Map(context.candidates.map((candidate) => [titleKey(candidate.title), candidate]));
+  const existing: string[] = [];
+  const fresh: string[] = [];
+  const hold = (id: string): void => {
+    if (!existing.includes(id)) existing.push(id);
+  };
+
+  for (const said of strings(parsed.existingConcepts)) {
+    const candidate = byId.get(said.trim()) ?? byTitle.get(titleKey(said));
+    if (candidate !== undefined) hold(candidate.id);
+  }
+  for (const said of strings(parsed.newConcepts ?? parsed.concepts)) {
+    const candidate = byTitle.get(titleKey(said));
+    if (candidate !== undefined) hold(candidate.id);
+    else if (!fresh.some((one) => titleKey(one) === titleKey(said))) fresh.push(said.trim());
+  }
+
+  const types = strings(parsed.types)
+    .flatMap((said) => {
+      const canonical = vocabulary.find((word) => titleKey(word) === titleKey(said));
+      return canonical === undefined ? [] : [canonical];
+    })
+    .filter((type, index, all) => all.indexOf(type) === index)
+    .slice(0, 2);
+  const concepts = [
+    ...existing.map((id) => ({ existing: id })),
+    ...fresh.map((name) => ({ fresh: name })),
+  ].slice(0, 5);
   return {
-    // Lo que no está en el vocabulario se descarta: el modelo propone dentro de
-    // lo que hay, y una palabra inventada sería vocabulario nuevo entrando por
-    // la puerta de atrás.
-    types: strings(parsed.types).filter((t) =>
-      vocabulary.some((v) => v.toLowerCase() === t.toLowerCase()),
-    ),
-    concepts: strings(parsed.concepts).slice(0, 5),
+    types,
+    existingConcepts: concepts.flatMap((one) => 'existing' in one ? [one.existing] : []),
+    newConcepts: concepts.flatMap((one) => 'fresh' in one ? [one.fresh] : []),
   };
 }
 
@@ -258,15 +357,24 @@ export function mergeReadings(readings: Reading[]): Reading {
       .map((one) => one.label);
   };
 
+  const concepts = vote(
+    readings.map((reading) => [
+      ...reading.existingConcepts.map((id) => `existing:${id.trim()}`),
+      ...reading.newConcepts.map((name) => `new:${name.trim()}`),
+    ]),
+    5,
+  );
   return {
     types: vote(
       readings.map((reading) => reading.types),
       2,
     ),
-    concepts: vote(
-      readings.map((reading) => reading.concepts),
-      5,
-    ),
+    existingConcepts: concepts
+      .filter((concept) => concept.startsWith('existing:'))
+      .map((concept) => concept.slice('existing:'.length)),
+    newConcepts: concepts
+      .filter((concept) => concept.startsWith('new:'))
+      .map((concept) => concept.slice('new:'.length)),
   };
 }
 
@@ -279,7 +387,12 @@ export function mergeReadings(readings: Reading[]): Reading {
  * codiciosa: el propio prompt lleva un `{…}` de ejemplo, y `\{[\s\S]*\}` abarcaba
  * desde esa llave hasta la última del texto y no parseaba nunca.
  */
-export function lastObjectIn(text: string): { types?: unknown; concepts?: unknown } | null {
+export function lastObjectIn(text: string): {
+  types?: unknown;
+  concepts?: unknown;
+  existingConcepts?: unknown;
+  newConcepts?: unknown;
+} | null {
   let start = text.lastIndexOf('{');
   while (start !== -1) {
     let depth = 0;
@@ -292,7 +405,12 @@ export function lastObjectIn(text: string): { types?: unknown; concepts?: unknow
           try {
             const parsed = JSON.parse(text.slice(start, at + 1)) as Record<string, unknown>;
             // Un objeto cualquiera no sirve: tiene que ser el que se pidió.
-            if ('types' in parsed || 'concepts' in parsed) return parsed;
+            if (
+              'types' in parsed ||
+              'concepts' in parsed ||
+              'existingConcepts' in parsed ||
+              'newConcepts' in parsed
+            ) return parsed;
           } catch {
             // No era JSON válido; se sigue buscando hacia atrás.
           }

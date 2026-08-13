@@ -7,7 +7,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { lastObjectIn, mergeReadings } from '../src/model.ts';
+import {
+  lastObjectIn,
+  mergeReadings,
+  readingFrom,
+  readingPrompt,
+  READING_PROMPT_CHARS,
+} from '../src/model.ts';
 
 describe('el objeto que el modelo devolvió', () => {
   it('lo encuentra cuando viene solo', () => {
@@ -46,6 +52,61 @@ describe('el objeto que el modelo devolvió', () => {
   });
 });
 
+describe('atar la lectura al vocabulario de Vera', () => {
+  const context = {
+    objects: [],
+    properties: [],
+    candidates: [
+      { id: 'page:aac', title: 'Accesibilidad cognitiva', uses: 3, backlinks: 2, linked: false, excerpt: null },
+    ],
+  };
+
+  it('convierte en existente un título que Qwen devolvió como nuevo', () => {
+    const reading = readingFrom(
+      { types: ['proyecto'], newConcepts: ['accesibilidad cognitiva', 'codiseño'] },
+      ['Proyecto'],
+      context,
+    );
+    assert.deepEqual(reading, {
+      types: ['Proyecto'],
+      existingConcepts: ['page:aac'],
+      newConcepts: ['codiseño'],
+    });
+  });
+
+  it('rechaza identidades inventadas y no hace coincidencias difusas', () => {
+    const reading = readingFrom(
+      { existingConcepts: ['page:inventada'], newConcepts: ['Accesibilidad'] },
+      [],
+      context,
+    );
+    assert.deepEqual(reading.existingConcepts, []);
+    assert.deepEqual(reading.newConcepts, ['Accesibilidad']);
+  });
+});
+
+describe('presupuesto del contexto local', () => {
+  it('hace caber ontología, candidatos y texto en la ventana completa', () => {
+    const candidates = Array.from({ length: 24 }, (_, at) => ({
+      id: `page:${at}`,
+      title: `Concepto pertinente ${at}`,
+      uses: 10,
+      backlinks: 20,
+      linked: false,
+      excerpt: 'Una glosa deliberadamente larga para ocupar el presupuesto del contexto.'.repeat(3),
+    }));
+    const prompt = readingPrompt('Página larga', 'á'.repeat(20_000), ['Nota'], {
+      objects: [],
+      properties: [],
+      candidates,
+    });
+    assert.ok(prompt.length <= READING_PROMPT_CHARS);
+    assert.match(prompt, /page:0 \| Concepto pertinente 0/);
+    assert.doesNotMatch(prompt, /page:23 \| Concepto pertinente 23/);
+    assert.match(prompt, /Texto: á+/);
+  });
+});
+
 /*
  * Juntar lo que dijo cada parte de una página larga.
  *
@@ -56,40 +117,44 @@ describe('el objeto que el modelo devolvió', () => {
 describe('mergeReadings', () => {
   it('lo que dicen varias partes manda sobre lo que dice una sola', () => {
     const merged = mergeReadings([
-      { types: ['Nota'], concepts: ['diseño'] },
-      { types: ['Bitácora'], concepts: ['diseño'] },
-      { types: ['Bitácora'], concepts: ['almuerzo'] },
+      { types: ['Nota'], existingConcepts: ['page:diseño'], newConcepts: [] },
+      { types: ['Bitácora'], existingConcepts: ['page:diseño'], newConcepts: [] },
+      { types: ['Bitácora'], existingConcepts: [], newConcepts: ['almuerzo'] },
     ]);
     assert.deepEqual(merged.types, ['Bitácora', 'Nota']);
-    assert.equal(merged.concepts[0], 'diseño');
+    assert.equal(merged.existingConcepts[0], 'page:diseño');
   });
 
   it('a igualdad de menciones manda el orden de aparición', () => {
-    const merged = mergeReadings([{ types: ['Idea'], concepts: [] }, { types: ['Nota'], concepts: [] }]);
+    const merged = mergeReadings([
+      { types: ['Idea'], existingConcepts: [], newConcepts: [] },
+      { types: ['Nota'], existingConcepts: [], newConcepts: [] },
+    ]);
     assert.deepEqual(merged.types, ['Idea', 'Nota']);
   });
 
   it('no inventa nada que ninguna parte dijera', () => {
-    const merged = mergeReadings([{ types: [], concepts: [] }]);
-    assert.deepEqual(merged, { types: [], concepts: [] });
+    const merged = mergeReadings([{ types: [], existingConcepts: [], newConcepts: [] }]);
+    assert.deepEqual(merged, { types: [], existingConcepts: [], newConcepts: [] });
   });
 
   it('leer la página entera da una lectura mejor, no una lista más larga', () => {
     const many = Array.from({ length: 8 }, (_, at) => ({
       types: [`T${at}`],
-      concepts: [`c${at}`, `d${at}`],
+      existingConcepts: [`page:c${at}`],
+      newConcepts: [`d${at}`],
     }));
     const merged = mergeReadings(many);
     assert.equal(merged.types.length, 2);
-    assert.equal(merged.concepts.length, 5);
+    assert.equal(merged.existingConcepts.length + merged.newConcepts.length, 5);
   });
 
   it('la misma palabra escrita de dos formas es una sola', () => {
     const merged = mergeReadings([
-      { types: ['Nota'], concepts: ['Diseño'] },
-      { types: ['nota'], concepts: [' diseño '] },
+      { types: ['Nota'], existingConcepts: [], newConcepts: ['Diseño'] },
+      { types: ['nota'], existingConcepts: [], newConcepts: [' diseño '] },
     ]);
     assert.deepEqual(merged.types, ['Nota']);
-    assert.deepEqual(merged.concepts, ['Diseño']);
+    assert.deepEqual(merged.newConcepts, ['Diseño']);
   });
 });
