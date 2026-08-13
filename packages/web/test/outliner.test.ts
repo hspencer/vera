@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildNeighbourhoods, buildTree, nodeMarkdown } from '../src/outliner.ts';
+import { buildNeighbourhoods, buildTree, foldedState, nodeMarkdown } from '../src/outliner.ts';
 import type { BlockView } from '../src/api.ts';
 
 const block = (stableId: string, parent: string | null, position: number, content = stableId): BlockView => ({
@@ -65,6 +65,17 @@ describe('nodeMarkdown', () => {
   it('una hoja copia sólo su Markdown', () => {
     const tree = buildTree([block('hoja', null, 0, 'Texto **limpio**')]);
     assert.equal(nodeMarkdown(tree[0]!), 'Texto **limpio**');
+  });
+});
+
+describe('foldedState', () => {
+  it('proyecta inmediatamente plegar y desplegar en la vista local', () => {
+    assert.deepEqual(foldedState([], 'padre', true), ['padre']);
+    assert.deepEqual(foldedState(['padre'], 'padre', false), []);
+  });
+
+  it('no duplica un bloque ya plegado', () => {
+    assert.deepEqual(foldedState(['padre'], 'padre', true), ['padre']);
   });
 });
 

@@ -33,7 +33,7 @@ import {
 import { onRecording } from './audio-block.ts';
 import { isDay, today } from './autocomplete.ts';
 import { GOVERNING_KINDS } from './governing-table.ts';
-import { renderSettings, type Section } from './settings.ts';
+import { renderFilesAdministration, renderSettings, type Section } from './settings.ts';
 import { parseRoute, routeTo } from './router.ts';
 import { voice } from './voice.ts';
 import { brandMark, icon, type IconName } from './icons.ts';
@@ -467,6 +467,7 @@ async function openToday(): Promise<void> {
  * nada antes de ponerse a escribir.
  */
 function drawUnstartedDay(date: string): void {
+  $('#vera-root').classList.remove('special-surface');
   workspace.activePage = null;
   // Todavía no hay página, pero sí hay sitio: el día que se está mirando. Dejar
   // sólo «Vera» aquí haría que la ventana perdiera el nombre justo al abrirla,
@@ -670,7 +671,7 @@ function markShowing(text: HTMLElement, kept: boolean): void {
 
 async function openPage(
   id: string,
-  focus: { block: string; at: number } | null = null,
+  focus: { block: string; at: number | null } | null = null,
   options: {
     fromUrl?: boolean;
     reveal?: string | null;
@@ -679,6 +680,7 @@ async function openPage(
     title?: string;
   } = {},
 ): Promise<void> {
+  $('#vera-root').classList.remove('special-surface');
   let page;
   /*
    * Si el corpus tarda, se dice qué se está abriendo.
@@ -743,7 +745,21 @@ async function openPage(
    * Lo que va detrás no es volver a pedir la página: es la pregunta barata de qué
    * ha pasado desde el cursor. Ver `catchUpWithCorpus`.
    */
-  const kept = here ? null : await held.page(id);
+  let kept = here ? null : await held.page(id);
+  /*
+   * Una copia anterior al arreglo puede haber sobrevivido con el cursor ya
+   * avanzado. El índice trae el número canónico de bloques y permite reconocer
+   * esa mentira sin descargar la página completa. Se suelta una vez y la ruta
+   * normal trae el documento vigente.
+   */
+  const retained = kept;
+  const summary = retained === null
+    ? undefined
+    : pages.find((one) => one.id === retained.id || one.title.toLowerCase() === retained.title.toLowerCase());
+  if (kept !== null && summary !== undefined && summary.blockCount !== kept.blocks.length) {
+    await held.forgetPage(kept.id);
+    kept = null;
+  }
   if (kept !== null) {
     if (slow !== null) clearTimeout(slow);
     fromKept = true;
@@ -1165,6 +1181,10 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
  * así que el historial del navegador y el de Vera cuentan lo mismo.
  */
 async function applyRoute(): Promise<void> {
+  if (window.location.pathname === '/archivos') {
+    await openFilesAdministration();
+    return;
+  }
   const route = parseRoute(new URL(window.location.href));
   if (route.page === null) {
     // La raíz es hoy. Antes era la página más conectada del corpus, que es una
@@ -1186,6 +1206,16 @@ async function applyRoute(): Promise<void> {
   // distinguirlos y no los distingue: los tres son llegar sin venir de dentro.
   await openPage(route.page, null, { fromUrl: true, gesture: 'opened_directly' });
   if (route.block !== null) revealBlock(route.block);
+}
+
+async function openFilesAdministration(push = false): Promise<void> {
+  workspace.activePage = null;
+  workspace.focusRoot = null;
+  nameWindow('Administración de archivos');
+  if (push && window.location.pathname !== '/archivos') window.history.pushState({}, '', '/archivos');
+  $('#vera-root').classList.add('special-surface');
+  closeSettings();
+  await renderFilesAdministration($('#text'));
 }
 
 /**
@@ -1506,6 +1536,9 @@ async function catchUpWithCorpus(): Promise<void> {
    * dejaría un aviso encendido sobre algo que uno acaba de hacer.
    */
   if (waiting.waiting.length === 0) {
+    // Que no haya nada que anunciar no vuelve vigente un snapshot viejo. Las
+    // operaciones propias también pueden haber cambiado una página retenida.
+    for (const page of waiting.staleElsewhere) await held.forgetPage(page);
     if (waiting.upTo > cursor) await held.keepCursor(waiting.upTo);
     waiting = null;
   }
@@ -2375,11 +2408,12 @@ function wireTheme(): void {
         openSettings();
       },
       onClose: closeSettings,
+      onOpenFiles: () => void openFilesAdministration(true),
     });
     // Recordar la sección entre aperturas: se vuelve a la misma que se dejó.
     panel.querySelectorAll('.settings-tab').forEach((tab, at) => {
       tab.addEventListener('click', () => {
-        section = at === 0 ? 'teclado' : 'apariencia';
+        section = (['memoria', 'archivos', 'teclado', 'apariencia'] as Section[])[at] ?? 'memoria';
       });
     });
   };

@@ -26,6 +26,7 @@ import {
 import {
   api,
   type BlockView,
+  type CatalogAsset,
   type Change,
   type CrossingRow,
   type PageView,
@@ -74,6 +75,7 @@ import {
 } from './audio-block.ts';
 import { audioUrl, voice, type Recording } from './voice.ts';
 import { type NavigationGesture } from './trace.ts';
+import { openMediaDetails } from './media-dialog.ts';
 import {
   resolveArrow,
   resolveBackspaceAtStart,
@@ -138,7 +140,7 @@ export interface OutlinerCallbacks {
    * vista se rehace desde el grafo en vez de intentar parchearla: el grafo es
    * quien sabe cómo quedó el árbol.
    */
-  onReload(focus: { block: string; at: number } | null): void;
+  onReload(focus: { block: string; at: number | null } | null): void;
   /** Reenraizar la vista en un bloque; sin bloque, volver a la página entera. */
   onFocusBlock?(block: string | null): void;
   /**
@@ -478,15 +480,41 @@ async function markChildren(
 async function toggleFold(
   block: string,
   folded: boolean,
+  page: PageView,
   callbacks: OutlinerCallbacks,
 ): Promise<void> {
+  const before = document.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(block)}"]`)
+    ?.getBoundingClientRect().top ?? null;
   try {
-    await api.fold(block, folded);
+    const response = await api.fold(block, folded);
+    if (!response.ok) throw new Error(`fold failed: ${response.status}`);
   } catch {
     toast('no se pudo plegar: sin conexión con el servidor');
     return;
   }
-  callbacks.onReload(null);
+  // `onReload` normalmente repinta desde la réplica local. El plegado no forma
+  // parte de esa réplica porque es estado de lectura y no una operación del
+  // grafo; si no proyectamos aquí la respuesta, el repintado conserva la lista
+  // anterior y deshace visualmente el clic aunque el servidor sí lo guardó.
+  page.folded = foldedState(page.folded, block, folded);
+  // Plegar no es abandonar el lugar. El foco nulo dentro de este anclaje pide
+  // volver al control del mismo bloque sin abrir su editor. Además evita que
+  // una página larga vuelva a componerse progresivamente desde arriba.
+  callbacks.onReload({ block, at: null });
+  const row = document.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(block)}"]`);
+  if (row !== null) {
+    const after = row.getBoundingClientRect().top;
+    if (before !== null) window.scrollBy(0, after - before);
+    row.querySelector<HTMLButtonElement>('.fold')?.focus({ preventScroll: true });
+  }
+}
+
+/** Proyecta localmente el estado personal de plegado, sin duplicados. */
+export function foldedState(current: string[], block: string, folded: boolean): string[] {
+  const next = new Set(current);
+  if (folded) next.add(block);
+  else next.delete(block);
+  return [...next];
 }
 
 /**
@@ -1885,9 +1913,10 @@ export function buildTree(blocks: BlockView[]): Node[] {
  * imagen ni el cliente tiene que saber cómo se direcciona el almacén.
  */
 export function assetResolver(page: PageView): RenderOptions['resolveAsset'] {
-  if (page.assets.length === 0) return undefined;
-  const byPath = new Map(page.assets.map((asset) => [asset.path, asset]));
   return (path) => {
+    // Se consulta la colección viva. Un medio pegado manualmente puede
+    // resolverse después de que empezó la edición, sin reconstruir el editor.
+    const byPath = new Map(page.assets.map((asset) => [asset.path, asset]));
     const found = byPath.get(path);
     if (found !== undefined) return { url: found.url, mediaType: found.mediaType };
     // El corpus escribe algunas rutas con caracteres codificados y otras no.
@@ -1910,11 +1939,27 @@ export function blockResolver(page: PageView): RenderOptions['resolveBlock'] {
   };
 }
 
+function wireCataloguedMedia(container: HTMLElement, page: PageView): void {
+  for (const asset of page.assets) {
+    for (const element of container.querySelectorAll<HTMLElement>(
+      `[src="${CSS.escape(asset.url)}"], [href="${CSS.escape(asset.url)}"]`,
+    )) {
+      if (element.classList.contains('media-catalogued')) continue;
+      element.classList.add('media-catalogued');
+      element.title = 'Previsualizar y editar metadatos';
+      element.addEventListener('click', (event) => {
+        event.preventDefault();
+        openMediaDetails(asset);
+      });
+    }
+  }
+}
+
 export function renderOutliner(
   container: HTMLElement,
   page: PageView,
   callbacks: OutlinerCallbacks,
-  focus: { block: string; at: number } | null = null,
+  focus: { block: string; at: number | null } | null = null,
   focusRoot: string | null = null,
 ): void {
   container.innerHTML = '';
@@ -1947,8 +1992,19 @@ export function renderOutliner(
   const audioHandlers: AudioBlockHandlers = {
     onSettled: () => callbacks.onReload(null),
     notify: toast,
-    // Un eslabón que avanza sin mover el árbol no necesita rehacer la página.
-    onChanged: () => undefined,
+    // Una grabación vive fuera de la réplica estructural. Si cambia su audio,
+    // se incorpora la respuesta canónica a la vista abierta antes de repintar;
+    // de otro modo `onReload` reconstruiría los bloques pero conservaría la
+    // grabación vieja y la interfaz negaría un cambio que sí quedó guardado.
+    onChanged: (recording) => {
+      const recordings = page.recordings ?? [];
+      const at = recordings.findIndex((held) => held.id === recording.id);
+      const next = [...recordings];
+      if (at === -1) next.push(recording);
+      else next[at] = recording;
+      page.recordings = next;
+      callbacks.onReload(null);
+    },
   };
   const options: RenderOptions = { embedHosts };
   const asset = assetResolver(page);
@@ -2432,6 +2488,22 @@ export function renderOutliner(
   // es un acto aparte y deliberado — ver rule AdoptImportedVisibilityProperty.
   const written = page.properties.filter((property) => property.key !== 'public');
 
+  const outward = (raw: string): string | null => {
+    const text = raw.trim();
+    const candidate = /^https?:\/\//i.test(text)
+      ? text
+      : /^(?:www\.)?[\w.-]+\.[a-z]{2,}(?:[/:?#].*)?$/i.test(text)
+        ? `https://${text}`
+        : null;
+    if (candidate === null) return null;
+    try {
+      const url = new URL(candidate);
+      return /^https?:$/.test(url.protocol) ? url.href : null;
+    } catch {
+      return null;
+    }
+  };
+
   for (const property of written) {
     const key = document.createElement('dt');
     key.className = 'property-key';
@@ -2508,6 +2580,22 @@ export function renderOutliner(
     };
 
     const offered = page.domains?.[property.key] ?? [];
+    const external = outward(property.value);
+
+    if (external !== null) {
+      const link = document.createElement('a');
+      link.className = 'property-word property-external';
+      link.href = external;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = property.value;
+      link.title = 'abrir fuera de Vera · doble clic para editar';
+      link.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        editInPlace(value, property.value, `valor de ${property.key}`, answer);
+      });
+      value.append(link);
+    } else {
 
     /*
      * Dos preguntas distintas que estaban siendo una sola.
@@ -2665,6 +2753,7 @@ export function renderOutliner(
       value.addEventListener('click', () => {
         editInPlace(value, property.value, `valor de ${property.key}`, answer);
       });
+    }
     }
 
     /*
@@ -3055,7 +3144,12 @@ export function renderOutliner(
    * Dibuja un bloque. `ordinal` es su número cuando su padre dice que sus hijos
    * van numerados, y nulo cuando van con viñeta — que es casi siempre.
    */
-  const drawBlock = (node: Node, depth: number, ordinal: number | null = null): void => {
+  const drawBlock = (
+    node: Node,
+    depth: number,
+    ordinal: number | null = null,
+    descend = true,
+  ): void => {
     const row = document.createElement('div');
     row.className = 'block';
     // La sangría sale de un token, y la hoja la encoge en pantallas estrechas.
@@ -3085,7 +3179,7 @@ export function renderOutliner(
       fold.setAttribute('aria-expanded', String(!shut));
       fold.addEventListener('click', (event) => {
         event.stopPropagation();
-        void toggleFold(node.block.stableId, !shut, callbacks);
+        void toggleFold(node.block.stableId, !shut, page, callbacks);
       });
       row.append(fold);
     } else {
@@ -3601,7 +3695,7 @@ export function renderOutliner(
     // Un subárbol plegado no se dibuja. Como la vecindad se calcula sobre el
     // árbol visible, las teclas que recorren bloques lo saltan sin saber nada
     // del plegado: no hay dos ideas de qué está a la vista.
-    if (!folded.has(node.block.stableId)) {
+    if (descend && !folded.has(node.block.stableId)) {
       /*
        * El número de un hijo es su sitio entre sus hermanos, y se calcula aquí.
        *
@@ -3870,6 +3964,7 @@ export function renderOutliner(
       options,
       {
         page: page.id,
+        view: page,
         near,
         children: node.children.map((child) => child.block.stableId),
       },
@@ -3884,9 +3979,74 @@ export function renderOutliner(
    * existe es sobre un bloque. Queda anotado en la spec como pregunta abierta en
    * vez de resuelto a medias aquí.
    */
-  for (const root of tree) drawBlock(root, 0);
-  wireFootnotes(list);
-  wireAnchors(list);
+  /*
+   * Una página grande se entrega como se lee: primero el comienzo y después lo
+   * que sigue, sin retenerlo todo detrás de una composición monolítica.
+   *
+   * El servidor ya contestó y el contenido está completo en memoria; lo que se
+   * reparte aquí es el trabajo de Markdown y DOM. Cada lote devuelve el turno al
+   * navegador para que pueda pintar, desplazar y actualizar el progreso. Así una
+   * página con tablas y cientos de bloques no se presenta como cuarenta segundos
+   * de silencio seguidos por una aparición súbita.
+   */
+  interface DrawEntry { node: Node; depth: number; ordinal: number | null }
+  const entries: DrawEntry[] = [];
+  const queue = (node: Node, depth: number, ordinal: number | null): void => {
+    entries.push({ node, depth, ordinal });
+    if (folded.has(node.block.stableId)) return;
+    const numbered = readChildListStyle(page.blockProperties?.[node.block.stableId]) === 'numbered';
+    node.children.forEach((child, index) =>
+      queue(child, depth + 1, numbered ? index + 1 : null),
+    );
+  };
+  for (const root of tree) queue(root, 0, null);
+
+  const progressive = focus === null && focusRoot === null && entries.length >= 100;
+  if (!progressive) {
+    for (const root of tree) drawBlock(root, 0);
+    wireFootnotes(list);
+    wireAnchors(list);
+  } else {
+    const progress = document.createElement('p');
+    progress.className = 'page-compose-progress';
+    progress.setAttribute('role', 'status');
+    progress.setAttribute('aria-live', 'polite');
+    list.append(progress);
+
+    let at = 0;
+    const batch = (): void => {
+      // Si se navegó mientras esta página se componía, su lista ya no está en
+      // el documento. No se sigue trabajando ni se mezcla la página anterior
+      // con la nueva.
+      if (!list.isConnected) return;
+      // Ocho bloques bastan para que el primer texto aparezca enseguida y
+      // mantienen cortos los turnos aun cuando uno contenga una tabla grande.
+      const until = Math.min(at + 8, entries.length);
+      while (at < until) {
+        const entry = entries[at];
+        if (entry !== undefined) {
+          drawBlock(entry.node, entry.depth, entry.ordinal, false);
+          // `drawBlock` añade al final; el estado debe permanecer después de lo
+          // ya compuesto y no intercalarse antes del lote siguiente.
+          list.append(progress);
+        }
+        at += 1;
+      }
+      progress.textContent = `Componiendo la página… ${at} de ${entries.length} bloques`;
+      if (at < entries.length) {
+        window.requestAnimationFrame(batch);
+        return;
+      }
+      wireFootnotes(list);
+      wireAnchors(list);
+      wireCataloguedMedia(container, page);
+      progress.textContent = 'Componiendo diagramas…';
+      void renderMermaid(list).finally(() => progress.remove());
+    };
+    // El primer lote se compone ahora: el título y el inicio llegan en la misma
+    // pintura. Los siguientes sí ceden un cuadro entre sí.
+    batch();
+  }
 
   // Una página sin bloques no tenía dónde pulsar, así que crearla dejaba a
   // quien la creó mirando una página en la que no podía escribir.
@@ -3958,8 +4118,12 @@ export function renderOutliner(
   if (focus !== null) {
     const seat = editors.get(focus.block);
     if (seat !== undefined) {
-      seat.body.closest('.block')?.scrollIntoView({ block: 'nearest' });
-      openEditor(seat.node, seat.body, focus.at);
+      const row = seat.body.closest<HTMLElement>('.block');
+      if (focus.at === null) row?.querySelector<HTMLButtonElement>('.fold')?.focus({ preventScroll: true });
+      else {
+        row?.scrollIntoView({ block: 'nearest' });
+        openEditor(seat.node, seat.body, focus.at);
+      }
     }
   }
 
@@ -4011,7 +4175,7 @@ export function renderOutliner(
 
   // Los diagramas se dibujan después del texto: la biblioteca se carga sola y
   // la página no espera por ella para poder leerse.
-  void renderMermaid(list);
+  if (!progressive) void renderMermaid(list);
 
   /*
    * Las dos columnas: lo que esta página afirma y lo que afirman sobre ella.
@@ -4261,6 +4425,10 @@ export function renderOutliner(
       container.append(whole.section);
     }
   }
+
+  // Pulsar un medio presentado abre su ficha. No se usa doble clic: en lectura
+  // una imagen no tiene otra acción primaria y la catalogación debe descubrirse.
+  wireCataloguedMedia(container, page);
 }
 
 /*
@@ -5017,7 +5185,7 @@ function startEditing(
   body: HTMLElement,
   callbacks: OutlinerCallbacks,
   options: RenderOptions,
-  context: { page: string; near: Neighbourhood; children: string[] },
+  context: { page: string; view: PageView; near: Neighbourhood; children: string[] },
   caret = Number.MAX_SAFE_INTEGER,
 ): void {
   if (body.querySelector('textarea') !== null) return;
@@ -5117,6 +5285,41 @@ function startEditing(
     const text = document.createElement('div');
     text.className = 'body-text';
     text.innerHTML = renderMarkdown(content, options);
+    text.addEventListener('click', (event) => {
+      const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a');
+      if (link === null || link.classList.contains('media-file')) return;
+      const destination = link.getAttribute('href') ?? '';
+      if (!destination.startsWith('../assets/')) return;
+
+      // Una referencia de archivo pegada a mano todavía no venía resuelta en
+      // la PageView con que nació este editor. Dejar actuar al navegador la
+      // interpreta como ruta de Vera y, peor, hace competir la navegación con
+      // el guardado provocado por blur. Este clic primero asienta el texto,
+      // después consulta el catálogo y sólo entonces abre el objeto.
+      event.preventDefault();
+      void (async () => {
+        window.clearTimeout(timer);
+        const saved = await flush(session.leave());
+        if (!saved) return;
+        let catalogue: CatalogAsset[];
+        try {
+          catalogue = await api.media();
+        } catch {
+          toast('el bloque quedó guardado, pero no se pudo abrir el archivo');
+          return;
+        }
+        let decoded = destination;
+        try { decoded = decodeURIComponent(destination); } catch { /* conserva la grafía original */ }
+        const asset = catalogue.find((one) => one.path === destination || one.path === decoded);
+        if (asset === undefined) {
+          toast('el bloque quedó guardado, pero Vera no encontró ese archivo');
+          return;
+        }
+        if (!context.view.assets.some((one) => one.path === asset.path)) context.view.assets.push(asset);
+        render(session.saved());
+        openMediaDetails(asset);
+      })();
+    });
     body.append(text);
 
     // Editada la pregunta, se vuelve a preguntar. Es lo mismo que hace el
@@ -5131,6 +5334,11 @@ function startEditing(
   };
 
   let timer: number | undefined;
+  // Abrir un selector de archivos quita el foco del textarea, pero no significa
+  // que Herbert haya terminado de editar: el archivo elegido todavía tiene que
+  // caer exactamente en ese bloque. Mientras el selector está abierto, ese blur
+  // pertenece al gesto de adjuntar y no debe cerrar la edición.
+  let choosingAttachment = false;
   // Una salida estructural no vuelve a dibujar aquí: la página se recarga entera
   // y sería dibujar algo que está a punto de desaparecer.
   let leaving = false;
@@ -5321,6 +5529,31 @@ function startEditing(
       return;
     }
 
+    if (acts === 'adjuntar') {
+      const chooser = document.createElement('input');
+      chooser.type = 'file';
+      chooser.multiple = true;
+      chooser.accept = 'image/*,audio/*,application/pdf';
+      chooser.style.display = 'none';
+      document.body.append(chooser);
+      choosingAttachment = true;
+      const finishChoosing = (): void => {
+        choosingAttachment = false;
+        chooser.remove();
+        editor.focus();
+      };
+      chooser.addEventListener('change', () => {
+        const files = admissibleFiles(chooser.files);
+        finishChoosing();
+        if (files.length > 0) void attach(files);
+      });
+      // `cancel` existe en los navegadores actuales y evita dejar la edición en
+      // un limbo cuando se cierra el selector sin elegir nada.
+      chooser.addEventListener('cancel', finishChoosing);
+      chooser.click();
+      return;
+    }
+
     /*
      * Dibujar no escribe aquí: abre el lienzo y lo que salga es el bloque.
      *
@@ -5425,6 +5658,73 @@ function startEditing(
     });
   };
 
+  async function attach(files: File[]): Promise<void> {
+    for (const file of files) {
+      toast(`guardando ${file.name || 'archivo'}…`);
+      const uploaded = await api.uploadMedia(file);
+      if ('error' in uploaded) {
+        toast(uploaded.error);
+        continue;
+      }
+      if (!context.view.assets.some((asset) => asset.path === uploaded.path)) context.view.assets.push(uploaded);
+      const label = file.name || 'archivo';
+      // Conserva el nombre humano en el almacén, pero escribe un destino
+      // Markdown inequívoco. El resolvedor decodifica esta forma al presentar.
+      const destination = uploaded.path.replace(/ /g, '%20');
+      const markdown = uploaded.mediaType.startsWith('image/')
+        ? `![${label}](${destination})`
+        : `[${label}](${destination})`;
+      const from = editor.selectionStart;
+      const to = editor.selectionEnd;
+      const separated =
+        (from > 0 && !/\s$/.test(editor.value.slice(0, from)) ? '\n' : '') +
+        markdown +
+        (to < editor.value.length && !/^\s/.test(editor.value.slice(to)) ? '\n' : '');
+      editor.setRangeText(separated, from, to, 'end');
+      session.type(editor.value);
+      autosize();
+      // No se difiere: el selector ya produjo un archivo y la referencia es el
+      // resultado de ese mismo gesto. Así no puede perderse por un blur o una
+      // navegación inmediatamente posteriores a la subida.
+      window.clearTimeout(timer);
+      const inserted = await flush(session.pending());
+      if (!inserted) {
+        toast(`no se pudo incorporar ${label} al bloque`);
+        continue;
+      }
+      toast(`adjuntado: ${label}`);
+      openMediaDetails(uploaded);
+    }
+    if (!document.querySelector('dialog.media-metadata[open]')) editor.focus();
+  }
+
+  const admissibleFiles = (files: FileList | null): File[] =>
+    [...(files ?? [])].filter(
+      (file) =>
+        file.type.startsWith('image/') ||
+        file.type.startsWith('audio/') ||
+        file.type === 'application/pdf' ||
+        /\.(?:avif|gif|jpe?g|png|svg|webp|aac|flac|m4a|mp3|oga|ogg|opus|wav|webm|pdf)$/i.test(file.name),
+    );
+
+  editor.addEventListener('paste', (event) => {
+    const files = admissibleFiles(event.clipboardData?.files ?? null);
+    if (files.length === 0) return;
+    event.preventDefault();
+    void attach(files);
+  });
+
+  editor.addEventListener('dragover', (event) => {
+    if (admissibleFiles(event.dataTransfer?.files ?? null).length > 0) event.preventDefault();
+  });
+
+  editor.addEventListener('drop', (event) => {
+    const files = admissibleFiles(event.dataTransfer?.files ?? null);
+    if (files.length === 0) return;
+    event.preventDefault();
+    void attach(files);
+  });
+
   editor.addEventListener('input', () => {
     session.type(editor.value);
     autosize();
@@ -5449,6 +5749,7 @@ function startEditing(
 
   editor.addEventListener('blur', () => {
     closeList();
+    if (choosingAttachment) return;
     leave();
   });
 
