@@ -334,6 +334,21 @@ const addConfinements: Migration = {
   },
 };
 
+const addMediaMetadata: Migration = {
+  version: 8,
+  name: 'descripción y texto alternativo de medios',
+  apply(db) {
+    const exists = db
+      .prepare("SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'media'")
+      .get() as { n: number };
+    // Las bases de las primeras versiones no tenían todavía almacén de medios.
+    // schema.sql se lo crea al abrir; la migración sólo transforma el que ya estaba.
+    if (exists.n === 0) return;
+    db.exec('ALTER TABLE media ADD COLUMN description TEXT');
+    db.exec('ALTER TABLE media ADD COLUMN alternative_text TEXT');
+  },
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   addWalkedChannel,
   addPageOriginCreatedAt,
@@ -342,6 +357,7 @@ export const MIGRATIONS: readonly Migration[] = [
   addExposureLog,
   addConfinements,
   addBlockGlosses,
+  addMediaMetadata,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

@@ -885,6 +885,14 @@ export interface MediaRecord {
   mediaType: string;
   byteSize: number;
   originalName: string | null;
+  description: string | null;
+  alternativeText: string | null;
+}
+
+export interface MediaUsage {
+  block: string;
+  page: string;
+  pageTitle: string;
 }
 
 /**
@@ -895,7 +903,7 @@ export interface MediaRecord {
  */
 export function recordMedia(
   store: Store,
-  reference: { path: string; hash: string; mediaType: string; byteSize: number; at: number },
+  reference: { path: string; hash: string; mediaType: string; byteSize: number; at: number; originalName?: string },
 ): void {
   store.db
     .prepare(
@@ -906,7 +914,7 @@ export function recordMedia(
       reference.hash,
       reference.mediaType,
       reference.byteSize,
-      reference.path,
+      reference.originalName ?? reference.path,
       reference.at,
     );
 
@@ -919,9 +927,9 @@ export function recordMedia(
 
 export function mediaByHash(store: Store, hash: string): MediaRecord | null {
   const row = store.db
-    .prepare('SELECT hash, media_type, byte_size, original_name FROM media WHERE hash = ?')
+    .prepare('SELECT hash, media_type, byte_size, original_name, description, alternative_text FROM media WHERE hash = ?')
     .get(hash) as
-    | { hash: string; media_type: string; byte_size: number; original_name: string | null }
+    | { hash: string; media_type: string; byte_size: number; original_name: string | null; description: string | null; alternative_text: string | null }
     | undefined;
 
   if (row === undefined) return null;
@@ -930,19 +938,128 @@ export function mediaByHash(store: Store, hash: string): MediaRecord | null {
     mediaType: row.media_type,
     byteSize: row.byte_size,
     originalName: row.original_name,
+    description: row.description,
+    alternativeText: row.alternative_text,
   };
 }
 
+/** El catálogo del almacén, una fila por contenido y con una ruta portable. */
+export function mediaUsages(store: Store, hash: string): MediaUsage[] {
+  const paths = store.db
+    .prepare('SELECT path FROM media_references WHERE graph_id = ? AND hash = ?')
+    .all(store.graphId, hash) as { path: string }[];
+  const found = new Map<string, MediaUsage>();
+
+  for (const { path } of paths) {
+    const spellings = new Set([path, path.replace(/ /g, '%20')]);
+    for (const spelling of spellings) {
+      const rows = store.db
+        .prepare(
+          `SELECT b.id AS block, p.id AS page, p.title AS pageTitle
+             FROM blocks b JOIN pages p ON p.id = b.page_id
+            WHERE p.graph_id = ? AND instr(b.content, ?) > 0`,
+        )
+        .all(store.graphId, spelling) as unknown as MediaUsage[];
+      for (const row of rows) found.set(row.block, row);
+    }
+  }
+
+  /*
+   * El reproductor de una grabación no necesita escribir una referencia
+   * Markdown en el bloque: la relación canónica es recordings.audio_hash →
+   * recordings.placed_in_block. Si sólo miramos texto, el catálogo llama
+   * «huérfano» a un audio que se oye perfectamente dentro de una página y
+   * luego ofrece una eliminación que la integridad referencial debe rechazar.
+   */
+  const recordings = store.db
+    .prepare(
+      `SELECT b.id AS block, p.id AS page, p.title AS pageTitle
+         FROM recordings r
+         JOIN blocks b ON b.id = r.placed_in_block
+         JOIN pages p ON p.id = b.page_id
+        WHERE r.graph_id = ? AND r.audio_hash = ?`,
+    )
+    .all(store.graphId, hash) as unknown as MediaUsage[];
+  for (const row of recordings) found.set(row.block, row);
+
+  return [...found.values()].sort((a, b) => a.pageTitle.localeCompare(b.pageTitle, 'es'));
+}
+
+export function listedMedia(store: Store): (MediaRecord & { path: string; createdAt: number; usages: MediaUsage[] })[] {
+  const rows = store.db
+    .prepare(
+      `SELECT m.hash, m.media_type AS mediaType, m.byte_size AS byteSize,
+              m.original_name AS originalName, m.description,
+              m.alternative_text AS alternativeText, m.created_at AS createdAt,
+              MIN(r.path) AS path
+         FROM media m
+         JOIN media_references r ON r.hash = m.hash AND r.graph_id = ?
+        GROUP BY m.hash
+        ORDER BY m.created_at DESC`,
+    )
+    .all(store.graphId) as unknown as (MediaRecord & { path: string; createdAt: number })[];
+  return rows.map((row) => ({ ...row, usages: mediaUsages(store, row.hash) }));
+}
+
+/**
+ * Quita del catálogo un archivo que ningún bloque usa.
+ *
+ * Los bytes sólo se pueden retirar cuando tampoco otro grafo ni una grabación
+ * conservan el hash. Devuelve `deleteObject` para que el servidor, dueño del
+ * filesystem, haga esa última parte.
+ */
+export function deleteOrphanMedia(store: Store, hash: string): { deleted: boolean; deleteObject: boolean } {
+  if (mediaUsages(store, hash).length > 0) return { deleted: false, deleteObject: false };
+
+  const recording = store.db.prepare('SELECT 1 FROM recordings WHERE audio_hash = ? LIMIT 1').get(hash);
+  if (recording !== undefined) return { deleted: false, deleteObject: false };
+
+  store.db.exec('BEGIN');
+  try {
+    const removed = store.db
+      .prepare('DELETE FROM media_references WHERE graph_id = ? AND hash = ?')
+      .run(store.graphId, hash);
+    if (removed.changes === 0) {
+      store.db.exec('ROLLBACK');
+      return { deleted: false, deleteObject: false };
+    }
+
+    const remaining = store.db.prepare('SELECT 1 FROM media_references WHERE hash = ? LIMIT 1').get(hash);
+    if (remaining !== undefined) {
+      store.db.exec('COMMIT');
+      return { deleted: true, deleteObject: false };
+    }
+    store.db.prepare('DELETE FROM media WHERE hash = ?').run(hash);
+    store.db.exec('COMMIT');
+    return { deleted: true, deleteObject: true };
+  } catch (error) {
+    store.db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+export function describeMedia(
+  store: Store,
+  hash: string,
+  metadata: { description: string | null; alternativeText: string | null },
+): MediaRecord | null {
+  const changed = store.db
+    .prepare('UPDATE media SET description = ?, alternative_text = ? WHERE hash = ?')
+    .run(metadata.description, metadata.alternativeText, hash);
+  return changed.changes === 0 ? null : mediaByHash(store, hash);
+}
+
 /** Resolución de las rutas de este grafo: lo que la presentación necesita. */
-export function mediaReferences(store: Store): { path: string; hash: string; mediaType: string }[] {
+export function mediaReferences(store: Store): { path: string; hash: string; mediaType: string; description: string | null; alternativeText: string | null }[] {
   return store.db
     .prepare(
-      `SELECT r.path AS path, r.hash AS hash, m.media_type AS mediaType
+      `SELECT r.path AS path, r.hash AS hash, m.media_type AS mediaType,
+              m.description AS description, m.alternative_text AS alternativeText
          FROM media_references r JOIN media m ON m.hash = r.hash
         WHERE r.graph_id = ?
         ORDER BY r.path`,
     )
-    .all(store.graphId) as { path: string; hash: string; mediaType: string }[];
+    .all(store.graphId) as { path: string; hash: string; mediaType: string; description: string | null; alternativeText: string | null }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1186,6 +1303,32 @@ export function discardAudio(store: Store, id: string): Recording | { error: str
   store.db
     .prepare('DELETE FROM media_references WHERE graph_id = ? AND path = ?')
     .run(store.graphId, `recording/${held.audioHash}`);
+  return recordingById(store, id) as Recording;
+}
+
+/**
+ * Recupera un audio soltado mientras sus bytes sigan en el almacén.
+ *
+ * `discardAudio` quita la referencia pero no destruye el objeto compartible. El
+ * identificador de la grabación conserva los primeros dieciséis caracteres del
+ * hash; la fila de media permite resolver el único objeto completo sin adivinar.
+ */
+export function restoreAudio(store: Store, id: string): Recording | { error: string } {
+  const held = recordingById(store, id);
+  if (held === null) return { error: 'no such recording' };
+  if (held.audioHash !== null) return held;
+  const prefix = id.startsWith('recording:') ? id.slice('recording:'.length) : '';
+  if (prefix.length !== 16) return { error: 'esa grabación no conserva una referencia recuperable' };
+  const matches = store.db
+    .prepare("SELECT hash FROM media WHERE hash LIKE ? AND original_name LIKE 'recording/%'")
+    .all(`${prefix}%`) as { hash: string }[];
+  if (matches.length !== 1) return { error: 'no se encontró un único audio recuperable' };
+  const hash = matches[0]?.hash;
+  if (hash === undefined) return { error: 'el audio ya no está en el almacén' };
+  store.db.prepare('UPDATE recordings SET audio_hash = ? WHERE id = ?').run(hash, id);
+  store.db
+    .prepare('INSERT OR REPLACE INTO media_references (graph_id, path, hash) VALUES (?, ?, ?)')
+    .run(store.graphId, `recording/${hash}`, hash);
   return recordingById(store, id) as Recording;
 }
 

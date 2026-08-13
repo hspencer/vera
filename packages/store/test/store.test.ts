@@ -9,6 +9,7 @@ import {
   createRecording,
   discardAudio,
   loadGraph,
+  listedMedia,
   neighbourhoodFromStore,
   openStore,
   placeRecording,
@@ -439,6 +440,20 @@ describe('una grabación con lugar en la escritura', () => {
     if ('error' in recording) return;
     assert.equal(recording.placedInBlock, block);
     assert.equal(recordingByBlock(store, block)?.id, recording.id);
+    store.close();
+  });
+
+  it('el catálogo no llama huérfano al audio colocado en un bloque', () => {
+    const { store, write, page } = withPage();
+    const block = write({ kind: 'create_block', page, parent: null, position: 0, content: '' });
+    const recording = createRecording(store, { ...spoken, placedInBlock: block });
+    assert.ok(!('error' in recording));
+
+    const audio = listedMedia(store).find((file) => file.hash === spoken.audioHash);
+    assert.deepEqual(
+      audio?.usages.map((usage) => ({ ...usage })),
+      [{ block, page, pageTitle: 'P' }],
+    );
     store.close();
   });
 

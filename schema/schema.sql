@@ -297,6 +297,8 @@ CREATE TABLE IF NOT EXISTS media (
     byte_size      INTEGER NOT NULL,
     custody        TEXT NOT NULL CHECK (custody IN ('internal', 'external_reference')),
     original_name  TEXT,
+    description    TEXT,
+    alternative_text TEXT,
     created_at     INTEGER NOT NULL
 ) STRICT;
 
