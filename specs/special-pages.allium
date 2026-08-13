@@ -73,6 +73,17 @@ contract SelfDescription {
         -- read and change. Vera does not keep a private list of page titles it
         -- treats differently: a rule that cannot be read from the corpus is a
         -- rule the corpus cannot be audited against.
+
+    @invariant SpecialPagesShareAVisibleNamespace
+        -- Every special page is titled `Vera: …`, so configuration pages gather
+        -- visibly in search, links and page lists. The prefix is a convention
+        -- for people, never how Vera decides that a page is special: only the
+        -- declared special kind carries that authority.
+        --
+        -- Pages whose subject is Vera but which do not govern it remain ordinary
+        -- prose and may use `Vera — …`; punctuation therefore distinguishes
+        -- system governance from writing about the system without creating a
+        -- second hidden classification rule.
 }
 
 ------------------------------------------------------------
