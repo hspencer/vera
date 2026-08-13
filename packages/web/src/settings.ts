@@ -11,7 +11,9 @@
 
 import { BINDINGS, GESTURES, TRIGGERS } from './bindings.ts';
 import { COMMANDS } from './autocomplete.ts';
+import { api, type CatalogAsset } from './api.ts';
 import { icon } from './icons.ts';
+import { openMediaDetails } from './media-dialog.ts';
 import {
   DEFAULT_TOKENS,
   FONT_STACKS,
@@ -20,7 +22,7 @@ import {
   type DesignToken,
 } from './tokens.ts';
 
-export type Section = 'memoria' | 'teclado' | 'apariencia';
+export type Section = 'memoria' | 'archivos' | 'teclado' | 'apariencia';
 
 export interface SettingsHandlers {
   scheme(): ColourScheme;
@@ -29,6 +31,7 @@ export interface SettingsHandlers {
   onTokenChange(token: DesignToken, value: string): void;
   onReset(): void;
   onClose(): void;
+  onOpenFiles(): void;
   /**
    * Dibuja el estado del corpus y su índice.
    *
@@ -41,6 +44,7 @@ export interface SettingsHandlers {
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'memoria', label: 'Memoria' },
+  { id: 'archivos', label: 'Archivos' },
   { id: 'teclado', label: 'Teclado' },
   { id: 'apariencia', label: 'Apariencia' },
 ];
@@ -118,8 +122,216 @@ export function renderSettings(
   host.append(body);
 
   if (active === 'memoria') drawMemory(body, handlers);
+  else if (active === 'archivos') void drawFilesSummary(body, handlers);
   else if (active === 'teclado') drawKeyboard(body);
   else drawAppearance(body, tokens, handlers);
+}
+
+const readableSize = (bytes: number): string =>
+  bytes < 1024 ? `${bytes} B` : bytes < 1024 ** 2 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+
+/** La pestaña de configuración resume; administrar merece una dirección propia. */
+async function drawFilesSummary(host: HTMLElement, handlers: SettingsHandlers): Promise<void> {
+  const status = document.createElement('p');
+  status.className = 'settings-note';
+  status.textContent = 'Leyendo el almacén…';
+  host.append(status);
+  let files: CatalogAsset[];
+  try { files = await api.media(); }
+  catch { status.textContent = 'No se pudo leer el almacén.'; return; }
+
+  const counts = new Map<string, number>();
+  const kind = (type: string): string => type.startsWith('image/') ? 'Imágenes' : type.startsWith('audio/') ? 'Audios' : type === 'application/pdf' ? 'PDF' : 'Otros';
+  for (const file of files) counts.set(kind(file.mediaType), (counts.get(kind(file.mediaType)) ?? 0) + 1);
+  const orphaned = files.filter((file) => file.usages.length === 0).length;
+  const facts = document.createElement('dl');
+  facts.className = 'media-summary';
+  for (const label of ['Imágenes', 'Audios', 'PDF', 'Otros']) {
+    const count = counts.get(label) ?? 0;
+    if (count === 0) continue;
+    const term = document.createElement('dt'); term.textContent = label;
+    const value = document.createElement('dd'); value.textContent = String(count);
+    facts.append(term, value);
+  }
+  const orphanTerm = document.createElement('dt'); orphanTerm.textContent = 'Huérfanos';
+  const orphanValue = document.createElement('dd'); orphanValue.textContent = String(orphaned);
+  facts.append(orphanTerm, orphanValue);
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'settings-open-files';
+  open.textContent = 'Administrar archivos';
+  open.addEventListener('click', handlers.onOpenFiles);
+  status.textContent = `${files.length} archivos en el almacén.`;
+  host.append(facts, open);
+}
+
+/** La página persistente del almacén: encontrar, describir, usar y limpiar. */
+export async function renderFilesAdministration(host: HTMLElement): Promise<void> {
+  host.innerHTML = '';
+  const head = document.createElement('header');
+  head.className = 'page-header';
+  const title = document.createElement('h1');
+  title.className = 'page-title';
+  title.textContent = 'Administración de archivos';
+  head.append(title);
+  host.append(head);
+  const intro = document.createElement('p');
+  intro.className = 'settings-note';
+  intro.textContent = 'Los archivos guardados en Vera. La columna «Enlazado desde» muestra dónde se usa cada uno; sólo los huérfanos se pueden eliminar.';
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.className = 'media-search';
+  search.placeholder = 'Buscar archivos…';
+  const status = document.createElement('p');
+  status.className = 'settings-note';
+  status.textContent = 'Buscando en el almacén…';
+  const scroll = document.createElement('div');
+  scroll.className = 'media-table-scroll';
+  const table = document.createElement('table');
+  table.className = 'media-table';
+  table.innerHTML = '<thead><tr><th>Archivo</th><th>Descripción</th><th>Enlazado desde</th><th>Acciones</th></tr></thead>';
+  const list = document.createElement('tbody');
+  table.append(list);
+  scroll.append(table);
+  host.append(intro, search, status, scroll);
+
+  let files: CatalogAsset[];
+  try {
+    files = await api.media();
+  } catch {
+    status.textContent = 'No se pudo leer el almacén.';
+    return;
+  }
+
+  const draw = (): void => {
+    list.innerHTML = '';
+    const asked = search.value.trim().toLocaleLowerCase('es');
+    const shown = files.filter((file) =>
+      [file.originalName, file.path, file.description, file.alternativeText]
+        .some((value) => value?.toLocaleLowerCase('es').includes(asked)),
+    );
+    status.textContent = `${shown.length} ${shown.length === 1 ? 'archivo' : 'archivos'}`;
+    for (const file of shown) list.append(mediaRow(file));
+  };
+  search.addEventListener('input', draw);
+  draw();
+}
+
+function mediaRow(file: CatalogAsset): HTMLTableRowElement {
+  const row = document.createElement('tr');
+  const preview = document.createElement('div');
+  preview.className = 'media-preview';
+  if (file.mediaType.startsWith('image/')) {
+    const image = document.createElement('img');
+    image.src = file.url;
+    image.alt = file.alternativeText ?? '';
+    image.loading = 'lazy';
+    preview.append(image);
+  } else if (file.mediaType.startsWith('audio/')) {
+    const audio = document.createElement('audio');
+    audio.src = file.url;
+    audio.controls = true;
+    preview.append(audio);
+  } else {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'media-preview-button';
+    button.textContent = 'Previsualizar PDF';
+    button.addEventListener('click', () => openMediaDetails(file));
+    preview.append(button);
+  }
+  const fileCell = document.createElement('td');
+  fileCell.className = 'media-file-cell';
+  const identity = document.createElement('div');
+  const name = document.createElement('strong');
+  name.textContent = file.originalName ?? file.path.split('/').pop() ?? 'Archivo';
+  const facts = document.createElement('span');
+  facts.className = 'media-facts';
+  facts.textContent = `${file.mediaType} · ${readableSize(file.byteSize)}`;
+  identity.append(name, facts);
+  fileCell.append(preview, identity);
+
+  const metadata = document.createElement('td');
+  const description = document.createElement('textarea');
+  description.rows = 2;
+  description.placeholder = 'Describe este archivo';
+  description.value = file.description ?? '';
+  const alt = document.createElement('input');
+  alt.type = 'text';
+  alt.placeholder = 'Texto alternativo';
+  alt.value = file.alternativeText ?? '';
+  alt.hidden = !file.mediaType.startsWith('image/');
+  metadata.append(description, alt);
+
+  const usageCell = document.createElement('td');
+  usageCell.className = 'media-usages';
+  if (file.usages.length === 0) {
+    const orphan = document.createElement('span');
+    orphan.className = 'media-orphan';
+    orphan.textContent = 'Huérfano';
+    usageCell.append(orphan);
+  } else {
+    for (const usage of file.usages) {
+      const link = document.createElement('a');
+      link.href = `/p/${encodeURIComponent(usage.pageTitle)}#${encodeURIComponent(usage.block)}`;
+      link.textContent = usage.pageTitle;
+      link.title = 'Ir al bloque que enlaza este archivo';
+      usageCell.append(link);
+    }
+  }
+
+  const actionCell = document.createElement('td');
+  const actions = document.createElement('div');
+  actions.className = 'media-card-actions';
+  const inspect = document.createElement('button');
+  inspect.type = 'button';
+  inspect.textContent = 'Previsualizar';
+  inspect.addEventListener('click', () => openMediaDetails(file));
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.textContent = 'Guardar';
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    const result = await api.describeMedia(file.hash, { description: description.value, alternativeText: alt.value });
+    save.disabled = false;
+    if ('error' in result) { save.textContent = result.error; return; }
+    file.description = result.description;
+    file.alternativeText = result.alternativeText;
+    save.textContent = 'Guardado';
+    window.setTimeout(() => { save.textContent = 'Guardar'; }, 1200);
+  });
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.textContent = 'Copiar referencia';
+  copy.addEventListener('click', async () => {
+    const label = file.alternativeText || file.description || file.originalName || 'archivo';
+    const destination = file.path.replace(/ /g, '%20');
+    await navigator.clipboard.writeText(file.mediaType.startsWith('image/') ? `![${label}](${destination})` : `[${label}](${destination})`);
+    copy.textContent = 'Copiada';
+    window.setTimeout(() => { copy.textContent = 'Copiar referencia'; }, 1200);
+  });
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'media-delete';
+  remove.textContent = 'Eliminar';
+  remove.disabled = file.usages.length > 0;
+  remove.title = remove.disabled ? 'Primero quita los enlaces desde los bloques indicados' : 'Eliminar este archivo huérfano';
+  remove.addEventListener('click', async () => {
+    const named = file.originalName ?? file.path;
+    if (!window.confirm(`¿Eliminar definitivamente «${named}»?`)) return;
+    remove.disabled = true;
+    const result = await api.deleteMedia(file.hash);
+    if ('error' in result) {
+      remove.textContent = result.error;
+      remove.disabled = false;
+      return;
+    }
+    row.remove();
+  });
+  actions.append(inspect, save, copy, remove);
+  actionCell.append(actions);
+  row.append(fileCell, metadata, usageCell, actionCell);
+  return row;
 }
 
 /**

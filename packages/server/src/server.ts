@@ -6,7 +6,7 @@
 // pasar por ahí.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync, unlinkSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { hostname, userInfo } from 'node:os';
 
@@ -48,6 +48,9 @@ import {
   foldedOnPage,
   loadGraph,
   discardAudio,
+  describeMedia,
+  deleteOrphanMedia,
+  listedMedia,
   mediaByHash,
   mediaReferences,
   openStore,
@@ -58,6 +61,7 @@ import {
   recordings,
   recordingsInPage,
   removeRecording,
+  restoreAudio,
   saveParticipant,
   saveWorkspace,
   setFold,
@@ -67,7 +71,7 @@ import {
   workspaceOf,
   type Store,
 } from '@vera/store';
-import { HASH, objectPath, putObject } from '@vera/store/objects';
+import { HASH, mediaTypeFor, objectPath, putObject, sniffMediaType } from '@vera/store/objects';
 import { forgetSecret, revealSecret, saveSecret, secretsOf, useSecret } from '@vera/store/secrets';
 import { clientsSeen, exposuresOf, recordExposure, whoRead } from '@vera/store/exposures';
 import { parseDocument } from '@vera/importer/document';
@@ -92,6 +96,7 @@ import {
   READABLE_CHARS,
   STARTER_TYPES,
 } from './model.ts';
+import { relevantConcepts, type ConceptCandidate } from './ontology-context.ts';
 import { LOCAL_MODEL, LOCAL_MODEL_NAME, promptFor, readAnswer } from './answer.ts';
 import { mentionsOf } from './mentions.ts';
 import { composePaper, toPdf } from './paper.ts';
@@ -699,14 +704,17 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     });
   };
 
-  const assetsOf = (pageId: string): { path: string; url: string; mediaType: string }[] => {
+  const assetsOf = (pageId: string): { path: string; url: string; mediaType: string; description: string | null; alternativeText: string | null }[] => {
     const text = graph
       .blocksOf(pageId)
       .map((block) => block.content)
       .join('\n');
     return media
-      .filter((entry) => text.includes(entry.path))
-      .map((entry) => ({ path: entry.path, url: `/media/${entry.hash}`, mediaType: entry.mediaType }));
+      // El editor escribe los blancos codificados para que el destino Markdown
+      // sea inequívoco; el almacén conserva el nombre humano. Ambas grafías
+      // nombran la misma referencia y tienen que hacer viajar el objeto.
+      .filter((entry) => text.includes(entry.path) || text.includes(entry.path.replace(/ /g, '%20')))
+      .map((entry) => ({ ...entry, url: `/media/${entry.hash}` }));
   };
 
   /*
@@ -1476,6 +1484,108 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     // borrar el audio. No hay estado que avanzar ni paso que completar; lo demás
     // es la edición ordinaria de un bloque ordinario.
 
+    if (request.method === 'POST' && path === '/media') {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let tooLarge = false;
+      request.on('data', (chunk: Buffer) => {
+        size += chunk.byteLength;
+        if (size > 50 * 1024 * 1024) tooLarge = true;
+        else chunks.push(chunk);
+      });
+      request.on('end', () => {
+        if (tooLarge) return send(response, 413, { error: 'el archivo supera los 50 MB' });
+        const bytes = Buffer.concat(chunks);
+        if (bytes.byteLength === 0) return send(response, 400, { error: 'no llegó ningún archivo' });
+        if (objectsRoot === null) return send(response, 500, { error: 'esta instancia no tiene almacén de objetos' });
+
+        const original = decodeURIComponent(String(request.headers['x-filename'] ?? 'archivo')).trim() || 'archivo';
+        const clean = original.replace(/^.*[\\/]/, '').replace(/[^\p{L}\p{N}._ -]/gu, '_');
+        const declared = String(request.headers['content-type'] ?? '').split(';')[0] ?? '';
+        const mediaType = sniffMediaType(bytes) ?? (declared && declared !== 'application/octet-stream' ? declared : mediaTypeFor(original));
+        if (!(mediaType.startsWith('image/') || mediaType.startsWith('audio/') || mediaType === 'application/pdf')) {
+          return send(response, 415, { error: 'Vera admite imágenes, audios y PDF' });
+        }
+        const stored = putObject(objectsRoot, bytes);
+        let asset = `../assets/${clean}`;
+        const occupied = media.find((one) => one.path === asset);
+        if (occupied !== undefined && occupied.hash !== stored.hash) {
+          const dot = clean.lastIndexOf('.');
+          asset = dot < 1
+            ? `../assets/${clean}-${stored.hash.slice(0, 8)}`
+            : `../assets/${clean.slice(0, dot)}-${stored.hash.slice(0, 8)}${clean.slice(dot)}`;
+        }
+        recordMedia(store, { path: asset, hash: stored.hash, mediaType, byteSize: stored.byteSize, at: Date.now(), originalName: original });
+        const held = media.findIndex((one) => one.path === asset);
+        const entry = { path: asset, hash: stored.hash, mediaType, description: null, alternativeText: null };
+        if (held < 0) media.push(entry);
+        else media[held] = entry;
+        send(response, 201, { path: asset, url: `/media/${stored.hash}`, mediaType, byteSize: stored.byteSize, originalName: original });
+      });
+      return;
+    }
+
+    if (request.method === 'GET' && path === '/media') {
+      send(
+        response,
+        200,
+        listedMedia(store).map((entry) => ({ ...entry, url: `/media/${entry.hash}` })),
+      );
+      return;
+    }
+
+    if (request.method === 'PATCH' && path.startsWith('/media/')) {
+      const hash = path.slice('/media/'.length);
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { description?: unknown; alternativeText?: unknown };
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+        } catch {
+          return send(response, 400, { error: 'metadatos inválidos' });
+        }
+        const clean = (value: unknown): string | null => {
+          if (typeof value !== 'string') return null;
+          const trimmed = value.trim();
+          return trimmed === '' ? null : trimmed.slice(0, 4000);
+        };
+        const updated = describeMedia(store, hash, {
+          description: clean(body.description),
+          alternativeText: clean(body.alternativeText),
+        });
+        if (updated === null) return send(response, 404, { error: 'no existe ese archivo' });
+        for (const entry of media) {
+          if (entry.hash !== hash) continue;
+          entry.description = updated.description;
+          entry.alternativeText = updated.alternativeText;
+        }
+        send(response, 200, updated);
+      });
+      return;
+    }
+
+    if (request.method === 'DELETE' && path.startsWith('/media/')) {
+      const hash = path.slice('/media/'.length);
+      if (!HASH.test(hash)) return send(response, 400, { error: 'hash inválido' });
+      const usages = listedMedia(store).find((entry) => entry.hash === hash)?.usages;
+      if (usages === undefined) return send(response, 404, { error: 'no existe ese archivo' });
+      if (usages.length > 0) {
+        return send(response, 409, { error: 'el archivo todavía está enlazado desde bloques', usages });
+      }
+      const removed = deleteOrphanMedia(store, hash);
+      if (!removed.deleted) return send(response, 409, { error: 'el archivo todavía pertenece a una grabación' });
+      if (removed.deleteObject && objectsRoot !== null) {
+        const file = objectPath(objectsRoot, hash);
+        if (existsSync(file)) unlinkSync(file);
+      }
+      for (let at = media.length - 1; at >= 0; at -= 1) {
+        if (media[at]?.hash === hash) media.splice(at, 1);
+      }
+      send(response, 200, { deleted: true });
+      return;
+    }
+
     if (request.method === 'POST' && path === '/recordings') {
       const chunks: Buffer[] = [];
       request.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -1722,6 +1832,19 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       return;
     }
 
+    if (request.method === 'POST' && /^\/recordings\/[^/]+\/audio\/restore$/.test(path)) {
+      const id = decodeURIComponent(path.split('/')[2] ?? '');
+      const outcome = restoreAudio(store, id);
+      if ('error' in outcome) return send(response, 422, outcome);
+      if (objectsRoot === null || outcome.audioHash === null || !existsSync(objectPath(objectsRoot, outcome.audioHash))) {
+        // No promete recuperación cuando sólo sobrevivió la ficha catalográfica.
+        discardAudio(store, id);
+        return send(response, 410, { error: 'los bytes de este audio ya no están en el almacén' });
+      }
+      send(response, 200, outcome);
+      return;
+    }
+
     /*
      * Quitar la grabación entera, y no sólo su audio.
      *
@@ -1782,8 +1905,11 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         .map((block) => block.content)
         .join('\n');
 
-      // El vocabulario sale de la página especial de ontología si existe, y de
-      // los valores por defecto si no. @invariant DefaultsLiveInTheCode.
+      // La ontología estructurada manda. La lista antigua se conserva como
+      // respaldo para corpus que todavía no migraron sus páginas especiales.
+      // @invariant DefaultsLiveInTheCode.
+      const objects = declaredObjects();
+      const ontologyProperties = declaredProperties();
       const ontology = graph
         .pages()
         .find((candidate) =>
@@ -1791,8 +1917,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             .propertiesOf(candidate.id)
             .some((property) => property.key === 'special-kind' && property.value === 'ontology'),
         );
-      const vocabulary =
-        ontology === undefined
+      const vocabulary = objects.length > 0
+        ? objects.map((object) => object.name)
+        : ontology === undefined
           ? STARTER_TYPES
           : (() => {
               // Los tipos son los hijos del bloque que los encabeza. Se leen del
@@ -1810,6 +1937,46 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 .filter((word) => word !== '' && word.length < 40 && !word.includes(' a propósito'));
               return listed.length > 0 ? listed : STARTER_TYPES;
             })();
+
+      /*
+       * El vocabulario conceptual se recupera desde Vera, no desde el modelo.
+       *
+       * Se prepara un catálogo con identidad estable y evidencia barata: uso
+       * como `concepto`, enlaces entrantes, vínculo desde esta página y una
+       * glosa tomada de su primer bloque. Para cada pase se ordena de nuevo por
+       * afinidad con ese texto; Qwen ve como máximo 24 candidatos, no dos mil.
+       */
+      const topicName = propertyNames().topic;
+      const uses = new Map<string, number>();
+      for (const observed of graph.observedValuesOf(topicName)) {
+        const held = graph.pageTitled(observed.value);
+        if (held !== undefined) uses.set(held.id, (uses.get(held.id) ?? 0) + observed.uses);
+      }
+      const linked = new Set(
+        graph.links()
+          .filter((link) => link.sourcePage === page.id && link.target !== null)
+          .map((link) => link.target!),
+      );
+      const conceptPool: ConceptCandidate[] = graph.pages()
+        // Una página relacionada no es por eso un concepto. Sólo entra en este
+        // vocabulario si el corpus ya la usó como respuesta de `concepto`; los
+        // enlaces sirven para ordenar dentro del vocabulario, no para convertir
+        // personas, fechas y proyectos en temas por accidente.
+        .filter((candidate) => candidate.id !== page.id && (uses.get(candidate.id) ?? 0) > 0)
+        .map((candidate) => {
+          const first = graph.blocksOf(candidate.id)
+            .find((block) => block.content.trim() !== '')?.content
+            .replace(/\s+/g, ' ')
+            .slice(0, 140) ?? null;
+          return {
+            id: candidate.id,
+            title: candidate.title,
+            uses: uses.get(candidate.id) ?? 0,
+            backlinks: graph.backlinks(candidate.id).length,
+            linked: linked.has(candidate.id),
+            excerpt: first,
+          };
+        });
 
       /*
        * Procesar se cuenta mientras pasa, no al terminar.
@@ -1932,7 +2099,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         const presence = await modelPresence();
         if (!presence.ready) {
           say({ step: 'model', state: 'failed', why: 'no hay un modelo local instalado' });
-          return { reading: { types: [], concepts: [] }, notDone: [...notDone, 'no hay un modelo local instalado'] };
+          return {
+            reading: { types: [], existingConcepts: [], newConcepts: [] },
+            notDone: [...notDone, 'no hay un modelo local instalado'],
+          };
         }
 
         const readings: Reading[] = [];
@@ -1944,7 +2114,12 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             of: reparto.passes.length,
             section: pass.title,
           });
-          const understood = await readPage(page.title, pass.text, vocabulary);
+          const candidates = relevantConcepts(`${page.title}\n${pass.title}\n${pass.text}`, conceptPool);
+          const understood = await readPage(page.title, pass.text, vocabulary, {
+            objects,
+            properties: ontologyProperties,
+            candidates,
+          });
           if ('error' in understood) {
             // Un pase que falla no cancela los demás: la parte de la página que
             // sí se pudo leer sigue valiendo, y la que no se dice.
@@ -1956,7 +2131,13 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         }
 
         const reading = mergeReadings(readings);
-        say({ step: 'model', state: 'done', types: reading.types, concepts: reading.concepts });
+        say({
+          step: 'model',
+          state: 'done',
+          types: reading.types,
+          existingConcepts: reading.existingConcepts,
+          newConcepts: reading.newConcepts,
+        });
         return { reading, notDone };
       })();
 
@@ -2067,11 +2248,17 @@ export function createVeraServer(options: ServerOptions): VeraServer {
            * como la página existente se llama, para que aceptar una y aceptar la
            * otra lleven al mismo sitio.
            */
-          concepts: understood.reading.concepts
-            .map((value) => {
-              const held = graph.pageTitled(value);
+          concepts: [
+            ...understood.reading.existingConcepts.map((id) => ({ id, value: null as string | null })),
+            ...understood.reading.newConcepts.map((value) => ({ id: null, value })),
+          ]
+            .map(({ id, value }) => {
+              // Una identidad elegida entre candidatos se resuelve por ID. Un
+              // nombre nuevo aún puede coincidir exactamente con una página
+              // creada entre la recuperación y este cierre; entonces se une.
+              const held = id === null ? graph.pageTitled(value ?? '') : graph.page(id);
               return {
-                value: held?.title ?? value,
+                value: held?.title ?? value ?? '',
                 page: held?.id ?? null,
                 backlinks: held === undefined ? 0 : graph.backlinks(held.id).length,
               };

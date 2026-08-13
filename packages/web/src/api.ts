@@ -33,6 +33,16 @@ export interface AssetView {
   path: string;
   url: string;
   mediaType: string;
+  description?: string | null;
+  alternativeText?: string | null;
+}
+
+export interface CatalogAsset extends AssetView {
+  hash: string;
+  byteSize: number;
+  originalName: string | null;
+  createdAt: number;
+  usages: { block: string; page: string; pageTitle: string }[];
 }
 
 /** Una referencia `((stable_id))` ya resuelta al bloque que nombra. */
@@ -868,6 +878,49 @@ export const api = {
       const body = (await response.json()) as { error?: string } & Record<string, unknown>;
       if (!response.ok) return { error: body.error ?? `error ${response.status}` };
       return body as unknown as { page: string; title: string; blocks: number; format: string; losses: string[] };
+    } catch {
+      return { error: 'sin conexión con el servidor' };
+    }
+  },
+
+  uploadMedia: async (file: File): Promise<AssetView | { error: string }> => {
+    try {
+      const response = await fetch('/media', {
+        method: 'POST',
+        headers: {
+          'content-type': file.type || 'application/octet-stream',
+          'x-filename': encodeURIComponent(file.name || 'archivo'),
+        },
+        body: await file.arrayBuffer(),
+      });
+      const body = (await response.json()) as AssetView & { error?: string };
+      return response.ok ? body : { error: body.error ?? `error ${response.status}` };
+    } catch {
+      return { error: 'sin conexión con el servidor' };
+    }
+  },
+
+  media: () => json<CatalogAsset[]>('/media'),
+
+  deleteMedia: async (hash: string): Promise<{ deleted: true } | { error: string }> => {
+    const response = await fetch(`/media/${encodeURIComponent(hash)}`, { method: 'DELETE' });
+    return await response.json() as { deleted: true } | { error: string };
+  },
+
+  describeMedia: async (
+    hash: string,
+    metadata: { description: string; alternativeText: string },
+  ): Promise<{ description: string | null; alternativeText: string | null } | { error: string }> => {
+    try {
+      const response = await fetch(`/media/${encodeURIComponent(hash)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(metadata),
+      });
+      const body = (await response.json()) as { description?: string | null; alternativeText?: string | null; error?: string };
+      return response.ok
+        ? { description: body.description ?? null, alternativeText: body.alternativeText ?? null }
+        : { error: body.error ?? `error ${response.status}` };
     } catch {
       return { error: 'sin conexión con el servidor' };
     }

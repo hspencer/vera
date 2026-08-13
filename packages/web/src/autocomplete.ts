@@ -210,7 +210,7 @@ export interface Command {
    * ese punto de la escritura, y quien atiende el comando es el outliner, porque
    * el hecho ocurre en el grafo y no en el texto.
    */
-  acts?: 'hablar' | 'elegir-fecha' | 'poner-plazo' | 'importar' | 'zotero' | 'dibujar';
+  acts?: 'hablar' | 'elegir-fecha' | 'poner-plazo' | 'importar' | 'adjuntar' | 'zotero' | 'dibujar';
 }
 
 /**
@@ -260,6 +260,13 @@ export const COMMANDS: Command[] = [
     inserts: '',
     caret: 0,
     acts: 'importar',
+  },
+  {
+    name: 'adjuntar',
+    hint: 'subir una imagen, un audio o un PDF a este bloque',
+    inserts: '',
+    caret: 0,
+    acts: 'adjuntar',
   },
   /*
    * Citar algo de la bibliografía.
