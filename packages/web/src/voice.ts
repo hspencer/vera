@@ -264,6 +264,9 @@ export const voice = {
   discardAudio: (id: string) =>
     ask<Recording>(`/recordings/${encodeURIComponent(id)}/audio`, { method: 'DELETE' }),
 
+  restoreAudio: (id: string) =>
+    ask<Recording>(`/recordings/${encodeURIComponent(id)}/audio/restore`, { method: 'POST' }),
+
   /** Le da o le quita lugar en la escritura a una grabación. */
   place: (id: string, block: string | null) =>
     ask<Recording>(`/recordings/${encodeURIComponent(id)}/place`, {

@@ -307,14 +307,34 @@ export function renderAudioBlock(
       if (!window.confirm(warning)) return;
       drop.disabled = true;
       void voice.discardAudio(recording.id).then((next) => {
-        if (fail(next)) {
+        if ('error' in next) {
+          handlers.notify(next.error);
           drop.disabled = false;
           return;
         }
-        handlers.onSettled();
+        // La grabación cambió, no el árbol. Volver a cargar desde la réplica
+        // del outliner resucita aquí el `audioHash` anterior, porque esa réplica
+        // sólo proyecta bloques y propiedades. Entregar el resultado canónico
+        // permite pintar inmediatamente exactamente lo que el servidor guardó.
+        handlers.onChanged(next);
       });
     });
     row.append(drop);
+  } else {
+    const restore = action('recuperar audio', 'plain');
+    restore.title = 'Recuperar el reproductor si los bytes todavía están en el almacén';
+    restore.addEventListener('click', () => {
+      restore.disabled = true;
+      void voice.restoreAudio(recording.id).then((next) => {
+        if ('error' in next) {
+          handlers.notify(next.error);
+          restore.disabled = false;
+          return;
+        }
+        handlers.onChanged(next);
+      });
+    });
+    row.append(restore);
   }
 
   box.append(row);
