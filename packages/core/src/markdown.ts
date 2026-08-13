@@ -44,7 +44,8 @@ const ATTRIBUTE = /(\w[\w-]*)\s*=\s*"([^"]*)"/g;
 const EMBED_HEIGHT = 460;
 
 export function embedIn(source: string, hosts: readonly string[] = []): string | null {
-  const found = EMBED.exec(source);
+  const youtube = youtubeEmbed(source.trim());
+  const found = EMBED.exec(youtube ?? source);
   if (found === null) return null;
 
   const said = new Map<string, string>();
@@ -105,7 +106,7 @@ export function embedIn(source: string, hosts: readonly string[] = []): string |
    * Se admite el servidor y sus subdominios: registrar `github.io` deja entrar a
    * `eadpucv.github.io`, y quien quiera sólo uno registra el nombre entero.
    */
-  const allowed = hosts.some((one) => {
+  const allowed = host === 'www.youtube-nocookie.com' || hosts.some((one) => {
     const clean = one.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
     return clean !== '' && (host === clean || host.endsWith(`.${clean}`));
   });
@@ -150,6 +151,25 @@ export function embedIn(source: string, hosts: readonly string[] = []): string |
     `<figcaption>incrustado desde ${escapeHtml(host)}</figcaption>` +
     `</figure>`
   );
+}
+
+/** Una URL de YouTube pegada sola se vuelve su reproductor sin cookies. */
+function youtubeEmbed(source: string): string | null {
+  if (!/^https:\/\//i.test(source)) return null;
+  try {
+    const url = new URL(source);
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    let id = '';
+    if (host === 'youtu.be') id = url.pathname.slice(1).split('/')[0] ?? '';
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      if (url.pathname === '/watch') id = url.searchParams.get('v') ?? '';
+      else id = /^\/(?:shorts|embed)\/([^/?]+)/.exec(url.pathname)?.[1] ?? '';
+    }
+    if (!/^[\w-]{6,20}$/.test(id)) return null;
+    return `<iframe src="https://www.youtube-nocookie.com/embed/${id}" height="460"></iframe>`;
+  } catch {
+    return null;
+  }
 }
 
 /** Esquemas que pueden viajar en un href o un src. `javascript:` no está. */
@@ -269,6 +289,9 @@ function mediaElement(
   if (resolved.mediaType.startsWith('image/')) {
     return `<img src="${quoteAttribute(resolved.url)}" alt="${quoteAttribute(alt)}" loading="lazy">`;
   }
+  if (resolved.mediaType.startsWith('audio/')) {
+    return `<audio class="media-audio" src="${quoteAttribute(resolved.url)}" controls preload="metadata"></audio>`;
+  }
   return (
     `<a class="media-file" href="${quoteAttribute(resolved.url)}" ` +
     `data-media-type="${quoteAttribute(resolved.mediaType)}">${alt === '' ? fallbackLabel : alt}</a>`
@@ -302,7 +325,7 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
   // alternativo en vez de desaparecer sin dejar rastro. El `alt` es texto
   // plano por definición de HTML, así que no recibe marcas.
   html = html.replace(
-    /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+    /!\[([^\]]*)\]\(([^)\n]+?)(?:\s+"[^"]*")?\)/g,
     (whole, alt: string, src: string) => {
       // Si Vera tiene el objeto, la ruta del corpus se traduce a él. Si no, se
       // emite tal cual y la presentación degrada sola.
@@ -370,7 +393,7 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
   html = html.replace(/\[\[([^\]]+)\]\]/g, (_whole, title: string) => hold(wikiLink(title)));
 
   html = html.replace(
-    /\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+    /\[([^\]]*)\]\(([^)\n]+?)(?:\s+"[^"]*")?\)/g,
     (whole, label: string, href: string) => {
       // El corpus también enlaza assets sin la marca de imagen —PDF, sobre
       // todo—, y esos apuntan al mismo objeto.

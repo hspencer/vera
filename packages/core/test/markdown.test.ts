@@ -169,6 +169,16 @@ describe('inlineMarkdown', () => {
       assert.match(html, new RegExp(`<img src="/media/${'a'.repeat(64)}" alt="retrato"`));
     });
 
+    it('resuelve una ruta con espacios escrita por el cargador', () => {
+      const html = inlineMarkdown('![captura](../assets/Captura de pantalla.png)', {
+        resolveAsset: (path) =>
+          path === '../assets/Captura de pantalla.png'
+            ? { url: '/media/abc', mediaType: 'image/png' }
+            : null,
+      });
+      assert.match(html, /<img src="\/media\/abc" alt="captura"/);
+    });
+
     it('lo que no es imagen se ofrece como archivo, no se finge presentado', () => {
       const html = inlineMarkdown('[el informe](../assets/informe.pdf)', resolver);
       assert.match(html, /class="media-file"/);
@@ -443,6 +453,19 @@ describe('incrustaciones', () => {
    * sin registro no entra nadie, y de eso hablan las últimas de aquí abajo.
    */
   const allowed = { embedHosts: ['eadpucv.github.io', 'ejemplo.cl'] };
+
+  it('una URL de YouTube pegada sola usa el reproductor sin cookies', () => {
+    const html = renderMarkdown('https://youtu.be/dQw4w9WgXcQ');
+    assert.match(html, /youtube-nocookie\.com\/embed\/dQw4w9WgXcQ/);
+    assert.match(html, /sandbox=/);
+    assert.match(html, /referrerpolicy="no-referrer"/);
+  });
+
+  it('reconoce watch, shorts y no incrusta una URL mezclada con prosa', () => {
+    assert.match(renderMarkdown('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), /youtube-nocookie/);
+    assert.match(renderMarkdown('https://youtube.com/shorts/dQw4w9WgXcQ'), /youtube-nocookie/);
+    assert.ok(!renderMarkdown('mira https://youtu.be/dQw4w9WgXcQ').includes('<iframe'));
+  });
 
   it('un bloque que es una incrustación entera se presenta como tal', () => {
     const html = renderMarkdown(embed, allowed);
