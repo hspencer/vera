@@ -82,6 +82,7 @@ import {
   resolveDelimiter,
   resolveDrawingKey,
   resolveEnter,
+  resolveFormat,
   resolveTab,
   type KeyOutcome,
   type Neighbourhood,
@@ -482,6 +483,7 @@ async function toggleFold(
   folded: boolean,
   page: PageView,
   callbacks: OutlinerCallbacks,
+  returnTo: { block: string; at: number } | null,
 ): Promise<void> {
   const before = document.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(block)}"]`)
     ?.getBoundingClientRect().top ?? null;
@@ -500,13 +502,27 @@ async function toggleFold(
   // Plegar no es abandonar el lugar. El foco nulo dentro de este anclaje pide
   // volver al control del mismo bloque sin abrir su editor. Además evita que
   // una página larga vuelva a componerse progresivamente desde arriba.
-  callbacks.onReload({ block, at: null });
+  callbacks.onReload(returnTo ?? { block, at: null });
   const row = document.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(block)}"]`);
   if (row !== null) {
     const after = row.getBoundingClientRect().top;
     if (before !== null) window.scrollBy(0, after - before);
-    row.querySelector<HTMLButtonElement>('.fold')?.focus({ preventScroll: true });
+    if (returnTo === null) row.querySelector<HTMLButtonElement>('.fold')?.focus({ preventScroll: true });
   }
+}
+
+/** El lugar de escritura que un plegado puede conservar tras repintar. */
+function focusAfterFold(block: string, folded: boolean): { block: string; at: number } | null {
+  const editor = document.activeElement;
+  if (!(editor instanceof HTMLTextAreaElement) || !editor.classList.contains('editor')) return null;
+  const editedRow = editor.closest<HTMLElement>('.block[data-id]');
+  const foldedRow = document.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(block)}"]`);
+  const edited = editedRow?.dataset['id'];
+  if (edited === undefined) return null;
+  // Si el bloque editado va a quedar oculto, el único foco honesto es el
+  // control que acaba de cerrar su ancestro.
+  if (folded && foldedRow !== null && editedRow !== foldedRow && foldedRow.contains(editedRow)) return null;
+  return { block: edited, at: editor.selectionStart };
 }
 
 /** Proyecta localmente el estado personal de plegado, sin duplicados. */
@@ -3177,9 +3193,20 @@ export function renderOutliner(
       fold.title = shut ? 'desplegar' : 'plegar';
       fold.setAttribute('aria-label', shut ? 'desplegar' : 'plegar');
       fold.setAttribute('aria-expanded', String(!shut));
+      // El foco cambia en mousedown, antes del click. Logseq aplica este mismo
+      // patrón a sus controles auxiliares: impedir el gesto nativo conserva el
+      // editor y su selección hasta que el plegado pueda devolverlos al DOM
+      // recién compuesto.
+      fold.addEventListener('mousedown', (event) => event.preventDefault());
       fold.addEventListener('click', (event) => {
         event.stopPropagation();
-        void toggleFold(node.block.stableId, !shut, page, callbacks);
+        void toggleFold(
+          node.block.stableId,
+          !shut,
+          page,
+          callbacks,
+          focusAfterFold(node.block.stableId, !shut),
+        );
       });
       row.append(fold);
     } else {
@@ -5756,6 +5783,17 @@ function startEditing(
   editor.addEventListener('keydown', (event) => {
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
+
+    if (is('bold', event) || is('italic', event)) {
+      event.preventDefault();
+      const formatted = resolveFormat(is('bold', event) ? '**' : '*', editor.value, start, end);
+      editor.value = formatted.buffer;
+      editor.setSelectionRange(formatted.selectionStart, formatted.selectionEnd);
+      session.type(editor.value);
+      autosize();
+      scheduleSave();
+      return;
+    }
 
     // Con una lista abierta, estas teclas son suyas. Sin esto, Enter partiría el
     // bloque en mitad de una búsqueda y Tab lo indentaría.

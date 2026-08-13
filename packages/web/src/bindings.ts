@@ -144,6 +144,28 @@ export const BINDINGS: Binding[] = [
     match: (event) => event.key === 'Enter' && (event.metaKey || event.ctrlKey),
   },
   {
+    id: 'bold',
+    keys: 'Ctrl/Cmd + B',
+    what: 'Alterna negrita Markdown en el texto seleccionado',
+    when: 'editando un bloque',
+    group: 'edición',
+    match: (event) =>
+      (event.key === 'b' || event.key === 'B') &&
+      (event.metaKey || event.ctrlKey) &&
+      !event.altKey,
+  },
+  {
+    id: 'italic',
+    keys: 'Ctrl/Cmd + I',
+    what: 'Alterna cursiva Markdown en el texto seleccionado',
+    when: 'editando un bloque',
+    group: 'edición',
+    match: (event) =>
+      (event.key === 'i' || event.key === 'I') &&
+      (event.metaKey || event.ctrlKey) &&
+      !event.altKey,
+  },
+  {
     id: 'complete-move',
     keys: '↑ ↓',
     what: 'Recorre las sugerencias',
