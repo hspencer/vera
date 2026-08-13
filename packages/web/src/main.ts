@@ -30,6 +30,7 @@ import {
   speakInto,
   type OutlinerCallbacks,
 } from './outliner.ts';
+import { holdViewport as holdTextViewport, restoreViewport as restoreTextViewport } from './viewport.ts';
 import { onRecording } from './audio-block.ts';
 import { isDay, today } from './autocomplete.ts';
 import { GOVERNING_KINDS } from './governing-table.ts';
@@ -1119,11 +1120,14 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
      * página sola, así que se pone al día aparte y sin prisa. Ver `catchUp`.
      */
     onReload: (focus) => {
+      const text = $('#text');
+      const viewport = holdTextViewport(text);
       if (replica !== null && openView !== null && workspace.activePage === replica.page) {
         openView.blocks = blocksOf(replica);
         openView.blockProperties = blockPropertiesOf(replica);
         openView.properties = pagePropertiesOf(replica);
-        renderOutliner($('#text'), openView, callbacksFor(openView), focus, workspace.focusRoot);
+        renderOutliner(text, openView, callbacksFor(openView), focus, workspace.focusRoot);
+        restoreTextViewport(text, viewport);
         catchUp();
         return;
       }

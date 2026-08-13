@@ -347,7 +347,6 @@ function markMissingImages(root: HTMLElement): void {
  */
 async function removeBlock(
   block: BlockView,
-  row: HTMLElement,
   callbacks: OutlinerCallbacks,
 ): Promise<void> {
   let result;
@@ -374,11 +373,11 @@ async function removeBlock(
    * mano no se pasaba nunca por ahí — recargar la página lo arreglaba, que es
    * tanto como no tener arreglo.
    *
-   * Redibujar cuesta una petición y hace que borrar termine en el mismo estado
-   * al que se llega abriendo la página. Un atajo que produce un estado que el
-   * dibujo no sabe producir es un atajo que va a divergir.
+   * La fila vieja se deja puesta hasta el repintado. Quitándola antes, el
+   * navegador ya había recolocado la página cuando `onReload` intentaba guardar
+   * el lugar; conservándola, el testigo siguiente sabe exactamente dónde estaba
+   * antes de que desapareciera éste.
    */
-  row.remove();
   callbacks.onReload(null);
   callbacks.onChanged();
 }
@@ -485,8 +484,6 @@ async function toggleFold(
   callbacks: OutlinerCallbacks,
   returnTo: { block: string; at: number } | null,
 ): Promise<void> {
-  const before = document.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(block)}"]`)
-    ?.getBoundingClientRect().top ?? null;
   try {
     const response = await api.fold(block, folded);
     if (!response.ok) throw new Error(`fold failed: ${response.status}`);
@@ -505,8 +502,6 @@ async function toggleFold(
   callbacks.onReload(returnTo ?? { block, at: null });
   const row = document.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(block)}"]`);
   if (row !== null) {
-    const after = row.getBoundingClientRect().top;
-    if (before !== null) window.scrollBy(0, after - before);
     if (returnTo === null) row.querySelector<HTMLButtonElement>('.fold')?.focus({ preventScroll: true });
   }
 }
@@ -3534,7 +3529,7 @@ export function renderOutliner(
             label: 'Eliminar bloque',
             icon: 'trash-2',
             ...(leaf ? {} : { blocked: 'un bloque con hijos no se puede eliminar todavía' }),
-            run: () => removeBlock(node.block, row, callbacks),
+            run: () => removeBlock(node.block, callbacks),
           },
         ],
       ]);

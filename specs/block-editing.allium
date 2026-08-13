@@ -89,6 +89,14 @@ contract FluidBlockEditing {
         -- taller than the view is brought to the caret and not to its own edge,
         -- and no keystroke leaves the caret where it cannot be seen.
 
+    @invariant StructuralEditingKeepsTheReadingPlace
+        -- Any edit that redraws the outline — removing, splitting, merging,
+        -- moving, indenting, marking or folding blocks, and editing their
+        -- properties — leaves the visible content at the same place in the
+        -- viewport. If the nearest visible block was removed, the next surviving
+        -- visible block holds its former position rather than sending the reader
+        -- to the beginning of the page.
+
     @invariant FamiliarFormattingKeysEditMarkdown
         -- Ctrl/Cmd-B toggles Markdown bold and Ctrl/Cmd-I toggles Markdown
         -- italics around the current selection. With no selection each gesture
