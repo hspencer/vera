@@ -33,6 +33,19 @@ describe('rastro durable y componible', () => {
     assert.deepEqual(loadTrace(), steps);
   });
 
+  it('al volver a abrir limpia repintados antiguos, pero conserva los regresos reales', () => {
+    const storage = memoryStorage();
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
+    saveTrace([
+      steps[0]!,
+      { ...steps[0]!, at: 2 },
+      steps[1]!,
+      steps[2]!,
+    ]);
+    assert.deepEqual(loadTrace().map((step) => step.page), ['a', 'b', 'a']);
+    assert.deepEqual(JSON.parse(storage.getItem('vera.navigationTrace') ?? '[]').map((step: TraceStep) => step.page), ['a', 'b', 'a']);
+  });
+
   it('conserva el gesto al reordenar y permite podar una llegada', () => {
     const arranged = movedTo(steps, 2, 0);
     assert.equal(arranged[0]?.gesture, 'returned');

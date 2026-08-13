@@ -56,7 +56,7 @@ export function loadTrace(): TraceStep[] {
   try {
     const held: unknown = JSON.parse(localStorage.getItem(TRACE_KEY) ?? '[]');
     if (!Array.isArray(held)) return [];
-    return held.filter((step): step is TraceStep => {
+    const valid = held.filter((step): step is TraceStep => {
       if (typeof step !== 'object' || step === null) return false;
       const candidate = step as Partial<TraceStep>;
       return (
@@ -68,6 +68,19 @@ export function loadTrace(): TraceStep[] {
         Number.isFinite(candidate.at)
       );
     });
+
+    /*
+     * Antes de RedrawingAPageIsNotWalkingToIt, pulsar un ancla podía guardar la
+     * página corriente otra vez. `walked` ya impide producir ese estado, pero el
+     * rastro es durable: sin migrarlo, cada recarga resucita para siempre los
+     * duplicados que la versión vieja dejó en localStorage.
+     *
+     * Sólo se colapsan llegadas contiguas a la misma página. A → B → A sigue
+     * entero, porque volver después de haber ido a otra parte sí es un recorrido.
+     */
+    const migrated = valid.filter((step, index) => index === 0 || valid[index - 1]?.page !== step.page);
+    if (migrated.length !== valid.length) saveTrace(migrated);
+    return migrated;
   } catch {
     return [];
   }

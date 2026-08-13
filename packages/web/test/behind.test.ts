@@ -93,6 +93,17 @@ describe('lo retenido que dejó de estar al día', () => {
     assert.deepEqual(state.staleElsewhere, []);
   });
 
+  it('lo propio no se anuncia, pero invalida la copia retenida incluso si estaba abierta', () => {
+    const state = behind([op({ sequence: 10, originId: 'web:mío', page: 'page:1' })], {
+      ...nada,
+      mine: new Set(['web:mío']),
+      openPage: 'page:1',
+      retained: new Set(['page:1']),
+    });
+    assert.equal(state.waiting.length, 0);
+    assert.deepEqual(state.staleElsewhere, ['page:1']);
+  });
+
   it('una página que no se tenía guardada no se anota: no hay nada viejo que corregir', () => {
     const state = behind([op({ sequence: 10, page: 'page:ajena' })], nada);
     assert.deepEqual(state.staleElsewhere, []);

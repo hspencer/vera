@@ -74,8 +74,17 @@ export function behind(
 
   for (const op of ops) {
     upTo = Math.max(upTo, op.sequence);
-    if (what.mine.has(op.originId)) continue;
     const here = what.openPage !== null && op.page === what.openPage;
+    const mine = what.mine.has(op.originId);
+    /*
+     * Lo propio no se anuncia, pero sí vuelve vieja una copia retenida.
+     *
+     * El gesto ya se vio en pantalla; eso no significa que IndexedDB haya
+     * recibido la nueva PageView. Si se conserva el snapshot anterior, la
+     * próxima visita resucita el estado previo y parece que el gesto se perdió.
+     */
+    if (op.page !== null && what.retained.has(op.page) && (mine || !here)) stale.add(op.page);
+    if (mine) continue;
     waiting.push({ op, here });
     hands.add(op.authoredBy);
     /*
