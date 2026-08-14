@@ -228,8 +228,9 @@ surface LocalOwnerRecovery {
         fulfils HumanAuthentication
 
     @guarantee TheNetworkCannotClaimToBeTheMachine
-        -- Locality is established from the real connection to the instance,
-        -- never from an address or forwarding claim supplied by the caller.
+        -- Recovery is not an HTTP surface. It opens the owner's corpus from the
+        -- machine itself, so a reverse proxy on that same machine cannot turn a
+        -- network request into an apparently local recovery request.
 }
 
 ------------------------------------------------------------

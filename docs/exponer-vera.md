@@ -160,8 +160,24 @@ La sexta ya tiene respuesta, y de ella sale un requisito duro:
 > la instancia no debe ser alcanzable de esa manera desde una red.»*
 
 O sea: **exposición y recuperación no pueden confundirse**. El camino de rescate
-tiene que comprobar que la petición nace en la máquina, y hoy no hay ni una línea
-en el servidor que mire de dónde viene una conexión.
+no es una ruta HTTP: abre la base desde la máquina. Un túnel inverso ejecutado en
+Alexei también llega al servidor por loopback, de modo que el socket no basta
+para distinguir a quien está sentado delante de una petición que vino de fuera.
+
+### Tres superficies, no una puerta enorme
+
+La versión soberana para la web separa el despliegue por propósito:
+
+| Superficie | Audiencia | Autoridad |
+| --- | --- | --- |
+| `vera.mediafranca.net` | cualquiera | sólo la proyección de páginas públicas |
+| aplicación viva | personas autenticadas | lectura y escritura según su credencial |
+| MCP remoto | inteligencias y clientes autorizados | herramientas y recursos según su credencial |
+
+Pueden compartir un túnel y una implementación, pero no una política. La
+proyección pública nunca consulta el corpus privado; la aplicación requiere una
+sesión humana; MCP usa OAuth o una credencial de máquina y conserva identidad,
+alcance y exposición en cada llamada.
 
 ### Endurecimiento del transporte
 

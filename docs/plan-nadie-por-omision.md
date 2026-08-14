@@ -19,7 +19,7 @@ modos públicos.
 | `server/src/server.ts:752` | leer sin credencial devuelve el dueño | `@invariant NobodyIsAssumed` |
 | `server/src/server.ts:245` | escribir sin credencial escribe como el dueño | `rule UnauthenticatedSubmissionIsRefused` |
 | — | no existe forma de que una persona se autentique | `contract HumanAuthentication` |
-| — | nada comprueba si una petición nace en la máquina | `rule TheOwnerIssuesFromTheMachine` |
+| `server/src/issue-owner.ts` | emite desde la base local, fuera de HTTP | `rule TheOwnerIssuesFromTheMachine` |
 
 `allium plan specs/identity-access.allium` da **25 obligaciones**:
 
@@ -83,10 +83,10 @@ verdad.
 Es lo que hará falta el día del modo 3, y trae consigo todo lo suyo: rotación,
 cierre, bloqueo por intentos.
 
-**b) Credencial fijada desde la máquina.** El navegador recibe una credencial la
-primera vez que se abre Vera **desde la propia máquina**, y la guarda. No hay
-formulario, no hay contraseña, no hay nada que recordar: la prueba de que eres tú
-es que estás sentado delante.
+**b) Credencial fijada desde la máquina.** La máquina emite una credencial fuera
+de HTTP y el navegador la recibe mediante un emparejamiento explícito. No hay
+una ruta web capaz de emitir la raíz: un proxy que corre en Alexei también llega
+por loopback y haría falsa esa prueba.
 
 La segunda es la que corresponde al modo privado, y es coherente con lo que la
 spec ya declaró como raíz de confianza: quien tiene la máquina puede emitirse una
@@ -115,7 +115,7 @@ construcción y no por configuración.
 
 | # | Paso | Rompe algo |
 | --- | --- | --- |
-| 1 | `is_local_to_the_instance` sobre el socket, y la emisión desde la máquina | **hecho** |
+| 1 | emisión desde la base local, enteramente fuera de la red | **hecho** |
 | 2 | Que el navegador local reciba y guarde su credencial, y la mande en cada petición | no |
 | 3 | Credencial propia para las tres conexiones MCP que hoy no la tienen | no |
 | 4 | Un modo estricto, apagado por omisión, que niega al anónimo | no |
