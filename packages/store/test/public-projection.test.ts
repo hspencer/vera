@@ -37,12 +37,20 @@ function graph(): VeraGraph {
   return graph;
 }
 
+function publicPage(corpus: VeraGraph): string {
+  const page = corpus.pages().find((candidate) => candidate.title === 'Página pública');
+  assert.ok(page);
+  return page.id;
+}
+
 describe('proyección pública', () => {
   it('genera sólo páginas públicas y escapa su HTML', () => {
     const target = scratch();
-    const summary = projectPublicSite(graph(), target, {
+    const corpus = graph();
+    const summary = projectPublicSite(corpus, target, {
       canonicalDomain: 'https://vera.mediafranca.net',
-      siteTitle: 'Vera de Herbert',
+      siteTitle: 'Vera',
+      publishedPages: new Set([publicPage(corpus)]),
     });
     assert.equal(summary.pages, 1);
     assert.deepEqual(readdirSync(target).sort(), ['index.html', 'pagina-publica']);
@@ -53,9 +61,11 @@ describe('proyección pública', () => {
 
   it('no filtra título, contenido ni manifiesto de páginas privadas', () => {
     const target = scratch();
-    projectPublicSite(graph(), target, {
+    const corpus = graph();
+    projectPublicSite(corpus, target, {
       canonicalDomain: 'https://vera.mediafranca.net',
-      siteTitle: 'Vera de Herbert',
+      siteTitle: 'Vera',
+      publishedPages: new Set([publicPage(corpus)]),
     });
     const all = [
       readFileSync(join(target, 'index.html'), 'utf8'),
@@ -67,6 +77,19 @@ describe('proyección pública', () => {
 
   it('produce rutas estables sin diacríticos', () => {
     assert.equal(publicPathFor('Vera — Instanciación'), 'vera-instanciacion');
+  });
+
+  it('omite una página pública no asignada a este sitio', () => {
+    const corpus = graph();
+    const target = scratch();
+    const summary = projectPublicSite(corpus, target, {
+      canonicalDomain: 'https://vera.mediafranca.net',
+      siteTitle: 'Vera',
+      publishedPages: new Set(),
+    });
+    assert.equal(summary.pages, 0);
+    assert.deepEqual(readdirSync(target), ['index.html']);
+    assert.doesNotMatch(readFileSync(join(target, 'index.html'), 'utf8'), /Página pública/);
   });
 
   it('rechaza dos títulos que producirían la misma dirección', () => {
@@ -87,7 +110,8 @@ describe('proyección pública', () => {
       () =>
         projectPublicSite(corpus, scratch(), {
           canonicalDomain: 'https://vera.mediafranca.net',
-          siteTitle: 'Vera de Herbert',
+          siteTitle: 'Vera',
+          publishedPages: new Set(corpus.pages().map((page) => page.id)),
         }),
       /public path collision/,
     );

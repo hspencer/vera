@@ -13,6 +13,8 @@ import type { Block, Page, VeraGraph } from '@vera/core';
 export interface PublicProjectionOptions {
   canonicalDomain: string;
   siteTitle: string;
+  /** Páginas que una publicación humana asignó explícitamente a este sitio. */
+  publishedPages: ReadonlySet<string>;
 }
 
 export interface PublicProjectionSummary {
@@ -114,7 +116,7 @@ export function projectPublicSite(
 
   const pages = graph
     .pages()
-    .filter((page) => page.visibility === 'public')
+    .filter((page) => page.visibility === 'public' && options.publishedPages.has(page.id))
     .sort((a, b) => a.title.localeCompare(b.title));
   const files: string[] = [];
   const occupiedPaths = new Map<string, string>();

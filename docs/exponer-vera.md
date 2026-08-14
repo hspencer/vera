@@ -78,10 +78,14 @@ sign-on: no hay a quién autenticar.**
 Vera ya puede generar una salida HTML estática separada del espejo Markdown:
 
 ```sh
-npm run project:public -- data/vera.sqlite ../vera-public https://vera.mediafranca.net
+npm run project:public -- data/vera.sqlite ../vera-public https://vera.mediafranca.net \
+  --page page:123 --page page:456
 ```
 
-La salida contiene portada y una carpeta por página pública. No contiene base,
+La salida contiene portada y una carpeta por página publicada explícitamente en
+ese sitio. Una página meramente visible no entra: `vera.mediafranca.net` es el
+sitio oficial del proyecto Vera, no el sitio personal de Herbert ni un agregado
+de sus otros proyectos. No contiene base,
 API, manifiesto reconstruible ni identificadores de página o bloque. Reutiliza
 el renderer Markdown de Vera, declara una URL canónica y se detiene si dos
 títulos producirían la misma ruta. Este primer corte toma la visibilidad como

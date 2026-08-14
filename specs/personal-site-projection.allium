@@ -1,14 +1,16 @@
 -- allium: 3
 -- personal-site-projection.allium
 
--- Scope: Public website projection and eventual migration of doble pagina into Vera
+-- Scope: Projection of deliberate publication sites from a personal Vera graph,
+--   including Vera's official project site and the eventual migration of doble pagina
 -- Includes: Public page rendering, canonical URLs, HTML metadata, public search,
 --   citations, Markdown footnotes, and ingestion of historical Jekyll content
 -- Excludes:
 --   - Static site generator and deployment implementation
 --   - Jekyll compatibility as a permanent runtime requirement
 --   - Detailed visual design and CSS implementation
--- Reference: herbertspencer.net is the visual, editorial and publishing baseline
+-- Current first site: vera.mediafranca.net is the official site of the Vera
+--   project, not a projection of Herbert's public identity or other projects
 
 use "./core.allium" as core
 
@@ -44,6 +46,12 @@ contract PersonalWebsiteProjection {
     @invariant ReproducibleOutput
         -- The same publication revision and presentation configuration produce
         -- equivalent public output independent of deployment technology.
+
+    @invariant SiteMembershipIsExplicit
+        -- Public visibility makes a page eligible for publication; it does not
+        -- put that page into every site. A build receives only publications
+        -- explicitly assigned to that site. Vera's project site therefore does
+        -- not inherit Herbert's other public pages, projects or personal work.
 }
 
 ------------------------------------------------------------
@@ -247,6 +255,11 @@ surface StaticSiteBuild {
         -- Building the public site receives only the site's explicit
         -- publications. It cannot enumerate the graph and then remember to
         -- filter private pages afterwards.
+
+    @guarantee BuildHasNoUnassignedPublicInput
+        -- A public page assigned to another site is as absent from this build as
+        -- a private page. Visibility and membership in a publication are
+        -- independent decisions.
 }
 
 surface HistoricalSiteMigration {
