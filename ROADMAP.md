@@ -401,8 +401,12 @@ y la reconciliación entre instancias, que hoy no existe en ninguna forma.
 - **Qué pasa cuando una instancia desaparece.** ¿Lo citado desde ella queda como
   hueco, como copia o como cita muerta? Una memoria que se vacía cuando otro
   apaga su máquina no es soberana.
-- **Retracción.** Si alguien despublica o borra algo que otras instancias
-  copiaron, ¿qué se puede exigir y qué se puede sólo pedir?
+- **Retracción — principio decidido, protocolo pendiente.** Compartir o publicar
+  permite que otras personas, bibliotecas o sitios sincronicen copias. Retirar el
+  origen detiene su disponibilidad futura, pero no borra lo que otra soberanía ya
+  recibió. Vera debe advertir esta consecuencia antes de compartir y puede
+  propagar una petición de retirada; no promete recuperar todas las copias. Falta
+  decidir cómo se representa, acusa recibo y audita esa petición.
 - **Moderación y bloqueo.** El fediverso resolvió esto mal y a golpes. Vera no
   puede pretender que el problema no la alcanza en cuanto dos instancias se
   hablen.

@@ -1,0 +1,109 @@
+-- allium: 3
+-- federated-sharing.allium
+
+-- Scope: Sharing selected pages from a sovereign personal Vera library
+-- Includes: Delimited selections, individual and shared destinations,
+--   synchronised copies, provenance and withdrawal limits
+-- Excludes:
+--   - Authentication and grant mechanics (identity-access.allium)
+--   - Who may accept or merge changes into the source
+--   - Conflict resolution between divergent copies
+--   - Transport and storage implementation
+-- Dependencies: Graph, Page and Participant are governed by core.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract SovereignSharing {
+    share: (selection: SharedSelection, destination: SharingDestination) -> Distribution
+    withdraw: (distribution: Distribution) -> Withdrawal
+
+    @invariant SharingIsDelimited
+        -- Sharing a project or concept selects pages explicitly or by a visible
+        -- criterion. It never grants the destination discovery of the remaining
+        -- personal library merely because selected pages came from it.
+
+    @invariant TheOriginAndHistoryTravel
+        -- Every delivered page keeps a stable reference to its source library,
+        -- source page and shared history. A synchronised copy does not pretend
+        -- to be an unrelated page merely because it now lives elsewhere.
+
+    @invariant AReceivedCopyEntersAnotherSovereignty
+        -- A person, shared graph or site that synchronises content receives a
+        -- copy it can retain independently. The source cannot silently erase
+        -- that copy or truthfully promise that withdrawal will recover it.
+
+    @invariant WithdrawalStopsTheFutureNotThePast
+        -- Withdrawing stops future discovery and synchronisation from the
+        -- source and may propagate a request for recipients to remove retained
+        -- copies. It does not report those copies erased without acknowledgement
+        -- from every recipient that held one.
+
+    @invariant IrreversibilityIsKnownBeforeSharing
+        -- Before the first distribution, Vera tells the sovereign participant
+        -- that recipients may retain synchronised copies and that public access
+        -- can be observed or copied beyond Vera's control.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum DestinationKind { participant | participants | shared_graph | shared_site | public }
+enum DistributionStatus { offered | synchronised | withdrawn }
+
+------------------------------------------------------------
+-- Entities and Values
+------------------------------------------------------------
+
+entity SharedSelection {
+    source: core/Graph
+    pages: List<core/Page>
+    criterion: String?
+    selected_by: core/Participant
+}
+
+entity SharingDestination {
+    kind: DestinationKind
+    address: String
+}
+
+entity Distribution {
+    selection: SharedSelection
+    destination: SharingDestination
+    status: DistributionStatus
+    shared_at: Timestamp
+    withdrawal: Withdrawal?
+}
+
+entity Withdrawal {
+    distribution: Distribution
+    requested_at: Timestamp
+    acknowledged_by: List<String>
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant ASelectionNeverEscapesItsSourceGraph {
+    for selection in SharedSelections:
+        selection.pages.all(page => page in selection.source.pages)
+}
+
+invariant AWithdrawalNamesAWithdrawnDistribution {
+    for withdrawal in Withdrawals:
+        withdrawal.distribution.status = withdrawn
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Do recipients submit changes directly to the source, propose differences for acceptance, or maintain forks that can later be merged?"
+open question "When a shared selection criterion gains or loses a page, does synchronisation follow the criterion automatically or require a new sharing decision?"
+open question "What acknowledgement proves that a recipient honoured a withdrawal request, and how long is that evidence retained?"
+open question "Can a public destination synchronise canonical page identity, or does it receive only a publication projection?"
