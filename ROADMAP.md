@@ -42,11 +42,17 @@ memoria. Un agente más capaz entra desde fuera como participante identificado:
 puede leer, escribir y modificar estructura por las mismas operaciones del
 dominio, sin convertirse por ello en dueño del contexto.
 
-La v0 identifica instancia y biblioteca: una instancia sirve un solo grafo y
-tiene una persona propietaria. Eso sigue siendo el alcance construido, no una
-decisión arquitectónica irreversible. Antes de multiusuario hay que decidir si
-una instancia podrá alojar varias bibliotecas independientes y si una biblioteca
-puede pertenecer a una persona, a un colectivo o a ninguno de sus servidores.
+La unidad soberana de Vera es personal: una biblioteca pertenece a un individuo
+humano. Esto ya no es sólo el alcance accidental de la v0. En la red federada se
+relacionan individuos soberanos; lo colectivo se construye entre varios sin
+convertirse retroactivamente en dueño de sus bibliotecas ni absorberlas en una
+cuenta común.
+
+Una instancia y una biblioteca siguen siendo conceptos distintos para poder
+mover, respaldar y restaurar la biblioteca sin identificarla con la máquina que
+la sirve. Queda por decidir si una instalación puede operar varias bibliotecas
+personales aisladas; esa decisión de alojamiento no cambia la unidad de
+soberanía.
 
 ### 0.1 El modelo de instalación y gobierno
 
@@ -56,9 +62,10 @@ sin perder el corpus ni su procedencia. El despliegue de una sola instancia debe
 ser reproducible antes de diseñar una red de ellas.
 
 Entregables: una spec de instancia y biblioteca; una prueba de restauración sobre
-una instalación vacía; y una decisión explícita sobre uno o varios grafos por
-instancia. Ésta última queda abierta: cambia el aislamiento, las URLs, el modelo
-de permisos, la sincronización y el modo de operar el servidor.
+una instalación vacía; y una decisión explícita sobre uno o varios grafos
+**personales** por instancia. Ésta última queda abierta: cambia el aislamiento,
+las URLs, el modelo de permisos, la sincronización y el modo de operar el
+servidor, pero no quién gobierna cada biblioteca.
 
 ### 0.2 Una identidad, distintas autoridades
 
