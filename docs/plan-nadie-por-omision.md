@@ -1,8 +1,8 @@
 # Plan: nadie por omisión
 
-Estado al escribirlo: rama `v0.4-local-first`, `allium check specs/` en 0 errores
-y 10 avisos sobre 33 specs, árbol con trabajo en curso sin confirmar
-(`waiting.allium`, `held.ts`). Vera corre en modo privado sobre la tailnet.
+Estado actual: rama `v0.5-sovereign-web`. El paso 1 ya está implementado y
+probado; Vera sigue corriendo en modo privado sobre la tailnet mientras el
+navegador aprende a portar su propia credencial.
 
 Este documento existe porque `specs/identity-access.allium` describe un
 comportamiento que el código contradice, y porque el hueco resulta ser más
@@ -115,7 +115,7 @@ construcción y no por configuración.
 
 | # | Paso | Rompe algo |
 | --- | --- | --- |
-| 1 | `is_local_to_the_instance` sobre el socket, y la emisión desde la máquina | no |
+| 1 | `is_local_to_the_instance` sobre el socket, y la emisión desde la máquina | **hecho** |
 | 2 | Que el navegador local reciba y guarde su credencial, y la mande en cada petición | no |
 | 3 | Credencial propia para las tres conexiones MCP que hoy no la tienen | no |
 | 4 | Un modo estricto, apagado por omisión, que niega al anónimo | no |

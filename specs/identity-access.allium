@@ -151,10 +151,10 @@ rule UnauthenticatedSubmissionIsRefused {
 -- over any network, so the instance's exposure and its recovery cannot be
 -- confused with one another.
 rule TheOwnerIssuesFromTheMachine {
-    when: IssueFromMachine(label, scopes)
+    when: IssueFromMachine(owner, label, scopes)
 
     requires: is_local_to_the_instance
-    requires: instance.owner != null
+    requires: instance.owner = owner
 
     ensures: agent/AccessToken.created(
         graph: instance.graph,
@@ -215,6 +215,21 @@ surface InstanceParticipantAdministration {
 
     @guarantee OwnerCannotBeRemoved
         -- Participant administration cannot remove or suspend the sovereign owner.
+}
+
+surface LocalOwnerRecovery {
+    facing owner: SovereignOwner
+    context instance: VeraInstance
+
+    provides:
+        IssueFromMachine(owner, label, scopes) when owner = instance.owner
+
+    contracts:
+        fulfils HumanAuthentication
+
+    @guarantee TheNetworkCannotClaimToBeTheMachine
+        -- Locality is established from the real connection to the instance,
+        -- never from an address or forwarding claim supplied by the caller.
 }
 
 ------------------------------------------------------------

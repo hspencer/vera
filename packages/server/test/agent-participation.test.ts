@@ -88,6 +88,16 @@ describe('admisión de un agente', () => {
 });
 
 describe('credenciales', () => {
+  it('la máquina puede emitir una credencial para la persona propietaria', async () => {
+    const issued = await call('/owner/credentials', {
+      method: 'POST',
+      body: { scopes: ['read', 'write', 'discard'], label: 'navegador local' },
+    });
+    assert.equal(issued.status, 201, JSON.stringify(issued.json));
+    assert.equal(issued.json['participant'], OWNER);
+    assert.match(issued.json['secret'] as string, /^vera_ag_/);
+  });
+
   it('emitir devuelve el secreto una sola vez', async () => {
     const issued = await call('/agents/credentials', {
       method: 'POST',

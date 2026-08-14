@@ -210,6 +210,20 @@ export interface VeraServer {
   close(): void;
 }
 
+/**
+ * La raíz de confianza de una Vera personal es la máquina que la contiene.
+ * Sólo la dirección real del socket cuenta: una cabecera puede ser inventada
+ * por quien llama o reescrita por un proxy.
+ */
+export function isLocalToInstance(address: string | undefined): boolean {
+  if (address === undefined) return false;
+  return (
+    address === '::1' ||
+    address.startsWith('127.') ||
+    address.startsWith('::ffff:127.')
+  );
+}
+
 interface SubmitBody {
   originId?: unknown;
   participant?: unknown;
@@ -1453,6 +1467,58 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         } catch (error) {
           send(response, 500, {
             error: 'no se pudo emitir la credencial',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+      return;
+    }
+
+    /*
+     * La única puerta que no exige una credencial anterior.
+     *
+     * @invariant TheMachineIsTheLastResort: quien posee la máquina puede emitir
+     * al dueño una credencial desde ella. La prueba es el socket real; no se
+     * consulta X-Forwarded-For ni ninguna otra afirmación del cliente.
+     */
+    if (request.method === 'POST' && path === '/owner/credentials') {
+      if (!isLocalToInstance(request.socket.remoteAddress)) {
+        send(response, 403, { error: 'una credencial del dueño sólo se emite desde la máquina' });
+        return;
+      }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { scopes?: unknown; label?: unknown; expiresAt?: unknown };
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+
+        const asked = Array.isArray(body.scopes) ? body.scopes : [];
+        const scopes = asked.filter((scope): scope is Scope => SCOPES.includes(scope as Scope));
+        if (scopes.length !== asked.length || scopes.length === 0) {
+          send(response, 400, { error: `scopes debe ser un subconjunto de ${SCOPES.join(', ')}` });
+          return;
+        }
+
+        try {
+          const issued = issueCredential(store, {
+            participant: owner.id,
+            scopes,
+            label:
+              typeof body.label === 'string' && body.label.trim() !== ''
+                ? body.label.trim()
+                : 'dueño local',
+            issuedBy: owner.id,
+            expiresAt: typeof body.expiresAt === 'number' ? body.expiresAt : null,
+          });
+          send(response, 201, { ...issued.credential, secret: issued.secret });
+        } catch (error) {
+          send(response, 500, {
+            error: 'no se pudo emitir la credencial del dueño',
             detail: error instanceof Error ? error.message : String(error),
           });
         }

@@ -1,6 +1,6 @@
 {
   "name": "@vera/web",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Espacio de trabajo de Vera: texto, grafo 2D/3D, búsqueda y tokens editables",

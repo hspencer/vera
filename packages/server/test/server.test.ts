@@ -3,13 +3,25 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { listen } from '../src/server.ts';
+import { isLocalToInstance, listen } from '../src/server.ts';
 
 let base: string;
 let running: ReturnType<typeof listen>;
 
 const PORT = 4271;
 const OWNER = 'participant:herbert';
+
+describe('raíz de confianza local', () => {
+  it('reconoce sólo direcciones loopback del socket', () => {
+    assert.equal(isLocalToInstance('127.0.0.1'), true);
+    assert.equal(isLocalToInstance('127.12.34.56'), true);
+    assert.equal(isLocalToInstance('::1'), true);
+    assert.equal(isLocalToInstance('::ffff:127.0.0.1'), true);
+    assert.equal(isLocalToInstance('192.168.1.20'), false);
+    assert.equal(isLocalToInstance('100.64.0.2'), false);
+    assert.equal(isLocalToInstance(undefined), false);
+  });
+});
 
 before(() => {
   running = listen({ port: PORT, databasePath: ':memory:', owner: { id: OWNER, name: 'Dueña' } });
