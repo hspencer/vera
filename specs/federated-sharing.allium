@@ -20,7 +20,8 @@ use "./core.allium" as core
 contract SovereignSharing {
     share: (selection: SharedSelection, destination: SharingDestination) -> Distribution
     edit: (distribution: Distribution, author: core/Participant, page: core/Page) -> SharedEdit
-    review: (edit: SharedEdit, owner: core/Participant, decision: ReviewDecision) -> SharedEdit
+    contribute: (distribution: Distribution, author: core/Participant, edits: List<SharedEdit>) -> Contribution
+    review: (selection: ReviewSelection, owner: core/Participant, decision: ReviewDecision) -> ReviewOutcome
     withdraw: (distribution: Distribution) -> Withdrawal
 
     @invariant SharingIsDelimited
@@ -68,6 +69,21 @@ contract SovereignSharing {
         -- enough evidence to explain why replicas differ without adding the
         -- proposed content to the canonical page.
 
+    @invariant AContributionArrivesAsACoherentBatch
+        -- Changes produced together travel together with their author, order and
+        -- dependencies. Synchronisation does not flatten them into unrelated
+        -- prompts that make the intention of the contribution unrecoverable.
+
+    @invariant ReviewCutsOnlyAtStructuralBoundaries
+        -- The owner may review the complete contribution, a dependency-closed
+        -- group or whole blocks. Vera never asks the owner to accept arbitrary
+        -- lines or an operation whose required operations were rejected.
+
+    @invariant PartialAcceptanceNeverInventsAnEdit
+        -- Whatever is accepted consists of edits the remote participant actually
+        -- submitted. Review can select coherent structural parts; it cannot
+        -- silently synthesise prose or a block state written by neither person.
+
     @invariant UnsharingEndsTheRelationship
         -- The owner can stop future synchronisation and editing authority by
         -- withdrawing the distribution. This ends the relationship; it does not
@@ -91,8 +107,9 @@ contract SovereignSharing {
 
 enum DestinationKind { participant | participants | shared_graph | shared_site | public }
 enum DistributionStatus { offered | synchronised | withdrawn }
-enum SharedEditStatus { local | awaiting_review | accepted | rejected }
+enum ContributionStatus { local | awaiting_review | partially_reviewed | accepted | rejected }
 enum ReviewDecision { accept | reject }
+enum ReviewBoundary { whole_contribution | dependent_group | whole_block }
 
 ------------------------------------------------------------
 -- Entities and Values
@@ -117,6 +134,7 @@ entity Distribution {
     shared_at: Timestamp
     withdrawal: Withdrawal?
     edits: SharedEdit with distribution = this
+    contributions: Contribution with distribution = this
 }
 
 entity Withdrawal {
@@ -130,9 +148,29 @@ entity SharedEdit {
     page: core/Page
     author: core/Participant
     recorded_at: Timestamp
-    status: SharedEditStatus
-    reviewed_by: core/Participant?
-    reviewed_at: Timestamp?
+}
+
+entity Contribution {
+    distribution: Distribution
+    author: core/Participant
+    edits: List<SharedEdit>
+    status: ContributionStatus
+    submitted_at: Timestamp
+    reviews: ReviewOutcome with contribution = this
+}
+
+entity ReviewSelection {
+    contribution: Contribution
+    boundary: ReviewBoundary
+    edits: List<SharedEdit>
+}
+
+entity ReviewOutcome {
+    contribution: Contribution
+    selection: ReviewSelection
+    reviewer: core/Participant
+    decision: ReviewDecision
+    reviewed_at: Timestamp
 }
 
 ------------------------------------------------------------
@@ -154,9 +192,9 @@ invariant ASharedEditBelongsToTheSharedSelection {
         edit.page in edit.distribution.selection.pages
 }
 
-invariant AReviewedEditNamesItsReviewer {
-    for edit in SharedEdits:
-        (edit.status = accepted or edit.status = rejected) implies edit.reviewed_by != null
+invariant AReviewSelectsOnlySubmittedEdits {
+    for selection in ReviewSelections:
+        selection.edits.all(edit => edit in selection.contribution.edits)
 }
 
 ------------------------------------------------------------
@@ -165,6 +203,9 @@ invariant AReviewedEditNamesItsReviewer {
 
 -- Answered: an authorised participant edits their replica directly; the source
 -- owner accepts or rejects the differences when they return.
+-- Answered: differences arrive as one coherent contribution. Review may accept
+-- the whole contribution, dependency-closed groups or whole blocks, never
+-- arbitrary lines or dependency-breaking operations.
 open question "When a shared selection criterion gains or loses a page, does synchronisation follow the criterion automatically or require a new sharing decision?"
 open question "What acknowledgement proves that a recipient honoured a withdrawal request, and how long is that evidence retained?"
 open question "Can a public destination synchronise canonical page identity, or does it receive only a publication projection?"
