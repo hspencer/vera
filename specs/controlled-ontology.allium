@@ -58,6 +58,7 @@ enum PropertyValueKind {
 entity Ontology {
     graph: core/Graph
     types: SemanticType with ontology = this
+    categories: Category with ontology = this
     concepts: Concept with ontology = this
     relations: RelationDefinition with ontology = this
     assignments: TypeAssignment with ontology = this
@@ -69,6 +70,26 @@ entity SemanticType {
     name: String
     description: String
     property_definitions: PropertyDefinition with semantic_type = this
+}
+
+-- Una clasificación taxonómica. Cada categoría tiene como máximo una categoría
+-- madre, de modo que el vocabulario forma un árbol y no varias jerarquías
+-- traslapadas. Una página puede verse reunida con las demás que pertenecen a la
+-- misma categoría sin convertir esa pertenencia en su tipo semántico.
+entity Category {
+    ontology: Ontology
+    preferred_label: String
+    definition: String
+    parent: Category?
+    status: VocabularyStatus
+    children: Category with parent = this
+    members: CategoryAssignment with category = this
+}
+
+entity CategoryAssignment {
+    category: Category
+    page: core/Page
+    assigned_by: core/Participant
 }
 
 -- De qué trata algo, que no es lo mismo que qué clase de cosa es.
@@ -726,6 +747,16 @@ invariant MultipleTypesMayDescribeOnePage {
         assignment.page != null implies assignment.semantic_type.ontology = assignment.ontology
 }
 
+invariant ACategoryParentBelongsToTheSameOntology {
+    for category in Categories:
+        category.parent != null implies category.parent.ontology = category.ontology
+}
+
+invariant ACategoryIsNotItsOwnParent {
+    for category in Categories:
+        category.parent != category
+}
+
 ------------------------------------------------------------
 -- Actor Declarations
 ------------------------------------------------------------
@@ -822,6 +853,17 @@ surface OntologyCuration {
         -- up answering neither: it is the failure mode of free tags, where
         -- `#pictograma` means «this is a pictogram» on one page and «this
         -- discusses pictograms» on the next, and no query can tell them apart.
+
+    @guarantee CategoryAndConceptAreDifferentClassifications
+        -- A category places a page in one explicit taxonomic tree whose nodes
+        -- may have subcategories. A concept is a non-exclusive keyword or tag:
+        -- concepts may overlap freely on the same page and do not determine the
+        -- page's object type. Neither one is a synonym for semantic type.
+
+    @guarantee ACategoryPageListsItsMembers
+        -- Reaching a category shows its subcategories and every page assigned
+        -- to it as derived views, in the same spirit as a wiki category page.
+        -- The listing is not copied into the category's written content.
 
     @guarantee AnInverseIsDerivedAndNeverStored
         -- A relation is written once, in its canonical direction, and asking it
