@@ -391,6 +391,13 @@ Falta: el proyecto como unidad de gobierno, con membresía y concesiones propias
 precondiciones de edición que impidan pisar lo que otro escribió mientras tanto;
 y la reconciliación entre instancias, que hoy no existe en ninguna forma.
 
+**Decidido:** compartir con autoridad de escritura da edición directa, no una
+cola obligatoria de propuestas. Las réplicas apuntan al mismo recurso lógico y
+la operación de cada participante entra en su historia; al sincronizar, todos ven
+el nuevo estado. Permiso explícito, autoría y reversión sustituyen la aprobación
+previa. Sigue abierto dónde se ordena esa historia y cómo se resuelven dos
+escrituras concurrentes.
+
 **Preguntas abiertas, todas sin respuesta:**
 
 - **Qué se federa.** ¿Páginas públicas? ¿Un grafo entero compartido? ¿Bloques

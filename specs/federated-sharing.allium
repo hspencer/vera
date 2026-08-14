@@ -3,10 +3,10 @@
 
 -- Scope: Sharing selected pages from a sovereign personal Vera library
 -- Includes: Delimited selections, individual and shared destinations,
---   synchronised copies, provenance and withdrawal limits
+--   synchronised replicas, authorised direct editing, provenance and
+--   withdrawal limits
 -- Excludes:
 --   - Authentication and grant mechanics (identity-access.allium)
---   - Who may accept or merge changes into the source
 --   - Conflict resolution between divergent copies
 --   - Transport and storage implementation
 -- Dependencies: Graph, Page and Participant are governed by core.allium
@@ -19,6 +19,7 @@ use "./core.allium" as core
 
 contract SovereignSharing {
     share: (selection: SharedSelection, destination: SharingDestination) -> Distribution
+    edit: (distribution: Distribution, author: core/Participant, page: core/Page) -> SharedEdit
     withdraw: (distribution: Distribution) -> Withdrawal
 
     @invariant SharingIsDelimited
@@ -33,8 +34,21 @@ contract SovereignSharing {
 
     @invariant AReceivedCopyEntersAnotherSovereignty
         -- A person, shared graph or site that synchronises content receives a
-        -- copy it can retain independently. The source cannot silently erase
-        -- that copy or truthfully promise that withdrawal will recover it.
+        -- replica it can retain independently. While sharing remains active,
+        -- replicas point to the same logical page identity rather than becoming
+        -- unrelated documents. The source cannot silently erase a retained
+        -- replica or truthfully promise that withdrawal will recover it.
+
+    @invariant AuthorisedEditorsWriteTheSharedResourceDirectly
+        -- A participant to whom the selection was shared with write authority
+        -- changes the shared logical page without prior approval. Every replica
+        -- learns that operation through synchronisation; none presents a private
+        -- fork as though it were the shared page.
+
+    @invariant DirectNeverMeansAnonymous
+        -- Direct editing preserves the writing participant, operation history
+        -- and a path to reversal. Permission removes the approval queue; it does
+        -- not remove authorship or make the latest writer the original author.
 
     @invariant WithdrawalStopsTheFutureNotThePast
         -- Withdrawing stops future discovery and synchronisation from the
@@ -77,12 +91,20 @@ entity Distribution {
     status: DistributionStatus
     shared_at: Timestamp
     withdrawal: Withdrawal?
+    edits: SharedEdit with distribution = this
 }
 
 entity Withdrawal {
     distribution: Distribution
     requested_at: Timestamp
     acknowledged_by: List<String>
+}
+
+entity SharedEdit {
+    distribution: Distribution
+    page: core/Page
+    author: core/Participant
+    recorded_at: Timestamp
 }
 
 ------------------------------------------------------------
@@ -99,11 +121,17 @@ invariant AWithdrawalNamesAWithdrawnDistribution {
         withdrawal.distribution.status = withdrawn
 }
 
+invariant ASharedEditBelongsToTheSharedSelection {
+    for edit in SharedEdits:
+        edit.page in edit.distribution.selection.pages
+}
+
 ------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
 
-open question "Do recipients submit changes directly to the source, propose differences for acceptance, or maintain forks that can later be merged?"
+-- Answered: a participant with write authority edits the shared logical page
+-- directly; history, authorship and reversal are the safeguard.
 open question "When a shared selection criterion gains or loses a page, does synchronisation follow the criterion automatically or require a new sharing decision?"
 open question "What acknowledgement proves that a recipient honoured a withdrawal request, and how long is that evidence retained?"
 open question "Can a public destination synchronise canonical page identity, or does it receive only a publication projection?"
