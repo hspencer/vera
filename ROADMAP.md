@@ -109,6 +109,14 @@ con memoria incorporada. Los modelos y agentes deben poder cambiar sin cambiar
 la identidad de la biblioteca, y dos inteligencias distintas deben recibir la
 misma descripción observable de qué existe, qué pueden hacer y quién decide.
 
+El proyecto conserva sus decisiones en dos registros enlazados. Las páginas de
+Vera guardan el pensamiento pasado al limpio: razones, alternativas, desacuerdos,
+preguntas y decisiones en su contexto intelectual. Las specs Allium reciben las
+decisiones conjuntas que ya fijan comportamiento observable del software. La
+página explica **por qué** y cómo se llegó; la spec obliga **qué** debe cumplirse.
+Una pregunta abierta no se disfraza de regla y una regla no depende de reconstruir
+una conversación para entender su intención.
+
 ### 0.4 Sincronización y Solid como decisiones derivadas
 
 La sincronización local entre navegador y servidor, la sincronización entre
