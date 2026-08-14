@@ -35,6 +35,13 @@ separar cuatro cosas que hoy coinciden en la única Vera que existe:
 - una **publicación** es una proyección revocable de una biblioteca, no acceso
   anónimo al almacén que la contiene.
 
+Vera es el contexto, no la inteligencia que lo usa. La biblioteca conserva los
+textos, relaciones y decisiones independientemente de cualquier modelo; sus
+funciones locales de IA son capacidades auxiliares, no el lugar donde vive la
+memoria. Un agente más capaz entra desde fuera como participante identificado:
+puede leer, escribir y modificar estructura por las mismas operaciones del
+dominio, sin convertirse por ello en dueño del contexto.
+
 La v0 identifica instancia y biblioteca: una instancia sirve un solo grafo y
 tiene una persona propietaria. Eso sigue siendo el alcance construido, no una
 decisión arquitectónica irreversible. Antes de multiusuario hay que decidir si
@@ -59,6 +66,15 @@ Cerrar el camino que hoy supone que una petición sin credencial es la persona
 propietaria. Personas y agentes se autentican por el mismo límite de identidad;
 lo que difiere es su clase de participante, su canal de contribución y la
 concesión concreta bajo la que actúan.
+
+La participación es horizontal en capacidad y explícitamente asimétrica en
+soberanía. Un agente admitido no queda reducido a sugerir desde un chat lateral:
+puede intervenir de verdad y cada intervención conserva su mano. Pero la persona
+o comunidad propietaria decide qué forma parte de su contexto, puede corregir,
+revertir o retirar autoridad y tiene la última palabra editorial. Que su palabra
+sea canónica significa que gobierna **su biblioteca**; no convierte sus
+afirmaciones en verdad factual ni permite reatribuir o borrar la procedencia de
+lo que escribió otra mano.
 
 Falta: autenticación humana; sesiones; recuperación desde la máquina soberana;
 membresías y concesiones por biblioteca; revocación; registro de lo leído además
@@ -87,6 +103,11 @@ descubrible por máquina, una referencia para humanos, ejemplos canónicos y una
 matriz de pruebas que conecte cada comando MCP/HTTP con la misma operación de
 dominio. Las páginas rectoras aportan contexto autorizado; ningún bloque común
 se convierte en instrucciones por estar escrito en el corpus.
+
+Ese contrato presenta a Vera como contexto soberano y durable, no como una IA
+con memoria incorporada. Los modelos y agentes deben poder cambiar sin cambiar
+la identidad de la biblioteca, y dos inteligencias distintas deben recibir la
+misma descripción observable de qué existe, qué pueden hacer y quién decide.
 
 ### 0.4 Sincronización y Solid como decisiones derivadas
 
