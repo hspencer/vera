@@ -232,6 +232,23 @@ surface PersonalWebsite {
         -- deliberately public media and metadata.
 }
 
+surface StaticSiteBuild {
+    facing owner: SiteOwner
+    context site: core/PersonalSite
+
+    exposes:
+        site.publications
+
+    provides:
+        RenderPublication(publication) when publication.site = site and site.owner = owner
+        GenerateHtmlMetadata(publication) when publication.site = site and site.owner = owner
+
+    @guarantee BuildHasNoPrivateInput
+        -- Building the public site receives only the site's explicit
+        -- publications. It cannot enumerate the graph and then remember to
+        -- filter private pages afterwards.
+}
+
 surface HistoricalSiteMigration {
     facing owner: SiteOwner
     context site: core/PersonalSite

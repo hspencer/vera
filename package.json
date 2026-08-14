@@ -20,6 +20,7 @@
     "import": "node packages/importer/src/persist.ts",
     "serve": "node packages/server/src/main.ts",
     "owner:credential": "node packages/server/src/issue-owner.ts",
+    "project:public": "node packages/store/src/public-project-cli.ts",
     "dev": "trap 'kill 0' INT TERM EXIT; npm run watch --workspace @vera/web & npm run serve",
     "deploy": "./scripts/deploy.sh",
     "restart": "./scripts/serve.sh restart",

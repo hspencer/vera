@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/store.ts",
     "./projection": "./src/projection.ts",
+    "./public-projection": "./src/public-projection.ts",
     "./objects": "./src/objects.ts",
     "./secrets": "./src/secrets.ts",
     "./exposures": "./src/exposures.ts"

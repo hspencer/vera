@@ -73,6 +73,21 @@ dos modos siguientes.
 Un sitio que cualquiera puede leer, con lo que tú decidas publicar. **Cero
 sign-on: no hay a quién autenticar.**
 
+### Primer corte ejecutable en v0.5
+
+Vera ya puede generar una salida HTML estática separada del espejo Markdown:
+
+```sh
+npm run project:public -- data/vera.sqlite ../vera-public https://vera.mediafranca.net
+```
+
+La salida contiene portada y una carpeta por página pública. No contiene base,
+API, manifiesto reconstruible ni identificadores de página o bloque. Reutiliza
+el renderer Markdown de Vera, declara una URL canónica y se detiene si dos
+títulos producirían la misma ruta. Este primer corte toma la visibilidad como
+frontera; antes de desplegarlo falta conectarlo a la operación humana explícita
+de publicación y a una revisión visible de la salida.
+
 ### Lo que falta
 
 **a) Que `visibility` mande.** Hoy cada página nace `'private'`
