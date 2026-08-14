@@ -127,6 +127,13 @@ export {
   titleKey,
 } from './text.ts';
 
+/*
+ * Cómo se escribe la dirección pública de una publicación. En el dominio porque
+ * la usan quien publica y el generador del sitio, y dos versiones de la misma
+ * regla acabarían sirviendo una URL distinta de la que se prometió.
+ */
+export { canonicalUrl, normalisePublicPath, suggestedPathFor } from './site.ts';
+
 export {
   CHANGE_KINDS,
   CONTRIBUTION_CHANNELS,
@@ -157,8 +164,11 @@ export type {
   ParticipantId,
   ParticipantKind,
   ParticipantStatus,
+  PersonalSite,
+  PersonalSiteId,
   PropertyAssignment,
   Publication,
+  PublicationId,
   Revision,
   SearchHit,
   SearchOutcome,

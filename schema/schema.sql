@@ -368,14 +368,23 @@ CREATE TABLE IF NOT EXISTS personal_sites (
     canonical_domain  TEXT NOT NULL
 ) STRICT;
 
+-- Publicar es una operación, no un atributo de la página: deja escrito qué
+-- revisión de qué página quedó en qué dirección de qué sitio, cuándo y de qué
+-- mano. `revision_operation_id` apunta al registro canónico y no a la tabla
+-- `revisions`, que es su materialización: una operación aceptada deja
+-- exactamente una revisión, así que nombrar la operación nombra la revisión sin
+-- un segundo identificador que mantener de acuerdo con el primero.
 CREATE TABLE IF NOT EXISTS publications (
-    id            TEXT PRIMARY KEY,
-    site_id       TEXT NOT NULL REFERENCES personal_sites (id),
-    page_id       TEXT NOT NULL REFERENCES pages (id),
-    path          TEXT NOT NULL,
-    published_at  INTEGER NOT NULL
+    id                     TEXT PRIMARY KEY,
+    site_id                TEXT NOT NULL REFERENCES personal_sites (id),
+    page_id                TEXT NOT NULL REFERENCES pages (id),
+    revision_operation_id  TEXT NOT NULL REFERENCES operations (id),
+    path                   TEXT NOT NULL,
+    published_at           INTEGER NOT NULL,
+    published_by           TEXT NOT NULL REFERENCES participants (id)
 ) STRICT;
 
+-- @invariant PublicationPathIsUniqueWithinSite
 CREATE UNIQUE INDEX IF NOT EXISTS publications_path ON publications (site_id, path);
 
 ------------------------------------------------------------

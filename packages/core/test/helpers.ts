@@ -97,6 +97,18 @@ export function makeBlock(
   );
 }
 
+/** Creates a personal site owned by the graph's human owner, and returns its id. */
+export function makeSite(
+  graph: VeraGraph,
+  options: { owner?: string; title?: string; domain?: string } = {},
+): string {
+  return graph.createSite({
+    owner: options.owner ?? OWNER,
+    title: options.title ?? 'Vera',
+    canonicalDomain: options.domain ?? 'https://vera.mediafranca.net',
+  }).id;
+}
+
 // ---------------------------------------------------------------------------
 // Property-based generation
 // ---------------------------------------------------------------------------

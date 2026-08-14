@@ -8,6 +8,8 @@ export type PageId = string;
 export type BlockId = string;
 export type GlossId = string;
 export type OperationId = string;
+export type PersonalSiteId = string;
+export type PublicationId = string;
 
 export const PARTICIPANT_KINDS = ['human', 'agent'] as const;
 export type ParticipantKind = (typeof PARTICIPANT_KINDS)[number];
@@ -191,6 +193,15 @@ export interface Submission {
 
 export interface Revision {
   readonly graph: GraphId;
+  /**
+   * La operación que la produjo, que es también su identidad.
+   *
+   * Una operación aceptada deja exactamente una revisión, así que nombrar la
+   * operación nombra la revisión sin inventar un segundo identificador que
+   * habría que mantener de acuerdo con el primero. Es lo que permite a una
+   * publicación decir qué revisión publicó.
+   */
+  readonly operation: OperationId;
   readonly page: PageId | null;
   readonly block: BlockId | null;
   readonly authoredBy: ParticipantId;
@@ -295,10 +306,37 @@ export interface UnportedQuery {
   portedAt: number | null;
 }
 
+/**
+ * Un sitio al que se publica. No es «lo público del grafo»: es un destino con
+ * dueño y dominio, y una página pública no entra en él por ser pública.
+ *
+ * @invariant SiteMembershipIsExplicit (personal-site-projection.allium)
+ */
+export interface PersonalSite {
+  readonly id: PersonalSiteId;
+  readonly graph: GraphId;
+  readonly owner: ParticipantId;
+  title: string;
+  canonicalDomain: string;
+}
+
+/**
+ * Una revisión de una página, puesta en una dirección de un sitio, por alguien,
+ * en un momento. Publicar es esta operación y no un atributo de la página.
+ *
+ * `revision` nombra la operación que produjo la revisión publicada (ver
+ * Revision.operation): la publicación fija *qué texto* se publicó, no sólo qué
+ * página, y por eso una edición posterior no cambia lo publicado hasta que
+ * alguien vuelva a publicar.
+ */
 export interface Publication {
+  readonly id: PublicationId;
+  readonly site: PersonalSiteId;
   readonly page: PageId;
+  readonly revision: OperationId;
   readonly path: string;
   readonly publishedAt: number;
+  readonly publishedBy: ParticipantId;
 }
 
 export type SearchableField =

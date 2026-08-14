@@ -15,7 +15,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { VeraGraph, titleKey } from '@vera/core';
-import type { Change, Operation, ParticipantId, ParticipantKind } from '@vera/core';
+import type {
+  Change,
+  Operation,
+  ParticipantId,
+  ParticipantKind,
+  PersonalSite,
+  Publication,
+} from '@vera/core';
 
 import { isFreshDatabase, migrate } from './migrations.ts';
 
@@ -783,6 +790,12 @@ export function loadGraph(store: Store, graphName = 'mind'): VeraGraph {
     graph.endReplay();
   }
 
+  // Sitios y publicaciones no salen del log —publicar no cambia el corpus, así
+  // que no es una operación del registro de cambios— y por eso se cargan aparte,
+  // después de reproducir y antes de suspender a nadie: quien publicó en su día
+  // tenía que estar activo entonces, no ahora.
+  loadSitesAndPublications(store, graph);
+
   // Los participantes suspendidos vuelven a serlo después de reproducir: durante
   // la reproducción deben poder aplicar lo que aplicaron en su día.
   for (const p of participants) {
@@ -790,6 +803,102 @@ export function loadGraph(store: Store, graphName = 'mind'): VeraGraph {
   }
 
   return graph;
+}
+
+// ---------------------------------------------------------------------------
+// Sitios y publicaciones (core.allium)
+//
+// La única tabla de Vera que no es materialización del registro de cambios.
+// Publicar no edita el corpus: dice qué de lo escrito quedó en un sitio, y eso
+// es un hecho aparte con su propia autoría y su propia fecha.
+// ---------------------------------------------------------------------------
+
+export function saveSite(store: Store, site: PersonalSite): void {
+  store.db
+    .prepare(
+      `INSERT INTO personal_sites (id, graph_id, owner_id, title, canonical_domain)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET title = excluded.title,
+                                      canonical_domain = excluded.canonical_domain`,
+    )
+    .run(site.id, site.graph, site.owner, site.title, site.canonicalDomain);
+}
+
+export function savePublication(store: Store, publication: Publication): void {
+  // Republicar la misma dirección la reemplaza: el sitio enseña una revisión por
+  // dirección. @invariant PublicationPathIsUniqueWithinSite.
+  store.db
+    .prepare('DELETE FROM publications WHERE site_id = ? AND path = ?')
+    .run(publication.site, publication.path);
+  store.db
+    .prepare(
+      `INSERT INTO publications
+         (id, site_id, page_id, revision_operation_id, path, published_at, published_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      publication.id,
+      publication.site,
+      publication.page,
+      publication.revision,
+      publication.path,
+      publication.publishedAt,
+      publication.publishedBy,
+    );
+}
+
+export function removePublication(store: Store, site: string, path: string): void {
+  store.db.prepare('DELETE FROM publications WHERE site_id = ? AND path = ?').run(site, path);
+}
+
+function loadSitesAndPublications(store: Store, graph: VeraGraph): void {
+  const sites = store.db
+    .prepare(
+      'SELECT id, graph_id, owner_id, title, canonical_domain FROM personal_sites WHERE graph_id = ?',
+    )
+    .all(store.graphId) as {
+    id: string;
+    graph_id: string;
+    owner_id: string;
+    title: string;
+    canonical_domain: string;
+  }[];
+  for (const site of sites) {
+    graph.createSite({
+      id: site.id,
+      owner: site.owner_id,
+      title: site.title,
+      canonicalDomain: site.canonical_domain,
+    });
+  }
+
+  const known = new Set(sites.map((site) => site.id));
+  const publications = store.db
+    .prepare(
+      `SELECT id, site_id, page_id, revision_operation_id, path, published_at, published_by
+       FROM publications ORDER BY published_at`,
+    )
+    .all() as {
+    id: string;
+    site_id: string;
+    page_id: string;
+    revision_operation_id: string;
+    path: string;
+    published_at: number;
+    published_by: string;
+  }[];
+  for (const row of publications) {
+    if (!known.has(row.site_id)) continue;
+    graph.publish({
+      id: row.id,
+      site: row.site_id,
+      page: row.page_id,
+      path: row.path,
+      participant: row.published_by,
+      revision: row.revision_operation_id,
+      at: row.published_at,
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------

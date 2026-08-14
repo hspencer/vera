@@ -6,6 +6,7 @@
 // ninguno tiene una puerta trasera.
 
 import { answersIn } from './vocabulary.ts';
+import { normalisePublicPath } from './site.ts';
 import { looksLikeQuery } from './query-source.ts';
 import { relationKeyOf, senseIn, titleIn } from './relations.ts';
 import type { Crossing } from './relations.ts';
@@ -41,9 +42,13 @@ import type {
   Participant,
   ParticipantId,
   ParticipantKind,
+  PersonalSite,
+  PersonalSiteId,
   PropertyAssignment,
   Gloss,
+  OperationId,
   Publication,
+  PublicationId,
   Revision,
   SearchHit,
   SearchOutcome,
@@ -111,6 +116,7 @@ export class VeraGraph {
   #linksByTarget = new Map<PageId, Set<PageLink>>();
   #unresolvedByTitleKey = new Map<string, Set<PageLink>>();
   #unportedByBlock = new Map<BlockId, UnportedQuery>();
+  #sites = new Map<PersonalSiteId, PersonalSite>();
   #publications: Publication[] = [];
 
   /*
@@ -485,8 +491,6 @@ export class VeraGraph {
       status: 'accepted',
     };
 
-    this.#recordRevision(submission, subjectId, at);
-
     /*
      * rule RecordAcceptedSubmission: la secuencia se asigna aquí y sólo aquí.
      *
@@ -498,8 +502,12 @@ export class VeraGraph {
      */
     this.#lastSequence = input.sequence ?? this.#lastSequence + 1;
     if (input.operationId !== undefined) this.#observeId(input.operationId);
+    // El identificador se resuelve antes de anotar la revisión porque la
+    // revisión lo lleva: es la operación la que la nombra.
+    const operationId = input.operationId ?? this.#nextId('op');
+    this.#recordRevision(submission, subjectId, at, operationId);
     const operation: Operation = {
-      id: input.operationId ?? this.#nextId('op'),
+      id: operationId,
       originId: input.originId,
       submission,
       sequence: this.#lastSequence,
@@ -546,7 +554,12 @@ export class VeraGraph {
     return [...this.#authorship.values()];
   }
 
-  #recordRevision(submission: Submission, subjectId: string, at: number): void {
+  #recordRevision(
+    submission: Submission,
+    subjectId: string,
+    at: number,
+    operation: OperationId,
+  ): void {
     const change = submission.change;
     const isBlockChange =
       change.kind === 'create_block' ||
@@ -569,6 +582,7 @@ export class VeraGraph {
 
     this.#revisions.push({
       graph: this.id,
+      operation,
       page,
       block,
       authoredBy: submission.submittedBy,
@@ -1506,29 +1520,159 @@ export class VeraGraph {
 
   // -------------------------------------------------------------------------
   // Publicación (core.allium)
+  //
+  // Publicar es un acto, no un atributo. Que una página sea pública la hace
+  // elegible; lo que la pone en un sitio es que alguien la publique ahí, y eso
+  // queda escrito con sitio, revisión, dirección, fecha y mano.
+  // @guarantee HumanPublicationAuthority
   // -------------------------------------------------------------------------
 
-  publish(input: { page: PageId; path: string; participant: ParticipantId }): Publication {
+  /** rule CreatePersonalSite — un destino de publicación con dueño y dominio. */
+  createSite(input: {
+    owner: ParticipantId;
+    title: string;
+    canonicalDomain: string;
+    id?: PersonalSiteId;
+  }): PersonalSite {
+    const owner = this.#participants.get(input.owner);
+    if (owner === undefined || owner.kind !== 'human') {
+      throw new Error('a personal site belongs to a human participant');
+    }
+    if (this.#memberships.get(input.owner) !== 'active') {
+      throw new Error('the site owner is not an active member of this graph');
+    }
+    if (input.id !== undefined) this.#observeId(input.id);
+    const site: PersonalSite = {
+      id: input.id ?? this.#nextId('site'),
+      graph: this.id,
+      owner: input.owner,
+      title: input.title,
+      canonicalDomain: input.canonicalDomain,
+    };
+    this.#sites.set(site.id, site);
+    return site;
+  }
+
+  sites(): PersonalSite[] {
+    return [...this.#sites.values()];
+  }
+
+  site(id: PersonalSiteId): PersonalSite | undefined {
+    return this.#sites.get(id);
+  }
+
+  /** El sitio nombrado por su dominio canónico, que es como lo nombra quien publica. */
+  siteByDomain(domain: string): PersonalSite | undefined {
+    const wanted = domain.replace(/\/$/, '');
+    return this.sites().find((site) => site.canonicalDomain.replace(/\/$/, '') === wanted);
+  }
+
+  /**
+   * rule PublishVisiblePageRevision.
+   *
+   * Sin `revision` publica la última revisión de la página, que es lo que quiere
+   * decir «publica esto» dicho delante de la página. Con `revision` publica esa,
+   * que es lo que hace falta para volver a publicar una versión anterior.
+   */
+  publish(input: {
+    site: PersonalSiteId;
+    page: PageId;
+    path: string;
+    participant: ParticipantId;
+    revision?: OperationId;
+    id?: PublicationId;
+    at?: number;
+  }): Publication {
     const participant = this.#participants.get(input.participant);
     if (participant === undefined || participant.kind !== 'human') {
       throw new Error('only a human participant may publish');
     }
-    if (input.participant !== this.#owner) {
+    if (this.#memberships.get(input.participant) !== 'active') {
+      throw new Error('a suspended member does not publish');
+    }
+    const site = this.#sites.get(input.site);
+    if (site === undefined) throw new Error(`no such site ${input.site}`);
+    if (site.owner !== input.participant) {
       throw new Error('only the site owner may publish');
     }
     const page = this.#pages.get(input.page);
     if (page === undefined) throw new Error('no such page');
+    // @invariant PublicationBelongsToSiteGraph
+    if (page.graph !== site.graph) {
+      throw new Error('the page belongs to another graph than the site');
+    }
     // @invariant PrivatePagesAreNeverPublished
     if (page.visibility !== 'public') {
       throw new Error('a private page is never published; set its visibility first');
     }
+
+    const path = normalisePublicPath(input.path);
+    if (path === '') throw new Error('a publication needs a path');
+    // @invariant PublicationPathIsUniqueWithinSite: dos publicaciones en la misma
+    // dirección no son dos, son una que perdió a la otra.
+    const occupied = this.#publications.find((p) => p.site === site.id && p.path === path);
+    if (occupied !== undefined && occupied.page !== page.id) {
+      throw new Error(`the path /${path}/ already publishes another page on this site`);
+    }
+
+    // @invariant PublicationNamesARevisionOfItsPage
+    const revision = input.revision ?? this.#lastRevisionOf(page.id);
+    if (revision === null) {
+      throw new Error('the page has no revision to publish');
+    }
+    if (input.revision !== undefined) {
+      const named = this.#revisions.find((r) => r.operation === input.revision);
+      if (named === undefined) throw new Error(`no such revision ${input.revision}`);
+      if (named.page !== page.id) throw new Error('that revision belongs to another page');
+    }
+
+    if (input.id !== undefined) this.#observeId(input.id);
     const publication: Publication = {
-      page: input.page,
-      path: input.path,
-      publishedAt: Date.now(),
+      id: input.id ?? this.#nextId('publication'),
+      site: site.id,
+      page: page.id,
+      revision,
+      path,
+      publishedAt: input.at ?? Date.now(),
+      publishedBy: input.participant,
     };
+    // Republicar la misma página en la misma dirección la reemplaza: el sitio
+    // enseña una revisión por dirección, y guardar las dos dejaría al build
+    // eligiendo entre ellas sin nada que decidiera.
+    this.#publications = this.#publications.filter(
+      (p) => !(p.site === site.id && p.path === path),
+    );
     this.#publications.push(publication);
     return publication;
+  }
+
+  /** Lo que un build de este sitio recibe: sus publicaciones y nada más. */
+  publicationsOf(site: PersonalSiteId): Publication[] {
+    return this.#publications.filter((publication) => publication.site === site);
+  }
+
+  /** Retira una publicación. La página sigue existiendo; deja de estar en el sitio. */
+  unpublish(input: { site: PersonalSiteId; path: string; participant: ParticipantId }): boolean {
+    const site = this.#sites.get(input.site);
+    if (site === undefined) throw new Error(`no such site ${input.site}`);
+    if (site.owner !== input.participant) {
+      throw new Error('only the site owner may withdraw a publication');
+    }
+    const path = normalisePublicPath(input.path);
+    const before = this.#publications.length;
+    this.#publications = this.#publications.filter(
+      (p) => !(p.site === input.site && p.path === path),
+    );
+    return this.#publications.length < before;
+  }
+
+  #lastRevisionOf(page: PageId): OperationId | null {
+    let latest: Revision | null = null;
+    for (const revision of this.#revisions) {
+      if (revision.page !== page) continue;
+      if (latest === null || revision.recordedAt >= latest.recordedAt) latest = revision;
+    }
+    return latest?.operation ?? null;
   }
 
   // -------------------------------------------------------------------------
@@ -1545,6 +1689,14 @@ export class VeraGraph {
     }
     replayed.#owner = this.#owner;
 
+    // Publicar no es un cambio del corpus y por eso no está en el registro de
+    // operaciones: el log dice qué se escribió, y una publicación dice qué de lo
+    // escrito se puso en un sitio. Se conserva como las membresías —copiada, no
+    // reproducida—, porque reproducir el log no puede inventar lo que el log no
+    // contiene.
+    for (const [id, site] of this.#sites) replayed.#sites.set(id, site);
+    replayed.#publications = [...this.#publications];
+
     // Las operaciones ya fueron validadas al admitirse: reproducir es aplicar,
     // reutilizando el sujeto que quedó registrado.
     for (const operation of [...this.#operations].sort((a, b) => a.sequence - b.sequence)) {
@@ -1559,7 +1711,12 @@ export class VeraGraph {
         operation.submission.channel,
         operation.appliedAt,
       );
-      replayed.#recordRevision(operation.submission, operation.subjectId, operation.appliedAt);
+      replayed.#recordRevision(
+        operation.submission,
+        operation.subjectId,
+        operation.appliedAt,
+        operation.id,
+      );
       replayed.#lastSequence = operation.sequence;
       replayed.#operations.push(operation);
       replayed.#origins.set(operation.originId, operation);

@@ -223,9 +223,19 @@ entity PropertyAssignment {
 entity Publication {
     site: PersonalSite
     page: Page
+    -- La revisión vigente cuando se abrió la vida pública de la página. No
+    -- congela la publicación: marca la frontera que separa el pasado privado.
+    first_revision: Revision
     path: String
     published_at: Timestamp
-    public_revisions: page.revisions where recorded_at >= published_at
+    public_revisions: page.revisions where recorded_at >= first_revision.recorded_at
+
+    -- Quién publicó, escrito y no derivado. Es hoy el dueño del sitio, pero un
+    -- sitio puede cambiar de manos, y entonces leer la autoría desde el dueño de
+    -- ahora haría decir al registro que publicó alguien que no estaba. «Quién
+    -- publicó esto y cuándo» es exactamente la clase de pregunta que Vera existe
+    -- para contestar, así que se guarda en el momento en que la respuesta consta.
+    published_by: Participant
 }
 
 ------------------------------------------------------------
@@ -285,7 +295,8 @@ rule PublishVisiblePage {
         site: site,
         page: page,
         path: path,
-        published_at: now
+        published_at: now,
+        published_by: participant
     )
 }
 
@@ -317,6 +328,25 @@ invariant SiteEntryPointIsPublishedInItsOwnGraph {
     for site in PersonalSites:
         site.entry_point.graph = site.graph and
         exists Publication{site: site, page: site.entry_point}
+}
+
+invariant PublicationRecordsItsHumanPublisher {
+    for publication in Publications:
+        publication.published_by.kind = human
+}
+
+invariant PublicationBeginsAtARevisionOfItsPage {
+    for publication in Publications:
+        publication.first_revision.page = publication.page
+}
+
+-- Dos publicaciones en la misma dirección no son dos: son una que perdió a la
+-- otra. @invariant CanonicalAddress de personal-site-projection.allium descansa
+-- en esto, porque una URL canónica que nombra a dos páginas no es canónica.
+invariant PublicationPathIsUniqueWithinSite {
+    for a in Publications:
+        for b in Publications:
+            a != b implies a.site != b.site or a.path != b.path
 }
 
 invariant RevisionParticipantBelongsToGraph {
