@@ -3,7 +3,7 @@
 
 -- Scope: Sharing selected pages from a sovereign personal Vera library
 -- Includes: Delimited selections, individual and shared destinations,
---   synchronised replicas, authorised direct editing, provenance and
+--   synchronised replicas, local editing, origin review, provenance and
 --   withdrawal limits
 -- Excludes:
 --   - Authentication and grant mechanics (identity-access.allium)
@@ -20,6 +20,7 @@ use "./core.allium" as core
 contract SovereignSharing {
     share: (selection: SharedSelection, destination: SharingDestination) -> Distribution
     edit: (distribution: Distribution, author: core/Participant, page: core/Page) -> SharedEdit
+    review: (edit: SharedEdit, owner: core/Participant, decision: ReviewDecision) -> SharedEdit
     withdraw: (distribution: Distribution) -> Withdrawal
 
     @invariant SharingIsDelimited
@@ -39,16 +40,26 @@ contract SovereignSharing {
         -- unrelated documents. The source cannot silently erase a retained
         -- replica or truthfully promise that withdrawal will recover it.
 
-    @invariant AuthorisedEditorsWriteTheSharedResourceDirectly
+    @invariant AuthorisedEditorsDoNotWaitToWork
         -- A participant to whom the selection was shared with write authority
-        -- changes the shared logical page without prior approval. Every replica
-        -- learns that operation through synchronisation; none presents a private
-        -- fork as though it were the shared page.
+        -- changes their replica without prior approval. Their hand does not wait
+        -- for the origin to be online or for its owner to review the difference.
 
-    @invariant DirectNeverMeansAnonymous
-        -- Direct editing preserves the writing participant, operation history
-        -- and a path to reversal. Permission removes the approval queue; it does
-        -- not remove authorship or make the latest writer the original author.
+    @invariant TheOriginReviewsWhatReturns
+        -- A remote edit does not silently enter the source library's canonical
+        -- page. Synchronisation presents the differences to the sovereign owner,
+        -- who accepts or rejects them before they join the source history.
+
+    @invariant AcceptanceAndRejectionStayAttributed
+        -- Accepting records the remote author and the owner who accepted; it
+        -- never reattributes the contribution to the owner. Rejecting preserves
+        -- enough evidence to explain why replicas differ without adding the
+        -- proposed content to the canonical page.
+
+    @invariant UnsharingEndsTheRelationship
+        -- The owner can stop future synchronisation and editing authority by
+        -- withdrawing the distribution. This ends the relationship; it does not
+        -- erase replicas or observations recipients already retained.
 
     @invariant WithdrawalStopsTheFutureNotThePast
         -- Withdrawing stops future discovery and synchronisation from the
@@ -68,6 +79,8 @@ contract SovereignSharing {
 
 enum DestinationKind { participant | participants | shared_graph | shared_site | public }
 enum DistributionStatus { offered | synchronised | withdrawn }
+enum SharedEditStatus { local | awaiting_review | accepted | rejected }
+enum ReviewDecision { accept | reject }
 
 ------------------------------------------------------------
 -- Entities and Values
@@ -105,6 +118,9 @@ entity SharedEdit {
     page: core/Page
     author: core/Participant
     recorded_at: Timestamp
+    status: SharedEditStatus
+    reviewed_by: core/Participant?
+    reviewed_at: Timestamp?
 }
 
 ------------------------------------------------------------
@@ -126,12 +142,17 @@ invariant ASharedEditBelongsToTheSharedSelection {
         edit.page in edit.distribution.selection.pages
 }
 
+invariant AReviewedEditNamesItsReviewer {
+    for edit in SharedEdits:
+        (edit.status = accepted or edit.status = rejected) implies edit.reviewed_by != null
+}
+
 ------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
 
--- Answered: a participant with write authority edits the shared logical page
--- directly; history, authorship and reversal are the safeguard.
+-- Answered: an authorised participant edits their replica directly; the source
+-- owner accepts or rejects the differences when they return.
 open question "When a shared selection criterion gains or loses a page, does synchronisation follow the criterion automatically or require a new sharing decision?"
 open question "What acknowledgement proves that a recipient honoured a withdrawal request, and how long is that evidence retained?"
 open question "Can a public destination synchronise canonical page identity, or does it receive only a publication projection?"
