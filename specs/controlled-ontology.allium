@@ -48,7 +48,7 @@ enum MigrationStatus { previewed | applied | discarded }
 -- cuyo valor es genuinamente una frase, y decirlo es distinto de no haberlo
 -- decidido nunca.
 enum PropertyValueKind {
-    boolean | one_of | concept | page_reference | date | number | free_text
+    boolean | one_of | concept | page_reference | external_url | date | number | free_text
 }
 
 ------------------------------------------------------------
@@ -810,6 +810,12 @@ surface OntologyCuration {
         -- the block. The title arrives beside it, as a suggestion to name it,
         -- and the source stays exactly what its author typed.
 
+    @guarantee InternalAndExternalLinksAreDifferentFields
+        -- A page reference names another entity inside Vera. An external URL
+        -- preserves and opens an address outside the corpus. Declaring one as
+        -- the other would make navigation, validation and processing lie about
+        -- which sovereignty owns the destination.
+
     @guarantee TypeAndTopicAreNeverTheSameQuestion
         -- What a page is and what it is about are asked separately and answered
         -- separately. A vocabulary that answers both at once with one word ends
@@ -999,9 +1005,9 @@ contract TheOntologyIsWrittenWhereItCanBeRead {
 open question "Which ontology changes may an agent curator apply without prior human confirmation?"
 open question "When processing resolves a link, does the title it found belong in the block as text, in a property of the page, or in a record beside the link that the block never sees?"
 open question "What does processing do with an address it cannot reach — say nothing, propose the link as dead, or leave a standing question to retry later, given that unreachable today and gone for ever look identical from here?"
--- Las clases de campo son seis —texto, número, fecha, enlace, sí/no, una de— y
--- se eligieron cortas: una lista larga es una lista de validaciones que alguien
--- tendría que escribir y mantener.
+-- Las clases de campo distinguen al menos texto, número, fecha, enlace interno,
+-- URL externa, sí/no y una de. La lista se mantiene corta: una lista larga es
+-- una lista de validaciones que alguien tendría que escribir y mantener.
 open question "¿Hace falta alguna clase de campo más —duración, cantidad con unidad, rango de fechas— o lo que parece faltar se resuelve declarando los valores conocidos de «una de»?"
 
 open question "What happens when two composed semantic types define incompatible properties or lifecycles?"
