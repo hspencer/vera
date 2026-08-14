@@ -114,6 +114,19 @@ contract SovereignSharing {
         -- a participant may establish a separate fork only by an explicit later
         -- decision.
 
+    @invariant ASharedSpaceHasAnOriginalHumanCustodian
+        -- A shared graph or site is constituted and sponsored by a human who
+        -- supplies its original custody, even when collaboration inside it is
+        -- horizontal. Collective governance does not make the infrastructure
+        -- ownerless or hide who remains responsible if the group cannot act.
+
+    @invariant TheAuthorisedGroupGovernsBeforeTheFallbackOwner
+        -- When a participant withdraws a contribution from a shared space, the
+        -- participants who retain governing authority over that space govern
+        -- its common continuation. If that group cannot exercise custody, the
+        -- space's original owner is the explicit fallback; the withdrawn
+        -- contribution's origin does not regain control merely by withdrawing.
+
     @invariant WithdrawalStopsTheFutureNotThePast
         -- Withdrawing stops future discovery and synchronisation from the
         -- source and may propagate a request for recipients to remove retained
@@ -150,6 +163,8 @@ entity SharedSelection {
 entity SharingDestination {
     kind: DestinationKind
     address: String
+    original_owner: core/Participant?
+    governors: List<core/Participant>
 }
 
 entity Distribution {
@@ -244,6 +259,12 @@ invariant ASharedSpaceHasAtMostOneCommonContinuation {
                 implies a.canonical_custody != b.canonical_custody
 }
 
+invariant EverySharedSpaceHasAFallbackOwner {
+    for destination in SharingDestinations:
+        destination.kind in {shared_graph, shared_site}
+            implies destination.original_owner != null
+}
+
 ------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
@@ -260,3 +281,5 @@ open question "Can a public destination synchronise canonical page identity, or 
 -- canonical custody, permanently derived from the immutable historical origin.
 -- Answered: a shared graph or site normally continues as one common fork under
 -- that space's custody. Separate participant forks require explicit decisions.
+-- Answered: the authorised group governs that common continuation; if it cannot
+-- act, custody falls back to the shared space's original human owner.

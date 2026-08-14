@@ -403,8 +403,10 @@ Las contribuciones se revisan como lotes coherentes, grupos cerrados bajo sus
 dependencias o bloques completos, nunca como líneas arbitrarias. Si se retira el
 origen de un espacio compartido, el espacio continúa normalmente como una sola
 bifurcación común con canon nuevo; las ramas personales sólo nacen por una
-decisión explícita posterior. Sigue abierto cómo se resuelven dos escrituras
-concurrentes.
+decisión explícita posterior. Esa continuación la gobiernan primero quienes
+conservan autoridad en el espacio compartido; si el grupo no puede ejercerla, la
+custodia vuelve a la persona propietaria original que constituyó y sostiene ese
+grafo. Sigue abierto cómo se resuelven dos escrituras concurrentes.
 
 **Preguntas abiertas, todas sin respuesta:**
 
