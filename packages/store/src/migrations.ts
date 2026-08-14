@@ -349,6 +349,54 @@ const addMediaMetadata: Migration = {
   },
 };
 
+/**
+ * 9 — la publicación dice qué revisión y de qué mano.
+ *
+ * La tabla existía desde el primer esquema y nadie la escribía nunca, así que
+ * describía una publicación más pobre que la que la spec pide: sitio, página,
+ * ruta y fecha, sin revisión y sin quien publicó. Sin revisión, «lo publicado»
+ * era la página de ahora y no el texto que se publicó; sin publicador, «quién
+ * publicó esto» se leía del dueño de hoy, que no tiene por qué ser el de
+ * entonces.
+ *
+ * Añadir dos columnas NOT NULL a una tabla con filas exige inventarles un valor,
+ * y aquí no hay ninguno honesto que inventar. Por eso la migración se planta si
+ * encuentra filas: en toda base existente hay cero, y una que las tuviera vendría
+ * de un camino de escritura que nunca existió.
+ */
+const addPublicationProvenance: Migration = {
+  version: 9,
+  name: 'revisión y mano de una publicación',
+  apply(db) {
+    const table = db
+      .prepare("SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'publications'")
+      .get() as { n: number };
+    if (table.n === 0) return;
+    const rows = db.prepare('SELECT count(*) AS n FROM publications').get() as { n: number };
+    if (rows.n > 0) {
+      throw new Error(
+        `publications tiene ${rows.n} filas anteriores a que publicar registrara revisión y ` +
+          'autor. No hay valor honesto que darles: revísalas a mano antes de migrar.',
+      );
+    }
+    rebuildTable(
+      db,
+      'publications',
+      `CREATE TABLE publications_new (
+          id                     TEXT PRIMARY KEY,
+          site_id                TEXT NOT NULL REFERENCES personal_sites (id),
+          page_id                TEXT NOT NULL REFERENCES pages (id),
+          revision_operation_id  TEXT NOT NULL REFERENCES operations (id),
+          path                   TEXT NOT NULL,
+          published_at           INTEGER NOT NULL,
+          published_by           TEXT NOT NULL REFERENCES participants (id)
+      ) STRICT`,
+      ['id', 'site_id', 'page_id', 'path', 'published_at'],
+      ['CREATE UNIQUE INDEX publications_path ON publications (site_id, path)'],
+    );
+  },
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   addWalkedChannel,
   addPageOriginCreatedAt,
@@ -358,6 +406,7 @@ export const MIGRATIONS: readonly Migration[] = [
   addConfinements,
   addBlockGlosses,
   addMediaMetadata,
+  addPublicationProvenance,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

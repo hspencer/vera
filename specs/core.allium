@@ -225,6 +225,13 @@ entity Publication {
     revision: Revision
     path: String
     published_at: Timestamp
+
+    -- Quién publicó, escrito y no derivado. Es hoy el dueño del sitio, pero un
+    -- sitio puede cambiar de manos, y entonces leer la autoría desde el dueño de
+    -- ahora haría decir al registro que publicó alguien que no estaba. «Quién
+    -- publicó esto y cuándo» es exactamente la clase de pregunta que Vera existe
+    -- para contestar, así que se guarda en el momento en que la respuesta consta.
+    published_by: Participant
 }
 
 ------------------------------------------------------------
@@ -286,7 +293,8 @@ rule PublishVisiblePageRevision {
         page: page,
         revision: revision,
         path: path,
-        published_at: now
+        published_at: now,
+        published_by: participant
     )
 }
 
@@ -312,6 +320,25 @@ invariant OnlySiteOwnerPublishes {
 invariant PublicationBelongsToSiteGraph {
     for publication in Publications:
         publication.page.graph = publication.site.graph
+}
+
+invariant PublicationRecordsItsHumanPublisher {
+    for publication in Publications:
+        publication.published_by.kind = human
+}
+
+invariant PublicationNamesARevisionOfItsPage {
+    for publication in Publications:
+        publication.revision.page = publication.page
+}
+
+-- Dos publicaciones en la misma dirección no son dos: son una que perdió a la
+-- otra. @invariant CanonicalAddress de personal-site-projection.allium descansa
+-- en esto, porque una URL canónica que nombra a dos páginas no es canónica.
+invariant PublicationPathIsUniqueWithinSite {
+    for a in Publications:
+        for b in Publications:
+            a != b implies a.site != b.site or a.path != b.path
 }
 
 invariant RevisionParticipantBelongsToGraph {

@@ -13,6 +13,7 @@ import {
   intents,
   makeBlock,
   makePage,
+  makeSite,
   runIntents,
   submit,
 } from './helpers.ts';
@@ -138,30 +139,35 @@ describe('invariant BlockParentBelongsToSamePage', () => {
 describe('invariant PrivatePagesAreNeverPublished', () => {
   it('refuses to publish a private page', () => {
     const graph = inhabitedGraph();
+    const site = makeSite(graph);
     const page = makePage(graph, 'Privada');
 
     assert.throws(
-      () => graph.publish({ page, path: '/privada/', participant: OWNER }),
+      () => graph.publish({ site, page, path: 'privada', participant: OWNER }),
       /private|visibility/i,
     );
   });
 
   it('publishes a public page for its human owner', () => {
     const graph = inhabitedGraph();
+    const site = makeSite(graph);
     const page = makePage(graph, 'Publica', 'public');
 
-    const publication = graph.publish({ page, path: '/publica/', participant: OWNER });
+    const publication = graph.publish({ site, page, path: '/publica/', participant: OWNER });
 
     assert.equal(publication.page, page);
-    assert.equal(publication.path, '/publica/');
+    assert.equal(publication.site, site);
+    assert.equal(publication.path, 'publica');
+    assert.equal(publication.publishedBy, OWNER);
   });
 
   it('refuses to let an agent publish', () => {
     const graph = inhabitedGraph();
+    const site = makeSite(graph);
     const page = makePage(graph, 'Publica', 'public');
 
     assert.throws(
-      () => graph.publish({ page, path: '/publica/', participant: AGENT }),
+      () => graph.publish({ site, page, path: 'publica', participant: AGENT }),
       /human|owner/i,
     );
   });
@@ -175,6 +181,137 @@ describe('invariant PrivatePagesAreNeverPublished', () => {
         }
       }),
     );
+  });
+});
+
+// Publicar es una operación con sitio, revisión, dirección, fecha y mano. Una
+// página pública es *elegible*; lo que la pone en un sitio es que alguien la
+// publique ahí. @guarantee HumanPublicationAuthority, @invariant
+// SiteMembershipIsExplicit (personal-site-projection.allium).
+describe('rule PublishVisiblePageRevision', () => {
+  it('records which revision was published, not merely which page', () => {
+    const graph = inhabitedGraph();
+    const site = makeSite(graph);
+    const page = makePage(graph, 'Publica', 'public');
+    const block = makeBlock(graph, page, 'primera version');
+
+    const first = graph.publish({ site, page, path: 'publica', participant: OWNER });
+
+    submit(graph, { kind: 'edit_block', block, content: 'segunda version' });
+
+    assert.equal(
+      graph.publicationsOf(site)[0]?.revision,
+      first.revision,
+      'editing after publishing does not republish',
+    );
+
+    const again = graph.publish({ site, page, path: 'publica', participant: OWNER });
+    assert.notEqual(again.revision, first.revision, 'publishing again names the new revision');
+    assert.equal(graph.publicationsOf(site).length, 1, 'the address holds one revision');
+  });
+
+  it('refuses a revision that belongs to another page', () => {
+    const graph = inhabitedGraph();
+    const site = makeSite(graph);
+    const here = makePage(graph, 'Aqui', 'public');
+    const there = makePage(graph, 'Alla', 'public');
+    const elsewhere = graph.revisions().find((revision) => revision.page === there)?.operation;
+    assert.ok(elsewhere !== undefined);
+
+    assert.throws(
+      () =>
+        graph.publish({ site, page: here, path: 'aqui', participant: OWNER, revision: elsewhere }),
+      /another page/i,
+    );
+  });
+
+  it('refuses to hand one address to two pages', () => {
+    const graph = inhabitedGraph();
+    const site = makeSite(graph);
+    const first = makePage(graph, 'Primera', 'public');
+    const second = makePage(graph, 'Segunda', 'public');
+
+    graph.publish({ site, page: first, path: 'obra', participant: OWNER });
+
+    assert.throws(
+      () => graph.publish({ site, page: second, path: 'obra', participant: OWNER }),
+      /already publishes/i,
+    );
+  });
+
+  it('refuses a path that climbs out of the site', () => {
+    const graph = inhabitedGraph();
+    const site = makeSite(graph);
+    const page = makePage(graph, 'Publica', 'public');
+
+    assert.throws(
+      () => graph.publish({ site, page, path: '../../etc/passwd', participant: OWNER }),
+      /traverse/i,
+    );
+  });
+
+  it('refuses to publish to a site owned by someone else', () => {
+    const graph = inhabitedGraph();
+    graph.addParticipant({ id: OUTSIDER, name: 'Otra', kind: 'human' });
+    graph.admit(OUTSIDER);
+    const site = graph.createSite({
+      owner: OUTSIDER,
+      title: 'Otro sitio',
+      canonicalDomain: 'https://otro.example',
+    }).id;
+    const page = makePage(graph, 'Publica', 'public');
+
+    assert.throws(
+      () => graph.publish({ site, page, path: 'publica', participant: OWNER }),
+      /site owner/i,
+    );
+  });
+
+  // @guarantee BuildHasNoUnassignedPublicInput: una página pública asignada a
+  // otro sitio está tan ausente de este build como una privada.
+  it('keeps a public page out of a site nobody published it to', () => {
+    const graph = inhabitedGraph();
+    const mine = makeSite(graph, { domain: 'https://vera.mediafranca.net' });
+    const other = makeSite(graph, { title: 'Otro', domain: 'https://otro.example' });
+    const page = makePage(graph, 'Publica', 'public');
+
+    graph.publish({ site: other, page, path: 'publica', participant: OWNER });
+
+    assert.deepEqual(graph.publicationsOf(mine), []);
+    assert.equal(graph.publicationsOf(other).length, 1);
+  });
+
+  it('withdraws a publication without touching the page', () => {
+    const graph = inhabitedGraph();
+    const site = makeSite(graph);
+    const page = makePage(graph, 'Publica', 'public');
+    graph.publish({ site, page, path: 'publica', participant: OWNER });
+
+    assert.equal(graph.unpublish({ site, path: 'publica', participant: OWNER }), true);
+    assert.deepEqual(graph.publicationsOf(site), []);
+    assert.equal(graph.page(page)?.visibility, 'public', 'the page survives its withdrawal');
+  });
+
+  it('survives replaying the log, which does not contain it', () => {
+    const graph = inhabitedGraph();
+    const site = makeSite(graph);
+    const page = makePage(graph, 'Publica', 'public');
+    graph.publish({ site, page, path: 'publica', participant: OWNER });
+
+    const replayed = graph.replayFromLog();
+
+    assert.equal(replayed.publicationsOf(site).length, 1);
+    assert.equal(replayed.site(site)?.canonicalDomain, 'https://vera.mediafranca.net');
+    assert.deepEqual(checkInvariants(replayed), []);
+  });
+
+  it('leaves the graph free of violations', () => {
+    const graph = inhabitedGraph();
+    const site = makeSite(graph);
+    const page = makePage(graph, 'Publica', 'public');
+    graph.publish({ site, page, path: 'publica', participant: OWNER });
+
+    assert.deepEqual(checkInvariants(graph), []);
   });
 });
 
