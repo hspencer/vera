@@ -23,6 +23,7 @@ contract SovereignSharing {
     contribute: (distribution: Distribution, author: core/Participant, edits: List<SharedEdit>) -> Contribution
     review: (selection: ReviewSelection, owner: core/Participant, decision: ReviewDecision) -> ReviewOutcome
     withdraw: (distribution: Distribution) -> Withdrawal
+    continue_after_withdrawal: (distribution: Distribution, custodian: core/Participant) -> ContinuationFork
 
     @invariant SharingIsDelimited
         -- Sharing a project or concept selects pages explicitly or by a visible
@@ -89,6 +90,23 @@ contract SovereignSharing {
         -- withdrawing the distribution. This ends the relationship; it does not
         -- erase replicas or observations recipients already retained.
 
+    @invariant WithdrawalDoesNotEndOtherPeoplesWork
+        -- A recipient may continue retained work after withdrawal as an editable
+        -- fork under new canonical custody. The source owner can end the sharing
+        -- relationship, not prohibit independent continuation of what was
+        -- already distributed.
+
+    @invariant ContinuationIsNewAndItsDerivationIsPermanent
+        -- The continuing fork receives a new identity and canonical history. It
+        -- permanently names the withdrawn distribution and original pages as
+        -- its derivation; it never presents itself as the still-synchronised
+        -- original or rewrites where sharing began.
+
+    @invariant PendingWorkSurvivesTheCut
+        -- Remote edits not yet reviewed when withdrawal occurs remain explicit
+        -- in the continuing fork or are deliberately discarded by its new
+        -- custodian. Withdrawal never makes pending work vanish silently.
+
     @invariant WithdrawalStopsTheFutureNotThePast
         -- Withdrawing stops future discovery and synchronisation from the
         -- source and may propagate a request for recipients to remove retained
@@ -135,6 +153,7 @@ entity Distribution {
     withdrawal: Withdrawal?
     edits: SharedEdit with distribution = this
     contributions: Contribution with distribution = this
+    continuations: ContinuationFork with withdrawn_distribution = this
 }
 
 entity Withdrawal {
@@ -173,6 +192,13 @@ entity ReviewOutcome {
     reviewed_at: Timestamp
 }
 
+entity ContinuationFork {
+    withdrawn_distribution: Distribution
+    custodian: core/Participant
+    derived_from: List<core/Page>
+    created_at: Timestamp
+}
+
 ------------------------------------------------------------
 -- Invariants
 ------------------------------------------------------------
@@ -197,6 +223,11 @@ invariant AReviewSelectsOnlySubmittedEdits {
         selection.edits.all(edit => edit in selection.contribution.edits)
 }
 
+invariant AContinuationComesFromAWithdrawnDistribution {
+    for fork in ContinuationForks:
+        fork.withdrawn_distribution.status = withdrawn
+}
+
 ------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
@@ -209,4 +240,6 @@ invariant AReviewSelectsOnlySubmittedEdits {
 open question "When a shared selection criterion gains or loses a page, does synchronisation follow the criterion automatically or require a new sharing decision?"
 open question "What acknowledgement proves that a recipient honoured a withdrawal request, and how long is that evidence retained?"
 open question "Can a public destination synchronise canonical page identity, or does it receive only a publication projection?"
-open question "When the origin withdraws while recipients have accepted or pending edits, do their replicas freeze as archival forks, may a recipient adopt a continuing fork with a new canonical custodian, or must custodianship be transferred before withdrawal?"
+-- Answered: recipients may continue as an editable fork with new identity and
+-- canonical custody, permanently derived from the immutable historical origin.
+open question "When several recipients shared one space, does withdrawal create one continuation governed by that space or may each recipient establish an independent fork?"

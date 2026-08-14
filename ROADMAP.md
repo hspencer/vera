@@ -414,7 +414,10 @@ concurrentes.
   origen detiene su disponibilidad futura, pero no borra lo que otra soberanía ya
   recibió. Vera debe advertir esta consecuencia antes de compartir y puede
   propagar una petición de retirada; no promete recuperar todas las copias. Falta
-  decidir cómo se representa, acusa recibo y audita esa petición.
+  decidir cómo se representa, acusa recibo y audita esa petición. Quien recibió
+  el trabajo puede continuarlo como una bifurcación editable con identidad y
+  canon nuevos, permanentemente derivada del origen histórico. El origen puede
+  terminar el vínculo, no destruir el trabajo ajeno.
 - **Moderación y bloqueo.** El fediverso resolvió esto mal y a golpes. Vera no
   puede pretender que el problema no la alcanza en cuanto dos instancias se
   hablen.
