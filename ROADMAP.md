@@ -9,11 +9,101 @@ Este documento no promete fechas. Dice **qué falta, por qué importa, qué lo
 bloquea y qué preguntas siguen abiertas**. Una hoja de ruta con fechas y sin
 preguntas abiertas es una lista de deseos con formato de plan.
 
-> Las cuatro direcciones estructurales —instanciación multiusuario, MCP remoto,
-> modularización, proyectos colaborativos— están descritas en
-> [README § Pasos futuros](README.md#pasos-futuros) y no se repiten aquí.
-> Este documento añade los tres horizontes que hoy mandan sobre la experiencia:
-> **que la mano no espere**, **que la espera se vea** y **la federación**.
+Las cuatro direcciones estructurales antes resumidas en
+[README § Pasos futuros](README.md#pasos-futuros) y los tres horizontes de
+experiencia no son dos planes distintos. Todos dependen de un mismo umbral:
+definir qué se instala, qué contiene, quién entra y qué contrato ofrece Vera a
+personas y agentes. La hoja empieza por ese fundamento y después ordena **que la
+mano no espere**, **que la espera se vea** y **la federación**.
+
+---
+
+## Umbral — Saber qué es una Vera
+
+**Estado: parcialmente decidido y construido para una sola persona, un solo
+grafo y agentes locales. La generalización no está especificada.**
+
+Antes de robustecer el servidor o elegir un protocolo de federación hay que
+separar cuatro cosas que hoy coinciden en la única Vera que existe:
+
+- una **instancia** es el servidor instalable y operable, con dirección,
+  almacenamiento, configuración, actualización, respaldo y recuperación;
+- una **biblioteca** es un corpus gobernado como una unidad, con sus páginas,
+  bloques, objetos, historial, vocabulario y reglas;
+- un **participante** es una persona o un agente con identidad, membresía,
+  autoridad y procedencia;
+- una **publicación** es una proyección revocable de una biblioteca, no acceso
+  anónimo al almacén que la contiene.
+
+La v0 identifica instancia y biblioteca: una instancia sirve un solo grafo y
+tiene una persona propietaria. Eso sigue siendo el alcance construido, no una
+decisión arquitectónica irreversible. Antes de multiusuario hay que decidir si
+una instancia podrá alojar varias bibliotecas independientes y si una biblioteca
+puede pertenecer a una persona, a un colectivo o a ninguno de sus servidores.
+
+### 0.1 El modelo de instalación y gobierno
+
+Especificar el ciclo completo de una instancia: crearla, reclamar su propiedad,
+levantarla en otra máquina, actualizarla, respaldarla, restaurarla y abandonarla
+sin perder el corpus ni su procedencia. El despliegue de una sola instancia debe
+ser reproducible antes de diseñar una red de ellas.
+
+Entregables: una spec de instancia y biblioteca; una prueba de restauración sobre
+una instalación vacía; y una decisión explícita sobre uno o varios grafos por
+instancia. Ésta última queda abierta: cambia el aislamiento, las URLs, el modelo
+de permisos, la sincronización y el modo de operar el servidor.
+
+### 0.2 Una identidad, distintas autoridades
+
+Cerrar el camino que hoy supone que una petición sin credencial es la persona
+propietaria. Personas y agentes se autentican por el mismo límite de identidad;
+lo que difiere es su clase de participante, su canal de contribución y la
+concesión concreta bajo la que actúan.
+
+Falta: autenticación humana; sesiones; recuperación desde la máquina soberana;
+membresías y concesiones por biblioteca; revocación; registro de lo leído además
+de lo escrito; y autenticación remota con consentimiento. Sólo después se expone
+Vera fuera de `localhost` y se abre MCP a clientes que viven en la nube.
+
+### 0.3 El protocolo del bibliotecario
+
+Vera no debe estar documentada para una IA particular. Cualquier inteligencia
+admitida puede ocupar una plaza de bibliotecario y tiene que poder descubrir,
+sin conocimiento privado del código:
+
+- qué puede hacer y bajo qué identidad, concesión y versión de protocolo;
+- qué contexto rector debe leer y qué parte del corpus es sólo contenido;
+- cómo descubrir páginas, bloques, relaciones, propiedades y objetos;
+- cómo consultar el grafo y cómo interpretar resultados, límites y procedencia;
+- cómo proponer y aplicar cambios idempotentes, con precondiciones y rechazos
+  legibles;
+- cuáles son las reglas de escritura del outliner: identidad del bloque,
+  jerarquía, orden, referencias, propiedades, medios y descarte;
+- qué conserva y qué pierde cada representación, especialmente Markdown;
+- cómo verificar el efecto de una escritura y cómo actuar ante conflicto.
+
+El entregable no es sólo documentación narrativa: es un contrato versionado,
+descubrible por máquina, una referencia para humanos, ejemplos canónicos y una
+matriz de pruebas que conecte cada comando MCP/HTTP con la misma operación de
+dominio. Las páginas rectoras aportan contexto autorizado; ningún bloque común
+se convierte en instrucciones por estar escrito en el corpus.
+
+### 0.4 Sincronización y Solid como decisiones derivadas
+
+La sincronización local entre navegador y servidor, la sincronización entre
+aparatos y la federación entre instancias comparten operaciones e identidad,
+pero no son el mismo problema. Primero se completa y mide la reconciliación del
+horizonte 1. Después se ejecutan dos prototipos aislados:
+
+1. contrastar `any-sync` con el registro canónico de operaciones, cifrado,
+   conflictos y portabilidad de Vera;
+2. contrastar Solid —Pods, WebID/Solid-OIDC y autorizaciones— con bibliotecas,
+   participantes, publicación y procedencia.
+
+Solid es un candidato a infraestructura, no el modelo de dominio de Vera. El
+prototipo debe contestar qué sustituye, qué conserva y qué obliga a duplicar
+antes de adoptarlo. No se diseña un protocolo exclusivo mientras una combinación
+de estándares abiertos pueda satisfacer el contrato sin perder semántica.
 
 ---
 
@@ -305,31 +395,30 @@ No está decidido y **se decide en una spec antes que en código**, como todo.
 ## El orden
 
 ```
-  Horizonte 1 ─── que la mano no espere ──────────────┐
-  (en curso)                                          │
-                                                      ▼
-  Horizonte 2 ─── que la espera se vea ───────► independientes entre sí;
-  (empezable ya)                                los dos son experiencia
-                                                      │
-  README §1 ────── multiusuario ──────────────────────┤
-  (precondición de casi todo)                         │
-       │                                              ▼
-       ├──► README §2 · MCP remoto            Horizonte 3.1 · publicación web
-       │                                      (empezable ya, no depende de nada)
-       ├──► README §3 · modularización
-       │                                              │
-       └──► Horizonte 3.2 · identidad federada ───────┤
-                     │                                │
-                     └──► Horizonte 3.3 · grafos compartidos
-                              │
-                              └──► README §4 · proyectos colaborativos
+  Umbral 0.1 ── instancia y biblioteca ──────────────────────────┐
+       │                                                         │
+       ├──► Umbral 0.2 · identidad y autoridad ───► MCP remoto   │
+       │             │                                           │
+       │             └──► identidad federada y colaboración      │
+       │                                                         │
+       ├──► Umbral 0.3 · protocolo del bibliotecario             │
+       │             └──► cualquier IA lee y escribe con contrato│
+       │                                                         │
+       └──► Horizonte 3.1 · publicación web                      │
+                                                                 │
+  Horizonte 1 ── reconciliación local ─► Umbral 0.4 · prototipos │
+       │                                      Solid / any-sync   │
+       └──────────────────────────────────────► federación ◄─────┘
+
+  Horizonte 2 ── esperas visibles (independiente, empezable ya)
 ```
 
-Lo que se puede empezar hoy sin depender de nada: **lo que queda del horizonte
-2** —PDF, importación, mapa— y la **publicación web (3.1)**. Todo lo demás pasa por la autenticación humana, que es
-la deuda que bloquea el resto del proyecto: mientras exista una vía anónima que
-escribe como el propietario, exponer Vera fuera de la máquina es exponer la
-firma.
+Lo que se puede empezar hoy sin depender de decisiones abiertas: **lo que queda
+del horizonte 2** —PDF, importación, mapa—, la **publicación web (3.1)** como
+proyección estática y la documentación del contrato ya construido en **0.3**.
+Exponer el corpus vivo, MCP remoto, multiusuario y federación pasan por la
+autenticación humana: mientras exista una vía anónima que escribe como el
+propietario, exponer Vera fuera de la máquina es exponer la firma.
 
 ---
 
