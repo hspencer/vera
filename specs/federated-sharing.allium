@@ -33,6 +33,18 @@ contract SovereignSharing {
         -- source page and shared history. A synchronised copy does not pretend
         -- to be an unrelated page merely because it now lives elsewhere.
 
+    @invariant OriginMeansWhereSharingBegan
+        -- Origin is literally the personal library and page from which the
+        -- sovereign participant first shared the resource. Synchronising,
+        -- editing, accepting changes or sharing onward never transfers or
+        -- rewrites that origin.
+
+    @invariant HorizontalParticipationDoesNotEraseOrigin
+        -- Participants with equivalent writing authority collaborate
+        -- horizontally inside the granted relationship. Equality of permission
+        -- does not make every replica an origin or remove the source owner's
+        -- responsibility for the canonical history.
+
     @invariant AReceivedCopyEntersAnotherSovereignty
         -- A person, shared graph or site that synchronises content receives a
         -- replica it can retain independently. While sharing remains active,
