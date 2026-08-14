@@ -116,13 +116,16 @@ con memoria incorporada. Los modelos y agentes deben poder cambiar sin cambiar
 la identidad de la biblioteca, y dos inteligencias distintas deben recibir la
 misma descripción observable de qué existe, qué pueden hacer y quién decide.
 
-El proyecto conserva sus decisiones en dos registros enlazados. Las páginas de
+El proyecto conserva sus decisiones en tres rastros enlazados. Las páginas de
 Vera guardan el pensamiento pasado al limpio: razones, alternativas, desacuerdos,
 preguntas y decisiones en su contexto intelectual. Las specs Allium reciben las
-decisiones conjuntas que ya fijan comportamiento observable del software. La
-página explica **por qué** y cómo se llegó; la spec obliga **qué** debe cumplirse.
-Una pregunta abierta no se disfraza de regla y una regla no depende de reconstruir
-una conversación para entender su intención.
+decisiones conjuntas que ya fijan comportamiento observable del software. Los
+README, documentos y diagramas Mermaid del repositorio explican la arquitectura
+elegida para cumplirlas. Vera enlaza hacia ambos: la página explica **por qué** y
+cómo se llegó; la spec obliga **qué** debe cumplirse; el repositorio muestra
+**cómo** se realiza técnicamente. Una pregunta abierta no se disfraza de regla,
+una regla no depende de reconstruir una conversación para entender su intención
+y la documentación técnica no se convierte en una tercera fuente normativa.
 
 ### 0.4 Sincronización y Solid como decisiones derivadas
 
