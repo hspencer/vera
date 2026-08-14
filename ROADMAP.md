@@ -399,7 +399,11 @@ biblioteca que compartió la página conserva el canon. Al sincronizar, su
 propietario ve las diferencias y acepta o rechaza antes de incorporarlas. Aceptar
 preserva la autoría remota; rechazar no reescribe la réplica ajena. Descompartir
 corta futuras sincronizaciones y autoridad sin recuperar copias ya distribuidas.
-Sigue abierto con qué granularidad se revisa y cómo se resuelven dos escrituras
+Las contribuciones se revisan como lotes coherentes, grupos cerrados bajo sus
+dependencias o bloques completos, nunca como líneas arbitrarias. Si se retira el
+origen de un espacio compartido, el espacio continúa normalmente como una sola
+bifurcación común con canon nuevo; las ramas personales sólo nacen por una
+decisión explícita posterior. Sigue abierto cómo se resuelven dos escrituras
 concurrentes.
 
 **Preguntas abiertas, todas sin respuesta:**

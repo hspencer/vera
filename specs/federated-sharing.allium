@@ -23,7 +23,7 @@ contract SovereignSharing {
     contribute: (distribution: Distribution, author: core/Participant, edits: List<SharedEdit>) -> Contribution
     review: (selection: ReviewSelection, owner: core/Participant, decision: ReviewDecision) -> ReviewOutcome
     withdraw: (distribution: Distribution) -> Withdrawal
-    continue_after_withdrawal: (distribution: Distribution, custodian: core/Participant) -> ContinuationFork
+    continue_after_withdrawal: (distribution: Distribution, custody: SharingDestination) -> ContinuationFork
 
     @invariant SharingIsDelimited
         -- Sharing a project or concept selects pages explicitly or by a visible
@@ -106,6 +106,13 @@ contract SovereignSharing {
         -- Remote edits not yet reviewed when withdrawal occurs remain explicit
         -- in the continuing fork or are deliberately discarded by its new
         -- custodian. Withdrawal never makes pending work vanish silently.
+
+    @invariant ASharedSpaceContinuesTogether
+        -- When the withdrawn destination was one shared graph or shared site,
+        -- its normal continuation is one common fork governed by that space.
+        -- Withdrawal does not automatically create one fork per participant;
+        -- a participant may establish a separate fork only by an explicit later
+        -- decision.
 
     @invariant WithdrawalStopsTheFutureNotThePast
         -- Withdrawing stops future discovery and synchronisation from the
@@ -194,7 +201,7 @@ entity ReviewOutcome {
 
 entity ContinuationFork {
     withdrawn_distribution: Distribution
-    custodian: core/Participant
+    canonical_custody: SharingDestination
     derived_from: List<core/Page>
     created_at: Timestamp
 }
@@ -228,6 +235,15 @@ invariant AContinuationComesFromAWithdrawnDistribution {
         fork.withdrawn_distribution.status = withdrawn
 }
 
+invariant ASharedSpaceHasAtMostOneCommonContinuation {
+    for a in ContinuationForks:
+        for b in ContinuationForks:
+            a != b
+                and a.withdrawn_distribution = b.withdrawn_distribution
+                and a.withdrawn_distribution.destination.kind in {shared_graph, shared_site}
+                implies a.canonical_custody != b.canonical_custody
+}
+
 ------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
@@ -242,4 +258,5 @@ open question "What acknowledgement proves that a recipient honoured a withdrawa
 open question "Can a public destination synchronise canonical page identity, or does it receive only a publication projection?"
 -- Answered: recipients may continue as an editable fork with new identity and
 -- canonical custody, permanently derived from the immutable historical origin.
-open question "When several recipients shared one space, does withdrawal create one continuation governed by that space or may each recipient establish an independent fork?"
+-- Answered: a shared graph or site normally continues as one common fork under
+-- that space's custody. Separate participant forks require explicit decisions.
