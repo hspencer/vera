@@ -168,3 +168,4 @@ invariant AReviewedEditNamesItsReviewer {
 open question "When a shared selection criterion gains or loses a page, does synchronisation follow the criterion automatically or require a new sharing decision?"
 open question "What acknowledgement proves that a recipient honoured a withdrawal request, and how long is that evidence retained?"
 open question "Can a public destination synchronise canonical page identity, or does it receive only a publication projection?"
+open question "When the origin withdraws while recipients have accepted or pending edits, do their replicas freeze as archival forks, may a recipient adopt a continuing fork with a new canonical custodian, or must custodianship be transferred before withdrawal?"
