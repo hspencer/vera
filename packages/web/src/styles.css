@@ -915,6 +915,12 @@ input {
 }
 
 @media (max-width: 640px) {
+  /* El rastro y el gesto nativo de iOS ya permiten volver. En una barra de
+     teléfono, dos flechas redundantes cuestan el ancho de una acción real. */
+  #nav {
+    display: none;
+  }
+
   #sync-state {
     position: fixed;
     right: max(0.75rem, env(safe-area-inset-right));
@@ -2660,7 +2666,7 @@ code {
    * depende del aparato y de quién lo sostiene.
    */
   html {
-    font-size: calc(100% * var(--phone-scale, 1.35));
+    font-size: calc(100% * var(--phone-scale, 1.4));
   }
 
   /*
@@ -2687,7 +2693,7 @@ code {
    * para que el número que se ajusta desde dentro de Vera siga siendo uno solo.
    */
   .blocks {
-    --indent-scale: 0.8;
+    --indent-scale: 0.6;
   }
 
   /*
