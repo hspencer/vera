@@ -184,12 +184,12 @@ describe('invariant PrivatePagesAreNeverPublished', () => {
   });
 });
 
-// Publicar es una operación con sitio, revisión, dirección, fecha y mano. Una
+// Publicar es una operación con sitio, frontera, dirección, fecha y mano. Una
 // página pública es *elegible*; lo que la pone en un sitio es que alguien la
 // publique ahí. @guarantee HumanPublicationAuthority, @invariant
 // SiteMembershipIsExplicit (personal-site-projection.allium).
-describe('rule PublishVisiblePageRevision', () => {
-  it('records which revision was published, not merely which page', () => {
+describe('rule PublishVisiblePage', () => {
+  it('keeps the first public revision while later revisions join the public life', () => {
     const graph = inhabitedGraph();
     const site = makeSite(graph);
     const page = makePage(graph, 'Publica', 'public');
@@ -200,14 +200,14 @@ describe('rule PublishVisiblePageRevision', () => {
     submit(graph, { kind: 'edit_block', block, content: 'segunda version' });
 
     assert.equal(
-      graph.publicationsOf(site)[0]?.revision,
-      first.revision,
-      'editing after publishing does not republish',
+      graph.publicationsOf(site)[0]?.firstRevision,
+      first.firstRevision,
+      'editing after publishing does not move the public boundary',
     );
 
     const again = graph.publish({ site, page, path: 'publica', participant: OWNER });
-    assert.notEqual(again.revision, first.revision, 'publishing again names the new revision');
-    assert.equal(graph.publicationsOf(site).length, 1, 'the address holds one revision');
+    assert.equal(again.firstRevision, first.firstRevision, 'publishing again preserves the boundary');
+    assert.equal(graph.publicationsOf(site).length, 1, 'the address holds one living page');
   });
 
   it('refuses a revision that belongs to another page', () => {
@@ -220,7 +220,7 @@ describe('rule PublishVisiblePageRevision', () => {
 
     assert.throws(
       () =>
-        graph.publish({ site, page: here, path: 'aqui', participant: OWNER, revision: elsewhere }),
+        graph.publish({ site, page: here, path: 'aqui', participant: OWNER, firstRevision: elsewhere }),
       /another page/i,
     );
   });

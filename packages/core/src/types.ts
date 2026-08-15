@@ -321,19 +321,18 @@ export interface PersonalSite {
 }
 
 /**
- * Una revisión de una página, puesta en una dirección de un sitio, por alguien,
- * en un momento. Publicar es esta operación y no un atributo de la página.
+ * Una página puesta en una dirección de un sitio, por alguien, en un momento.
+ * Publicar es esta operación y no un atributo de la página.
  *
- * `revision` nombra la operación que produjo la revisión publicada (ver
- * Revision.operation): la publicación fija *qué texto* se publicó, no sólo qué
- * página, y por eso una edición posterior no cambia lo publicado hasta que
- * alguien vuelva a publicar.
+ * `firstRevision` nombra la revisión que estaba vigente al abrir la página al
+ * público. Es una frontera temporal, no una instantánea congelada: las
+ * revisiones posteriores forman parte de la vida pública del nodo.
  */
 export interface Publication {
   readonly id: PublicationId;
   readonly site: PersonalSiteId;
   readonly page: PageId;
-  readonly revision: OperationId;
+  readonly firstRevision: OperationId;
   readonly path: string;
   readonly publishedAt: number;
   readonly publishedBy: ParticipantId;

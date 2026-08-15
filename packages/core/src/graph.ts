@@ -1523,7 +1523,7 @@ export class VeraGraph {
   //
   // Publicar es un acto, no un atributo. Que una página sea pública la hace
   // elegible; lo que la pone en un sitio es que alguien la publique ahí, y eso
-  // queda escrito con sitio, revisión, dirección, fecha y mano.
+  // queda escrito con sitio, frontera inicial, dirección, fecha y mano.
   // @guarantee HumanPublicationAuthority
   // -------------------------------------------------------------------------
 
@@ -1568,18 +1568,17 @@ export class VeraGraph {
   }
 
   /**
-   * rule PublishVisiblePageRevision.
+   * rule PublishVisiblePage.
    *
-   * Sin `revision` publica la última revisión de la página, que es lo que quiere
-   * decir «publica esto» dicho delante de la página. Con `revision` publica esa,
-   * que es lo que hace falta para volver a publicar una versión anterior.
+   * `firstRevision` sólo se recibe al rehidratar una publicación persistida. Al
+   * publicar normalmente, la revisión vigente abre la frontera pública.
    */
   publish(input: {
     site: PersonalSiteId;
     page: PageId;
     path: string;
     participant: ParticipantId;
-    revision?: OperationId;
+    firstRevision?: OperationId;
     id?: PublicationId;
     at?: number;
   }): Publication {
@@ -1614,15 +1613,18 @@ export class VeraGraph {
     if (occupied !== undefined && occupied.page !== page.id) {
       throw new Error(`the path /${path}/ already publishes another page on this site`);
     }
+    // Una página ya publicada en esa dirección sigue siendo la misma vida
+    // pública. Volver a pulsar publicar no puede borrar su comienzo.
+    if (occupied !== undefined) return occupied;
 
-    // @invariant PublicationNamesARevisionOfItsPage
-    const revision = input.revision ?? this.#lastRevisionOf(page.id);
-    if (revision === null) {
+    // @invariant PublicationBeginsAtARevisionOfItsPage
+    const firstRevision = input.firstRevision ?? this.#lastRevisionOf(page.id);
+    if (firstRevision === null) {
       throw new Error('the page has no revision to publish');
     }
-    if (input.revision !== undefined) {
-      const named = this.#revisions.find((r) => r.operation === input.revision);
-      if (named === undefined) throw new Error(`no such revision ${input.revision}`);
+    if (input.firstRevision !== undefined) {
+      const named = this.#revisions.find((r) => r.operation === input.firstRevision);
+      if (named === undefined) throw new Error(`no such revision ${input.firstRevision}`);
       if (named.page !== page.id) throw new Error('that revision belongs to another page');
     }
 
@@ -1631,17 +1633,11 @@ export class VeraGraph {
       id: input.id ?? this.#nextId('publication'),
       site: site.id,
       page: page.id,
-      revision,
+      firstRevision,
       path,
       publishedAt: input.at ?? Date.now(),
       publishedBy: input.participant,
     };
-    // Republicar la misma página en la misma dirección la reemplaza: el sitio
-    // enseña una revisión por dirección, y guardar las dos dejaría al build
-    // eligiendo entre ellas sin nada que decidiera.
-    this.#publications = this.#publications.filter(
-      (p) => !(p.site === site.id && p.path === path),
-    );
     this.#publications.push(publication);
     return publication;
   }

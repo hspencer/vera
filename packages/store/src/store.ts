@@ -840,7 +840,7 @@ export function savePublication(store: Store, publication: Publication): void {
       publication.id,
       publication.site,
       publication.page,
-      publication.revision,
+      publication.firstRevision,
       publication.path,
       publication.publishedAt,
       publication.publishedBy,
@@ -895,7 +895,7 @@ function loadSitesAndPublications(store: Store, graph: VeraGraph): void {
       page: row.page_id,
       path: row.path,
       participant: row.published_by,
-      revision: row.revision_operation_id,
+      firstRevision: row.revision_operation_id,
       at: row.published_at,
     });
   }
