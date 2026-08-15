@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildNeighbourhoods, buildTree, foldedState, nodeMarkdown } from '../src/outliner.ts';
+import { buildNeighbourhoods, buildTree, foldedState, matchingMovePages, nodeMarkdown } from '../src/outliner.ts';
 import type { BlockView } from '../src/api.ts';
 
 const block = (stableId: string, parent: string | null, position: number, content = stableId): BlockView => ({
@@ -76,6 +76,20 @@ describe('foldedState', () => {
 
   it('no duplica un bloque ya plegado', () => {
     assert.deepEqual(foldedState(['padre'], 'padre', true), ['padre']);
+  });
+});
+
+describe('buscar la página a la que se mueve un bloque', () => {
+  const page = (id: string, title: string) => ({ id, title, visibility: 'private' as const, blockCount: 0, linkCount: 0 });
+
+  it('omite la página de origen y busca sin depender de acentos', () => {
+    const pages = [page('a', 'Actual'), page('b', 'Diseño gráfico'), page('c', 'Biología')];
+    assert.deepEqual(matchingMovePages('diseno', pages, 'a').map((one) => one.id), ['b']);
+  });
+
+  it('pone primero el título exacto y después los que sólo lo contienen', () => {
+    const pages = [page('a', 'Actual'), page('b', 'Notas de diseño'), page('c', 'Diseño')];
+    assert.deepEqual(matchingMovePages('diseño', pages, 'a').map((one) => one.id), ['c', 'b']);
   });
 });
 

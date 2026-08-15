@@ -689,9 +689,9 @@ rule RefuseMarkingWithoutChildren {
     )
 
     @guidance
-        -- Se ofrece igual y bloqueada, con el motivo, como el resto de las
-        -- negativas de este esquema: esconder el control deja a quien mira sin
-        -- saber por qué esto no se puede y lo de al lado sí.
+        -- La negativa protege cualquier gesto estructural que llegue hasta aquí,
+        -- incluido el teclado. El menú contextual no ofrece esta acción cuando
+        -- el bloque no tiene hijos: sólo enumera lo que puede hacerse ahora.
 }
 
 rule ParticipantFocusesOnBlock {

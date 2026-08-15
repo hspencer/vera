@@ -97,6 +97,8 @@ contract NativeMarkdownEditing {
 
 contract BlockManipulation {
     copy_reference: (block: core/Block) -> BlockReference
+    copy_block: (block: core/Block) -> String
+    move_to_page: (block: core/Block, page: core/Page) -> core/Block
     discard_empty: (participant: core/Participant, block: core/Block) -> core/Page
     select_range: (from: core/Block, to: core/Block) -> BlockSelection
     discard_selection: (participant: core/Participant, selection: BlockSelection) -> core/Page
@@ -110,6 +112,21 @@ contract BlockManipulation {
     @invariant ReferenceResolvesToItsBlock
         -- A reference presented in the workspace can be followed to the block it
         -- names. A reference that cannot be followed is not a reference.
+
+    @invariant ImpossibleActionsDoNotLengthenTheMenu
+        -- The block menu contains only actions that can act on the selected
+        -- block in its present context. An unavailable action is absent rather
+        -- than occupying a disabled row in every block.
+
+    @invariant VariantsFollowTheirSharedVerb
+        -- Copying is one first-level action and moving is another. Choosing one
+        -- reveals its applicable variants; reference, identity and Markdown do
+        -- not compete as three unrelated verbs in the main block menu.
+
+    @invariant MovingToAnotherPageAppendsTheSubtree
+        -- Moving a block to a searched destination keeps its stable identity
+        -- and descendants, makes it a root block there, and places it after the
+        -- destination page's existing root blocks.
 
     @invariant OnlyEmptyBlocksAreDiscarded
         -- Discarding by emptying removes a block only when its content is empty.

@@ -29,6 +29,7 @@ import {
   type CatalogAsset,
   type Change,
   type CrossingRow,
+  type PageSummary,
   type PageView,
   type SubmitResult,
   type YoutubeTranscriptChoice,
@@ -326,7 +327,7 @@ interface MenuAction {
    * quien escribe.
    */
   icon?: IconName;
-  /** Por qué no se puede, cuando no se puede. La acción se muestra igual. */
+  /** Por qué no se puede, cuando no se puede. La acción no ocupa sitio. */
   blocked?: string;
   run(): void | Promise<void>;
 }
@@ -347,7 +348,10 @@ function openBlockMenu(anchor: HTMLElement, groups: MenuAction[][]): void {
   menu.className = 'block-menu';
   menu.setAttribute('role', 'menu');
 
-  for (const group of groups.filter((one) => one.length > 0)) {
+  const available = groups
+    .map((group) => group.filter((action) => action.blocked === undefined))
+    .filter((group) => group.length > 0);
+  for (const group of available) {
     if (menu.childElementCount > 0) {
       const rule = document.createElement('div');
       rule.className = 'block-menu-rule';
@@ -369,10 +373,6 @@ function openBlockMenu(anchor: HTMLElement, groups: MenuAction[][]): void {
       const said = document.createElement('span');
       said.textContent = action.label;
       item.append(said);
-      if (action.blocked !== undefined) {
-        item.disabled = true;
-        item.title = action.blocked;
-      }
       item.addEventListener('click', () => {
         closeMenu();
         void action.run();
@@ -389,6 +389,99 @@ function openBlockMenu(anchor: HTMLElement, groups: MenuAction[][]): void {
 
   openMenu = menu;
   menu.querySelector('button')?.focus();
+}
+
+const foldedForSearch = (text: string): string =>
+  text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim();
+
+export function matchingMovePages(
+  query: string,
+  pages: readonly PageSummary[],
+  currentPage: string,
+): PageSummary[] {
+  const needle = foldedForSearch(query);
+  return pages
+    .filter((page) => page.id !== currentPage)
+    .filter((page) => needle === '' || foldedForSearch(page.title).includes(needle))
+    .sort((a, b) => {
+      const left = foldedForSearch(a.title);
+      const right = foldedForSearch(b.title);
+      const leftRank = left === needle ? 0 : left.startsWith(needle) ? 1 : 2;
+      const rightRank = right === needle ? 0 : right.startsWith(needle) ? 1 : 2;
+      return leftRank - rightRank || a.title.localeCompare(b.title, 'es');
+    });
+}
+
+async function chooseMovePage(currentPage: string): Promise<PageSummary | null> {
+  const pages = await api.pages();
+  return new Promise((resolve) => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'block-choice-dialog';
+    const title = document.createElement('h2');
+    title.textContent = 'Mover a otra página';
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.placeholder = 'Buscar página';
+    search.setAttribute('aria-label', 'buscar página de destino');
+    const results = document.createElement('div');
+    results.className = 'block-choice-results';
+    let settled = false;
+    const finish = (page: PageSummary | null): void => {
+      if (settled) return;
+      settled = true;
+      dialog.close();
+      dialog.remove();
+      resolve(page);
+    };
+    const draw = (): void => {
+      results.innerHTML = '';
+      for (const page of matchingMovePages(search.value, pages, currentPage).slice(0, 30)) {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.textContent = page.title;
+        option.addEventListener('click', () => finish(page));
+        results.append(option);
+      }
+    };
+    search.addEventListener('input', draw);
+    dialog.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      finish(null);
+    });
+    dialog.append(title, search, results);
+    document.body.append(dialog);
+    draw();
+    dialog.showModal();
+    search.focus();
+  });
+}
+
+async function moveBlockToPage(
+  block: BlockView,
+  currentPage: string,
+  callbacks: OutlinerCallbacks,
+): Promise<void> {
+  let destination: PageSummary | null;
+  try {
+    destination = await chooseMovePage(currentPage);
+  } catch {
+    toast('no se pudieron traer las páginas');
+    return;
+  }
+  if (destination === null) return;
+  const result = await api.submit({
+    kind: 'move_block',
+    block: block.stableId,
+    page: destination.id,
+    parent: null,
+    position: destination.blockCount,
+  });
+  if (result.status === 'rejected') {
+    toast(`no se pudo mover: ${result.reason}`);
+    return;
+  }
+  callbacks.onChanged();
+  callbacks.onOpen(destination.id, 'searched');
 }
 
 let toastTimer: number | undefined;
@@ -3574,11 +3667,6 @@ export function renderOutliner(
            * término, que es lo que hace que la relación se pueda leer desde el
            * otro extremo.
            */
-          {
-            label: 'Explicar relación…',
-            icon: 'feather',
-            run: () => explainFrom(body, node.block, page.id, toast, callbacks),
-          },
           /*
            * El bloque como pedido: lo escrito se le da al modelo local y la
            * respuesta ocupa su sitio, con sus ítems colgando.
@@ -3599,22 +3687,29 @@ export function renderOutliner(
         ],
         [
           {
-            label: 'Subir',
-            icon: 'arrow-up',
-            ...(neighbourhoods.get(node.block.stableId)?.index === 0
-              ? { blocked: 'el bloque ya es el primero de su nivel' }
-              : {}),
+            label: 'Mover…',
+            icon: 'corner-up-right',
             run: () => {
               const near = neighbourhoods.get(node.block.stableId);
-              if (near !== undefined) void moveBlock(node.block, page.id, near, true, callbacks);
-            },
-          },
-          {
-            label: 'Bajar',
-            icon: 'arrow-down',
-            run: () => {
-              const near = neighbourhoods.get(node.block.stableId);
-              if (near !== undefined) void moveBlock(node.block, page.id, near, false, callbacks);
+              const hasNextSibling = near !== undefined && [...neighbourhoods.values()].some(
+                (candidate) => candidate.parent === near.parent && candidate.index === near.index + 1,
+              );
+              openBlockMenu(bullet, [[
+                {
+                  label: 'Arriba', icon: 'arrow-up',
+                  ...(near?.index === 0 ? { blocked: 'ya es el primero' } : {}),
+                  run: () => { if (near !== undefined) void moveBlock(node.block, page.id, near, true, callbacks); },
+                },
+                {
+                  label: 'Abajo', icon: 'arrow-down',
+                  ...(!hasNextSibling ? { blocked: 'ya es el último' } : {}),
+                  run: () => { if (near !== undefined) void moveBlock(node.block, page.id, near, false, callbacks); },
+                },
+                {
+                  label: 'A otra página…', icon: 'search',
+                  run: () => void moveBlockToPage(node.block, page.id, callbacks),
+                },
+              ]]);
             },
           },
           /*
@@ -3627,8 +3722,8 @@ export function renderOutliner(
           {
             label: numbering ? 'Volver a viñetas' : 'Numerar los hijos',
             icon: 'list',
-            // @invariant nothing_to_mark: se ofrece igual y bloqueada, con el
-            // motivo. Esconderla dejaría sin saber por qué aquí no y al lado sí.
+            // La regla del dominio todavía rechaza cualquier gesto imposible;
+            // el menú, en cambio, sólo enumera lo que se puede hacer ahora.
             ...(parent ? {} : { blocked: 'este bloque no tiene hijos que numerar' }),
             run: () =>
               void markChildren(
@@ -3641,19 +3736,17 @@ export function renderOutliner(
         ],
         [
           {
-            label: 'Copiar referencia',
-            icon: 'link-2',
-            run: () => copyText(`((${node.block.stableId}))`, toast),
-          },
-          {
-            label: 'Copiar identificador',
-            icon: 'hash',
-            run: () => copyText(node.block.stableId, toast),
-          },
-          {
-            label: parent ? 'Copiar bloque y sus hijos' : 'Copiar el Markdown del bloque',
+            label: 'Copiar…',
             icon: 'copy',
-            run: () => copyText(nodeMarkdown(node), toast),
+            run: () => openBlockMenu(bullet, [[
+              { label: 'Referencia', icon: 'link-2', run: () => copyText(`((${node.block.stableId}))`, toast) },
+              { label: 'Identificador', icon: 'hash', run: () => copyText(node.block.stableId, toast) },
+              {
+                label: parent ? 'Bloque y sus hijos' : 'Markdown del bloque',
+                icon: 'copy',
+                run: () => copyText(nodeMarkdown(node), toast),
+              },
+            ]]),
           },
         ],
         [

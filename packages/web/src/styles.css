@@ -1932,11 +1932,40 @@ input {
   background: var(--rule);
 }
 
-/* Una acción imposible se muestra igual, atenuada y con su motivo en el título:
-   ocultarla dejaría sin saber por qué aquí no se puede y al lado sí. */
-.block-menu-item:disabled {
-  color: var(--text-dim);
-  cursor: not-allowed;
+/* Una acción imposible no ocupa un renglón: el menú describe lo que este bloque
+   puede hacer ahora, no el inventario completo de Vera. */
+
+.block-choice-dialog {
+  width: min(28rem, calc(100vw - 2rem));
+  max-height: min(75vh, 36rem);
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: var(--bg);
+  color: var(--text);
+}
+.block-choice-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+.block-choice-dialog h2 { margin: 0 0 0.75rem; font-size: 1.05rem; }
+.block-choice-dialog input {
+  width: 100%;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  padding: 0.5rem 0.6rem;
+}
+.block-choice-results {
+  display: grid;
+  max-height: min(55vh, 28rem);
+  margin-top: 0.5rem;
+  overflow: auto;
+}
+.block-choice-results button {
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.25rem;
+  text-align: left;
+}
+.block-choice-results button:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  outline: none;
 }
 
 /* Referencia a otro bloque. Se lee como el texto al que apunta, no como su
