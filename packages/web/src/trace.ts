@@ -42,6 +42,7 @@ export interface TraceStep {
 }
 
 const TRACE_KEY = 'vera.navigationTrace';
+export const TRACE_LIMIT = 50;
 const GESTURES = new Set<NavigationGesture>([
   'followed_reference',
   'followed_backlink',
@@ -78,7 +79,8 @@ export function loadTrace(): TraceStep[] {
      * Sólo se colapsan llegadas contiguas a la misma página. A → B → A sigue
      * entero, porque volver después de haber ido a otra parte sí es un recorrido.
      */
-    const migrated = valid.filter((step, index) => index === 0 || valid[index - 1]?.page !== step.page);
+    const deduplicated = valid.filter((step, index) => index === 0 || valid[index - 1]?.page !== step.page);
+    const migrated = deduplicated.slice(-TRACE_LIMIT);
     if (migrated.length !== valid.length) saveTrace(migrated);
     return migrated;
   } catch {
@@ -88,7 +90,12 @@ export function loadTrace(): TraceStep[] {
 
 /** El rastro es local-first: cada gesto queda durable antes de volver a la red. */
 export function saveTrace(trace: readonly TraceStep[]): void {
-  localStorage.setItem(TRACE_KEY, JSON.stringify(trace));
+  localStorage.setItem(TRACE_KEY, JSON.stringify(trace.slice(-TRACE_LIMIT)));
+}
+
+/** Vacía el rastro local: todavía no es corpus y por eso no deja historial. */
+export function clearTrace(): void {
+  localStorage.removeItem(TRACE_KEY);
 }
 
 /**
@@ -100,11 +107,9 @@ export function saveTrace(trace: readonly TraceStep[]): void {
  * en el plano del sentido, y colapsar las dos llegadas en una lo borraría justo
  * donde importa.
  *
- * Tampoco tiene tope. `HISTORY = 50` truncaba por el principio en silencio, lo
- * que en un rastro promovible significa que media sesión no llega al argumento
- * sin que nada lo diga. Un paso ocupa unas decenas de bytes; una jornada larga
- * son kilobytes. Si algún día estorba, lo que estorba es que el rastro no
- * persista, y eso es una pregunta abierta de trail.allium, no un tope.
+ * Conserva como máximo las últimas TRACE_LIMIT llegadas. El rastro orienta el
+ * taller y puede promoverse, pero no es un archivo ilimitado de actividad: para
+ * guardar un tramo como argumento existe el gesto de promoverlo a recorrido.
  */
 export function walked(trace: readonly TraceStep[], step: TraceStep): TraceStep[] {
   /*
@@ -124,7 +129,7 @@ export function walked(trace: readonly TraceStep[], step: TraceStep): TraceStep[
   // Y sin `from` —una dirección pegada, el botón de atrás— lo dice el rastro:
   // si el último paso ya estaba ahí, nadie se movió.
   if (step.from === null && trace[trace.length - 1]?.page === step.page) return [...trace];
-  return [...trace, step];
+  return [...trace, step].slice(-TRACE_LIMIT);
 }
 
 /**

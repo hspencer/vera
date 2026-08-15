@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { dropped, loadTrace, movedTo, saveTrace, walked, type TraceStep } from '../src/trace.ts';
+import {
+  TRACE_LIMIT,
+  clearTrace,
+  dropped,
+  loadTrace,
+  movedTo,
+  saveTrace,
+  walked,
+  type TraceStep,
+} from '../src/trace.ts';
 
 const originalStorage = globalThis.localStorage;
 
@@ -58,6 +67,31 @@ describe('rastro durable y componible', () => {
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
     assert.deepEqual(loadTrace(), []);
   });
+
+  it('conserva sólo las últimas cincuenta llegadas, también al migrar un rastro antiguo', () => {
+    const storage = memoryStorage();
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
+    const long = Array.from({ length: TRACE_LIMIT + 7 }, (_, at): TraceStep => ({
+      page: `page:${at}`,
+      from: at === 0 ? null : `page:${at - 1}`,
+      gesture: 'followed_reference',
+      at,
+    }));
+    storage.setItem('vera.navigationTrace', JSON.stringify(long));
+    const loaded = loadTrace();
+    assert.equal(loaded.length, TRACE_LIMIT);
+    assert.equal(loaded[0]?.page, 'page:7');
+    assert.equal(JSON.parse(storage.getItem('vera.navigationTrace') ?? '[]').length, TRACE_LIMIT);
+  });
+
+  it('puede limpiarse por completo', () => {
+    const storage = memoryStorage();
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
+    saveTrace(steps);
+    clearTrace();
+    assert.deepEqual(loadTrace(), []);
+    assert.equal(storage.getItem('vera.navigationTrace'), null);
+  });
 });
 
 describe('lo que es andar y lo que no', () => {
@@ -90,5 +124,23 @@ describe('lo que es andar y lo que no', () => {
   it('y llegar de fuera a otra página sigue siendo llegar', () => {
     const arrived = walked(steps, { page: 'c', from: null, gesture: 'opened_directly', at: 4 });
     assert.equal(arrived.length, 4);
+  });
+
+  it('al seguir andando descarta primero la llegada más antigua', () => {
+    const full = Array.from({ length: TRACE_LIMIT }, (_, at): TraceStep => ({
+      page: `page:${at}`,
+      from: at === 0 ? null : `page:${at - 1}`,
+      gesture: 'followed_reference',
+      at,
+    }));
+    const next = walked(full, {
+      page: 'page:nueva',
+      from: `page:${TRACE_LIMIT - 1}`,
+      gesture: 'followed_reference',
+      at: TRACE_LIMIT,
+    });
+    assert.equal(next.length, TRACE_LIMIT);
+    assert.equal(next[0]?.page, 'page:1');
+    assert.equal(next.at(-1)?.page, 'page:nueva');
   });
 });

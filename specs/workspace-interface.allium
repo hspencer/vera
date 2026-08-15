@@ -430,6 +430,14 @@ entity BlockReference {
 }
 
 ------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    max_trace_steps: Integer = 50
+}
+
+------------------------------------------------------------
 -- Rules
 ------------------------------------------------------------
 
@@ -512,14 +520,15 @@ rule ParticipantNavigatesToPage {
 
     ensures:
         workspace.active_page = page
-        workspace.navigation_history = append(
-            workspace.navigation_history,
+        workspace.navigation_history = latest(
+            append(workspace.navigation_history,
             TraceStep{
                 page: page,
                 from: workspace.active_page,
                 gesture: gesture,
                 at: now
-            }
+            }),
+            config.max_trace_steps
         )
 
     @invariant TheGestureIsObservedAndNeverInferred
@@ -558,15 +567,24 @@ rule ParticipantOpensGraphNodeOnPhone {
     ensures:
         workspace.active_page = page
         workspace.layout = text_only
-        workspace.navigation_history = append(
-            workspace.navigation_history,
+        workspace.navigation_history = latest(
+            append(workspace.navigation_history,
             TraceStep{
                 page: page,
                 from: workspace.active_page,
                 gesture: pressed_on_the_map,
                 at: now
-            }
+            }),
+            config.max_trace_steps
         )
+}
+
+rule ParticipantClearsTheTrace {
+    when: ClearTrace(participant, workspace)
+
+    requires: workspace.participant = participant
+
+    ensures: workspace.navigation_history = []
 }
 
 -- Quitar un paso del rastro.
@@ -726,6 +744,11 @@ invariant ActivePageBelongsToWorkspaceGraph {
         workspace.active_page != null implies workspace.active_page.graph = workspace.graph
 }
 
+invariant TraceRemainsBounded {
+    for workspace in Workspaces:
+        workspace.navigation_history.count <= config.max_trace_steps
+}
+
 invariant SearchSuggestionsBelongToTheirGraph {
     for suggestion in PageSearchSuggestions:
         suggestion.page.graph = suggestion.result.graph
@@ -784,6 +807,7 @@ surface VeraWorkspace {
         NavigateToPage(participant, workspace, page, gesture)
         DropTraceStep(participant, workspace, step)
         ReorderTraceStep(participant, workspace, step, position)
+        ClearTrace(participant, workspace)
         OpenPageFrontMatter(participant, workspace, page)
         OpenMobileGraphNode(participant, workspace, page)
         EditThemeSource(participant, workspace, stylesheet_source)
@@ -915,6 +939,12 @@ surface VeraWorkspace {
         -- privado del taller, sin página, autor ni historial de revisiones; sólo
         -- deja de depender de que una pestaña permanezca abierta. Promoverlo sigue
         -- siendo el gesto que lo vuelve texto compartible y auditable.
+
+    @guarantee TheTraceIsBoundedAndClearable
+        -- El rastro conserva las llegadas más recientes hasta un límite visible
+        -- del taller y ofrece un gesto para vaciarlo entero. Limpiarlo no borra
+        -- páginas ni recorridos ya promovidos: sólo descarta el rastro privado de
+        -- este dispositivo, sin dejar un historial de lo descartado.
 
     @guarantee PromotingIsOneSmallGesture
         -- El rastro lleva una sola marca para promoverlo, discreta, con su nombre

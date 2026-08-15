@@ -58,6 +58,7 @@ import {
   type WorkspaceLayout,
 } from './tokens.ts';
 import {
+  clearTrace,
   dropped,
   loadTrace,
   movedTo,
@@ -1977,6 +1978,23 @@ function drawTrail(): void {
     keep.setAttribute('aria-label', 'guardar como recorrido');
     keep.addEventListener('click', () => void promoteTrace(null));
     trail.append(keep);
+  }
+
+  if (workspace.trace.length > 0) {
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'trail-clear';
+    clear.innerHTML = icon('trash-2');
+    clear.title = 'limpiar rastro';
+    clear.setAttribute('aria-label', 'limpiar rastro');
+    clear.addEventListener('click', () => {
+      if (!globalThis.confirm('¿Limpiar todo el rastro de este dispositivo?')) return;
+      workspace.trace = [];
+      clearTrace();
+      drawTrail();
+      void drawGraph();
+    });
+    trail.append(clear);
   }
 }
 
