@@ -1,6 +1,8 @@
 // Genera un sitio HTML estático exclusivamente con las páginas públicas.
 //   npm run project:public -- data/vera.sqlite ../vera-public https://vera.mediafranca.net --page page:123
 
+import { fileURLToPath } from 'node:url';
+
 import { loadGraph, openStore } from './store.ts';
 import { projectPublicSite } from './public-projection.ts';
 
@@ -32,6 +34,7 @@ try {
     canonicalDomain,
     siteTitle: 'Vera',
     publishedPages,
+    brandingAssets: fileURLToPath(new URL('../../web/public/', import.meta.url)),
     ...(entryPoint === undefined ? {} : { entryPoint }),
   });
   console.log(`sitio público proyectado a ${target}`);

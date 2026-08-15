@@ -35,6 +35,10 @@ contract PersonalWebsiteProjection {
         -- Published pages expose useful HTML metadata, participate in public
         -- search and provide a stable, shareable citation.
 
+    @invariant RecognisableSiteIdentity
+        -- Browser tabs, installed shortcuts and social previews use the site's
+        -- declared mark in formats appropriate to each surface.
+
     @invariant FootnoteFidelity
         -- Markdown footnote references and definitions remain correctly linked
         -- and readable when projected to public HTML.
@@ -252,6 +256,10 @@ surface PersonalWebsite {
     @guarantee EntryPointOccupiesTheSiteRoot
         -- The configured published page is the document at the site root. It is
         -- not a separate copied homepage or an automatically chosen index.
+
+    @guarantee BrandSurvivesEveryPublicSurface
+        -- The same recognisable mark appears as favicon, touch icon, installable
+        -- application icon and public preview without depending on private assets.
 }
 
 surface StaticSiteBuild {

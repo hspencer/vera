@@ -2,9 +2,9 @@
 //
 // No es una variante de projectGraph: aquella proyección es un espejo privado
 // y reconstruible. Esta cara sólo recibe páginas declaradas públicas y produce
-// HTML sin identificadores internos, manifiesto, API ni acceso a la base.
+// HTML sin identificadores internos, manifiesto del corpus, API ni acceso a la base.
 
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { renderMarkdown } from '@vera/core';
@@ -17,6 +17,8 @@ export interface PublicProjectionOptions {
   publishedPages: ReadonlySet<string>;
   /** Página publicada cuya proyección ocupa la raíz del sitio. */
   entryPoint?: string;
+  /** Directorio de la marca pública, compartido con la PWA. */
+  brandingAssets?: string;
 }
 
 export interface PublicProjectionSummary {
@@ -91,11 +93,25 @@ function document(input: {
   title: string;
   siteTitle: string;
   canonicalUrl: string;
+  brandImageUrl: string;
   body: string;
+  branded: boolean;
 }): string {
   const title = escapeHtml(input.title);
   const site = escapeHtml(input.siteTitle);
   const url = escapeHtml(input.canonicalUrl);
+  const branding = input.branded
+    ? [
+        '<link rel="manifest" href="/site.webmanifest">',
+        '<meta name="theme-color" content="#2e0024">',
+        '<link rel="icon" href="/icon-16.png" sizes="16x16" type="image/png">',
+        '<link rel="icon" href="/icon-32.png" sizes="32x32" type="image/png">',
+        '<link rel="icon" href="/icon-192.png" sizes="192x192" type="image/png">',
+        '<link rel="shortcut icon" href="/favicon.ico">',
+        '<link rel="apple-touch-icon" href="/apple-touch-icon.png">',
+        `<meta property="og:image" content="${escapeHtml(input.brandImageUrl)}">`,
+      ]
+    : [];
   return [
     '<!doctype html>',
     '<html lang="es">',
@@ -105,6 +121,7 @@ function document(input: {
     `<title>${title} · ${site}</title>`,
     `<link rel="canonical" href="${url}">`,
     '<meta name="robots" content="index,follow">',
+    ...branding,
     '<style>',
     ':root{color-scheme:light dark;font-family:ui-serif,Georgia,Cambria,"Times New Roman",serif;line-height:1.58;background:#f7f5ef;color:#24231f}',
     '*{box-sizing:border-box}',
@@ -129,6 +146,42 @@ function document(input: {
     '</html>',
     '',
   ].join('\n');
+}
+
+const BRAND_ASSETS = [
+  'apple-touch-icon.png',
+  'favicon.ico',
+  'icon-16.png',
+  'icon-32.png',
+  'icon-192.png',
+  'icon-512.png',
+  'icon-maskable-512.png',
+] as const;
+
+function projectBranding(target: string, source: string, siteTitle: string): string[] {
+  for (const filename of BRAND_ASSETS) copyFileSync(join(source, filename), join(target, filename));
+  writeFileSync(
+    join(target, 'site.webmanifest'),
+    `${JSON.stringify(
+      {
+        name: siteTitle,
+        short_name: siteTitle,
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#2e0024',
+        theme_color: '#2e0024',
+        icons: [
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  return [...BRAND_ASSETS, 'site.webmanifest'];
 }
 
 function clear(target: string): void {
@@ -180,7 +233,9 @@ export function projectPublicSite(
         title: page.title,
         siteTitle: options.siteTitle,
         canonicalUrl: canonical(options.canonicalDomain, `${path}/`),
+        brandImageUrl: canonical(options.canonicalDomain, 'icon-512.png'),
         body: `<main><h1>${escapeHtml(page.title)}</h1>${renderBlocks(graph, page, publishedByTitle)}</main>`,
+        branded: options.brandingAssets !== undefined,
       }),
       'utf8',
     );
@@ -204,11 +259,16 @@ export function projectPublicSite(
       title: indexTitle,
       siteTitle: options.siteTitle,
       canonicalUrl: canonical(options.canonicalDomain, ''),
+      brandImageUrl: canonical(options.canonicalDomain, 'icon-512.png'),
       body: indexBody,
+      branded: options.brandingAssets !== undefined,
     }),
     'utf8',
   );
   files.unshift('index.html');
+  if (options.brandingAssets !== undefined) {
+    files.push(...projectBranding(target, options.brandingAssets, options.siteTitle));
+  }
 
   return { pages: pages.length, files };
 }

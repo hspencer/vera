@@ -1,6 +1,6 @@
 import { after, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -79,6 +79,41 @@ describe('proyección pública', () => {
 
   it('produce rutas estables sin diacríticos', () => {
     assert.equal(publicPathFor('Vera — Instanciación'), 'vera-instanciacion');
+  });
+
+  it('proyecta la marca como favicon, icono instalable y vista social', () => {
+    const target = scratch();
+    const branding = scratch();
+    for (const filename of [
+      'apple-touch-icon.png',
+      'favicon.ico',
+      'icon-16.png',
+      'icon-32.png',
+      'icon-192.png',
+      'icon-512.png',
+      'icon-maskable-512.png',
+    ]) {
+      writeFileSync(join(branding, filename), filename);
+    }
+    const corpus = graph();
+    projectPublicSite(corpus, target, {
+      canonicalDomain: 'https://vera.mediafranca.net',
+      siteTitle: 'Vera',
+      publishedPages: new Set([publicPage(corpus)]),
+      brandingAssets: branding,
+    });
+
+    const index = readFileSync(join(target, 'index.html'), 'utf8');
+    assert.match(index, /rel="manifest" href="\/site\.webmanifest"/);
+    assert.match(index, /rel="apple-touch-icon" href="\/apple-touch-icon\.png"/);
+    assert.match(index, /property="og:image" content="https:\/\/vera\.mediafranca\.net\/icon-512\.png"/);
+    assert.equal(readFileSync(join(target, 'icon-512.png'), 'utf8'), 'icon-512.png');
+    const manifest = JSON.parse(readFileSync(join(target, 'site.webmanifest'), 'utf8')) as {
+      name: string;
+      icons: Array<{ purpose: string }>;
+    };
+    assert.equal(manifest.name, 'Vera');
+    assert.ok(manifest.icons.some((icon) => icon.purpose === 'maskable'));
   });
 
   it('proyecta una página publicada como entry point del sitio', () => {
