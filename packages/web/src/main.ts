@@ -9,6 +9,7 @@ import {
   api,
   onSubmissionActivity,
   type CorpusHealth,
+  type Hit,
   type PageSummary,
   type PageView,
 } from './api.ts';
@@ -39,7 +40,7 @@ import { parseRoute, routeTo } from './router.ts';
 import { voice } from './voice.ts';
 import { brandMark, icon, type IconName } from './icons.ts';
 import { is } from './bindings.ts';
-import { suggestTitles } from '@vera/core';
+import { pageSearchResults } from './search-results.ts';
 import { createPage } from './pages.ts';
 import { changesGraphMeaning } from './invalidation.ts';
 import { behind, disagreements, said, type Behind, type Disagreement } from './behind.ts';
@@ -2103,28 +2104,31 @@ function wireSearch(): void {
   };
 
   /*
-   * Autocompletar va delante de buscar.
+   * Una sugerencia por página, aunque el asunto aparezca en muchos bloques.
    *
-   * Son dos preguntas distintas y sólo una se puede contestar al instante: «¿qué
-   * página se llama así?» se responde con el índice de títulos que la sesión ya
-   * lleva en memoria, sin pedirle nada a nadie; «¿dónde se dice esto?» hay que
-   * ir a buscarla. Antes sólo existía la segunda, así que escribir el nombre de
-   * una página no ofrecía la página: ofrecía los bloques donde se la nombra, y
-   * llegar a ella pedía reconocerla en un extracto.
+   * Los títulos se pueden responder inmediatamente con el índice retenido. Al
+   * llegar la búsqueda completa, la misma lista suma la evidencia interior y
+   * vuelve a ordenarse: repetir un asunto vuelve más pertinente a la página, no
+   * más larga a la lista.
    */
-  const suggest = (text: string): void => {
-    const titles = suggestTitles(text, pages);
-    results.querySelectorAll('.hit-title').forEach((one) => one.remove());
-    if (titles.length === 0) return;
-    const before = results.firstChild;
-    for (const page of titles) {
+  const suggest = (text: string, hits: readonly Hit[] = []): void => {
+    const suggestions = pageSearchResults(text, pages, hits).slice(0, 24);
+    results.innerHTML = '';
+    for (const suggestion of suggestions) {
+      const page = suggestion.page;
       const item = row('hit hit-title');
       const where = document.createElement('span');
       where.className = 'hit-page';
       where.textContent = page.title;
       const what = document.createElement('span');
       what.className = 'hit-excerpt';
-      what.textContent = isDay(page.title) ? 'un día de la bitácora' : 'página';
+      const count = suggestion.matches === 1 ? '1 coincidencia' : `${suggestion.matches} coincidencias`;
+      what.textContent =
+        suggestion.excerpt === null
+          ? isDay(page.title)
+            ? 'un día de la bitácora'
+            : 'página'
+          : `${suggestion.excerpt} · ${count}`;
       item.append(where, what);
       item.addEventListener('click', () => {
         close();
@@ -2141,8 +2145,9 @@ function wireSearch(): void {
           if (input.value === page.title) input.value = '';
         });
       });
-      results.insertBefore(item, before);
+      results.append(item);
     }
+    if (suggestions.length === 0) return;
     place();
     results.hidden = false;
   };
@@ -2155,9 +2160,8 @@ function wireSearch(): void {
       return;
     }
 
-    // Los títulos, ya: no esperan a nada. Lo de dentro del corpus, en cuanto
-    // llegue, y debajo.
-    results.innerHTML = '';
+    // Los títulos, ya: no esperan a nada. Cuando llegue el contenido se funde
+    // con ellos y la lista se reordena por página.
     suggest(text);
 
     window.clearTimeout(searchTimer);
@@ -2171,44 +2175,7 @@ function wireSearch(): void {
       }
       if (turn !== searchTurn || input.value.trim() !== text) return;
 
-      // Se quitan los de la búsqueda anterior y se dejan los títulos, que ya
-      // están puestos y no dependen de esta respuesta.
-      results.querySelectorAll('.hit-block, .hit-said').forEach((one) => one.remove());
-      if (hits.length === 0) return;
-
-      const said = document.createElement('div');
-      said.className = 'hit-said';
-      said.textContent = 'y lo dicen estos bloques';
-      results.append(said);
-
-      for (const hit of hits.slice(0, 24)) {
-        const item = row('hit hit-block');
-        // Texto del corpus, puesto como texto. Hay bloques con SVG y HTML
-        // dentro: interpretarlos aquí sería dejar que el contenido dicte la
-        // interfaz.
-        const where = document.createElement('span');
-        where.className = 'hit-page';
-        where.textContent = pages.find((p) => p.id === hit.page)?.title ?? hit.page;
-
-        const excerpt = document.createElement('span');
-        excerpt.className = 'hit-excerpt';
-        excerpt.textContent = hit.excerpt;
-
-        item.append(where, excerpt);
-        item.addEventListener('click', () => {
-          close();
-          const named = pages.find((one) => one.id === hit.page)?.title ?? null;
-          if (named !== null) input.value = named;
-          void openPage(hit.page, null, { gesture: 'searched', ...(named === null ? {} : { title: named }) }).then(
-            () => {
-              if (named !== null && input.value === named) input.value = '';
-            },
-          );
-        });
-        results.append(item);
-      }
-      place();
-      results.hidden = false;
+      suggest(text, hits);
     }, 120);
   });
 
