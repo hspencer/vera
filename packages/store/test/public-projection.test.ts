@@ -34,6 +34,7 @@ function graph(): VeraGraph {
   write({ kind: 'create_block', page: visible, parent: null, position: 0, content: 'Texto <visible>' });
   const privatePage = write({ kind: 'create_page', title: 'Secreto irrepetible', visibility: 'private' });
   write({ kind: 'create_block', page: privatePage, parent: null, position: 0, content: 'No debe salir' });
+  write({ kind: 'create_block', page: visible, parent: null, position: 1, content: 'Ver [[Secreto irrepetible]]' });
   return graph;
 }
 
@@ -71,12 +72,43 @@ describe('proyección pública', () => {
       readFileSync(join(target, 'index.html'), 'utf8'),
       readFileSync(join(target, 'pagina-publica', 'index.html'), 'utf8'),
     ].join('\n');
-    assert.doesNotMatch(all, /Secreto irrepetible|No debe salir|block:|page:/);
+    assert.doesNotMatch(all, /data-page="Secreto irrepetible"|No debe salir|block:|page:/);
+    assert.match(all, /<span class="wiki unavailable">Secreto irrepetible<\/span>/);
     assert.ok(!readdirSync(target).includes('manifest.json'));
   });
 
   it('produce rutas estables sin diacríticos', () => {
     assert.equal(publicPathFor('Vera — Instanciación'), 'vera-instanciacion');
+  });
+
+  it('proyecta una página publicada como entry point del sitio', () => {
+    const corpus = graph();
+    const page = publicPage(corpus);
+    const target = scratch();
+    projectPublicSite(corpus, target, {
+      canonicalDomain: 'https://vera.mediafranca.net',
+      siteTitle: 'Vera',
+      publishedPages: new Set([page]),
+      entryPoint: page,
+    });
+    const index = readFileSync(join(target, 'index.html'), 'utf8');
+    assert.match(index, /<h1>Página pública<\/h1>/);
+    assert.match(index, /<p>Texto &lt;visible&gt;<\/p>/);
+    assert.match(index, /rel="canonical" href="https:\/\/vera\.mediafranca\.net\/"/);
+  });
+
+  it('rechaza un entry point privado o no asignado al sitio', () => {
+    const corpus = graph();
+    assert.throws(
+      () =>
+        projectPublicSite(corpus, scratch(), {
+          canonicalDomain: 'https://vera.mediafranca.net',
+          siteTitle: 'Vera',
+          publishedPages: new Set(),
+          entryPoint: publicPage(corpus),
+        }),
+      /entry point must be an explicitly published public page/,
+    );
   });
 
   it('omite una página pública no asignada a este sitio', () => {

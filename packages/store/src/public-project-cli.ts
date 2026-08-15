@@ -8,7 +8,13 @@ const database = process.argv[2] ?? 'data/vera.sqlite';
 const target = process.argv[3] ?? '../vera-public';
 const canonicalDomain = process.argv[4] ?? 'https://vera.mediafranca.net';
 const publishedPages = new Set<string>();
+let entryPoint: string | undefined;
 for (let at = 5; at < process.argv.length; at += 1) {
+  if (process.argv[at] === '--entry-point' && process.argv[at + 1] !== undefined) {
+    entryPoint = process.argv[at + 1]!;
+    at += 1;
+    continue;
+  }
   if (process.argv[at] !== '--page' || process.argv[at + 1] === undefined) {
     throw new Error('cada selección se declara como --page <page-id>');
   }
@@ -26,6 +32,7 @@ try {
     canonicalDomain,
     siteTitle: 'Vera',
     publishedPages,
+    ...(entryPoint === undefined ? {} : { entryPoint }),
   });
   console.log(`sitio público proyectado a ${target}`);
   console.log(`  páginas ${summary.pages}`);

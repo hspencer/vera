@@ -52,6 +52,15 @@ contract PersonalWebsiteProjection {
         -- put that page into every site. A build receives only publications
         -- explicitly assigned to that site. Vera's project site therefore does
         -- not inherit Herbert's other public pages, projects or personal work.
+
+    @invariant PublicationOpensTheFutureNotThePrivatePast
+        -- Publishing reveals the page state at that instant and its later
+        -- revisions. It never reveals revisions recorded before published_at.
+
+    @invariant PrivateLinksRevealNoPrivateNode
+        -- Words that name a private page remain readable as authored text, but
+        -- the public projection neither confirms a node exists nor exposes a
+        -- route, backlink, search result or graph edge for it.
 }
 
 ------------------------------------------------------------
@@ -226,6 +235,7 @@ surface PersonalWebsite {
     exposes:
         site.title
         site.canonical_domain
+        site.entry_point
         site.publications
 
     provides:
@@ -238,6 +248,10 @@ surface PersonalWebsite {
     @guarantee PublicOnly
         -- The website reveals only explicitly published pages and their
         -- deliberately public media and metadata.
+
+    @guarantee EntryPointOccupiesTheSiteRoot
+        -- The configured published page is the document at the site root. It is
+        -- not a separate copied homepage or an automatically chosen index.
 }
 
 surface StaticSiteBuild {

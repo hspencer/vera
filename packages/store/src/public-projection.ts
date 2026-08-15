@@ -15,6 +15,8 @@ export interface PublicProjectionOptions {
   siteTitle: string;
   /** Páginas que una publicación humana asignó explícitamente a este sitio. */
   publishedPages: ReadonlySet<string>;
+  /** Página publicada cuya proyección ocupa la raíz del sitio. */
+  entryPoint?: string;
 }
 
 export interface PublicProjectionSummary {
@@ -51,7 +53,7 @@ function sorted(blocks: Block[]): Block[] {
   );
 }
 
-function renderBlocks(graph: VeraGraph, page: Page): string {
+function renderBlocks(graph: VeraGraph, page: Page, published: ReadonlyMap<string, Page>): string {
   const byParent = new Map<string | null, Block[]>();
   for (const block of graph.blocksOf(page.id)) {
     const siblings = byParent.get(block.parent) ?? [];
@@ -59,11 +61,27 @@ function renderBlocks(graph: VeraGraph, page: Page): string {
     byParent.set(block.parent, siblings);
   }
 
+  const renderBlockMarkdown = (source: string): string =>
+    renderMarkdown(source, { pageExists: (title) => published.has(title) })
+      .replace(
+        /<a class="wiki([^"]*) pending" data-page="[^"]*" href="#">([\s\S]*?)<\/a>/g,
+        '<span class="wiki$1 unavailable">$2</span>',
+      )
+      .replace(
+        /<a class="wiki([^"]*)" data-page="([^"]+)" href="#">([\s\S]*?)<\/a>/g,
+        (_whole, extra: string, title: string, label: string) => {
+          const destination = published.get(title);
+          return destination === undefined
+            ? `<span class="wiki${extra} unavailable">${label}</span>`
+            : `<a class="wiki${extra}" href="/${publicPathFor(destination.title)}/">${label}</a>`;
+        },
+      );
+
   const render = (parent: string | null): string => {
     const children = sorted(byParent.get(parent) ?? []);
     if (children.length === 0) return '';
     return `<ul>${children
-      .map((block) => `<li>${renderMarkdown(block.content)}${render(block.stableId)}</li>`)
+      .map((block) => `<li>${renderBlockMarkdown(block.content)}${render(block.stableId)}</li>`)
       .join('')}</ul>`;
   };
   return render(null);
@@ -87,6 +105,23 @@ function document(input: {
     `<title>${title} · ${site}</title>`,
     `<link rel="canonical" href="${url}">`,
     '<meta name="robots" content="index,follow">',
+    '<style>',
+    ':root{color-scheme:light dark;font-family:ui-serif,Georgia,Cambria,"Times New Roman",serif;line-height:1.58;background:#f7f5ef;color:#24231f}',
+    '*{box-sizing:border-box}',
+    'body{margin:0}',
+    'main{max-width:48rem;margin:0 auto;padding:clamp(2rem,7vw,6rem) clamp(1.25rem,5vw,3rem) 8rem}',
+    'h1{font-size:clamp(2.7rem,8vw,5rem);line-height:.95;letter-spacing:-.045em;margin:0 0 3rem}',
+    'h2,h3{font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.15;letter-spacing:-.025em;margin:3rem 0 1rem}',
+    'h3{font-size:clamp(1.35rem,3vw,1.75rem)}',
+    'p{font-size:clamp(1.08rem,2vw,1.28rem);margin:0 0 1.35rem}',
+    'strong{font-weight:700}',
+    'ul{list-style:none;margin:0;padding:0}',
+    'li>ul{border-left:1px solid color-mix(in srgb,currentColor 20%,transparent);padding-left:1.25rem}',
+    'a{color:inherit;text-decoration-thickness:.08em;text-underline-offset:.18em}',
+    '.unavailable{color:color-mix(in srgb,currentColor 72%,transparent)}',
+    'nav{border-top:1px solid color-mix(in srgb,currentColor 20%,transparent);margin-top:4rem;padding-top:2rem;font-family:ui-sans-serif,system-ui,sans-serif}',
+    '@media(prefers-color-scheme:dark){:root{background:#1c1b18;color:#ece8df}}',
+    '</style>',
     '</head>',
     '<body>',
     input.body,
@@ -120,6 +155,14 @@ export function projectPublicSite(
     .sort((a, b) => a.title.localeCompare(b.title));
   const files: string[] = [];
   const occupiedPaths = new Map<string, string>();
+  const entryPoint =
+    options.entryPoint === undefined
+      ? null
+      : pages.find((page) => page.id === options.entryPoint) ?? null;
+  if (options.entryPoint !== undefined && entryPoint === null) {
+    throw new Error('entry point must be an explicitly published public page');
+  }
+  const publishedByTitle = new Map(pages.map((page) => [page.title, page]));
 
   for (const page of pages) {
     const path = publicPathFor(page.title);
@@ -137,7 +180,7 @@ export function projectPublicSite(
         title: page.title,
         siteTitle: options.siteTitle,
         canonicalUrl: canonical(options.canonicalDomain, `${path}/`),
-        body: `<main><h1>${escapeHtml(page.title)}</h1>${renderBlocks(graph, page)}</main>`,
+        body: `<main><h1>${escapeHtml(page.title)}</h1>${renderBlocks(graph, page, publishedByTitle)}</main>`,
       }),
       'utf8',
     );
@@ -145,15 +188,23 @@ export function projectPublicSite(
   }
 
   const links = pages
+    .filter((page) => page.id !== entryPoint?.id)
     .map((page) => `<li><a href="./${publicPathFor(page.title)}/">${escapeHtml(page.title)}</a></li>`)
     .join('');
+  const indexTitle = entryPoint?.title ?? options.siteTitle;
+  const indexBody =
+    entryPoint === null
+      ? `<main><h1>${escapeHtml(options.siteTitle)}</h1><ul>${links}</ul></main>`
+      : `<main><h1>${escapeHtml(entryPoint.title)}</h1>${renderBlocks(graph, entryPoint, publishedByTitle)}${
+          links === '' ? '' : `<nav aria-label="Páginas publicadas"><ul>${links}</ul></nav>`
+        }</main>`;
   writeFileSync(
     join(target, 'index.html'),
     document({
-      title: options.siteTitle,
+      title: indexTitle,
       siteTitle: options.siteTitle,
       canonicalUrl: canonical(options.canonicalDomain, ''),
-      body: `<main><h1>${escapeHtml(options.siteTitle)}</h1><ul>${links}</ul></main>`,
+      body: indexBody,
     }),
     'utf8',
   );

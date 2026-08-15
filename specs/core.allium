@@ -143,6 +143,7 @@ entity PersonalSite {
     owner: Participant
     title: String
     canonical_domain: String
+    entry_point: Page
     publications: Publication with site = this
 }
 
@@ -222,9 +223,9 @@ entity PropertyAssignment {
 entity Publication {
     site: PersonalSite
     page: Page
-    revision: Revision
     path: String
     published_at: Timestamp
+    public_revisions: page.revisions where recorded_at >= published_at
 }
 
 ------------------------------------------------------------
@@ -268,8 +269,8 @@ rule AcceptParticipantSubmission {
         SubmissionAccepted(submission: submission)
 }
 
-rule PublishVisiblePageRevision {
-    when: PublishPage(participant, site, page, revision, path)
+rule PublishVisiblePage {
+    when: PublishPage(participant, site, page, path)
 
     let membership = Membership{graph: page.graph, participant: participant}
 
@@ -279,12 +280,10 @@ rule PublishVisiblePageRevision {
     requires: site.owner = participant
     requires: site.graph = page.graph
     requires: page.visibility = public
-    requires: revision.page = page
 
     ensures: Publication.created(
         site: site,
         page: page,
-        revision: revision,
         path: path,
         published_at: now
     )
@@ -312,6 +311,12 @@ invariant OnlySiteOwnerPublishes {
 invariant PublicationBelongsToSiteGraph {
     for publication in Publications:
         publication.page.graph = publication.site.graph
+}
+
+invariant SiteEntryPointIsPublishedInItsOwnGraph {
+    for site in PersonalSites:
+        site.entry_point.graph = site.graph and
+        exists Publication{site: site, page: site.entry_point}
 }
 
 invariant RevisionParticipantBelongsToGraph {
@@ -416,10 +421,11 @@ surface PersonalSitePublication {
     exposes:
         site.title
         site.canonical_domain
+        site.entry_point
         site.publications
 
     provides:
-        PublishPage(owner, site, page, revision, path) when page.visibility = public
+        PublishPage(owner, site, page, path) when page.visibility = public
 
     @guarantee HumanPublicationAuthority
         -- Only the human owner of the personal site authorizes publication.
