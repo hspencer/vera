@@ -285,6 +285,12 @@ rule DrawingOpensAWholeScreen {
         -- En el lienzo no hay paleta, ni regla de grosores, ni barra de
         -- herramientas. No es minimalismo: es que no hay nada que elegir. Lo
         -- único que puede pasar ahí es dibujar, deshacer y salir.
+
+    @invariant ShiftMakesOneStraightStroke
+        -- Si Shift participa mientras se hace un trazo, éste conserva sólo el
+        -- punto donde se apoyó y el punto donde se levantó. Mientras la mano se
+        -- mueve, el segundo extremo sigue a la mano: no se acumulan muestras
+        -- intermedias ni se fabrican pequeños segmentos sobre la recta.
 }
 
 rule LeavingTheCanvasKeepsWhatWasDrawn {

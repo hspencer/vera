@@ -30,6 +30,21 @@ export interface CanvasResult {
 }
 
 /**
+ * Añade una muestra a mano alzada o desplaza el único extremo de una recta.
+ *
+ * Está fuera del listener para fijar con pruebas la diferencia estructural: una
+ * recta no es una polilínea que por casualidad quedó derecha.
+ */
+export function extendStroke(stroke: Stroke, point: Point, straight: boolean): void {
+  if (!straight || stroke.length === 0) {
+    stroke.push(point);
+    return;
+  }
+  if (stroke.length === 1) stroke.push(point);
+  else stroke.splice(1, stroke.length - 1, point);
+}
+
+/**
  * Abre el lienzo y devuelve lo dibujado cuando se cierra.
  *
  * Entra lo que ya hubiera —volver a dibujar sobre un dibujo terminado es seguir
@@ -176,6 +191,8 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
     // --- Dibujar ----------------------------------------------------------
 
     const drawing = new Map<number, Stroke>();
+    /** Punteros cuyo trazo ya se convirtió en recta durante este apoyo. */
+    const straightening = new Set<number>();
     /** Los dos dedos de un pellizco, mientras dure. */
     const pinching = new Map<number, { x: number; y: number }>();
     /*
@@ -218,6 +235,7 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
             if (at !== -1) strokes.splice(at, 1);
           }
           drawing.clear();
+          straightening.clear();
           const [a, b] = [...pinching.values()];
           if (a !== undefined && b !== undefined) {
             twoFingers = { at: Date.now(), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, moved: 0 };
@@ -237,6 +255,7 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
       if (pinching.size > 1) return;
       canvas.setPointerCapture(event.pointerId);
       const stroke: Stroke = [sample(event)];
+      if (event.shiftKey) straightening.add(event.pointerId);
       undone.length = 0;
       drawing.set(event.pointerId, stroke);
       strokes.push(stroke);
@@ -271,6 +290,7 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
       }
       const stroke = drawing.get(event.pointerId);
       if (stroke === undefined) return;
+      if (event.shiftKey) straightening.add(event.pointerId);
       /*
        * Los puntos intermedios que el navegador guardó.
        *
@@ -280,6 +300,12 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
        */
       const many = typeof event.getCoalescedEvents === 'function' ? event.getCoalescedEvents() : [];
       const points = many.length > 0 ? many : [event];
+      if (straightening.has(event.pointerId)) {
+        const end = points.at(-1);
+        if (end !== undefined) extendStroke(stroke, sample(end as PointerEvent), true);
+        paint();
+        return;
+      }
       for (const one of points) {
         const point = sample(one as PointerEvent);
         const last = stroke.at(-1);
@@ -287,7 +313,7 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
         if (last !== undefined && Math.hypot(point.x - last.x, point.y - last.y) * scale < 0.7) {
           continue;
         }
-        stroke.push(point);
+        extendStroke(stroke, point, false);
       }
       paint();
     });
@@ -309,7 +335,12 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
       pinching.delete(event.pointerId);
       if (pinching.size < 2) pinchFrom = null;
       const stroke = drawing.get(event.pointerId);
+      if (stroke !== undefined && (straightening.has(event.pointerId) || event.shiftKey)) {
+        straightening.add(event.pointerId);
+        extendStroke(stroke, sample(event), true);
+      }
       drawing.delete(event.pointerId);
+      straightening.delete(event.pointerId);
       if (stroke !== undefined && stroke.length === 0) {
         const at = strokes.indexOf(stroke);
         if (at !== -1) strokes.splice(at, 1);
