@@ -235,6 +235,19 @@ h1.paper-title {
   break-inside: avoid;
   page-break-inside: avoid;
 }
+
+/* Un dibujo a mano también es una sola figura. Sus medidas ya llegan reducidas
+   a la caja imprimible, con la misma regla proporcional de los diagramas. */
+.b .drawn {
+  margin: 0.8rem 0;
+  text-align: center;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.b .drawn svg {
+  display: block;
+  margin: 0 auto;
+}
 /* Las medidas ya vienen puestas desde el servidor, ajustadas a la caja de la
    página. Aquí no se acota nada más: un ancho máximo encogería el ancho sin
    tocar el alto, que es exactamente el hueco en blanco que esto vino a quitar. */
@@ -275,7 +288,16 @@ h1.paper-title {
   width: 100%;
   margin: 0 0 0.55rem;
   border-collapse: collapse;
+}
+
+/* Las tablas largas sí se parten: preservar tamaño legible importa más que la
+   unidad de la tabla. El grupo de cabecera se repite en cada hoja nueva. */
+.b .table-scroll { overflow: visible; }
+.b thead { display: table-header-group; }
+.b tbody { display: table-row-group; }
+.b tr {
   break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .b :is(th, td) {
@@ -408,6 +430,20 @@ function fitToPage(svg: string): string {
 }
 
 /**
+ * Ajusta sólo los dibujos manuales; los Mermaid se sustituyen y ajustan después.
+ *
+ * @invariant AHandDrawingFitsOnOnePage. El cercado sigue siendo el contenido
+ * canónico del bloque. Esta transformación toca únicamente su proyección SVG
+ * para papel y deja la pantalla y el corpus intactos.
+ */
+function fittedHandDrawings(html: string): string {
+  return html.replace(
+    /(<figure class="drawn">)(<svg\b[\s\S]*?<\/svg>)(<\/figure>)/g,
+    (_whole, opening: string, svg: string, closing: string) => opening + fitToPage(svg) + closing,
+  );
+}
+
+/**
  * Dónde está cada diagrama en el HTML del papel, y qué dice.
  *
  * Se busca sobre el HTML ya dibujado y no sobre el Markdown de los bloques a
@@ -500,7 +536,7 @@ export function paperHtml(options: PaperOptions): string {
     .map(({ block, depth }) => {
       const sangría =
         options.indent === true && depth > 0 ? ` style="margin-left:${depth * 1.2}rem"` : '';
-      const text = onPaper(renderMarkdown(block.content, render), source);
+      const text = fittedHandDrawings(onPaper(renderMarkdown(block.content, render), source));
       return `<div class="b"${sangría}>${drawn(text, options.diagrams ?? new Map())}</div>`;
     })
     .join('\n');

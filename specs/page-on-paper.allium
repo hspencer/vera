@@ -149,6 +149,23 @@ contract APageBecomesADocument {
         -- ajusta sólo al ancho. Ver TheTextIsRenderedByTheSameHandAsTheScreen, que
         -- habla del texto; el sitio donde el texto cae sí es distinto en cada uno,
         -- y esto es una consecuencia de eso y no una excepción.
+
+    @invariant AHandDrawingFitsOnOnePage
+        -- Un dibujo hecho a mano viaja entero y proporcional, como el diagrama.
+        -- Si su tamaño natural supera la caja escribible de una hoja se encoge
+        -- por igual en ambas medidas hasta caber; nunca se agranda ni se parte.
+        -- El soporte es distinto, pero cortar sus trazos entre dos hojas rompe
+        -- la misma unidad visual que partir un Mermaid.
+
+    @invariant ATableCarriesItsHeadingAcrossPages
+        -- Una tabla puede continuar en tantas páginas como necesite. Cuando un
+        -- salto la divide, cada página posterior repite la fila de cabeceras
+        -- antes de continuar con sus filas, para que las celdas no pierdan el
+        -- nombre de la columna a la que pertenecen.
+        --
+        -- A diferencia de dibujos y diagramas, encoger una tabla larga hasta
+        -- una sola hoja volvería ilegible su texto; por eso aquí se conserva el
+        -- tamaño de lectura y se permite la partición.
 }
 
 ------------------------------------------------------------

@@ -372,3 +372,47 @@ describe('un diagrama que no cabe en la página', () => {
     assert.match(html, /<svg id="sinCaja">/);
   });
 });
+
+describe('un dibujo a mano en el papel', () => {
+  it('uno muy vertical se encoge proporcionalmente hasta caber en una hoja', () => {
+    const html = paperHtml({
+      title: 'Dibujo largo',
+      blocks: [
+        bloque(
+          'block:1',
+          null,
+          0,
+          '```dibujo\n10,10,50 400,3000\n```',
+        ),
+      ],
+    });
+    const figure = /<figure class="drawn">(<svg[^>]*>)/.exec(html)?.[1] ?? '';
+    const box = /viewBox="[^"]* ([\d.]+) ([\d.]+)"/.exec(figure);
+    const size = /width="(\d+)" height="(\d+)"/.exec(figure);
+    assert.ok(box !== null && size !== null, 'el dibujo no llegó como figura medida');
+    const originalWidth = Number(box[1]);
+    const originalHeight = Number(box[2]);
+    const width = Number(size[1]);
+    const height = Number(size[2]);
+    assert.ok(height <= 820, `sigue midiendo ${height} de alto`);
+    assert.ok(Math.abs(width / height - originalWidth / originalHeight) < 0.01);
+  });
+
+  it('su figura se declara indivisible', () => {
+    const html = paperHtml({ title: 'Dibujo', blocks: [] });
+    assert.match(html, /\.b \.drawn \{[\s\S]*?break-inside: avoid/);
+  });
+});
+
+describe('una tabla larga en el papel', () => {
+  it('puede partirse y repite la cabecera en la página siguiente', () => {
+    const html = paperHtml({
+      title: 'Tabla',
+      blocks: [bloque('block:1', null, 0, '| Nombre | Valor |\n| --- | --- |\n| uno | 1 |')],
+    });
+    assert.match(html, /<table><thead><tr><th>Nombre<\/th><th>Valor<\/th><\/tr><\/thead>/);
+    assert.match(html, /\.b thead \{ display: table-header-group; \}/);
+    const tableRule = /\.b table \{([^}]*)\}/.exec(html)?.[1] ?? '';
+    assert.ok(!tableRule.includes('break-inside'), 'la tabla completa sigue siendo indivisible');
+  });
+});
