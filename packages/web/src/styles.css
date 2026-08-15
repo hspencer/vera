@@ -843,6 +843,12 @@ input {
 #view-switch button {
   display: flex;
   align-items: center;
+  box-sizing: border-box;
+  height: var(--bar-control-height);
+  /* El marco del switch ocupa un píxel arriba y abajo. El botón lo cubre en
+     vez de quedarse en los 34 px interiores: vista, búsqueda y voz miden así
+     exactamente lo mismo, incluido su blanco pulsable. */
+  margin-block: -1px;
   padding: 0.25rem 0.5rem;
   border: 0;
   border-right: 1px solid var(--rule);
