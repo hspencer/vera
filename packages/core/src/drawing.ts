@@ -177,66 +177,36 @@ export interface Nib {
   most: number;
 }
 
-export const NIB: Nib = { least: 1.1, most: 4.2 };
+export const NIB: Nib = { least: 0.25, most: 8 };
 
-const width = (pressure: number, nib: Nib): number =>
+export const widthAt = (pressure: number, nib: Nib = NIB): number =>
   nib.least + (nib.most - nib.least) * Math.max(0, Math.min(1, pressure));
 
+export interface Segment {
+  from: Point;
+  to: Point;
+  width: number;
+}
+
 /**
- * El contorno de un trazo, como una figura que se rellena.
+ * Los segmentos que recorren el eje de un trazo.
  *
- * Un trazo de grosor variable no se puede dibujar con una línea: una línea tiene
- * un grosor y aquí cambia en cada punto. Se recorre el trazo por un lado
- * separándose la mitad del grosor hacia la perpendicular, se vuelve por el otro,
- * y lo que queda es un polígono que se rellena con la tinta.
- *
- * Una figura por trazo y no una por segmento: un dibujo son miles de puntos, y
- * miles de elementos en la página convierten leer una nota en una cuenta de
- * pintura que el navegador no puede pagar.
+ * Cada tramo toma el promedio de la presión de sus extremos. La presión sigue
+ * perteneciendo a los puntos guardados; esto es sólo su proyección visible.
  */
-export function outlineOf(stroke: Stroke, nib: Nib = NIB): string {
-  if (stroke.length === 0) return '';
-
-  /*
-   * Un toque sin recorrido es un punto, y un punto es un círculo.
-   *
-   * Sin este caso, apoyar y levantar sin moverse no dibujaba nada: el contorno
-   * de un trazo de un solo punto es un polígono de área cero. Poner un punto es
-   * un gesto que la gente hace.
-   */
-  if (stroke.length === 1) {
-    const only = stroke[0]!;
-    const r = width(only.pressure, nib) / 2;
-    return (
-      `M ${round(only.x - r)} ${round(only.y)} ` +
-      `a ${round(r)} ${round(r)} 0 1 0 ${round(r * 2)} 0 ` +
-      `a ${round(r)} ${round(r)} 0 1 0 ${round(-r * 2)} 0 Z`
-    );
+export function segmentsOf(stroke: Stroke, nib: Nib = NIB): Segment[] {
+  const segments: Segment[] = [];
+  for (let index = 1; index < stroke.length; index += 1) {
+    const from = stroke[index - 1]!;
+    const to = stroke[index]!;
+    if (from.x === to.x && from.y === to.y) continue;
+    segments.push({
+      from,
+      to,
+      width: widthAt((from.pressure + to.pressure) / 2, nib),
+    });
   }
-
-  const left: string[] = [];
-  const right: string[] = [];
-  for (let index = 0; index < stroke.length; index += 1) {
-    const point = stroke[index]!;
-    const before = stroke[Math.max(0, index - 1)]!;
-    const after = stroke[Math.min(stroke.length - 1, index + 1)]!;
-    let dx = after.x - before.x;
-    let dy = after.y - before.y;
-    const length = Math.hypot(dx, dy);
-    if (length === 0) {
-      dx = 1;
-      dy = 0;
-    } else {
-      dx /= length;
-      dy /= length;
-    }
-    const r = width(point.pressure, nib) / 2;
-    // La perpendicular a la dirección de avance, a media anchura por cada lado.
-    left.push(`${round(point.x - dy * r)} ${round(point.y + dx * r)}`);
-    right.push(`${round(point.x + dy * r)} ${round(point.y - dx * r)}`);
-  }
-  right.reverse();
-  return `M ${left.join(' L ')} L ${right.join(' L ')} Z`;
+  return segments;
 }
 
 /** Dos decimales bastan: más cifras son bytes que nadie ve. */
@@ -270,10 +240,31 @@ export function drawingSvg(
   const extents = extentsOf(strokes, nib.most / 2 + margin);
   if (extents.width <= 0 || extents.height <= 0) return null;
 
-  const paths = strokes
-    .map((stroke) => outlineOf(stroke, nib))
-    .filter((one) => one !== '')
-    .map((one) => `<path d="${one}"/>`)
+  /*
+   * La figura sigue el eje que se guardó, no una silueta triangulada a ambos
+   * lados. SVG no admite variar el grosor dentro de un solo path, por lo que
+   * agrupamos en un path todos los segmentos que comparten ancho. El número de
+   * nodos queda acotado por los niveles de presión, no por los puntos.
+   */
+  const byWidth = new Map<string, string[]>();
+  const dots: string[] = [];
+  for (const stroke of strokes) {
+    if (stroke.length === 1) {
+      const point = stroke[0]!;
+      dots.push(`<circle cx="${round(point.x)}" cy="${round(point.y)}" r="${round(widthAt(point.pressure, nib) / 2)}"/>`);
+      continue;
+    }
+    for (const segment of segmentsOf(stroke, nib)) {
+      const key = round(segment.width);
+      const pieces = byWidth.get(key) ?? [];
+      pieces.push(
+        `M ${round(segment.from.x)} ${round(segment.from.y)} L ${round(segment.to.x)} ${round(segment.to.y)}`,
+      );
+      byWidth.set(key, pieces);
+    }
+  }
+  const paths = [...byWidth]
+    .map(([strokeWidth, pieces]) => `<path d="${pieces.join(' ')}" stroke-width="${strokeWidth}"/>`)
     .join('');
 
   const box = `${round(extents.left)} ${round(extents.top)} ${round(extents.width)} ${round(extents.height)}`;
@@ -281,7 +272,8 @@ export function drawingSvg(
     extents,
     svg:
       `<svg class="drawing" viewBox="${box}" width="${round(extents.width)}" ` +
-      `height="${round(extents.height)}" fill="currentColor" stroke="none" ` +
-      `role="img" aria-label="dibujo a mano" focusable="false">${paths}</svg>`,
+      `height="${round(extents.height)}" fill="currentColor" stroke="currentColor" ` +
+      `stroke-linecap="round" stroke-linejoin="round" role="img" ` +
+      `aria-label="dibujo a mano" focusable="false">${paths}${dots.join('')}</svg>`,
   };
 }

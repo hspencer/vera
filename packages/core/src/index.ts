@@ -87,11 +87,12 @@ export {
   drawingSvg,
   extentsOf,
   looksLikeDrawing,
-  outlineOf,
   readDrawing,
+  segmentsOf,
+  widthAt,
   writeDrawing,
 } from './drawing.ts';
-export type { DrawnSvg, Extents, Nib, Point, Stroke } from './drawing.ts';
+export type { DrawnSvg, Extents, Nib, Point, Segment, Stroke } from './drawing.ts';
 export type { RenderOptions } from './markdown.ts';
 export { answersIn } from './vocabulary.ts';
 

@@ -15,7 +15,7 @@
 // ventana a mitad de un dibujo lo pierde, y eso es lo honesto: nada a medias
 // quedó dicho. @guarantee TheGraphIsNotTouchedUntilTheCanvasCloses.
 
-import { NIB, outlineOf, writeDrawing, type Point, type Stroke } from '@vera/core';
+import { NIB, segmentsOf, widthAt, writeDrawing, type Point, type Stroke } from '@vera/core';
 
 import { icon } from './icons.ts';
 
@@ -106,10 +106,24 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
       context.translate(panX, panY);
       context.scale(scale, scale);
       context.fillStyle = ink;
+      context.strokeStyle = ink;
+      context.lineCap = 'round';
+      context.lineJoin = 'round';
       for (const stroke of strokes) {
-        const outline = outlineOf(stroke, NIB);
-        if (outline === '') continue;
-        context.fill(new Path2D(outline));
+        if (stroke.length === 1) {
+          const point = stroke[0]!;
+          context.beginPath();
+          context.arc(point.x, point.y, widthAt(point.pressure, NIB) / 2, 0, Math.PI * 2);
+          context.fill();
+          continue;
+        }
+        for (const segment of segmentsOf(stroke, NIB)) {
+          context.beginPath();
+          context.moveTo(segment.from.x, segment.from.y);
+          context.lineTo(segment.to.x, segment.to.y);
+          context.lineWidth = segment.width;
+          context.stroke();
+        }
       }
       context.restore();
     };

@@ -140,6 +140,12 @@ contract AStrokeRemembersHowItWasMade {
         -- Tampoco hay grosor que elegir. El grosor sale de la presión, que es de
         -- dónde sale en un lápiz de verdad. Un selector de grosor sería una
         -- pregunta que la mano ya está contestando.
+
+    @invariant TheTraceHasNoContourInterference
+        -- Lo que se ve sigue el recorrido central de la mano y varía su grosor
+        -- con la presión. Su construcción no añade una silueta zigzagueante ni
+        -- cruces alternados capaces de producir moiré: esa geometría no fue
+        -- parte del gesto y no debe aparecer como textura del dibujo.
 }
 
 ------------------------------------------------------------

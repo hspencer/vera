@@ -12,8 +12,8 @@ import {
   drawingSvg,
   extentsOf,
   looksLikeDrawing,
-  outlineOf,
   readDrawing,
+  segmentsOf,
   writeDrawing,
   type Stroke,
 } from '../src/drawing.ts';
@@ -137,33 +137,34 @@ describe('la figura', () => {
 
   it('viene encuadrada en lo dibujado', () => {
     const drawn = drawingSvg(strokes, { margin: 8 });
-    assert.match(drawn?.svg ?? '', /viewBox="-10\.1 -10\.1/);
+    assert.match(drawn?.svg ?? '', /viewBox="-12 -12/);
   });
 
-  it('una figura por trazo y no una por segmento', () => {
-    // Miles de elementos en la página convierten leer una nota en una cuenta de
-    // pintura que el navegador no puede pagar.
+  it('agrupa en un path los segmentos del mismo grosor', () => {
+    // El eje central no necesita un elemento del DOM por cada muestra.
     const muchos: Stroke[] = Array.from({ length: 12 }, () => [point(0, 0), point(5, 5), point(9, 2)]);
     const drawn = drawingSvg(muchos);
-    assert.equal((drawn?.svg.match(/<path /g) ?? []).length, 12);
+    assert.equal((drawn?.svg.match(/<path /g) ?? []).length, 1);
+    assert.equal((drawn?.svg.match(/ M |d="M /g) ?? []).length, 24);
   });
 
   it('el grosor sale de la presión y de nada más', () => {
-    // Apretando, el contorno se separa más del recorrido.
-    const flojo = outlineOf([point(0, 0, 0), point(20, 0, 0)]);
-    const fuerte = outlineOf([point(0, 0, 1), point(20, 0, 1)]);
-    const alturaDe = (d: string) => {
-      const ys = [...d.matchAll(/-?[\d.]+ (-?[\d.]+)/g)].map((m) => Number(m[1]));
-      return Math.max(...ys) - Math.min(...ys);
-    };
-    assert.ok(alturaDe(fuerte) > alturaDe(flojo) * 2);
+    const flojo = segmentsOf([point(0, 0, 0), point(20, 0, 0)])[0]!;
+    const fuerte = segmentsOf([point(0, 0, 1), point(20, 0, 1)])[0]!;
+    assert.ok(fuerte.width > flojo.width * 20);
+  });
+
+  it('la figura recorre sólo el eje central, sin un polígono de contorno', () => {
+    const drawn = drawingSvg(strokes);
+    assert.match(drawn?.svg ?? '', /stroke-linecap="round"/);
+    assert.ok(!(drawn?.svg ?? '').includes(' Z'));
   });
 
   it('un toque sin recorrido es un punto y se ve', () => {
-    // Apoyar y levantar sin moverse es un gesto que la gente hace; el contorno
-    // de un trazo de un solo punto es un polígono de área cero.
+    // Apoyar y levantar sin moverse es un gesto que la gente hace; sin recorrido
+    // no hay segmento, así que ese gesto se presenta explícitamente como punto.
     const drawn = drawingSvg([[point(10, 10, 0.8)]]);
-    assert.match(drawn?.svg ?? '', /a [\d.]+ [\d.]+ 0 1 0/);
+    assert.match(drawn?.svg ?? '', /<circle /);
   });
 
   it('de nada no sale figura', () => {
