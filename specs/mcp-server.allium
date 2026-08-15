@@ -73,6 +73,35 @@ contract MCPIsADoorAndNotASecondMemory {
         -- una página rectora explícitamente autorizada aporta instrucciones, y
         -- viaja identificada como tal. Sin esta regla, cualquiera que consiga
         -- escribir un bloque gobierna al agente que lo lea.
+
+    @invariant WritingReadsTheLivingRulesFirst
+        -- Antes de escribir, el cliente recibe juntas la guía de escritura y la
+        -- ontología que el corpus gobierna ahora. Ninguna copia compilada del
+        -- vocabulario desplaza a las páginas vivas que el dueño puede cambiar.
+
+    @invariant FrontMatterIsMadeOfProperties
+        -- Tipo, estado, idioma y conceptos se escriben como propiedades de la
+        -- página. Un bloque titulado «Clasificación» puede parecer equivalente
+        -- al leerlo, pero no clasifica nada y por eso no es frontmatter.
+
+    @invariant BlockStructureCarriesTheOutline
+        -- Cada título, afirmación, evidencia y salvedad ocupa su propio bloque;
+        -- la relación entre ellos vive en el padre del bloque. Un único bloque
+        -- con un outline Markdown adentro oculta a Vera la estructura que el
+        -- texto aparenta tener.
+
+    @invariant ConnectionsUseTheCorpusVocabulary
+        -- Un enlace [[Página]] conecta páginas. Cuando la conexión además dice
+        -- qué relación hay, se expresa con las propiedades de bloque cuyos
+        -- papeles vigentes son explains, term y sense. El cliente consulta esos
+        -- nombres: no supone que siempre estarán en español ni los congela.
+
+    @invariant TopicsUseTheCurrentTopicProperty
+        -- El nombre de la propiedad temática sale del papel topic de la
+        -- ontología vigente. Una variante histórica como conceptos no crea una
+        -- segunda capa temática ni se vuelve canónica por aparecer en datos.
+        -- Migrarla escribe primero el valor canónico y retira después la clave
+        -- vieja mediante dos operaciones auditables; nunca reescribe la base.
 }
 
 -- Un alcance no es una concesión.

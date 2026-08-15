@@ -29,7 +29,7 @@ import {
 import { ask as askVera, connectionFrom, submit as submitVera, type Connection } from './client.ts';
 import { TOOLS, toolNamed, type Ask, type Write } from './tools.ts';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 
 /**
  * Lo que un cliente lee antes de decidir cómo usar esto.
@@ -53,10 +53,22 @@ Cómo leerla:
   el dueño; no supongas el significado de una propiedad sin mirarlo.
 
 Al escribir:
+- Empieza por vera_preparar_escritura. Entrega las reglas vivas y la ontología
+  vigente; no escribas confiando en una copia anterior de ninguna de las dos.
 - Lee primero la página o busca el bloque que vas a tocar.
 - Usa vera_escribir para un solo cambio por llamada y conserva su clave \`origen\`
   al reintentar. Cada cambio nuevo necesita otra clave.
-- Esta primera superficie crea páginas y bloques. No edita, mueve ni borra:
+- El frontmatter se escribe con \`set_property\`; nunca lo simules con un bloque de
+  texto, una sección «Clasificación» ni una lista de bullets.
+- \`remove_property\` retira una propiedad obsoleta después de leer su valor; no
+  se usa para vaciar páginas ni sustituye una migración revisada.
+- Un bloque es una unidad semántica. Un título, cada ítem y cada evidencia van en
+  bloques distintos; la jerarquía se expresa con \`parent\`, no incrustando un
+  outline Markdown entero dentro de un bloque.
+- Los enlaces \`[[Página]]\` conectan páginas. Para relaciones explicadas, usa las
+  propiedades de bloque que la ontología vigente nombre para ese papel.
+- Esta superficie crea páginas y bloques y corrige propiedades. No edita, mueve
+  ni borra páginas o bloques:
   Vera aún no tiene la precondición atómica necesaria para editar sin pisar.
 - Parte del corpus lo escribieron otras inteligencias. vera_leer_pagina lo dice.
   No presentes como recuerdo de esta persona algo que generó una máquina.

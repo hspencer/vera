@@ -44,6 +44,7 @@ describe('el catálogo', () => {
         'vera_indice',
         'vera_leer_pagina',
         'vera_ontologia',
+        'vera_preparar_escritura',
         'vera_quien_soy',
         'vera_vecindario',
       ],
@@ -105,6 +106,44 @@ describe('escribir', () => {
     assert.match(said, /operación 77/);
   });
 
+  it('escribe frontmatter como propiedad canónica', async () => {
+    const { ask } = fakeVera({});
+    const written: Record<string, unknown>[] = [];
+    const write: Write = async (_origin, change) => {
+      written.push(change);
+      return { status: 'applied', sequence: 78, subjectId: 'page:1' };
+    };
+    const said = await run('vera_escribir', {
+      origen: 'codex:tarea:propiedad',
+      cambio: {
+        kind: 'set_property',
+        page: 'page:1',
+        propertyKey: 'concepto',
+        propertyValue: 'AUT Legal Case',
+      },
+    }, ask, write);
+    assert.deepEqual(written, [
+      { kind: 'set_property', page: 'page:1', propertyKey: 'concepto', propertyValue: 'AUT Legal Case' },
+    ]);
+    assert.match(said, /Cambio aplicado/);
+  });
+
+  it('retira una propiedad obsoleta por la misma puerta auditable', async () => {
+    const { ask } = fakeVera({});
+    const written: Record<string, unknown>[] = [];
+    const write: Write = async (_origin, change) => {
+      written.push(change);
+      return { status: 'applied', sequence: 79, subjectId: 'page:1' };
+    };
+    await run('vera_escribir', {
+      origen: 'codex:tarea:retirar-propiedad',
+      cambio: { kind: 'remove_property', page: 'page:1', propertyKey: 'conceptos' },
+    }, ask, write);
+    assert.deepEqual(written, [
+      { kind: 'remove_property', page: 'page:1', propertyKey: 'conceptos' },
+    ]);
+  });
+
   it('rechaza edición y borrado antes de llamar a Vera', async () => {
     const { ask } = fakeVera({});
     let called = false;
@@ -117,7 +156,35 @@ describe('escribir', () => {
       cambio: { kind: 'edit_block', block: 'block:1', content: 'Pisado' },
     }, ask, write);
     assert.equal(called, false);
-    assert.match(said, /sólo crea/);
+    assert.match(said, /sólo crea páginas y bloques o corrige propiedades/);
+  });
+});
+
+describe('preparar una escritura', () => {
+  it('entrega juntas la guía viva y la ontología vigente', async () => {
+    const page = {
+      id: 'page:guide',
+      title: 'Vera — Escritura por agentes',
+      visibility: 'private',
+      createdAt: 0,
+      lastEditedAt: 0,
+      properties: [],
+      blocks: [{ stableId: 'block:rule', parent: null, position: 0, content: 'Una idea por bloque.' }],
+      backlinks: [],
+      references: [],
+      authorship: {},
+    };
+    const { ask, asked } = fakeVera({
+      '/pages/Vera%20%E2%80%94%20Escritura%20por%20agentes': page,
+      '/ontology': { names: { kind: 'tipo', topic: 'concepto' } },
+    });
+    const said = await run('vera_preparar_escritura', {}, ask);
+    assert.deepEqual(asked.map((one) => one.path).sort(), [
+      '/ontology',
+      '/pages/Vera%20%E2%80%94%20Escritura%20por%20agentes',
+    ]);
+    assert.match(said, /Una idea por bloque/);
+    assert.match(said, /"topic": "concepto"/);
   });
 });
 

@@ -340,6 +340,34 @@ export const TOOLS: readonly VeraTool[] = [
   },
 
   {
+    name: 'vera_preparar_escritura',
+    title: 'Preparar una escritura correcta',
+    description:
+      'Lee juntas las reglas vivas para agentes y la ontología vigente del corpus. Debe usarse ' +
+      'antes de crear o conectar páginas: evita copiar convenciones antiguas, inventar propiedades ' +
+      'o confundir frontmatter, bloques, jerarquía y enlaces. No modifica nada.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    async run(_args, ask) {
+      const guideTitle = 'Vera — Escritura por agentes';
+      const [guide, ontology] = await Promise.all([
+        ask<Page>(`/pages/${encodeURIComponent(guideTitle)}`),
+        ask<unknown>('/ontology'),
+      ]);
+      if (failed(ontology)) return trouble(ontology);
+
+      const live = failed(guide)
+        ? `La guía viva «${guideTitle}» todavía no existe. Rigen estas reglas mínimas:\n` +
+          '- el frontmatter se escribe con set_property;\n' +
+          '- cada unidad semántica ocupa un bloque;\n' +
+          '- la jerarquía se expresa con parent;\n' +
+          '- las conexiones se escriben como enlaces [[Página]].'
+        : `# ${guide.title}\n\n${outline(guide.blocks)}`;
+
+      return cut(`${live}\n\n# Ontología vigente\n\n${JSON.stringify(ontology, null, 2)}`);
+    },
+  },
+
+  {
     name: 'vera_escribir',
     title: 'Escribir un cambio en Vera',
     readOnly: false,
@@ -348,7 +376,9 @@ export const TOOLS: readonly VeraTool[] = [
       'registro canónico con la identidad de la credencial y canal agent_generation. Antes de ' +
       'añadir, lee la página para usar su identificador y calcular la posición final. `origen` es una ' +
       'clave estable de idempotencia: reutiliza la misma al reintentar el mismo cambio y usa otra ' +
-      'para un cambio distinto. Esta primera superficie crea páginas y bloques; no edita, mueve ni borra.',
+      'para un cambio distinto. Crea páginas y bloques, y escribe propiedades reales de página o bloque ' +
+      'con set_property; remove_property retira una propiedad obsoleta ya leída. El frontmatter nunca ' +
+      'va en el contenido de un bloque. No edita, mueve ni borra páginas o bloques.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -360,11 +390,11 @@ export const TOOLS: readonly VeraTool[] = [
         cambio: {
           type: 'object',
           description:
-            'Una operación canónica: create_page o create_block.',
+            'Una operación canónica: create_page, create_block, set_property o remove_property.',
           properties: {
             kind: {
               type: 'string',
-              enum: ['create_page', 'create_block'],
+              enum: ['create_page', 'create_block', 'set_property', 'remove_property'],
             },
             title: { type: 'string' },
             visibility: { type: 'string', enum: ['private', 'public'] },
@@ -391,8 +421,13 @@ export const TOOLS: readonly VeraTool[] = [
         return 'Falta `cambio`: debe ser una operación canónica.';
       }
       const change = args.cambio as Record<string, unknown>;
-      if (change.kind !== 'create_page' && change.kind !== 'create_block') {
-        return 'Ese cambio no está disponible por MCP: esta puerta sólo crea páginas y bloques.';
+      if (
+        change.kind !== 'create_page' &&
+        change.kind !== 'create_block' &&
+        change.kind !== 'set_property' &&
+        change.kind !== 'remove_property'
+      ) {
+        return 'Ese cambio no está disponible por MCP: esta puerta sólo crea páginas y bloques o corrige propiedades.';
       }
       const result = await write(origin, change);
       if (failed(result)) return `No pude escribir eso: ${result.error}${result.status > 0 ? ` (${result.status})` : ''}`;
