@@ -336,11 +336,21 @@ surface VoiceCapture {
         -- a request that must stay open is a machine that fails on the long
         -- recordings — which are exactly the ones worth transcribing.
 
+    @guarantee AFinishedTranscriptAppearsWhereItWasRequested
+        -- When transcription finishes, the recording and the written text
+        -- appear together immediately on the open page. A device must not show
+        -- the old action again while the words already exist in the corpus.
+
     @guarantee SpeakingReachesTheDayFromAnywhere
         -- Recording is available wherever one is, and what is recorded without a
         -- stated place lands on the day in progress. Speaking is the mode that
         -- has to work with one hand while walking; asking where it should go
         -- first is asking at the worst possible moment. See daily-log.allium.
+
+    @guarantee ActiveRecordingRemainsControllableAcrossNavigation
+        -- While the microphone is open, duration, input level, destination,
+        -- stop and discard remain visible over every page. Navigating cannot
+        -- strand a live recording inside the page where it began.
 
     @guarantee NothingSpokenIsStrandedFromTheWriting
         -- A recording that lost its block can be found and placed again. A

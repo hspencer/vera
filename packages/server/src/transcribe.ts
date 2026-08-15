@@ -33,7 +33,13 @@ const home = homedir();
 const DEFAULTS = {
   language: 'es',
   timeoutMs: 10 * 60 * 1000,
-  model: `${home}/.local/share/whisper/ggml-base.bin`,
+  /*
+   * `small` cuesta más CPU que `base`, pero mejora bastante nombres propios,
+   * frases largas y puntuación en español. En Vera la voz se transcribe de
+   * forma explícita y fuera del gesto de grabar, así que aquí manda la calidad;
+   * el tiempo se hace visible en la interfaz y no bloquea seguir leyendo.
+   */
+  model: `${home}/.local/share/whisper/ggml-small.bin`,
 };
 
 // El servidor no siempre nace de un shell de inicio de sesión: un lanzador de

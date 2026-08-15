@@ -1176,7 +1176,7 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
           return;
         }
       }
-      speakInto(place);
+      speakInto(place, page.title);
       if (workspace.activePage !== null) await openPage(workspace.activePage);
     },
   };
@@ -2464,7 +2464,7 @@ function wireTheme(): void {
     void (async () => {
       const block = await startDay(today());
       if (block === null) return;
-      speakInto(block);
+      speakInto(block, today());
       if (workspace.activePage !== null) await openPage(workspace.activePage);
     })();
   });

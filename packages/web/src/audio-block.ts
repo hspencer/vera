@@ -17,6 +17,8 @@ export interface AudioBlockHandlers {
   notify(message: string): void;
   /** La grabación cambió sin que el árbol se mueva. */
   onChanged(recording: Recording): void;
+  /** La transcripción cambió a la vez la grabación y el texto de su bloque. */
+  onTranscribed(recording: Recording, block: string, text: string): void;
 }
 
 /*
@@ -33,6 +35,7 @@ export interface AudioBlockHandlers {
  */
 let live = false;
 const watchers = new Set<(on: boolean) => void>();
+let activeOverlay: HTMLElement | null = null;
 
 /** Avisa cuando una grabación empieza o termina. */
 export function onRecording(watcher: (on: boolean) => void): void {
@@ -81,11 +84,36 @@ export function renderRecorder(
   host: HTMLElement,
   block: string,
   handlers: AudioBlockHandlers,
+  destination = 'este bloque',
 ): void {
+  if (activeOverlay !== null) {
+    activeOverlay.focus();
+    return;
+  }
+  const overlay = document.createElement('section');
+  overlay.className = 'recording-overlay';
+  overlay.tabIndex = -1;
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-label', 'Grabación activa');
+
   const box = document.createElement('div');
   box.className = 'audio-block recording';
   host.innerHTML = '';
-  host.append(box);
+  const heading = document.createElement('strong');
+  heading.className = 'recording-title';
+  heading.textContent = 'Grabando';
+  const where = document.createElement('span');
+  where.className = 'recording-destination';
+  where.textContent = `se guardará en ${destination}`;
+  overlay.append(heading, box, where);
+  document.body.append(overlay);
+  activeOverlay = overlay;
+  overlay.focus();
+
+  const closeOverlay = (): void => {
+    overlay.remove();
+    if (activeOverlay === overlay) activeOverlay = null;
+  };
 
   const dot = document.createElement('span');
   dot.className = 'audio-dot';
@@ -122,6 +150,7 @@ export function renderRecorder(
       setLive(false);
       handlers.notify(started.error);
       host.innerHTML = '';
+      closeOverlay();
       return;
     }
 
@@ -146,6 +175,7 @@ export function renderRecorder(
       started.cancel();
       // Nada que guardar: no llegó a haber grabación.
       host.innerHTML = '';
+      closeOverlay();
       handlers.onSettled();
     });
 
@@ -174,6 +204,7 @@ export function renderRecorder(
           if ('error' in captured) {
             handlers.notify(captured.error);
             host.innerHTML = '';
+            closeOverlay();
             return;
           }
           /*
@@ -191,11 +222,13 @@ export function renderRecorder(
               'No entró sonido: la grabación quedó muda. Revisa qué micrófono tiene elegido este navegador.',
             );
           }
+          closeOverlay();
           handlers.onSettled();
         })
         .catch(() => {
           handlers.notify('no se pudo cerrar la grabación; lo dicho hasta ahí se ha perdido');
           host.innerHTML = '';
+          closeOverlay();
           handlers.onSettled();
         });
     });
@@ -284,14 +317,24 @@ export function renderAudioBlock(
        */
       const counting = countInto(ask, 'transcribiendo…', 'voice:transcribe');
       void voice.transcribe(recording.id).then((next) => {
-        if (fail(next)) {
+        if ('error' in next) {
+          handlers.notify(next.error);
           counting.close('failed');
           ask.disabled = false;
           ask.textContent = again ? 'retranscribir' : 'transcribir';
           return;
         }
         counting.close();
-        handlers.onSettled();
+        /*
+         * La respuesta ya trae las dos verdades que acaban de cambiar.
+         *
+         * Esperar a que la replica local alcance la operación hacía que iOS
+         * redibujara primero el estado anterior: desaparecía la espera, volvía
+         * el botón «transcribir» y el texto parecía perdido, aunque el servidor
+         * sí lo había escrito. Se incorporan ambos resultados canónicos antes
+         * de repintar; la sincronización posterior sólo los confirma.
+         */
+        handlers.onTranscribed(next.recording, next.block, next.text);
       });
     });
     row.append(ask);

@@ -164,7 +164,7 @@ export interface OutlinerCallbacks {
  * la intención sobrevive aquí hasta que el bloque exista en la página. Se
  * consume al usarla: volver a dibujar no vuelve a grabar.
  */
-let speakingIn: string | null = null;
+let speakingIn: { block: string; destination: string } | null = null;
 
 function stamp(milliseconds: number): string {
   const total = Math.floor(milliseconds / 1000);
@@ -278,8 +278,8 @@ function chooseTranscript(choices: YoutubeTranscriptChoice[]): Promise<YoutubeTr
 }
 
 /** Deja dicho que en este bloque se va a hablar. */
-export function speakInto(block: string): void {
-  speakingIn = block;
+export function speakInto(block: string, destination = 'este bloque'): void {
+  speakingIn = { block, destination };
 }
 
 /**
@@ -2236,6 +2236,18 @@ export function renderOutliner(
       page.recordings = next;
       callbacks.onReload(null);
     },
+    onTranscribed: (recording, block, content) => {
+      const recordings = page.recordings ?? [];
+      const at = recordings.findIndex((held) => held.id === recording.id);
+      const next = [...recordings];
+      if (at === -1) next.push(recording);
+      else next[at] = recording;
+      page.recordings = next;
+
+      const written = page.blocks.find((held) => held.stableId === block);
+      if (written !== undefined) written.content = content;
+      callbacks.onReload(null);
+    },
   };
   const options: RenderOptions = { embedHosts };
   const asset = assetResolver(page);
@@ -3516,11 +3528,12 @@ export function renderOutliner(
      * sin pedirle permiso a nada.
      */
     const attached = held.get(node.block.stableId);
-    const speaking = speakingIn === node.block.stableId;
+    const speaking = speakingIn?.block === node.block.stableId;
+    const speakingDestination = speakingIn?.destination ?? page.title;
     if (speaking) speakingIn = null;
 
     if (speaking) {
-      renderRecorder(body, node.block.stableId, audioHandlers);
+      renderRecorder(body, node.block.stableId, audioHandlers, speakingDestination);
     } else {
       if (attached !== undefined) {
         renderAudioBlock(body, attached, audioHandlers, node.block.content);
