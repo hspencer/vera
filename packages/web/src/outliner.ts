@@ -118,6 +118,86 @@ export function allowEmbedsFrom(hosts: readonly string[]): void {
   embedHosts = [...hosts];
 }
 
+/** Una dirección HTTP que sale del origen de Vera, o nada si el enlace es interno. */
+export function externalDestination(raw: string, here = window.location.href): string | null {
+  try {
+    const destination = new URL(raw, here);
+    const origin = new URL(here).origin;
+    return /^https?:$/.test(destination.protocol) && destination.origin !== origin
+      ? destination.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pregunta antes de abandonar Vera y conserva visible la dirección completa.
+ *
+ * En macOS el puente `vera-open` es quien puede cruzar la frontera que una PWA
+ * no puede: delega la URL a Launch Services, que conoce el navegador
+ * predeterminado. En los demás sistemas se conserva la apertura web corriente.
+ */
+function openExternalLink(url: string): void {
+  const dialog = document.createElement('dialog');
+  dialog.className = 'external-link-dialog';
+
+  const title = document.createElement('h2');
+  title.textContent = 'Enlace externo';
+  const destination = document.createElement('p');
+  destination.className = 'external-link-destination';
+  destination.textContent = url;
+
+  const actions = document.createElement('div');
+  actions.className = 'dialog-actions';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.textContent = 'Cancelar';
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.textContent = 'Copiar URL';
+  const open = document.createElement('button');
+  open.type = 'button';
+  const mac = /Macintosh|Mac OS X/.test(navigator.userAgent);
+  open.textContent = mac ? 'Abrir en navegador predeterminado' : 'Abrir enlace';
+
+  cancel.addEventListener('click', () => dialog.close());
+  copy.addEventListener('click', () => {
+    void navigator.clipboard.writeText(url).then(() => {
+      copy.textContent = 'Copiada';
+      window.setTimeout(() => { copy.textContent = 'Copiar URL'; }, 1200);
+    }).catch(() => toast('no se pudo copiar la URL'));
+  });
+  open.addEventListener('click', () => {
+    dialog.close();
+    if (mac) {
+      window.location.href = `vera-open://open?url=${encodeURIComponent(url)}`;
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  });
+  dialog.addEventListener('close', () => dialog.remove());
+
+  actions.append(cancel, copy, open);
+  dialog.append(title, destination, actions);
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
+/** Intercepta sólo enlaces web salientes; páginas, anclas y archivos siguen igual. */
+function wireExternalLinks(container: HTMLElement): void {
+  container.addEventListener('click', (event) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
+    if (link === null) return;
+    const destination = externalDestination(link.getAttribute('href') ?? '');
+    if (destination === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openExternalLink(destination);
+  });
+}
+
 export interface OutlinerCallbacks {
   onNavigate(title: string): void;
   /** Deshacer el último gesto de esta página, o rehacerlo. Lo calcula el
@@ -4724,6 +4804,7 @@ export function renderOutliner(
   // Pulsar un medio presentado abre su ficha. No se usa doble clic: en lectura
   // una imagen no tiene otra acción primaria y la catalogación debe descubrirse.
   wireCataloguedMedia(container, page);
+  wireExternalLinks(container);
 }
 
 /*

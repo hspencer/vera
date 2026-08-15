@@ -1977,6 +1977,33 @@ input {
   outline: none;
 }
 
+.external-link-dialog {
+  width: min(32rem, calc(100vw - 2rem));
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: var(--bg);
+  color: var(--text);
+}
+.external-link-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+.external-link-dialog h2 { margin: 0 0 0.65rem; font-size: 1.05rem; }
+.external-link-destination {
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.external-link-dialog .dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
+}
+
 /* Referencia a otro bloque. Se lee como el texto al que apunta, no como su
    identificador, que no le dice nada a nadie. */
 .block-ref {

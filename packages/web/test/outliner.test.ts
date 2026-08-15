@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {
   buildNeighbourhoods,
   buildTree,
+  externalDestination,
   foldedState,
   invokeMenuAction,
   matchingMovePages,
@@ -21,6 +22,17 @@ const block = (stableId: string, parent: string | null, position: number, conten
   parent,
   position,
   content,
+});
+
+describe('enlaces salientes', () => {
+  const here = 'https://vera.mediafranca.net/p/Bit%C3%A1cora';
+
+  it('reconoce sólo HTTP de otro origen', () => {
+    assert.equal(externalDestination('https://ejemplo.cl/a', here), 'https://ejemplo.cl/a');
+    assert.equal(externalDestination('/p/Otra', here), null);
+    assert.equal(externalDestination('#seccion', here), null);
+    assert.equal(externalDestination('mailto:alguien@ejemplo.cl', here), null);
+  });
 });
 
 describe('menú encadenado', () => {

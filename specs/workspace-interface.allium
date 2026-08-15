@@ -50,6 +50,12 @@ contract EditablePresentation {
 contract NativeMarkdownEditing {
     edit: (page: core/Page, source: String) -> core/Page
 
+    @invariant ExternalLinksExposeTheirDestination
+        -- Following an external link first presents its destination and offers
+        -- copying the URL as well as opening it. On a device with Vera's native
+        -- bridge, opening delegates to the operating system's default browser;
+        -- cancelling leaves the current page and its editing state untouched.
+
     @invariant SourceRemainsMarkdown
         -- Editing produces portable Markdown rather than an opaque editor format.
 
