@@ -185,6 +185,17 @@ describe('aplicar en casa', () => {
     assert.deepEqual(pagePropertiesOf(replica), [{ key: 'concepto', value: 'Vera' }]);
   });
 
+  it('la visibilidad de la página cambia en la réplica antes de repintar', () => {
+    const replica = seed(view());
+    const said = applyLocally(
+      replica,
+      { kind: 'set_page_visibility', page: 'page:1', visibility: 'public' },
+      'local:visibility',
+    );
+    assert.equal(said.kind, 'applied');
+    assert.equal(replica.graph.page('page:1')?.visibility, 'public');
+  });
+
   it('la negativa es la del dominio, y llega sin salir de casa', () => {
     // Las mismas palabras que habría contestado el servidor. Si el cliente
     // decidiera por su cuenta, diría que sí donde el servidor dice que no y el

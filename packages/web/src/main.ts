@@ -888,6 +888,7 @@ async function openPage(
   page.blocks = blocksOf(replica);
   page.blockProperties = blockPropertiesOf(replica);
   page.properties = pagePropertiesOf(replica);
+  page.visibility = replica.graph.page(replica.page)?.visibility ?? page.visibility;
 
   derivedStale = false;
   window.clearTimeout(catchUpTimer);
@@ -1126,6 +1127,7 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
         openView.blocks = blocksOf(replica);
         openView.blockProperties = blockPropertiesOf(replica);
         openView.properties = pagePropertiesOf(replica);
+        openView.visibility = replica.graph.page(replica.page)?.visibility ?? openView.visibility;
         renderOutliner(text, openView, callbacksFor(openView), focus, workspace.focusRoot);
         restoreTextViewport(text, viewport);
         catchUp();

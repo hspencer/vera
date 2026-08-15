@@ -134,6 +134,7 @@ export type LocalOutcome =
  */
 const AT_HOME = new Set([
   'create_page',
+  'set_page_visibility',
   'create_block',
   'edit_block',
   'move_block',
@@ -194,6 +195,8 @@ function holds(replica: Replica, change: Change): boolean {
      */
     case 'create_page':
       return true;
+    case 'set_page_visibility':
+      return change.page === page;
     case 'create_block':
       return change.page === page && (change.parent === null || graph.block(change.parent) !== undefined);
     case 'edit_block':
