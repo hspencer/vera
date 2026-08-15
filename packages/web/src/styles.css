@@ -4623,6 +4623,11 @@ code {
   background: var(--bg-raised);
 }
 
+.embed iframe[src^="https://www.youtube-nocookie.com/embed/"] {
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
 .embed figcaption {
   margin-top: 0.25rem;
   font-family: var(--font-mono);

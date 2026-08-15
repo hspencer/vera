@@ -69,11 +69,12 @@ contract EmbeddedContentIsSandboxed {
         -- pone alrededor de un dibujo, dicha para algo que además trae su propio
         -- programa.
 
-    @invariant ItDoesNotSayWhereItCameFrom
-        -- La petición sale sin decir desde qué página se hizo. Quien aloja lo
-        -- incrustado tiene que poder servirlo; no tiene por qué enterarse de cómo
-        -- se llama la nota desde la que alguien lo está mirando, que es una cosa
-        -- del corpus y el corpus no sale de casa.
+    @invariant ItDoesNotSayWhichPageItCameFrom
+        -- La petición no dice desde qué página se hizo. Quien aloja lo incrustado
+        -- tiene que poder servirlo; no tiene por qué enterarse de cómo se llama la
+        -- nota desde la que alguien lo está mirando. Cuando el proveedor exige
+        -- identificar al sitio que contiene el reproductor, puede conocer el
+        -- origen de Vera, pero nunca la ruta ni el nombre de la nota.
 
     @invariant OnlyOverACarriedConnection
         -- Sólo se incrusta lo que viaja cifrado. Una incrustación sin cifrar

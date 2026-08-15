@@ -458,7 +458,7 @@ describe('incrustaciones', () => {
     const html = renderMarkdown('https://youtu.be/dQw4w9WgXcQ');
     assert.match(html, /youtube-nocookie\.com\/embed\/dQw4w9WgXcQ/);
     assert.match(html, /sandbox=/);
-    assert.match(html, /referrerpolicy="no-referrer"/);
+    assert.match(html, /referrerpolicy="strict-origin-when-cross-origin"/);
   });
 
   it('reconoce watch, shorts y no incrusta una URL mezclada con prosa', () => {

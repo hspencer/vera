@@ -133,18 +133,24 @@ export function embedIn(source: string, hosts: readonly string[] = []): string |
    *
    * `referrerpolicy` para que la petición no diga desde qué nota se hizo: quien
    * aloja esto tiene que poder servirlo y no tiene por qué saber cómo se llama la
-   * página desde la que alguien lo mira.
+   * página desde la que alguien lo mira. YouTube es la excepción observable:
+   * rechaza el reproductor con el error 153 si no recibe siquiera el origen que
+   * lo contiene. En ese caso viaja sólo el origen, nunca la ruta de la nota.
    *
    * `loading="lazy"` porque una bitácora con seis incrustaciones no puede saludar
    * a seis servidores por el hecho de abrirse.
    */
+  const referrerPolicy = host === 'www.youtube-nocookie.com'
+    ? 'strict-origin-when-cross-origin'
+    : 'no-referrer';
+
   return (
     // La dirección viaja en el marcado aunque en pantalla se lea sólo quién
     // aloja: impresa, una incrustación es un rectángulo en blanco, y lo único
     // que puede salvarla es decir dónde estaba.
     `<figure class="embed" data-source="${quoteAttribute(escapeHtml(address))}">` +
     `<iframe src="${quoteAttribute(escapeHtml(src))}" height="${height}" loading="lazy" ` +
-    `referrerpolicy="no-referrer" sandbox="allow-scripts allow-forms allow-popups allow-same-origin" ` +
+    `referrerpolicy="${referrerPolicy}" sandbox="allow-scripts allow-forms allow-popups allow-same-origin" ` +
     `title="incrustado desde ${quoteAttribute(escapeHtml(host))}"></iframe>` +
     // Debajo, de dónde viene: un rectángulo que corre programa ajeno sin decir de
     // quién es se parece demasiado a una parte de Vera, y no lo es.
