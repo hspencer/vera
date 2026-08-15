@@ -7,7 +7,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createReadStream, existsSync, readFileSync, statSync, unlinkSync } from 'node:fs';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import { hostname, userInfo } from 'node:os';
 
 import {
@@ -29,6 +29,8 @@ import {
   readPropertyDeclarations,
   readPropertyNames,
   readQuery,
+  canonicalUrl,
+  suggestedPathFor,
   titleKey,
   writeQuery,
   STARTER_RELATIONS,
@@ -62,7 +64,10 @@ import {
   recordingsInPage,
   removeRecording,
   restoreAudio,
+  removePublication,
+  savePublication,
   saveParticipant,
+  saveSite,
   saveWorkspace,
   setFold,
   setTranscript,
@@ -124,6 +129,7 @@ import { describeStructure, readingPasses, readStructure } from './structure.ts'
 import { describePlan, planTabularity } from './tabularity.ts';
 import { transcribeAudio } from './transcribe.ts';
 import { renderPage } from '@vera/store/projection';
+import { projectPublicSiteAtomically } from '@vera/store/public-projection';
 
 const CHANGE_KINDS = new Set<string>(CORE_CHANGE_KINDS);
 
@@ -202,6 +208,14 @@ export interface ServerOptions {
    * la sabe quien la configuró; el proceso que corre detrás no.
    */
   reachableAt?: string;
+  /** Sitio estático que esta instancia publica, si su dueño lo configuró. */
+  publicSite?: { title: string; canonicalDomain: string };
+  /** Directorio estable que Tailscale Serve o el alojamiento público sirven. */
+  publicOutput?: string;
+  /** Iconos y manifiesto que acompañan a la proyección pública. */
+  publicBranding?: string;
+  /** Puerto loopback que sirve sólo la proyección, para una vista previa privada. */
+  publicPreviewPort?: number;
 }
 
 export interface VeraServer {
@@ -424,9 +438,53 @@ export function createVeraServer(options: ServerOptions): VeraServer {
   const webRoot = options.webRoot === undefined ? null : resolve(options.webRoot);
   const objectsRoot = options.objectsRoot === undefined ? null : resolve(options.objectsRoot);
 
+  const publicSite = () =>
+    options.publicSite === undefined
+      ? undefined
+      : graph.siteByDomain(options.publicSite.canonicalDomain);
+
+  const publicationView = (pageId: string) => {
+    if (options.publicSite === undefined) return null;
+    const site = publicSite();
+    const page = graph.page(pageId);
+    if (page === undefined) return null;
+    const publication = site === undefined
+      ? undefined
+      : graph.publicationsOf(site.id).find((candidate) => candidate.page === pageId);
+    const path = publication?.path ?? suggestedPathFor(page.title);
+    return {
+      site: site?.id ?? null,
+      siteTitle: options.publicSite.title,
+      canonicalDomain: options.publicSite.canonicalDomain,
+      path,
+      url: canonicalUrl(options.publicSite.canonicalDomain, path),
+      publishedAt: publication?.publishedAt ?? null,
+      entryPoint: site?.entryPoint === pageId,
+    };
+  };
+
+  /** La base nunca se sirve: sólo este directorio reemplazado atómicamente. */
+  const rebuildPublicSite = (): void => {
+    if (options.publicOutput === undefined) return;
+    const site = publicSite();
+    if (site === undefined) return;
+    projectPublicSiteAtomically(graph, resolve(options.publicOutput), {
+      site,
+      publications: graph.publicationsOf(site.id),
+      ...(options.publicBranding === undefined
+        ? {}
+        : { brandingAssets: resolve(options.publicBranding) }),
+    });
+  };
+
   // Las rutas del grafo y su objeto. Se leen una vez: el mapa cambia cuando se
   // ingiere un medio, no cuando se lee una página.
   const media = mediaReferences(store);
+
+  // Si ya había publicaciones, el proceso vuelve a dejar su proyección al día
+  // antes de aceptar peticiones. Una salida vieja no se sirve como si fuera la
+  // revisión vigente.
+  rebuildPublicSite();
 
   /*
    * El vocabulario de relaciones, leído de donde manda.
@@ -1043,6 +1101,24 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           if (fence.source !== null) mark(BIBLIOGRAPHY_NAMES.source, fence.source, 2);
         }
 
+        const touched = pageTouchedBy(
+          input.change,
+          outcome.subjectId,
+          (block) => graph.block(block)?.page,
+        );
+        const site = publicSite();
+        if (
+          touched !== null &&
+          site !== undefined &&
+          graph.publicationsOf(site.id).some((publication) => publication.page === touched)
+        ) {
+          try {
+            rebuildPublicSite();
+          } catch (error) {
+            console.error('la proyección pública quedó en su versión anterior:', error);
+          }
+        }
+
         send(response, 201, {
           status: 'applied',
           sequence: outcome.operation.sequence,
@@ -1066,6 +1142,140 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       bearerOf(request.headers.authorization) === null
         ? null
         : { error: 'sólo el dueño administra credenciales, y no lo hace con una credencial' };
+
+    const publicationPage = path.startsWith('/publications/')
+      ? decodeURIComponent(path.slice('/publications/'.length))
+      : null;
+
+    /** Publicar es un acto del dueño distinto de declarar la página pública. */
+    if (request.method === 'POST' && publicationPage !== null) {
+      const blocked = ownerOnly();
+      if (blocked !== null) {
+        send(response, 403, blocked);
+        return;
+      }
+      if (options.publicSite === undefined) {
+        send(response, 409, { error: 'esta instancia no tiene VERA_PUBLIC_DOMAIN configurado' });
+        return;
+      }
+      const page = graph.page(publicationPage);
+      if (page === undefined) {
+        send(response, 404, { error: 'no such page' });
+        return;
+      }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { path?: unknown; entryPoint?: unknown } = {};
+        try {
+          if (chunks.length > 0) {
+            body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+          }
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+        if (body.path !== undefined && typeof body.path !== 'string') {
+          send(response, 400, { error: 'path must be a string' });
+          return;
+        }
+        if (body.entryPoint !== undefined && typeof body.entryPoint !== 'boolean') {
+          send(response, 400, { error: 'entryPoint must be boolean' });
+          return;
+        }
+
+        store.db.exec('SAVEPOINT publish_page');
+        try {
+          let site = publicSite();
+          if (site === undefined) {
+            site = graph.createSite({
+              owner: owner.id,
+              title: options.publicSite!.title,
+              canonicalDomain: options.publicSite!.canonicalDomain,
+            });
+            saveSite(store, site);
+          }
+          const publication =
+            graph.publicationsOf(site.id).find((candidate) => candidate.page === page.id) ??
+            graph.publish({
+              site: site.id,
+              page: page.id,
+              path: typeof body.path === 'string' && body.path.trim() !== ''
+                ? body.path
+                : suggestedPathFor(page.title),
+              participant: owner.id,
+            });
+          savePublication(store, publication);
+          if (site.entryPoint === null || body.entryPoint === true) {
+            graph.setSiteEntryPoint({ site: site.id, page: page.id, participant: owner.id });
+            saveSite(store, site);
+          }
+          store.db.exec('RELEASE publish_page');
+        } catch (error) {
+          store.db.exec('ROLLBACK TO publish_page');
+          store.db.exec('RELEASE publish_page');
+          graph = loadGraph(store, 'mind');
+          send(response, 422, { error: error instanceof Error ? error.message : String(error) });
+          return;
+        }
+
+        try {
+          rebuildPublicSite();
+          send(response, 201, publicationView(page.id));
+        } catch (error) {
+          // Publicar quedó persistido; la proyección anterior sigue intacta por
+          // el reemplazo atómico y puede reconstruirse en el siguiente intento.
+          console.error('la publicación se guardó, pero su proyección falló:', error);
+          send(response, 201, {
+            ...publicationView(page.id),
+            projectionError: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+      return;
+    }
+
+    /** Retirar borra la dirección del sitio, no la página del corpus. */
+    if (request.method === 'DELETE' && publicationPage !== null) {
+      const blocked = ownerOnly();
+      if (blocked !== null) {
+        send(response, 403, blocked);
+        return;
+      }
+      const site = publicSite();
+      const publication = site === undefined
+        ? undefined
+        : graph.publicationsOf(site.id).find((candidate) => candidate.page === publicationPage);
+      if (site === undefined || publication === undefined) {
+        send(response, 200, publicationView(publicationPage));
+        return;
+      }
+      store.db.exec('SAVEPOINT withdraw_page');
+      try {
+        graph.unpublish({ site: site.id, path: publication.path, participant: owner.id });
+        removePublication(store, site.id, publication.path);
+        saveSite(store, site);
+        store.db.exec('RELEASE withdraw_page');
+      } catch (error) {
+        store.db.exec('ROLLBACK TO withdraw_page');
+        store.db.exec('RELEASE withdraw_page');
+        graph = loadGraph(store, 'mind');
+        send(response, 422, { error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+
+      try {
+        rebuildPublicSite();
+        send(response, 200, publicationView(publicationPage));
+      } catch (error) {
+        console.error('el retiro se guardó, pero su proyección falló:', error);
+        send(response, 200, {
+          ...publicationView(publicationPage),
+          projectionError: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
 
     /** Quién dice ser quien llama, para que un agente pueda comprobarlo. */
     if (request.method === 'GET' && path === '/agents/whoami') {
@@ -3507,6 +3717,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
            */
           trail: trailOf(page.id),
           visibility: page.visibility,
+          publication: publicationView(page.id),
           createdAt: page.createdAt,
           originCreatedAt: page.originCreatedAt,
           lastEditedAt: graph.lastEditedAt(page.id),
@@ -3915,14 +4126,61 @@ export function listen(options: ServerOptions & { port: number; host?: string })
   // en la red física. Quien la publique elige el frente (p. ej. tailscale serve,
   // que termina TLS y reenvía desde esta misma máquina).
   http.listen(options.port, options.host ?? '127.0.0.1');
+  const preview =
+    options.publicOutput === undefined || options.publicPreviewPort === undefined
+      ? null
+      : createServer((request, response) => {
+          if (request.method !== 'GET' && request.method !== 'HEAD') {
+            response.writeHead(405, { allow: 'GET, HEAD' });
+            response.end();
+            return;
+          }
+
+          const root = resolve(options.publicOutput!);
+          let pathname: string;
+          try {
+            pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
+          } catch {
+            response.writeHead(400);
+            response.end();
+            return;
+          }
+          let target = resolve(root, pathname.replace(/^\/+/, ''));
+          if (target !== root && !target.startsWith(`${root}${sep}`)) {
+            response.writeHead(404);
+            response.end();
+            return;
+          }
+          if (existsSync(target) && statSync(target).isDirectory()) target = join(target, 'index.html');
+          if (!existsSync(target) || !statSync(target).isFile()) {
+            response.writeHead(404);
+            response.end();
+            return;
+          }
+
+          response.writeHead(200, {
+            'content-type': MIME[extname(target)] ?? 'application/octet-stream',
+            'cache-control': REVALIDATE,
+            'content-security-policy': "default-src 'self'; style-src 'unsafe-inline'; img-src 'self' data: https:",
+            'x-content-type-options': 'nosniff',
+          });
+          if (request.method === 'HEAD') response.end();
+          else createReadStream(target).pipe(response);
+        });
+  preview?.listen(options.publicPreviewPort, '127.0.0.1');
+  const servers = preview === null ? [http] : [http, preview];
   return {
     vera,
-    close: () =>
-      new Promise((done) => {
-        http.close(() => {
-          vera.close();
-          done();
-        });
-      }),
+    close: async () => {
+      await Promise.all(
+        servers.map(
+          (server) =>
+            new Promise<void>((done) => {
+              server.close(() => done());
+            }),
+        ),
+      );
+      vera.close();
+    },
   };
 }

@@ -208,6 +208,22 @@ const publicationPathIsUniqueWithinSite: Check = (graph, report) => {
   }
 };
 
+const siteEntryPointIsPublishedInItsOwnGraph: Check = (graph, report) => {
+  for (const site of graph.sites()) {
+    if (site.entryPoint === null) continue;
+    const page = graph.page(site.entryPoint);
+    const published = graph
+      .publicationsOf(site.id)
+      .some((publication) => publication.page === site.entryPoint);
+    if (page?.graph !== site.graph || !published) {
+      report(
+        'SiteEntryPointIsPublishedInItsOwnGraph',
+        `${site.id} names ${site.entryPoint} without publishing it`,
+      );
+    }
+  }
+};
+
 // --- change-application.allium ---------------------------------------------
 
 const operationSequenceIsUniqueWithinLog: Check = (graph, report) => {
@@ -386,6 +402,7 @@ const CHECKS: readonly Check[] = [
   publicationBelongsToSiteGraph,
   publicationBeginsAtARevisionOfItsPage,
   publicationPathIsUniqueWithinSite,
+  siteEntryPointIsPublishedInItsOwnGraph,
   operationSequenceIsUniqueWithinLog,
   operationOriginIsUniqueWithinLog,
   sequenceNeverExceedsLogPosition,

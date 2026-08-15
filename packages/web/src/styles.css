@@ -1114,6 +1114,44 @@ input {
   border-color: var(--warm);
 }
 
+.publication-state {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+}
+
+.publication-address {
+  color: var(--warm);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+
+.publication-action,
+.publication-entry {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.publication-action.published {
+  color: var(--text-dim);
+}
+
+.publication-action:hover,
+.publication-action:focus-visible,
+.publication-entry:hover,
+.publication-entry:focus-visible {
+  color: var(--warm);
+  outline: none;
+}
+
 .blocks {
   margin-top: 1.4rem;
 }

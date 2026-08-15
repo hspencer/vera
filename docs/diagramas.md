@@ -917,9 +917,9 @@ erDiagram
     }
 ```
 
-`media` y `recordings` existen y están casi vacías: el camino de la voz está
-especificado y parcialmente construido. `personal_sites` y `publications`
-existen y la publicación no está construida.
+`media` y `recordings` sostienen el camino de la voz. `personal_sites` y
+`publications` sostienen la publicación explícita: dirección, autoría, fecha y
+portada; de ellas se construye la proyección HTML estática.
 
 ---
 

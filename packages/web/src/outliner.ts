@@ -2715,6 +2715,7 @@ export function renderOutliner(
    * en workspace-interface.allium.
    */
   const publica = page.visibility === 'public';
+  const publicada = page.publication?.publishedAt !== null && page.publication !== null && page.publication !== undefined;
 
   const visibilityKey = document.createElement('dt');
   visibilityKey.className = 'property-key';
@@ -2741,9 +2742,15 @@ export function renderOutliner(
   badge.setAttribute('role', 'switch');
   badge.setAttribute('aria-checked', String(publica));
   badge.title = publica
-    ? 'Pública: se proyecta al sitio personal. Pulsa para hacerla privada.'
-    : 'Privada: no sale de aquí. Pulsa para publicarla.';
+    ? publicada
+      ? 'Pública y publicada: despublícala antes de hacerla privada.'
+      : 'Pública: puede publicarse, pero todavía no está en el sitio.'
+    : 'Privada: no puede publicarse.';
   badge.addEventListener('click', () => {
+    if (publica && publicada) {
+      toast('despublica la página antes de hacerla privada');
+      return;
+    }
     void submitAndReload(
       {
         kind: 'set_page_visibility',
@@ -2758,6 +2765,77 @@ export function renderOutliner(
   // gesto que se ofrezca de paso, y repetido sobre cada fecha de la lectura
   // continua sería la fila más ruidosa de todas.
   if (!day) properties.append(visibilityKey, visibilityValue);
+
+  if (!day && publica && page.publication !== null && page.publication !== undefined) {
+    const publicationKey = document.createElement('dt');
+    publicationKey.className = 'property-key';
+    publicationKey.textContent = 'sitio';
+
+    const publicationValue = document.createElement('dd');
+    publicationValue.className = 'property-value governed publication-state';
+    const address = document.createElement('code');
+    address.className = 'publication-address';
+    address.textContent = page.publication.entryPoint
+      ? `portada · /${page.publication.path}/`
+      : `/${page.publication.path}/`;
+    address.title = page.publication.url;
+
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = publicada ? 'publication-action published' : 'publication-action';
+    action.textContent = publicada ? 'Despublicar' : 'Publicar';
+    action.addEventListener('click', () => {
+      if (publicada) {
+        if (!window.confirm(`Retirar ${page.publication!.url} del sitio público?`)) return;
+        action.disabled = true;
+        void api
+          .unpublish(page.id)
+          .then((publication) => {
+            page.publication = publication;
+            toast('despublicada');
+            callbacks.onReload(null);
+          })
+          .catch((error) => toast(error instanceof Error ? error.message : 'no se pudo despublicar'))
+          .finally(() => { action.disabled = false; });
+        return;
+      }
+
+      const chosen = window.prompt('Dirección estable dentro del sitio', page.publication!.path);
+      if (chosen === null) return;
+      action.disabled = true;
+      void api
+        .publish(page.id, chosen.trim())
+        .then((publication) => {
+          page.publication = publication;
+          toast('publicada');
+          callbacks.onReload(null);
+        })
+        .catch((error) => toast(error instanceof Error ? error.message : 'no se pudo publicar'))
+        .finally(() => { action.disabled = false; });
+    });
+    publicationValue.append(address, action);
+
+    if (publicada && !page.publication.entryPoint) {
+      const entry = document.createElement('button');
+      entry.type = 'button';
+      entry.className = 'publication-entry';
+      entry.textContent = 'Hacer portada';
+      entry.addEventListener('click', () => {
+        entry.disabled = true;
+        void api
+          .publish(page.id, page.publication!.path, true)
+          .then((publication) => {
+            page.publication = publication;
+            toast('ahora es la portada');
+            callbacks.onReload(null);
+          })
+          .catch((error) => toast(error instanceof Error ? error.message : 'no se pudo elegir la portada'))
+          .finally(() => { entry.disabled = false; });
+      });
+      publicationValue.append(entry);
+    }
+    properties.append(publicationKey, publicationValue);
+  }
 
   /*
    * Fechas de solo lectura.

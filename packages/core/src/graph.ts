@@ -631,9 +631,19 @@ export class VeraGraph {
         return null;
       }
       case 'set_page_visibility':
-        return this.#pages.has(change.page) ? null : 'no such page';
+        if (!this.#pages.has(change.page)) return 'no such page';
+        if (
+          change.visibility === 'private' &&
+          this.#publications.some((publication) => publication.page === change.page)
+        ) {
+          return 'a published page must be withdrawn before it becomes private';
+        }
+        return null;
       case 'remove_page': {
         if (!this.#pages.has(change.page)) return 'no such page';
+        if (this.#publications.some((publication) => publication.page === change.page)) {
+          return 'a published page must be withdrawn before it is removed';
+        }
         if (this.blocksOf(change.page).length > 0) {
           return 'a page is removable only once it is empty';
         }
@@ -1548,6 +1558,7 @@ export class VeraGraph {
       owner: input.owner,
       title: input.title,
       canonicalDomain: input.canonicalDomain,
+      entryPoint: null,
     };
     this.#sites.set(site.id, site);
     return site;
@@ -1565,6 +1576,29 @@ export class VeraGraph {
   siteByDomain(domain: string): PersonalSite | undefined {
     const wanted = domain.replace(/\/$/, '');
     return this.sites().find((site) => site.canonicalDomain.replace(/\/$/, '') === wanted);
+  }
+
+  /** La portada siempre es una página que este mismo sitio ya publica. */
+  setSiteEntryPoint(input: {
+    site: PersonalSiteId;
+    page: PageId | null;
+    participant: ParticipantId;
+  }): PersonalSite {
+    const site = this.#sites.get(input.site);
+    if (site === undefined) throw new Error(`no such site ${input.site}`);
+    if (site.owner !== input.participant) {
+      throw new Error('only the site owner chooses its entry point');
+    }
+    if (
+      input.page !== null &&
+      !this.#publications.some(
+        (publication) => publication.site === site.id && publication.page === input.page,
+      )
+    ) {
+      throw new Error('the entry point must already be published on this site');
+    }
+    site.entryPoint = input.page;
+    return site;
   }
 
   /**
@@ -1659,6 +1693,15 @@ export class VeraGraph {
     this.#publications = this.#publications.filter(
       (p) => !(p.site === input.site && p.path === path),
     );
+    if (
+      this.#publications.length < before &&
+      site.entryPoint !== null &&
+      !this.#publications.some(
+        (publication) => publication.site === site.id && publication.page === site.entryPoint,
+      )
+    ) {
+      site.entryPoint = null;
+    }
     return this.#publications.length < before;
   }
 

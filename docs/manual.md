@@ -569,11 +569,11 @@ sin darse cuenta.
 
 ## Privado, público, y qué significa hoy
 
-Toda página nace **privada**. El interruptor de la cabecera la marca como pública.
-
-Hay que decirlo con todas las letras: **marcar una página como pública declara una
-intención y hoy no pone nada en internet.** El sitio personal todavía no está
-construido — ver [ROADMAP § 3.1](../ROADMAP.md#31-publicación-web-de-las-páginas-públicas).
+Toda página nace **privada**. El interruptor de la cabecera la hace pública y,
+por tanto, elegible para publicar; todavía no la pone en un sitio. En una página
+pública aparece la fila **sitio**: ahí se elige su dirección estable, se publica,
+se hace portada o se retira. Retirarla no borra la página ni vuelve privada su
+contenido dentro de Vera.
 
 Lo que sí hay: el servidor escucha sólo en esta máquina, y si lo abres a la red
 avisa al arrancar de que cualquiera que alcance ese puerto escribe como tú.
@@ -637,8 +637,8 @@ es lo que se acaba de compilar**. Si no coinciden, se planta.
   propiedades de página y eso es una propiedad de bloque.
 - **Un recorrido no se puede podar ni publicar.** Se crea andando y se guarda; el
   argumento vivo y su publicación, no.
-- **No hay sitio publicado.** Marcar una página como pública declara una intención
-  sin efecto todavía.
+- **El sitio público todavía no tiene búsqueda ni RSS.** Publicar y retirar,
+  portada, URL canónica y salida HTML estática sí están construidos.
 - **La búsqueda no cubre valores de propiedad.** Falta `properties_fts`, ya
   declarado en el esquema.
 - **Las personas no se autentican ante Vera.** Sin credencial, todo lo que llega

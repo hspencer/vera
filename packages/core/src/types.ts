@@ -318,6 +318,7 @@ export interface PersonalSite {
   readonly owner: ParticipantId;
   title: string;
   canonicalDomain: string;
+  entryPoint: PageId | null;
 }
 
 /**

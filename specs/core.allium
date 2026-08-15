@@ -143,7 +143,10 @@ entity PersonalSite {
     owner: Participant
     title: String
     canonical_domain: String
-    entry_point: Page
+    -- Antes de la primera publicación todavía no hay portada. La primera página
+    -- publicada puede ocuparla en el mismo gesto; después siempre nombra una
+    -- publicación vigente del propio sitio.
+    entry_point: Page?
     publications: Publication with site = this
 }
 
@@ -326,8 +329,9 @@ invariant PublicationBelongsToSiteGraph {
 
 invariant SiteEntryPointIsPublishedInItsOwnGraph {
     for site in PersonalSites:
-        site.entry_point.graph = site.graph and
-        exists Publication{site: site, page: site.entry_point}
+        site.entry_point != null implies
+            site.entry_point.graph = site.graph and
+            exists Publication{site: site, page: site.entry_point}
 }
 
 invariant PublicationRecordsItsHumanPublisher {

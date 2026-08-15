@@ -816,12 +816,13 @@ export function loadGraph(store: Store, graphName = 'mind'): VeraGraph {
 export function saveSite(store: Store, site: PersonalSite): void {
   store.db
     .prepare(
-      `INSERT INTO personal_sites (id, graph_id, owner_id, title, canonical_domain)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO personal_sites (id, graph_id, owner_id, title, canonical_domain, entry_point)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET title = excluded.title,
-                                      canonical_domain = excluded.canonical_domain`,
+                                      canonical_domain = excluded.canonical_domain,
+                                      entry_point = excluded.entry_point`,
     )
-    .run(site.id, site.graph, site.owner, site.title, site.canonicalDomain);
+    .run(site.id, site.graph, site.owner, site.title, site.canonicalDomain, site.entryPoint);
 }
 
 export function savePublication(store: Store, publication: Publication): void {
@@ -854,7 +855,7 @@ export function removePublication(store: Store, site: string, path: string): voi
 function loadSitesAndPublications(store: Store, graph: VeraGraph): void {
   const sites = store.db
     .prepare(
-      'SELECT id, graph_id, owner_id, title, canonical_domain FROM personal_sites WHERE graph_id = ?',
+      'SELECT id, graph_id, owner_id, title, canonical_domain, entry_point FROM personal_sites WHERE graph_id = ?',
     )
     .all(store.graphId) as {
     id: string;
@@ -862,6 +863,7 @@ function loadSitesAndPublications(store: Store, graph: VeraGraph): void {
     owner_id: string;
     title: string;
     canonical_domain: string;
+    entry_point: string | null;
   }[];
   for (const site of sites) {
     graph.createSite({
@@ -897,6 +899,14 @@ function loadSitesAndPublications(store: Store, graph: VeraGraph): void {
       participant: row.published_by,
       firstRevision: row.revision_operation_id,
       at: row.published_at,
+    });
+  }
+  for (const site of sites) {
+    if (site.entry_point === null) continue;
+    graph.setSiteEntryPoint({
+      site: site.id,
+      page: site.entry_point,
+      participant: site.owner_id,
     });
   }
 }

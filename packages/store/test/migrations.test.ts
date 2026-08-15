@@ -235,4 +235,37 @@ describe('migraciones', () => {
       'las migraciones se numeran 1, 2, 3… sin huecos ni repeticiones',
     );
   });
+
+  it('añade la portada a un sitio de la versión anterior sin perderlo', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`
+      CREATE TABLE graphs (id TEXT PRIMARY KEY, name TEXT NOT NULL) STRICT;
+      CREATE TABLE participants (id TEXT PRIMARY KEY, name TEXT NOT NULL) STRICT;
+      CREATE TABLE pages (id TEXT PRIMARY KEY) STRICT;
+      CREATE TABLE personal_sites (
+        id TEXT PRIMARY KEY,
+        graph_id TEXT NOT NULL REFERENCES graphs (id),
+        owner_id TEXT NOT NULL REFERENCES participants (id),
+        title TEXT NOT NULL,
+        canonical_domain TEXT NOT NULL
+      ) STRICT;
+      INSERT INTO graphs VALUES ('graph:1', 'mind');
+      INSERT INTO participants VALUES ('participant:herbert', 'Herbert');
+      INSERT INTO personal_sites VALUES (
+        'site:1', 'graph:1', 'participant:herbert', 'Vera', 'https://vera.mediafranca.net'
+      );
+      PRAGMA user_version = 9;
+    `);
+
+    migrate(db, false);
+
+    const row = db.prepare('SELECT title, entry_point FROM personal_sites').get() as {
+      title: string;
+      entry_point: string | null;
+    };
+    assert.equal(row.title, 'Vera');
+    assert.equal(row.entry_point, null);
+    assert.equal(version(db), SCHEMA_VERSION);
+    db.close();
+  });
 });

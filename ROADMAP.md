@@ -347,15 +347,15 @@ Vera SaaS con instancias; **instancias, y ninguna de ellas principal**.
 
 *Lo primero, porque es lo único que no necesita que nadie más participe.*
 
-El interruptor `pública/privada` existe en cada página desde el principio, y hoy
-**declara una intención sin efecto**: marcar una página como pública no pone nada
-en internet. Cerrar ese hueco es lo primero de este horizonte.
+El interruptor `pública/privada` hace una página elegible, pero no la publica.
+La fila **sitio** completa el gesto humano: persiste su dirección, permite
+elegirla como portada y retirarla. La proyección estática se reconstruye desde
+esas publicaciones y conserva la dirección aunque cambie el título.
 
-Falta: la proyección del sitio como **vista selectiva del mismo grafo** y no un
-segundo corpus que mantener; autorización humana explícita para cada publicación;
-URLs históricas estables —las de un sitio anterior se preservan exactamente—;
-búsqueda, SEO y RSS; y el camino de **despublicar**, que es el que se olvida y el
-único que importa cuando alguien se arrepiente.
+**Construido en v0.5:** autorización humana explícita, alta y retiro,
+direcciones estables, portada persistida, build atómico y reconstrucción al
+editar una página publicada. **Falta:** búsqueda pública, SEO enriquecido, RSS,
+citas y el mapa de URLs históricas al migrar un sitio anterior.
 
 Depende de nada. Se puede empezar.
 

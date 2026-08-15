@@ -3,10 +3,10 @@
 Tres modos de estar alcanzable, qué exige cada uno, y por qué el que casi todo el
 mundo quiere no necesita autenticar a nadie.
 
-> Estado al escribirlo: rama `v0.4-local-first`, `allium check specs/` en 0
-> errores y 10 avisos sobre 33 specs. Vera corre en modo **privado**; los otros
-> dos modos no están construidos y este documento dice exactamente qué falta de
-> cada uno.
+> Estado al 2026-08-15: Vera corre en modo **privado** y el modo 2 ya tiene su
+> circuito mínimo completo —publicar y retirar desde la página, dirección
+> estable, portada persistida y proyección estática automática—. Se prueba dentro
+> de la tailnet antes de darle una URL de internet. El modo 3 no está construido.
 
 ---
 
@@ -73,39 +73,53 @@ dos modos siguientes.
 Un sitio que cualquiera puede leer, con lo que tú decidas publicar. **Cero
 sign-on: no hay a quién autenticar.**
 
-### Primer corte ejecutable en v0.5
+### Circuito ejecutable en v0.5
 
-Vera ya puede generar una salida HTML estática separada del espejo Markdown:
+Una página `pública` es elegible, no publicada. La fila **sitio** de su front
+matter hace el segundo gesto: asigna una dirección estable, la publica, permite
+elegirla como portada y permite retirarla. Cada cambio posterior de una página
+publicada reconstruye el sitio.
+
+La configuración vive junto al servidor:
 
 ```sh
-npm run project:public -- data/vera.sqlite ../vera-public https://vera.mediafranca.net \
-  --page page:123 --page page:456
+VERA_PUBLIC_DOMAIN=https://vera.mediafranca.net
+VERA_PUBLIC_TITLE=Vera
+VERA_PUBLIC_OUTPUT=/home/hspencer/Sites/vera-public-preview
+VERA_PUBLIC_PREVIEW_PORT=4174
 ```
 
-La salida contiene portada y una carpeta por página publicada explícitamente en
-ese sitio. Una página meramente visible no entra: `vera.mediafranca.net` es el
-sitio oficial del proyecto Vera, no el sitio personal de Herbert ni un agregado
-de sus otros proyectos. No contiene base,
-API, manifiesto reconstruible ni identificadores de página o bloque. Reutiliza
-el renderer Markdown de Vera, declara una URL canónica y se detiene si dos
-títulos producirían la misma ruta. Este primer corte toma la visibilidad como
-frontera; antes de desplegarlo falta conectarlo a la operación humana explícita
-de publicación y a una revisión visible de la salida.
+También se puede reconstruir a mano desde los hechos ya guardados:
+
+```sh
+npm run project:public -- data/vera.sqlite ../vera-public-preview https://vera.mediafranca.net
+```
+
+La salida contiene portada y una carpeta por publicación explícita. No contiene
+base, API, manifiesto reconstruible ni identificadores de página o bloque. Usa
+las rutas persistidas aunque después cambie un título, reutiliza el renderer
+Markdown de Vera y reemplaza la salida anterior sólo cuando el build nuevo
+terminó.
+
+Antes de internet se puede servir esa carpeta sólo en Tailscale, como servicio
+separado de la aplicación viva:
+
+```sh
+tailscale serve --service=svc:vera-preview --https=443 http://127.0.0.1:4174
+```
+
+Así la revisión mira exactamente los archivos que algún día irían al alojamiento
+público, mientras la API y el corpus siguen fuera de esa superficie.
 
 ### Lo que falta
 
-**a) Que `visibility` mande.** Hoy cada página nace `'private'`
-(`server.ts:592`) y ese campo **no filtra ni una sola lectura**. `/pages`,
-`/search`, `/graph` y `/query` devuelven todo. Las tablas `publications` y
-`personal_sites` están en el esquema desde hace tiempo y **no las lee ni las
-escribe nadie**.
+**a) Publicación deliberada — construida.** `visibility` sólo abre la
+posibilidad; `personal_sites` y `publications` guardan el sitio, la dirección,
+quién publicó y cuándo. Hacer privada o borrar una página publicada se rechaza
+hasta que la persona la retire.
 
-Publicar tiene que ser una operación como cualquier otra —con autoría, fecha y
-sitio en el registro—, porque «quién publicó esto y cuándo» es exactamente la
-clase de pregunta que Vera existe para contestar.
-
-**b) Un camino de lectura separado, y no un filtro añadido.** Éste es el punto
-importante de todo el documento.
+**b) Un camino de lectura separado — construido.** Éste es el punto importante
+de todo el documento.
 
 Si lo resuelves poniendo `WHERE visibility = 'public'` en los endpoints que ya
 hay, el día que añadas el endpoint número treinta y cuatro se te olvida, y el
@@ -117,17 +131,13 @@ Es la misma lección que ya se aprendió una vez en este repositorio, en el
 en cuanto apareció una lectura nueva, y hubo que invertirla. Una lista de lo que
 se permite envejece mal; una regla sobre la forma de la cosa, no.
 
-**c) Y por eso: la forma más segura es estática.** Generar HTML y servir
-archivos. Entonces la cara pública no tiene base de datos, ni API, ni proceso de
-Node, ni sesiones: no hay superficie que atacar, y toda la lista de endurecimiento
-del modo 3 desaparece de golpe. El `@invariant ReproducibleOutput` de la spec ya
-empuja hacia ahí —«la misma revisión produce salida equivalente
-independientemente de la tecnología de despliegue»—.
+**c) La forma es estática — construida.** Se genera HTML y se sirven archivos.
+La cara pública no tiene base de datos, API, proceso de Node ni sesiones: no hay
+superficie de escritura que endurecer.
 
-**d) Lo demás ya está especificado**: URL canónica estable
-(`CanonicalAddress`), metadatos HTML, notas al pie que sobreviven a la
-proyección, citas en el estilo que elija quien lee, y URLs históricas
-preservadas al migrar el sitio anterior.
+**d) Presentación — parcial.** Ya hay URL canónica, metadatos básicos, marca y
+HTML adaptable. Faltan notas al pie completas, citas configurables y el mapa de
+URLs históricas al migrar un sitio anterior.
 
 **e) La fuga clásica: el índice de búsqueda.** La spec la nombra aparte
 —`SearchReturnsOnlyPublicPages`— porque es el error que se comete incluso
@@ -251,8 +261,9 @@ está en [plan-nadie-por-omision.md](plan-nadie-por-omision.md).
 ### El orden
 
 1. `NobodyIsAssumed` + la salida por la máquina. *Sigues privado.*
-2. Que publicar sea una operación, y `visibility` filtre de verdad.
-3. La proyección estática: HTML, URL canónica, metadatos, notas al pie, citas.
+2. ~~Que publicar sea una operación separada de `visibility`.~~ *Construido.*
+3. ~~Proyección estática, URL canónica y metadatos básicos.~~ *Construido; falta
+   enriquecer notas al pie y citas.*
 4. Búsqueda pública construida **sólo** sobre lo público.
 5. Publicar los archivos. *Ya estás en el modo 2.*
 6. — y sólo si algún día hace falta — las seis preguntas del modo 3.

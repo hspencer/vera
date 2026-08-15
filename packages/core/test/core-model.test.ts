@@ -161,6 +161,23 @@ describe('invariant PrivatePagesAreNeverPublished', () => {
     assert.equal(publication.publishedBy, OWNER);
   });
 
+  it('keeps the site entry point empty until its owner chooses a published page', () => {
+    const graph = inhabitedGraph();
+    const site = makeSite(graph);
+    const page = makePage(graph, 'Portada', 'public');
+
+    assert.equal(graph.site(site)?.entryPoint, null);
+    assert.throws(
+      () => graph.setSiteEntryPoint({ site, page, participant: OWNER }),
+      /published/i,
+    );
+
+    graph.publish({ site, page, path: 'portada', participant: OWNER });
+    graph.setSiteEntryPoint({ site, page, participant: OWNER });
+
+    assert.equal(graph.site(site)?.entryPoint, page);
+  });
+
   it('refuses to let an agent publish', () => {
     const graph = inhabitedGraph();
     const site = makeSite(graph);
@@ -286,10 +303,29 @@ describe('rule PublishVisiblePage', () => {
     const site = makeSite(graph);
     const page = makePage(graph, 'Publica', 'public');
     graph.publish({ site, page, path: 'publica', participant: OWNER });
+    graph.setSiteEntryPoint({ site, page, participant: OWNER });
 
     assert.equal(graph.unpublish({ site, path: 'publica', participant: OWNER }), true);
     assert.deepEqual(graph.publicationsOf(site), []);
+    assert.equal(graph.site(site)?.entryPoint, null, 'withdrawing the cover clears the entry point');
     assert.equal(graph.page(page)?.visibility, 'public', 'the page survives its withdrawal');
+  });
+
+  it('requires withdrawal before a published page can become private', () => {
+    const graph = inhabitedGraph();
+    const site = makeSite(graph);
+    const page = makePage(graph, 'Publica', 'public');
+    graph.publish({ site, page, path: 'publica', participant: OWNER });
+
+    const outcome = graph.submitOperation({
+      originId: 'privatizar-publicada',
+      participant: OWNER,
+      channel: 'typed_text',
+      change: { kind: 'set_page_visibility', page, visibility: 'private' },
+    });
+
+    assert.equal(outcome.status, 'rejected');
+    assert.equal(graph.page(page)?.visibility, 'public');
   });
 
   it('survives replaying the log, which does not contain it', () => {

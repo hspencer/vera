@@ -71,6 +71,10 @@ const declaredOwner =
  * `VERA_URL`, y sin esto habría que acordarse de memoria.
  */
 const reachableAt = setting('VERA_REACHABLE_AT');
+const publicDomain = setting('VERA_PUBLIC_DOMAIN');
+const publicTitle = setting('VERA_PUBLIC_TITLE') ?? 'Vera';
+const publicOutput = setting('VERA_PUBLIC_OUTPUT');
+const publicPreviewPort = setting('VERA_PUBLIC_PREVIEW_PORT');
 
 const { vera } = listen({
   port,
@@ -79,6 +83,18 @@ const { vera } = listen({
   webRoot,
   objectsRoot,
   ...(reachableAt === undefined ? {} : { reachableAt }),
+  ...(publicDomain === undefined
+    ? {}
+    : { publicSite: { title: publicTitle, canonicalDomain: publicDomain } }),
+  ...(publicOutput === undefined
+    ? {}
+    : {
+        publicOutput,
+        publicBranding: join(ROOT, 'packages/web/public'),
+        ...(publicPreviewPort === undefined
+          ? {}
+          : { publicPreviewPort: Number(publicPreviewPort) }),
+      }),
   ...(declaredOwner === undefined ? {} : { owner: declaredOwner }),
 });
 
@@ -91,6 +107,16 @@ console.log(`  dueño:    ${vera.graph.participant(dueño ?? '')?.name ?? '—'}
 console.log(`  páginas:  ${vera.graph.pages().length}`);
 console.log(`  bloques:  ${vera.graph.allBlocks().length}`);
 console.log(`  secuencia:${vera.graph.log().lastSequence}`);
+if (publicDomain !== undefined) {
+  console.log(
+    `  sitio:    ${publicDomain}${
+      publicOutput === undefined ? ' (sin salida configurada)' : ` → ${publicOutput}`
+    }`,
+  );
+  if (publicPreviewPort !== undefined) {
+    console.log(`  previa:   http://127.0.0.1:${publicPreviewPort}`);
+  }
+}
 
 /*
  * Lo que se sirve es el compilado, y el compilado puede estar viejo.

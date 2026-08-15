@@ -19,7 +19,9 @@ import {
   recordingById,
   removeRecording,
   recordingsInPage,
+  savePublication,
   saveParticipant,
+  saveSite,
   searchStore,
 } from '../src/store.ts';
 
@@ -131,6 +133,33 @@ describe('persistencia', () => {
     assert.equal(loaded.pages().length, graph.pages().length);
     assert.equal(loaded.block(block)?.content, 'dos');
     assert.equal(loaded.block(block)?.stableId, block, 'la identidad sobrevive al viaje por disco');
+    assert.deepEqual(checkInvariants(loaded), []);
+    store.close();
+  });
+
+  it('conserva el sitio, sus publicaciones y su portada', () => {
+    const { store, graph, write } = freshStore();
+    const page = write({ kind: 'create_page', title: 'Portada', visibility: 'public' });
+    const site = graph.createSite({
+      owner: OWNER,
+      title: 'Vera',
+      canonicalDomain: 'https://vera.mediafranca.net',
+    });
+    const publication = graph.publish({
+      site: site.id,
+      page,
+      path: 'portada',
+      participant: OWNER,
+    });
+    graph.setSiteEntryPoint({ site: site.id, page, participant: OWNER });
+
+    saveSite(store, graph.site(site.id)!);
+    savePublication(store, publication);
+    saveSite(store, graph.site(site.id)!);
+
+    const loaded = loadGraph(store);
+    assert.equal(loaded.site(site.id)?.entryPoint, page);
+    assert.equal(loaded.publicationsOf(site.id)[0]?.path, 'portada');
     assert.deepEqual(checkInvariants(loaded), []);
     store.close();
   });

@@ -365,7 +365,8 @@ CREATE TABLE IF NOT EXISTS personal_sites (
     graph_id          TEXT NOT NULL REFERENCES graphs (id),
     owner_id          TEXT NOT NULL REFERENCES participants (id),
     title             TEXT NOT NULL,
-    canonical_domain  TEXT NOT NULL
+    canonical_domain  TEXT NOT NULL,
+    entry_point       TEXT REFERENCES pages (id) ON DELETE SET NULL
 ) STRICT;
 
 -- Publicar es una operación, no un atributo de la página: deja escrito qué

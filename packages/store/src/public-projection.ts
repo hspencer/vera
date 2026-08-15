@@ -4,19 +4,24 @@
 // y reconstruible. Esta cara sólo recibe páginas declaradas públicas y produce
 // HTML sin identificadores internos, manifiesto del corpus, API ni acceso a la base.
 
-import { copyFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
-import { renderMarkdown } from '@vera/core';
-import type { Block, Page, VeraGraph } from '@vera/core';
+import { canonicalUrl, renderMarkdown, suggestedPathFor } from '@vera/core';
+import type { Block, Page, PersonalSite, Publication, VeraGraph } from '@vera/core';
 
 export interface PublicProjectionOptions {
-  canonicalDomain: string;
-  siteTitle: string;
-  /** Páginas que una publicación humana asignó explícitamente a este sitio. */
-  publishedPages: ReadonlySet<string>;
-  /** Página publicada cuya proyección ocupa la raíz del sitio. */
-  entryPoint?: string;
+  site: PersonalSite;
+  /** Publicaciones de este sitio, ya separadas de cualquier otro destino. */
+  publications: readonly Publication[];
   /** Directorio de la marca pública, compartido con la PWA. */
   brandingAssets?: string;
 }
@@ -35,19 +40,7 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export function publicPathFor(title: string): string {
-  const slug = title
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-  return slug === '' ? 'pagina' : slug;
-}
-
-function canonical(domain: string, path: string): string {
-  return `${domain.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
-}
+export const publicPathFor = suggestedPathFor;
 
 function sorted(blocks: Block[]): Block[] {
   return [...blocks].sort(
@@ -55,7 +48,11 @@ function sorted(blocks: Block[]): Block[] {
   );
 }
 
-function renderBlocks(graph: VeraGraph, page: Page, published: ReadonlyMap<string, Page>): string {
+function renderBlocks(
+  graph: VeraGraph,
+  page: Page,
+  published: ReadonlyMap<string, { page: Page; path: string }>,
+): string {
   const byParent = new Map<string | null, Block[]>();
   for (const block of graph.blocksOf(page.id)) {
     const siblings = byParent.get(block.parent) ?? [];
@@ -75,7 +72,7 @@ function renderBlocks(graph: VeraGraph, page: Page, published: ReadonlyMap<strin
           const destination = published.get(title);
           return destination === undefined
             ? `<span class="wiki${extra} unavailable">${label}</span>`
-            : `<a class="wiki${extra}" href="/${publicPathFor(destination.title)}/">${label}</a>`;
+            : `<a class="wiki${extra}" href="/${destination.path}/">${label}</a>`;
         },
       );
 
@@ -202,23 +199,33 @@ export function projectPublicSite(
   mkdirSync(target, { recursive: true });
   clear(target);
 
-  const pages = graph
-    .pages()
-    .filter((page) => page.visibility === 'public' && options.publishedPages.has(page.id))
-    .sort((a, b) => a.title.localeCompare(b.title));
+  const pages = options.publications
+    .map((publication) => {
+      if (publication.site !== options.site.id) {
+        throw new Error(`publication ${publication.id} belongs to another site`);
+      }
+      const page = graph.page(publication.page);
+      if (page === undefined || page.visibility !== 'public') {
+        throw new Error(`publication ${publication.id} does not name a public page`);
+      }
+      return { page, publication };
+    })
+    .sort((a, b) => a.page.title.localeCompare(b.page.title));
   const files: string[] = [];
   const occupiedPaths = new Map<string, string>();
   const entryPoint =
-    options.entryPoint === undefined
+    options.site.entryPoint === null
       ? null
-      : pages.find((page) => page.id === options.entryPoint) ?? null;
-  if (options.entryPoint !== undefined && entryPoint === null) {
+      : pages.find(({ page }) => page.id === options.site.entryPoint) ?? null;
+  if (options.site.entryPoint !== null && entryPoint === null) {
     throw new Error('entry point must be an explicitly published public page');
   }
-  const publishedByTitle = new Map(pages.map((page) => [page.title, page]));
+  const publishedByTitle = new Map(
+    pages.map(({ page, publication }) => [page.title, { page, path: publication.path }]),
+  );
 
-  for (const page of pages) {
-    const path = publicPathFor(page.title);
+  for (const { page, publication } of pages) {
+    const path = publication.path;
     const occupiedBy = occupiedPaths.get(path);
     if (occupiedBy !== undefined) {
       throw new Error(`public path collision: ${occupiedBy} and ${page.title} both become /${path}/`);
@@ -231,9 +238,9 @@ export function projectPublicSite(
       join(target, relative),
       document({
         title: page.title,
-        siteTitle: options.siteTitle,
-        canonicalUrl: canonical(options.canonicalDomain, `${path}/`),
-        brandImageUrl: canonical(options.canonicalDomain, 'icon-512.png'),
+        siteTitle: options.site.title,
+        canonicalUrl: canonicalUrl(options.site.canonicalDomain, path),
+        brandImageUrl: `${options.site.canonicalDomain.replace(/\/+$/, '')}/icon-512.png`,
         body: `<main><h1>${escapeHtml(page.title)}</h1>${renderBlocks(graph, page, publishedByTitle)}</main>`,
         branded: options.brandingAssets !== undefined,
       }),
@@ -243,23 +250,23 @@ export function projectPublicSite(
   }
 
   const links = pages
-    .filter((page) => page.id !== entryPoint?.id)
-    .map((page) => `<li><a href="./${publicPathFor(page.title)}/">${escapeHtml(page.title)}</a></li>`)
+    .filter(({ page }) => page.id !== entryPoint?.page.id)
+    .map(({ page, publication }) => `<li><a href="./${publication.path}/">${escapeHtml(page.title)}</a></li>`)
     .join('');
-  const indexTitle = entryPoint?.title ?? options.siteTitle;
+  const indexTitle = entryPoint?.page.title ?? options.site.title;
   const indexBody =
     entryPoint === null
-      ? `<main><h1>${escapeHtml(options.siteTitle)}</h1><ul>${links}</ul></main>`
-      : `<main><h1>${escapeHtml(entryPoint.title)}</h1>${renderBlocks(graph, entryPoint, publishedByTitle)}${
+      ? `<main><h1>${escapeHtml(options.site.title)}</h1><ul>${links}</ul></main>`
+      : `<main><h1>${escapeHtml(entryPoint.page.title)}</h1>${renderBlocks(graph, entryPoint.page, publishedByTitle)}${
           links === '' ? '' : `<nav aria-label="Páginas publicadas"><ul>${links}</ul></nav>`
         }</main>`;
   writeFileSync(
     join(target, 'index.html'),
     document({
       title: indexTitle,
-      siteTitle: options.siteTitle,
-      canonicalUrl: canonical(options.canonicalDomain, ''),
-      brandImageUrl: canonical(options.canonicalDomain, 'icon-512.png'),
+      siteTitle: options.site.title,
+      canonicalUrl: canonicalUrl(options.site.canonicalDomain, ''),
+      brandImageUrl: `${options.site.canonicalDomain.replace(/\/+$/, '')}/icon-512.png`,
       body: indexBody,
       branded: options.brandingAssets !== undefined,
     }),
@@ -267,8 +274,31 @@ export function projectPublicSite(
   );
   files.unshift('index.html');
   if (options.brandingAssets !== undefined) {
-    files.push(...projectBranding(target, options.brandingAssets, options.siteTitle));
+    files.push(...projectBranding(target, options.brandingAssets, options.site.title));
   }
 
   return { pages: pages.length, files };
+}
+
+/** Construye al lado y sólo cambia la salida visible cuando el build terminó entero. */
+export function projectPublicSiteAtomically(
+  graph: VeraGraph,
+  target: string,
+  options: PublicProjectionOptions,
+): PublicProjectionSummary {
+  const next = `${target}.next`;
+  const previous = `${target}.previous`;
+  rmSync(next, { recursive: true, force: true });
+  rmSync(previous, { recursive: true, force: true });
+  try {
+    const summary = projectPublicSite(graph, next, options);
+    if (existsSync(target)) renameSync(target, previous);
+    renameSync(next, target);
+    rmSync(previous, { recursive: true, force: true });
+    return summary;
+  } catch (error) {
+    rmSync(next, { recursive: true, force: true });
+    if (!existsSync(target) && existsSync(previous)) renameSync(previous, target);
+    throw error;
+  }
 }

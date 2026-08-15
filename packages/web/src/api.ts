@@ -43,6 +43,16 @@ export interface BlockView {
   content: string;
 }
 
+export interface PublicationView {
+  site: string | null;
+  siteTitle: string;
+  canonicalDomain: string;
+  path: string;
+  url: string;
+  publishedAt: number | null;
+  entryPoint: boolean;
+}
+
 /**
  * Una ruta del Markdown y el objeto al que resuelve. El bloque sigue diciendo
  * `../assets/foo.png`; la traducción ocurre al presentar, así que la fuente no
@@ -82,6 +92,8 @@ export interface PageView {
    */
   trail?: Trail | null;
   visibility: 'private' | 'public';
+  /** Nulo cuando esta instancia no tiene un sitio público configurado. */
+  publication?: PublicationView | null;
   createdAt: number;
   originCreatedAt: number | null;
   lastEditedAt: number | null;
@@ -843,6 +855,15 @@ export const api = {
       `/pages/${encodeURIComponent(id)}`,
       within === undefined ? undefined : { signal: AbortSignal.timeout(within) },
     ),
+
+  publish: (page: string, path: string, entryPoint = false) =>
+    json<PublicationView>(`/publications/${encodeURIComponent(page)}`, {
+      method: 'POST',
+      body: JSON.stringify({ path, entryPoint }),
+    }),
+
+  unpublish: (page: string) =>
+    json<PublicationView>(`/publications/${encodeURIComponent(page)}`, { method: 'DELETE' }),
 
   /** Las páginas que gobiernan a Vera, por lo que declaran gobernar. */
   specialPages: () => json<{ id: string; title: string; kind: string }[]>('/special-pages'),

@@ -397,6 +397,27 @@ const addPublicationProvenance: Migration = {
   },
 };
 
+/** 10 — la portada pertenece al sitio, no al comando que construye sus archivos. */
+const addSiteEntryPoint: Migration = {
+  version: 10,
+  name: 'portada persistida del sitio',
+  apply(db) {
+    const sites = db
+      .prepare(
+        "SELECT count(*) AS n FROM sqlite_schema WHERE type = 'table' AND name = 'personal_sites'",
+      )
+      .get() as { n: number } | undefined;
+    if ((sites?.n ?? 0) === 0) return;
+
+    const columns = db.prepare('PRAGMA table_info(personal_sites)').all() as Array<{ name: string }>;
+    if (columns.some((column) => column.name === 'entry_point')) return;
+
+    db.exec(
+      'ALTER TABLE personal_sites ADD COLUMN entry_point TEXT REFERENCES pages (id) ON DELETE SET NULL',
+    );
+  },
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   addWalkedChannel,
   addPageOriginCreatedAt,
@@ -407,6 +428,7 @@ export const MIGRATIONS: readonly Migration[] = [
   addBlockGlosses,
   addMediaMetadata,
   addPublicationProvenance,
+  addSiteEntryPoint,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

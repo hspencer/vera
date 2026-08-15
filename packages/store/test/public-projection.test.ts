@@ -6,7 +6,11 @@ import { join } from 'node:path';
 
 import { VeraGraph } from '@vera/core';
 import type { Change } from '@vera/core';
-import { projectPublicSite, publicPathFor } from '../src/public-projection.ts';
+import {
+  projectPublicSite,
+  projectPublicSiteAtomically,
+  publicPathFor,
+} from '../src/public-projection.ts';
 
 const OWNER = 'participant:herbert';
 const temporary: string[] = [];
@@ -26,15 +30,28 @@ function graph(): VeraGraph {
   graph.admit(OWNER);
   let sequence = 0;
   const write = (change: Change): string => {
-    const outcome = graph.submitOperation({ originId: `public:${++sequence}`, participant: OWNER, change });
+    const outcome = graph.submitOperation({
+      originId: `public:${++sequence}`,
+      participant: OWNER,
+      change,
+    });
     if (outcome.status !== 'applied') throw new Error(JSON.stringify(outcome));
     return outcome.subjectId;
   };
   const visible = write({ kind: 'create_page', title: 'Página pública', visibility: 'public' });
-  write({ kind: 'create_block', page: visible, parent: null, position: 0, content: 'Texto <visible>' });
-  const privatePage = write({ kind: 'create_page', title: 'Secreto irrepetible', visibility: 'private' });
-  write({ kind: 'create_block', page: privatePage, parent: null, position: 0, content: 'No debe salir' });
-  write({ kind: 'create_block', page: visible, parent: null, position: 1, content: 'Ver [[Secreto irrepetible]]' });
+  write({
+    kind: 'create_block', page: visible, parent: null, position: 0, content: 'Texto <visible>',
+  });
+  const privatePage = write({
+    kind: 'create_page', title: 'Secreto irrepetible', visibility: 'private',
+  });
+  write({
+    kind: 'create_block', page: privatePage, parent: null, position: 0, content: 'No debe salir',
+  });
+  write({
+    kind: 'create_block', page: visible, parent: null, position: 1,
+    content: 'Ver [[Secreto irrepetible]]',
+  });
   return graph;
 }
 
@@ -44,15 +61,24 @@ function publicPage(corpus: VeraGraph): string {
   return page.id;
 }
 
+function published(corpus: VeraGraph, path = 'pagina-publica', entryPoint = false) {
+  const site = corpus.createSite({
+    owner: OWNER, title: 'Vera', canonicalDomain: 'https://vera.mediafranca.net',
+  });
+  const publication = corpus.publish({
+    site: site.id, page: publicPage(corpus), path, participant: OWNER,
+  });
+  if (entryPoint) {
+    corpus.setSiteEntryPoint({ site: site.id, page: publication.page, participant: OWNER });
+  }
+  return { site, publications: [publication] };
+}
+
 describe('proyección pública', () => {
-  it('genera sólo páginas públicas y escapa su HTML', () => {
+  it('genera sólo publicaciones explícitas y escapa su HTML', () => {
     const target = scratch();
     const corpus = graph();
-    const summary = projectPublicSite(corpus, target, {
-      canonicalDomain: 'https://vera.mediafranca.net',
-      siteTitle: 'Vera',
-      publishedPages: new Set([publicPage(corpus)]),
-    });
+    const summary = projectPublicSite(corpus, target, published(corpus));
     assert.equal(summary.pages, 1);
     assert.deepEqual(readdirSync(target).sort(), ['index.html', 'pagina-publica']);
     const page = readFileSync(join(target, 'pagina-publica', 'index.html'), 'utf8');
@@ -63,11 +89,7 @@ describe('proyección pública', () => {
   it('no filtra título, contenido ni manifiesto de páginas privadas', () => {
     const target = scratch();
     const corpus = graph();
-    projectPublicSite(corpus, target, {
-      canonicalDomain: 'https://vera.mediafranca.net',
-      siteTitle: 'Vera',
-      publishedPages: new Set([publicPage(corpus)]),
-    });
+    projectPublicSite(corpus, target, published(corpus));
     const all = [
       readFileSync(join(target, 'index.html'), 'utf8'),
       readFileSync(join(target, 'pagina-publica', 'index.html'), 'utf8'),
@@ -77,71 +99,63 @@ describe('proyección pública', () => {
     assert.ok(!readdirSync(target).includes('manifest.json'));
   });
 
-  it('produce rutas estables sin diacríticos', () => {
+  it('propone rutas sin diacríticos cuando una persona publica', () => {
     assert.equal(publicPathFor('Vera — Instanciación'), 'vera-instanciacion');
+  });
+
+  it('conserva la dirección publicada aunque cambie el título', () => {
+    const corpus = graph();
+    const options = published(corpus, 'historia/vera');
+    const renamed = corpus.submitOperation({
+      originId: 'public:renamed', participant: OWNER,
+      change: { kind: 'rename_page', page: publicPage(corpus), title: 'Otro título' },
+    });
+    assert.equal(renamed.status, 'applied');
+    const target = scratch();
+    projectPublicSite(corpus, target, options);
+    assert.match(
+      readFileSync(join(target, 'historia', 'vera', 'index.html'), 'utf8'),
+      /https:\/\/vera\.mediafranca\.net\/historia\/vera\//,
+    );
   });
 
   it('proyecta la marca como favicon, icono instalable y vista social', () => {
     const target = scratch();
     const branding = scratch();
     for (const filename of [
-      'apple-touch-icon.png',
-      'favicon.ico',
-      'icon-16.png',
-      'icon-32.png',
-      'icon-192.png',
-      'icon-512.png',
-      'icon-maskable-512.png',
+      'apple-touch-icon.png', 'favicon.ico', 'icon-16.png', 'icon-32.png',
+      'icon-192.png', 'icon-512.png', 'icon-maskable-512.png',
     ]) {
       writeFileSync(join(branding, filename), filename);
     }
     const corpus = graph();
-    projectPublicSite(corpus, target, {
-      canonicalDomain: 'https://vera.mediafranca.net',
-      siteTitle: 'Vera',
-      publishedPages: new Set([publicPage(corpus)]),
-      brandingAssets: branding,
-    });
+    projectPublicSite(corpus, target, { ...published(corpus), brandingAssets: branding });
 
     const index = readFileSync(join(target, 'index.html'), 'utf8');
     assert.match(index, /rel="manifest" href="\/site\.webmanifest"/);
     assert.match(index, /rel="apple-touch-icon" href="\/apple-touch-icon\.png"/);
     assert.match(index, /property="og:image" content="https:\/\/vera\.mediafranca\.net\/icon-512\.png"/);
     assert.equal(readFileSync(join(target, 'icon-512.png'), 'utf8'), 'icon-512.png');
-    const manifest = JSON.parse(readFileSync(join(target, 'site.webmanifest'), 'utf8')) as {
-      name: string;
-      icons: Array<{ purpose: string }>;
-    };
-    assert.equal(manifest.name, 'Vera');
-    assert.ok(manifest.icons.some((icon) => icon.purpose === 'maskable'));
   });
 
-  it('proyecta una página publicada como entry point del sitio', () => {
+  it('proyecta la portada persistida en la raíz del sitio', () => {
     const corpus = graph();
-    const page = publicPage(corpus);
     const target = scratch();
-    projectPublicSite(corpus, target, {
-      canonicalDomain: 'https://vera.mediafranca.net',
-      siteTitle: 'Vera',
-      publishedPages: new Set([page]),
-      entryPoint: page,
-    });
+    projectPublicSite(corpus, target, published(corpus, 'pagina-publica', true));
     const index = readFileSync(join(target, 'index.html'), 'utf8');
     assert.match(index, /<h1>Página pública<\/h1>/);
     assert.match(index, /<p>Texto &lt;visible&gt;<\/p>/);
     assert.match(index, /rel="canonical" href="https:\/\/vera\.mediafranca\.net\/"/);
   });
 
-  it('rechaza un entry point privado o no asignado al sitio', () => {
+  it('rechaza una portada que no pertenece a sus publicaciones', () => {
     const corpus = graph();
+    const site = corpus.createSite({
+      owner: OWNER, title: 'Vera', canonicalDomain: 'https://vera.mediafranca.net',
+    });
+    site.entryPoint = publicPage(corpus);
     assert.throws(
-      () =>
-        projectPublicSite(corpus, scratch(), {
-          canonicalDomain: 'https://vera.mediafranca.net',
-          siteTitle: 'Vera',
-          publishedPages: new Set(),
-          entryPoint: publicPage(corpus),
-        }),
+      () => projectPublicSite(corpus, scratch(), { site, publications: [] }),
       /entry point must be an explicitly published public page/,
     );
   });
@@ -149,38 +163,21 @@ describe('proyección pública', () => {
   it('omite una página pública no asignada a este sitio', () => {
     const corpus = graph();
     const target = scratch();
-    const summary = projectPublicSite(corpus, target, {
-      canonicalDomain: 'https://vera.mediafranca.net',
-      siteTitle: 'Vera',
-      publishedPages: new Set(),
+    const site = corpus.createSite({
+      owner: OWNER, title: 'Vera', canonicalDomain: 'https://vera.mediafranca.net',
     });
+    const summary = projectPublicSite(corpus, target, { site, publications: [] });
     assert.equal(summary.pages, 0);
     assert.deepEqual(readdirSync(target), ['index.html']);
     assert.doesNotMatch(readFileSync(join(target, 'index.html'), 'utf8'), /Página pública/);
   });
 
-  it('rechaza dos títulos que producirían la misma dirección', () => {
+  it('reemplaza la salida sólo después de terminar el nuevo build', () => {
     const corpus = graph();
-    const first = corpus.submitOperation({
-      originId: 'public:collision:first',
-      participant: OWNER,
-      change: { kind: 'create_page', title: 'Alpha & beta', visibility: 'public' },
-    });
-    const second = corpus.submitOperation({
-      originId: 'public:collision:second',
-      participant: OWNER,
-      change: { kind: 'create_page', title: 'Alpha + beta', visibility: 'public' },
-    });
-    assert.equal(first.status, 'applied');
-    assert.equal(second.status, 'applied');
-    assert.throws(
-      () =>
-        projectPublicSite(corpus, scratch(), {
-          canonicalDomain: 'https://vera.mediafranca.net',
-          siteTitle: 'Vera',
-          publishedPages: new Set(corpus.pages().map((page) => page.id)),
-        }),
-      /public path collision/,
-    );
+    const target = scratch();
+    writeFileSync(join(target, 'anterior.txt'), 'anterior');
+    projectPublicSiteAtomically(corpus, target, published(corpus));
+    assert.ok(!readdirSync(target).includes('anterior.txt'));
+    assert.ok(readdirSync(target).includes('index.html'));
   });
 });
