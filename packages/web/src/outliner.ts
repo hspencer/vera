@@ -60,6 +60,7 @@ import {
 import { renderTrailBand, trailMarks, type TrailMark } from './trail-page.ts';
 import { pendingLine, saySeconds } from './waiting.ts';
 import { createPage } from './pages.ts';
+import { removePageAndBlocks } from './remove-page.ts';
 import { createSession, type SaveIntent } from './session.ts';
 import {
   actionOf,
@@ -1055,26 +1056,7 @@ async function deletePage(
       : `Se va a eliminar «${page.title}»${dentro}. No se puede deshacer.`;
   if (!window.confirm(aviso)) return;
 
-  // Las hojas primero: un bloque con hijos no se puede quitar, asi que se ordena
-  // por profundidad y se va de abajo hacia arriba.
-  const parents = new Map(page.blocks.map((b) => [b.stableId, b.parent]));
-  const depthOf = (id: string): number => {
-    let depth = 0;
-    let at = parents.get(id) ?? null;
-    // El tope es por si un dia el arbol llegara con un ciclo: mejor un orden
-    // aproximado que un bucle infinito en el navegador de alguien.
-    while (at !== null && depth < 1000) {
-      depth += 1;
-      at = parents.get(at) ?? null;
-    }
-    return depth;
-  };
-  const deepestFirst = [...page.blocks].sort((a, b) => depthOf(b.stableId) - depthOf(a.stableId));
-
-  for (const block of deepestFirst) {
-    if (!(await submitQuietly({ kind: 'remove_block', block: block.stableId }))) return;
-  }
-  if (!(await submitQuietly({ kind: 'remove_page', page: page.id }))) return;
+  if (!(await removePageAndBlocks(page, submitQuietly))) return;
 
   toast(`eliminada: ${page.title}`);
   // La pagina que se estaba leyendo ya no existe, asi que hay que ir a alguna

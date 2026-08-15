@@ -23,6 +23,7 @@ import {
 } from './api.ts';
 import { cellIn, editableCell, observedCell, rowIn, section } from './table.ts';
 import { when } from './dates.ts';
+import { removePageAndBlocks } from './remove-page.ts';
 
 /** ¿Esta página gobierna la puerta MCP? Se responde con lo que la página trae. */
 export function isMCPPage(properties: readonly { key: string; value: string }[]): boolean {
@@ -814,11 +815,22 @@ function markedSection(
     keep.textContent = 'se queda';
     keep.title = 'Quita la marca. La página no se toca.';
     keep.addEventListener('click', () => {
+      keep.disabled = true;
+      drop.disabled = true;
       void write({
         kind: 'remove_property',
         page: one.page,
         propertyKey: door.markKey ?? 'por borrar',
-      }).then((done) => notify(done ? `«${one.title}» se queda` : 'no se pudo quitar la marca'));
+      }).then((done) => {
+        if (done) {
+          row.remove();
+          notify(`«${one.title}» se queda`);
+          return;
+        }
+        keep.disabled = false;
+        drop.disabled = false;
+        notify('no se pudo quitar la marca');
+      });
     });
 
     const drop = document.createElement('button');
@@ -837,9 +849,26 @@ function markedSection(
       if (!window.confirm(`¿Borrar «${one.title}»? Es lo único que no se puede deshacer leyendo.`)) {
         return;
       }
-      void write({ kind: 'remove_page', page: one.page }).then((done) =>
-        notify(done ? `«${one.title}» borrada` : 'no se pudo borrar: la página tiene bloques dentro'),
-      );
+      keep.disabled = true;
+      drop.disabled = true;
+      void api
+        .page(one.page)
+        .then((page) => removePageAndBlocks(page, write))
+        .then((done) => {
+          if (done) {
+            row.remove();
+            notify(`«${one.title}» borrada`);
+            return;
+          }
+          keep.disabled = false;
+          drop.disabled = false;
+          notify('no se pudo completar el borrado');
+        })
+        .catch(() => {
+          keep.disabled = false;
+          drop.disabled = false;
+          notify('no se pudo leer la página para borrarla');
+        });
     });
 
     acts.append(keep, drop);
