@@ -867,6 +867,10 @@ input {
 #view-switch .icon {
   width: 1.3rem;
   height: 1.3rem;
+  /* Los tres dibujos propios tienen una silueta más compacta que Feather.
+     Un trazo apenas más fino conserva su tamaño y los deja respirar en la
+     misma barra sin adelgazar el botón que los contiene. */
+  stroke-width: 1.65;
 }
 
 #sync-state {
@@ -3895,7 +3899,9 @@ code {
   font-size: 1.3rem;
 }
 
-/* Ajustes y micrófono son pares en la barra: mismo blanco táctil e icono. */
+/* Ajustes y micrófono son pares en la barra: mismo blanco táctil. El dibujo
+   Feather es algo más expansivo que los iconos propios de las vistas, así que
+   se reduce dentro del botón sin reducir el área que se puede pulsar. */
 #controls button#settings {
   box-sizing: border-box;
   width: var(--bar-control-height);
@@ -3905,8 +3911,8 @@ code {
 }
 
 #controls :is(#insert-voice, #settings) .icon {
-  width: 1.3rem;
-  height: 1.3rem;
+  width: 1.12rem;
+  height: 1.12rem;
 }
 
 #controls button#insert-voice:hover {
