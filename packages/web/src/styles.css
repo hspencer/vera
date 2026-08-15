@@ -4759,17 +4759,16 @@ code {
  * cualquier cosa puesta sobre él tapa justo el trazo que alguien mira antes de
  * decidir si lo retoca.
  *
- * Y no más ancho que el dibujo: `width: fit-content` hace que el pie mida lo que
- * mide la figura, así que el lápiz cae bajo su esquina derecha y no en el borde
- * de la columna, a media pantalla de lo que edita.
+ * Fecha y lápiz se recogen juntos al extremo derecho. Son información y acción
+ * secundarias: no abren una segunda línea de lectura bajo la figura.
  */
 .drawn-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1.5rem;
-  width: fit-content;
-  min-width: 8rem;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
   margin: -0.1rem 0 0.5rem;
   font-family: var(--font-ui);
@@ -4786,7 +4785,7 @@ code {
   background: none;
   border: none;
   margin: 0;
-  padding: 0.1rem;
+  padding: 0;
   flex: none;
   line-height: 0;
   color: var(--text-dim);
@@ -4796,8 +4795,13 @@ code {
 }
 
 .drawn-edit svg {
-  width: 0.9em;
-  height: 0.9em;
+  width: 0.72em;
+  height: 0.72em;
+}
+
+.drawn-edit .icon-edit-filled {
+  fill: currentColor;
+  stroke: none;
 }
 
 /* Al enfocar o al pasar por encima, y no antes.

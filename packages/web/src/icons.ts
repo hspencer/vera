@@ -103,6 +103,11 @@ const SHAPES = {
    * página se distingan de reojo.
    */
   'edit-2': '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+  // El lápiz macizo: una acción secundaria pequeña se reconoce por su silueta,
+  // sin necesitar fondo ni el doble trazo de un icono calado.
+  'edit-filled':
+    '<path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z"/>' +
+    '<path d="M20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>',
 
   // La pluma: explicar por qué esta página y aquélla se tocan es escribir.
   feather:

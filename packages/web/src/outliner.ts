@@ -3609,9 +3609,9 @@ export function renderOutliner(
        * alguien mira antes de decidir si lo retoca, y cualquier cosa puesta en el
        * canalón desalinea el dibujo del texto de los bloques vecinos.
        *
-       * Al pie caben las dos cosas que hay que saber de un dibujo terminado, y
-       * caen donde uno acaba de mirar: la fecha a la izquierda, porque se lee, y
-       * el lápiz a la derecha, porque se pulsa.
+       * Al pie caben las dos cosas que hay que saber de un dibujo terminado. Las
+       * dos se recogen a la derecha: información y gesto secundarios quedan
+       * juntos y fuera del eje principal de la lectura.
        */
       const foot = document.createElement('div');
       foot.className = 'drawn-foot';
@@ -3633,7 +3633,7 @@ export function renderOutliner(
       const pencil = document.createElement('button');
       pencil.type = 'button';
       pencil.className = 'drawn-edit';
-      pencil.innerHTML = icon('edit-2');
+      pencil.innerHTML = icon('edit-filled');
       pencil.title = 'seguir dibujando';
       pencil.setAttribute('aria-label', 'seguir dibujando en este bloque');
       pencil.addEventListener('click', (event) => {
