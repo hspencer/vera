@@ -213,9 +213,15 @@ function chooseTranscript(choices: YoutubeTranscriptChoice[]): Promise<YoutubeTr
     title.textContent = 'Traer transcripción';
     const explain = document.createElement('p');
     explain.textContent = 'Elige la pista que se guardará bajo el video. Se conservarán idioma, procedencia y marcas temporales.';
-    const select = document.createElement('select');
-    select.setAttribute('aria-label', 'idioma y procedencia');
     const preferred = localStorage.getItem('vera.youtube-transcript-choice');
+    let picked = choices.find((choice) => `${choice.source}:${choice.language}` === preferred)
+      ?? choices.find((choice) => choice.language === 'es')
+      ?? choices.find((choice) => !choice.translated)
+      ?? choices[0]
+      ?? null;
+    const catalogue = document.createElement('div');
+    catalogue.className = 'transcript-catalogue';
+    catalogue.setAttribute('aria-label', 'transcripciones disponibles');
     const groups = [
       ['Pistas publicadas', choices.filter((one) => one.source === 'published')],
       ['Originales automáticas', choices.filter((one) => one.source === 'automatic' && !one.translated)],
@@ -223,17 +229,30 @@ function chooseTranscript(choices: YoutubeTranscriptChoice[]): Promise<YoutubeTr
     ] as const;
     for (const [label, items] of groups) {
       if (items.length === 0) continue;
-      const group = document.createElement('optgroup');
-      group.label = label;
-      for (const [index, choice] of choices.entries()) {
-        if (!items.includes(choice)) continue;
-        const option = document.createElement('option');
-        option.value = String(index);
-        option.textContent = `${choice.label} (${choice.language})`;
-        if (`${choice.source}:${choice.language}` === preferred || (preferred === null && choice.language === 'es')) option.selected = true;
-        group.append(option);
+      const section = document.createElement('section');
+      const heading = document.createElement('h3');
+      heading.textContent = `${label} · ${items.length}`;
+      const tokens = document.createElement('div');
+      tokens.className = 'transcript-tokens';
+      for (const choice of items) {
+        const token = document.createElement('button');
+        token.type = 'button';
+        token.className = choice === picked ? 'transcript-token selected' : 'transcript-token';
+        token.textContent = choice.label;
+        token.title = `${choice.label} · ${choice.language}`;
+        token.setAttribute('aria-pressed', choice === picked ? 'true' : 'false');
+        token.addEventListener('click', () => {
+          picked = choice;
+          for (const other of catalogue.querySelectorAll<HTMLButtonElement>('.transcript-token')) {
+            const selected = other === token;
+            other.classList.toggle('selected', selected);
+            other.setAttribute('aria-pressed', selected ? 'true' : 'false');
+          }
+        });
+        tokens.append(token);
       }
-      select.append(group);
+      section.append(heading, tokens);
+      catalogue.append(section);
     }
     const actions = document.createElement('div');
     actions.className = 'dialog-actions';
@@ -241,16 +260,17 @@ function chooseTranscript(choices: YoutubeTranscriptChoice[]): Promise<YoutubeTr
     cancel.type = 'button'; cancel.textContent = 'Cancelar';
     const take = document.createElement('button');
     take.type = 'button'; take.className = 'primary'; take.textContent = 'Traer';
+    take.disabled = picked === null;
     cancel.addEventListener('click', () => dialog.close('cancel'));
     take.addEventListener('click', () => dialog.close('take'));
     dialog.addEventListener('close', () => {
-      const picked = dialog.returnValue === 'take' ? choices[Number(select.value)] ?? null : null;
-      if (picked !== null) localStorage.setItem('vera.youtube-transcript-choice', `${picked.source}:${picked.language}`);
+      const chosen = dialog.returnValue === 'take' ? picked : null;
+      if (chosen !== null) localStorage.setItem('vera.youtube-transcript-choice', `${chosen.source}:${chosen.language}`);
       dialog.remove();
-      resolve(picked);
+      resolve(chosen);
     });
     actions.append(cancel, take);
-    dialog.append(title, explain, select, actions);
+    dialog.append(title, explain, catalogue, actions);
     document.body.append(dialog);
     dialog.showModal();
   });

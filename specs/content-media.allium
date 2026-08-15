@@ -226,9 +226,10 @@ rule ParticipantChoosesVideoTranscript {
     )
 
     @guidance
-        -- If more than one track is available, Vera asks the participant which
-        -- language and provenance to preserve before writing anything. Cancelling
-        -- that choice leaves the page unchanged.
+        -- Vera presents only tracks the provider says are available, as discrete
+        -- legible choices grouped by provenance. Listing them does not fetch any
+        -- transcript text. Only confirming one choice fetches and preserves that
+        -- track. Cancelling leaves the page unchanged.
 }
 
 rule AutomaticallyTranscribeAudio {

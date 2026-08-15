@@ -4663,8 +4663,49 @@ code {
 .youtube-transcript-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
 .youtube-transcript-dialog h2 { margin: 0 0 0.5rem; font-size: 1.1rem; }
 .youtube-transcript-dialog p { color: var(--text-dim); }
-.youtube-transcript-dialog select { width: 100%; min-height: 2.5rem; font: inherit; }
 .youtube-transcript-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1rem; }
+
+.transcript-catalogue {
+  display: grid;
+  gap: 0.9rem;
+  max-height: min(55vh, 28rem);
+  overflow: auto;
+  padding: 0.15rem 0.25rem 0.4rem 0;
+}
+
+.transcript-catalogue h3 {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.transcript-tokens { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+.transcript-token {
+  appearance: none;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+
+.transcript-token.selected {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+}
+
+@media (max-width: 640px) {
+  .youtube-transcript-dialog { width: calc(100vw - 1rem); padding: 1rem; }
+  .transcript-catalogue { max-height: 58vh; }
+  .transcript-token { padding: 0.4rem 0.6rem; }
+}
 
 
 /*
