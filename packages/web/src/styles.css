@@ -4766,7 +4766,9 @@ code {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.25rem;
+  /* Casi contiguos: el lápiz funciona como remate de la fecha, no como una
+     acción separada flotando a su lado. */
+  gap: 0.06rem;
   width: 100%;
   min-width: 0;
   max-width: 100%;
