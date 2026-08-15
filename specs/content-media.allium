@@ -45,13 +45,14 @@ contract NativeMediaSupport {
 ------------------------------------------------------------
 
 enum MediaCustody { internal | external_reference }
+enum TranscriptProvenance { published | automatic_original | automatic_translation }
 
 ------------------------------------------------------------
 -- Entities and Variants
 ------------------------------------------------------------
 
 entity MediaResource {
-    kind: Markdown | Audio | RasterImage | Pdf | Svg | Mermaid | CanvasSketch
+    kind: Markdown | Audio | RasterImage | Pdf | Svg | Mermaid | CanvasSketch | ExternalVideo
     title: String?
     custody: MediaCustody
     created_by: core/Participant
@@ -94,6 +95,22 @@ variant Mermaid : MediaResource {
 variant CanvasSketch : MediaResource {
     javascript_source: String
     canvas_library: String?
+}
+
+variant ExternalVideo : MediaResource {
+    source_url: String
+    provider: String
+    original_language: String?
+}
+
+entity VideoTranscript {
+    video: ExternalVideo
+    language: String
+    original_language: String?
+    provenance: TranscriptProvenance
+    timestamped_text: String
+    extracted_at: Timestamp
+    attached_block: String
 }
 
 entity PageEmbedding {
@@ -189,6 +206,31 @@ rule PresentAudioArtifact {
     )
 }
 
+rule ParticipantChoosesVideoTranscript {
+    when: FetchVideoTranscript(participant, page, video, language, original_language, provenance, timestamped_text, attached_block)
+
+    let membership = core/Membership{graph: page.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: timestamped_text != ""
+
+    ensures: VideoTranscript.created(
+        video: video,
+        language: language,
+        original_language: original_language,
+        provenance: provenance,
+        timestamped_text: timestamped_text,
+        extracted_at: now,
+        attached_block: attached_block
+    )
+
+    @guidance
+        -- If more than one track is available, Vera asks the participant which
+        -- language and provenance to preserve before writing anything. Cancelling
+        -- that choice leaves the page unchanged.
+}
+
 rule AutomaticallyTranscribeAudio {
     when: TranscribeAudio(participant, page, audio, transcript)
 
@@ -278,6 +320,7 @@ surface PageMedia {
         StoreMedia(resource)
         PresentMedia(resource)
         PresentAudio(audio)
+        FetchVideoTranscript(participant, page, video, language, original_language, provenance, timestamped_text, attached_block)
         TranscribeAudio(participant, page, audio, transcript)
         ValidateAudioTranscript(participant, page, audio)
         DeleteAudioSource(participant, page, audio)

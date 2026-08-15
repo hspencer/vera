@@ -4633,7 +4633,38 @@ code {
   font-family: var(--font-mono);
   font-size: 0.7rem;
   color: var(--text-dim);
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
 }
+
+.youtube-transcript {
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.youtube-transcript:disabled { color: var(--text-dim); cursor: default; }
+
+.youtube-transcript-dialog {
+  width: min(32rem, calc(100vw - 2rem));
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+  padding: 1.2rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.youtube-transcript-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+.youtube-transcript-dialog h2 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+.youtube-transcript-dialog p { color: var(--text-dim); }
+.youtube-transcript-dialog select { width: 100%; min-height: 2.5rem; font: inherit; }
+.youtube-transcript-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1rem; }
 
 
 /*

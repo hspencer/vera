@@ -31,6 +31,8 @@ import {
   type CrossingRow,
   type PageView,
   type SubmitResult,
+  type YoutubeTranscriptChoice,
+  type YoutubeTranscriptResult,
 } from './api.ts';
 
 import { scrollDeltaFor, sourceOffsetFor } from './caret.ts';
@@ -162,6 +164,97 @@ export interface OutlinerCallbacks {
  * consume al usarla: volver a dibujar no vuelve a grabar.
  */
 let speakingIn: string | null = null;
+
+function stamp(milliseconds: number): string {
+  const total = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+/** Una lectura cómoda: conserva acceso temporal sin crear dos mil bloques. */
+function transcriptBlock(source: string, result: YoutubeTranscriptResult): string {
+  const chunks: { startMs: number; text: string[] }[] = [];
+  for (const segment of result.segments) {
+    const last = chunks.at(-1);
+    if (last === undefined || segment.startMs - last.startMs >= 15_000) {
+      chunks.push({ startMs: segment.startMs, text: [segment.text] });
+    } else if (last.text.at(-1) !== segment.text) {
+      last.text.push(segment.text);
+    }
+  }
+  const provenance = result.choice.translated
+    ? `traducción automática desde ${result.video.originalLanguage ?? 'idioma original'}`
+    : result.choice.source === 'automatic' ? 'subtítulos automáticos originales' : 'subtítulos publicados';
+  const lines = chunks.map((chunk) => {
+    const seconds = Math.floor(chunk.startMs / 1000);
+    return `[${stamp(chunk.startMs)}](${source.replace(/[?&]t=\d+s?/, '')}${source.includes('?') ? '&' : '?'}t=${seconds}s) ${chunk.text.join(' ')}`;
+  });
+  return [
+    `**Transcripción: ${result.video.title}**`,
+    `idioma:: ${result.choice.label}`,
+    `idioma original:: ${result.video.originalLanguage ?? 'no declarado'}`,
+    `procedencia:: ${provenance}`,
+    `fuente:: ${source}`,
+    `extraída:: ${new Date().toISOString()}`,
+    '',
+    ...lines,
+  ].join('\n');
+}
+
+function chooseTranscript(choices: YoutubeTranscriptChoice[]): Promise<YoutubeTranscriptChoice | null> {
+  return new Promise((resolve) => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'youtube-transcript-dialog';
+    const title = document.createElement('h2');
+    title.textContent = 'Traer transcripción';
+    const explain = document.createElement('p');
+    explain.textContent = 'Elige la pista que se guardará bajo el video. Se conservarán idioma, procedencia y marcas temporales.';
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', 'idioma y procedencia');
+    const preferred = localStorage.getItem('vera.youtube-transcript-choice');
+    const groups = [
+      ['Pistas publicadas', choices.filter((one) => one.source === 'published')],
+      ['Originales automáticas', choices.filter((one) => one.source === 'automatic' && !one.translated)],
+      ['Traducciones automáticas', choices.filter((one) => one.translated)],
+    ] as const;
+    for (const [label, items] of groups) {
+      if (items.length === 0) continue;
+      const group = document.createElement('optgroup');
+      group.label = label;
+      for (const [index, choice] of choices.entries()) {
+        if (!items.includes(choice)) continue;
+        const option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = `${choice.label} (${choice.language})`;
+        if (`${choice.source}:${choice.language}` === preferred || (preferred === null && choice.language === 'es')) option.selected = true;
+        group.append(option);
+      }
+      select.append(group);
+    }
+    const actions = document.createElement('div');
+    actions.className = 'dialog-actions';
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.textContent = 'Cancelar';
+    const take = document.createElement('button');
+    take.type = 'button'; take.className = 'primary'; take.textContent = 'Traer';
+    cancel.addEventListener('click', () => dialog.close('cancel'));
+    take.addEventListener('click', () => dialog.close('take'));
+    dialog.addEventListener('close', () => {
+      const picked = dialog.returnValue === 'take' ? choices[Number(select.value)] ?? null : null;
+      if (picked !== null) localStorage.setItem('vera.youtube-transcript-choice', `${picked.source}:${picked.language}`);
+      dialog.remove();
+      resolve(picked);
+    });
+    actions.append(cancel, take);
+    dialog.append(title, explain, select, actions);
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+}
 
 /** Deja dicho que en este bloque se va a hablar. */
 export function speakInto(block: string): void {
@@ -3343,6 +3436,46 @@ export function renderOutliner(
       text.innerHTML = renderMarkdown(task === null ? node.block.content : task.said, options);
       markMissingImages(text);
       body.append(text);
+
+      const transcript = text.querySelector<HTMLButtonElement>('button.youtube-transcript[data-youtube-source]');
+      if (transcript !== null) {
+        const already = node.children.some((child) => child.block.content.startsWith('**Transcripción:'));
+        if (already) {
+          transcript.textContent = 'Transcripción guardada';
+          transcript.disabled = true;
+        } else {
+          transcript.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const source = transcript.dataset['youtubeSource'] ?? node.block.content.trim();
+            transcript.disabled = true;
+            transcript.textContent = 'Buscando pistas…';
+            void api.youtubeTranscripts(source).then(async (catalog) => {
+              const choice = await chooseTranscript(catalog.choices);
+              if (choice === null) return;
+              transcript.textContent = 'Trayendo…';
+              const result = await api.youtubeTranscript(source, choice);
+              const born = await api.submit({
+                kind: 'create_block',
+                page: page.id,
+                parent: node.block.stableId,
+                position: node.children.length,
+                content: transcriptBlock(source, result),
+              });
+              if (born.status === 'rejected') throw new Error(born.reason);
+              toast(`transcripción en ${choice.label} guardada bajo el video`);
+              callbacks.onChanged();
+              callbacks.onReload(null);
+            }).catch((problem: unknown) => {
+              toast(`no se pudo traer la transcripción: ${problem instanceof Error ? problem.message : 'error desconocido'}`);
+            }).finally(() => {
+              if (transcript.isConnected && !transcript.disabled) return;
+              transcript.disabled = false;
+              transcript.textContent = 'Traer transcripción';
+            });
+          });
+        }
+      }
 
       /*
        * El plazo, cuando lo hay.

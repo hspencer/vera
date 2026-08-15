@@ -118,6 +118,7 @@ import {
   titleFor,
 } from './services.ts';
 import { children, item, search, whoami, type ZoteroItem } from './zotero.ts';
+import { youtubeTranscript, youtubeTranscriptChoices } from './youtube-transcript.ts';
 import { readLinks } from './process.ts';
 import { describeStructure, readingPasses, readStructure } from './structure.ts';
 import { describePlan, planTabularity } from './tabularity.ts';
@@ -832,7 +833,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     return one === undefined ? null : one.slice(0, 200);
   };
 
-  const handle = (request: IncomingMessage, response: ServerResponse): void => {
+  const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     const path = url.pathname;
 
@@ -3254,6 +3255,31 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           more: Math.max(0, found.length - MOST_ANSWERS),
         });
       });
+      return;
+    }
+
+    if (request.method === 'GET' && path === '/youtube/transcripts') {
+      const source = url.searchParams.get('url') ?? '';
+      send(response, 200, await youtubeTranscriptChoices(source));
+      return;
+    }
+
+    if (request.method === 'POST' && path === '/youtube/transcripts') {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      let body: { url?: unknown; language?: unknown; source?: unknown };
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+      } catch {
+        send(response, 400, { error: 'el cuerpo debe ser JSON' });
+        return;
+      }
+      if (typeof body.url !== 'string' || typeof body.language !== 'string' ||
+          (body.source !== 'published' && body.source !== 'automatic')) {
+        send(response, 400, { error: 'falta elegir una pista' });
+        return;
+      }
+      send(response, 200, await youtubeTranscript(body.url, body.language, body.source));
       return;
     }
 

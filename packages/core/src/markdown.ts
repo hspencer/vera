@@ -154,7 +154,11 @@ export function embedIn(source: string, hosts: readonly string[] = []): string |
     `title="incrustado desde ${quoteAttribute(escapeHtml(host))}"></iframe>` +
     // Debajo, de dónde viene: un rectángulo que corre programa ajeno sin decir de
     // quién es se parece demasiado a una parte de Vera, y no lo es.
-    `<figcaption>incrustado desde ${escapeHtml(host)}</figcaption>` +
+    `<figcaption>incrustado desde ${escapeHtml(host)}` +
+    (host === 'www.youtube-nocookie.com'
+      ? `<button type="button" class="youtube-transcript" data-youtube-source="${quoteAttribute(escapeHtml(source))}">Traer transcripción</button>`
+      : '') +
+    `</figcaption>` +
     `</figure>`
   );
 }

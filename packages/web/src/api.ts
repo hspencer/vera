@@ -17,6 +17,25 @@ export interface PageSummary {
   linkCount: number;
 }
 
+export interface YoutubeTranscriptChoice {
+  language: string;
+  label: string;
+  source: 'published' | 'automatic';
+  translated: boolean;
+  originalLanguage: string | null;
+}
+
+export interface YoutubeTranscriptCatalog {
+  video: { id: string; title: string; author: string; description: string; originalLanguage: string | null };
+  choices: YoutubeTranscriptChoice[];
+}
+
+export interface YoutubeTranscriptResult {
+  video: { id: string; title: string; author: string; originalLanguage: string | null };
+  choice: YoutubeTranscriptChoice;
+  segments: { startMs: number; durationMs: number; text: string }[];
+}
+
 export interface BlockView {
   stableId: string;
   parent: string | null;
@@ -829,6 +848,23 @@ export const api = {
   specialPages: () => json<{ id: string; title: string; kind: string }[]>('/special-pages'),
 
   search: (text: string) => json<Hit[]>(`/search?q=${encodeURIComponent(text)}`),
+
+  youtubeTranscripts: (url: string) =>
+    json<YoutubeTranscriptCatalog>(`/youtube/transcripts?url=${encodeURIComponent(url)}`),
+
+  youtubeTranscript: async (
+    url: string,
+    choice: YoutubeTranscriptChoice,
+  ): Promise<YoutubeTranscriptResult> => {
+    const response = await fetch('/youtube/transcripts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url, language: choice.language, source: choice.source }),
+    });
+    const body = await response.json() as YoutubeTranscriptResult & { error?: string };
+    if (!response.ok) throw new Error(body.error ?? `error ${response.status}`);
+    return body;
+  },
 
   /**
    * Le pregunta al grafo.
