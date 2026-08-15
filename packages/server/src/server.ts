@@ -3260,7 +3260,11 @@ export function createVeraServer(options: ServerOptions): VeraServer {
 
     if (request.method === 'GET' && path === '/youtube/transcripts') {
       const source = url.searchParams.get('url') ?? '';
-      send(response, 200, await youtubeTranscriptChoices(source));
+      try {
+        send(response, 200, await youtubeTranscriptChoices(source));
+      } catch (problem) {
+        send(response, 502, { error: problem instanceof Error ? problem.message : 'YouTube no contestó' });
+      }
       return;
     }
 
@@ -3279,7 +3283,11 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         send(response, 400, { error: 'falta elegir una pista' });
         return;
       }
-      send(response, 200, await youtubeTranscript(body.url, body.language, body.source));
+      try {
+        send(response, 200, await youtubeTranscript(body.url, body.language, body.source));
+      } catch (problem) {
+        send(response, 502, { error: problem instanceof Error ? problem.message : 'YouTube no entregó la pista' });
+      }
       return;
     }
 

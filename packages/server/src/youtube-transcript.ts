@@ -1,7 +1,10 @@
 import { execFile } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
+const YT_DLP = process.env['VERA_YT_DLP'] ?? join(homedir(), '.local', 'bin', 'yt-dlp');
 
 export interface YoutubeTranscriptChoice {
   language: string;
@@ -35,7 +38,7 @@ function youtubeUrl(raw: string): string {
 
 async function infoFor(raw: string): Promise<YoutubeInfo> {
   const url = youtubeUrl(raw);
-  const { stdout } = await run('yt-dlp', ['--dump-single-json', '--skip-download', '--no-warnings', url], {
+  const { stdout } = await run(YT_DLP, ['--dump-single-json', '--skip-download', '--no-warnings', url], {
     maxBuffer: 20 * 1024 * 1024,
     timeout: 30_000,
   });
