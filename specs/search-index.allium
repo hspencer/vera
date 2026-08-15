@@ -52,7 +52,7 @@ contract GraphSearch {
 -- The content Vera indexes. audio_transcript is declared here because a corrected
 -- transcript participates in search as ordinary text; it becomes reachable when
 -- content-media.allium is implemented, and it never displaces its audio source.
-enum SearchableField { page_title | block_content | property_value | audio_transcript }
+enum SearchableField { page_title | block_content | property_value | gloss_content | audio_transcript }
 
 ------------------------------------------------------------
 -- Entities and Variants
@@ -172,6 +172,11 @@ invariant BlockContentHitsNameTheirBlock {
         hit.field = block_content implies hit.block != null
 }
 
+invariant GlossContentHitsNameTheirBlock {
+    for hit in SearchHits:
+        hit.field = gloss_content implies hit.block != null
+}
+
 invariant EmptyTextFindsNothing {
     for outcome in SearchOutcomes:
         outcome.text = "" implies outcome.hits.count = 0
@@ -204,8 +209,9 @@ surface GraphSearchAccess {
         fulfils GraphSearch
 
     @guarantee OneSearchReachesEverySearchableField
-        -- A single text search covers page titles, block content and property values
-        -- together. Herbert does not choose in advance which of them to look in.
+        -- A single text search covers page titles, block content, property values
+        -- and glosas together. Herbert does not choose in advance which of them
+        -- to look in.
 
     @guarantee HitsCarryTheirLocation
         -- Every hit names the page it belongs to, and the block when the match was in

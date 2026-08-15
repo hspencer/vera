@@ -373,7 +373,18 @@ entity DesignToken {
 entity SearchResult {
     graph: core/Graph
     text: String
-    matching_pages: Set<core/Page>
+    suggestions: PageSearchSuggestion with result = this
+}
+
+-- La evidencia del índice se presenta por página, no como una fila por cada
+-- bloque coincidente. Una página aparece una vez y acumula las señales que
+-- explican por qué debería subir en la lista.
+entity PageSearchSuggestion {
+    result: SearchResult
+    page: core/Page
+    excerpt: String?
+    internal_matches: Integer
+    rank: Integer
 }
 
 entity QueryResult {
@@ -674,11 +685,19 @@ rule ParticipantSearchesGraph {
 
     requires: workspace.participant = participant
 
-    ensures: SearchResult.created(
-        graph: workspace.graph,
-        text: text,
-        matching_pages: search_pages(workspace.graph, text, participant)
-    )
+    ensures:
+        let result = SearchResult.created(
+            graph: workspace.graph,
+            text: text
+        )
+        for suggestion in page_search_suggestions(workspace.graph, text, participant):
+            PageSearchSuggestion.created(
+                result: result,
+                page: suggestion.page,
+                excerpt: suggestion.excerpt,
+                internal_matches: suggestion.internal_matches,
+                rank: suggestion.rank
+            )
 }
 
 rule ParticipantQueriesGraph {
@@ -705,6 +724,28 @@ invariant WorkspaceUsesThemeFromItsGraph {
 invariant ActivePageBelongsToWorkspaceGraph {
     for workspace in Workspaces:
         workspace.active_page != null implies workspace.active_page.graph = workspace.graph
+}
+
+invariant SearchSuggestionsBelongToTheirGraph {
+    for suggestion in PageSearchSuggestions:
+        suggestion.page.graph = suggestion.result.graph
+}
+
+invariant SearchSuggestsEachPageOnce {
+    for a in PageSearchSuggestions:
+        for b in PageSearchSuggestions:
+            a != b and a.result = b.result implies a.page != b.page
+}
+
+invariant SearchSuggestionRanksAreUnique {
+    for a in PageSearchSuggestions:
+        for b in PageSearchSuggestions:
+            a != b and a.result = b.result implies a.rank != b.rank
+}
+
+invariant SearchSuggestionCountsAreNonNegative {
+    for suggestion in PageSearchSuggestions:
+        suggestion.internal_matches >= 0
 }
 
 ------------------------------------------------------------
@@ -929,6 +970,13 @@ surface VeraWorkspace {
         -- there the vocabulary is already settled by the delimiter typed —
         -- `[[` names a page, `#` a tag, `((` a block — and offering everything
         -- would undo a choice the participant already made.
+
+    @guarantee SearchEvidenceCollapsesToOneSuggestionPerPage
+        -- A page appears once even when its title, several blocks, properties or
+        -- glosas match. Internal matches are counted and make the page rise; an
+        -- exact title remains the strongest signal. The suggestion keeps one
+        -- excerpt and the count, so collapsing repetition does not hide why the
+        -- page was offered.
 
     @guarantee AVocabularyValueIsReachableFromWhereItIsAnswered
         -- Beside a controlled answer there is a way to the page that bears its
