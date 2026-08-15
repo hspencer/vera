@@ -1005,8 +1005,11 @@ deferred BlockGloss.present       -- see: block-gloss.allium
 open question "When edited style source is invalid, should Vera reject it or keep it with the last valid presentation active?"
 -- Preview is no longer open: rendered presentation is required, and its shape is
 -- fixed by RenderedPresentationIsFaithful and EditingRevealsTheSource above.
-open question "Which native Markdown editing behaviours are required beyond direct source editing and rendered presentation, including shortcuts, autocomplete and footnote assistance?"
-open question "Should a footnote reference resolve to its definition within the workspace, given that a definition may live in a different block from the reference that names it?"
+-- Contestadas: negrita y cursiva conservan los atajos nativos del sistema; las
+-- notas se escriben como Markdown portable y se resuelven sobre la página
+-- compuesta, aunque referencia y definición vivan en bloques distintos. Ver
+-- FamiliarFormattingKeysEditMarkdown, FootnotesRemainEditable y
+-- FootnotesAreARoundTrip.
 -- Contestadas: la unidad del alcance son los saltos, el autocompletado va contra
 -- todo junto y ordenado, y el mapa vuelve como estaba. Ver las garantías
 -- TheMapIsBoundedByReach, OneCompletionOverEverythingNamed y TheMapHoldsItsPositions.

@@ -43,6 +43,50 @@ export type KeyOutcome =
   | { kind: 'mover-foco'; block: string; at: 'inicio' | 'final' }
   | { kind: 'rechazo'; reason: string };
 
+export interface FormatOutcome {
+  buffer: string;
+  selectionStart: number;
+  selectionEnd: number;
+}
+
+/** Alterna un delimitador Markdown conservando el texto escogido. */
+export function resolveFormat(
+  marker: '*' | '**',
+  buffer: string,
+  selectionStart: number,
+  selectionEnd: number,
+): FormatOutcome {
+  const width = marker.length;
+  const selected = buffer.slice(selectionStart, selectionEnd);
+
+  if (
+    selectionStart >= width &&
+    buffer.slice(selectionStart - width, selectionStart) === marker &&
+    buffer.slice(selectionEnd, selectionEnd + width) === marker
+  ) {
+    return {
+      buffer: buffer.slice(0, selectionStart - width) + selected + buffer.slice(selectionEnd + width),
+      selectionStart: selectionStart - width,
+      selectionEnd: selectionEnd - width,
+    };
+  }
+
+  if (selected.length >= width * 2 && selected.startsWith(marker) && selected.endsWith(marker)) {
+    const inner = selected.slice(width, -width);
+    return {
+      buffer: buffer.slice(0, selectionStart) + inner + buffer.slice(selectionEnd),
+      selectionStart,
+      selectionEnd: selectionEnd - width * 2,
+    };
+  }
+
+  return {
+    buffer: buffer.slice(0, selectionStart) + marker + selected + marker + buffer.slice(selectionEnd),
+    selectionStart: selectionStart + width,
+    selectionEnd: selectionEnd + width,
+  };
+}
+
 /**
  * Enter parte el bloque por el cursor.
  *

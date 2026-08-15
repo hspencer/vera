@@ -1,12 +1,15 @@
 -- allium: 3
 -- identity-access.allium
 
--- Scope: Identity and access boundaries for one Vera instance and its graph
--- Includes: Single-graph instance ownership and the boundary for human and
---   agent participation
+-- Scope: Identity and access boundaries for one personal Vera library and the
+--   instance that currently serves it
+-- Includes: One sovereign human owner, single-graph instance ownership and the
+--   boundary for human and agent participation
 -- Excludes:
 --   - Hosting several private graphs inside one Vera instance
 --   - Closing the current graph and opening or switching to another graph
+--   - Collective ownership; collective work is composed between sovereign
+--     personal libraries and belongs to federation specifications
 --   - Authentication protocol and credential storage implementation
 --   - Public anonymous access to the projected personal website
 -- Dependencies: Participant, Graph and Membership are governed by core.allium
@@ -84,6 +87,12 @@ contract ParticipantAdministration {
     @invariant HistoricalIdentitySurvivesRemoval
         -- Removing access preserves the participant's identity on historical
         -- revisions and audit records while preventing further graph access.
+
+    @invariant ThePersonalLibraryRemainsPersonal
+        -- Inviting collaborators or agents gives them real participation and
+        -- never turns the library into a jointly owned account. Collective work
+        -- is composed between sovereign individuals; it does not dissolve the
+        -- human owner of either person's context.
 }
 
 ------------------------------------------------------------
@@ -167,7 +176,7 @@ invariant OneInstanceServesOneGraph {
             a != b implies a.graph != b.graph
 }
 
-invariant InstanceOwnerIsHuman {
+invariant PersonalLibraryHasOneHumanSovereignOwner {
     for instance in VeraInstances:
         instance.owner.kind = human
 }

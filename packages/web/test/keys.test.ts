@@ -11,6 +11,7 @@ import {
   resolveDelimiter,
   resolveDrawingKey,
   resolveEnter,
+  resolveFormat,
   resolveTab,
   type Neighbourhood,
 } from '../src/keys.ts';
@@ -247,6 +248,40 @@ describe('autopar', () => {
 
   it('un cierre sin su pareja delante tampoco', () => {
     assert.equal(resolveDelimiter(')', 'ab', 1, 1), null);
+  });
+});
+
+describe('formato Markdown', () => {
+  it('pone negrita alrededor de la selección y la conserva', () => {
+    assert.deepEqual(resolveFormat('**', 'uno dos', 4, 7), {
+      buffer: 'uno **dos**',
+      selectionStart: 6,
+      selectionEnd: 9,
+    });
+  });
+
+  it('pone cursiva y deja el cursor dentro cuando no hay selección', () => {
+    assert.deepEqual(resolveFormat('*', 'uno ', 4, 4), {
+      buffer: 'uno **',
+      selectionStart: 5,
+      selectionEnd: 5,
+    });
+  });
+
+  it('quita el formato si los delimitadores rodean la selección', () => {
+    assert.deepEqual(resolveFormat('**', 'uno **dos**', 6, 9), {
+      buffer: 'uno dos',
+      selectionStart: 4,
+      selectionEnd: 7,
+    });
+  });
+
+  it('quita el formato si los delimitadores forman parte de la selección', () => {
+    assert.deepEqual(resolveFormat('*', 'uno *dos*', 4, 9), {
+      buffer: 'uno dos',
+      selectionStart: 4,
+      selectionEnd: 7,
+    });
   });
 });
 

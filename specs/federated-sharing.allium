@@ -1,0 +1,285 @@
+-- allium: 3
+-- federated-sharing.allium
+
+-- Scope: Sharing selected pages from a sovereign personal Vera library
+-- Includes: Delimited selections, individual and shared destinations,
+--   synchronised replicas, local editing, origin review, provenance and
+--   withdrawal limits
+-- Excludes:
+--   - Authentication and grant mechanics (identity-access.allium)
+--   - Conflict resolution between divergent copies
+--   - Transport and storage implementation
+-- Dependencies: Graph, Page and Participant are governed by core.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract SovereignSharing {
+    share: (selection: SharedSelection, destination: SharingDestination) -> Distribution
+    edit: (distribution: Distribution, author: core/Participant, page: core/Page) -> SharedEdit
+    contribute: (distribution: Distribution, author: core/Participant, edits: List<SharedEdit>) -> Contribution
+    review: (selection: ReviewSelection, owner: core/Participant, decision: ReviewDecision) -> ReviewOutcome
+    withdraw: (distribution: Distribution) -> Withdrawal
+    continue_after_withdrawal: (distribution: Distribution, custody: SharingDestination) -> ContinuationFork
+
+    @invariant SharingIsDelimited
+        -- Sharing a project or concept selects pages explicitly or by a visible
+        -- criterion. It never grants the destination discovery of the remaining
+        -- personal library merely because selected pages came from it.
+
+    @invariant TheOriginAndHistoryTravel
+        -- Every delivered page keeps a stable reference to its source library,
+        -- source page and shared history. A synchronised copy does not pretend
+        -- to be an unrelated page merely because it now lives elsewhere.
+
+    @invariant OriginMeansWhereSharingBegan
+        -- Origin is literally the personal library and page from which the
+        -- sovereign participant first shared the resource. Synchronising,
+        -- editing, accepting changes or sharing onward never transfers or
+        -- rewrites that origin.
+
+    @invariant HorizontalParticipationDoesNotEraseOrigin
+        -- Participants with equivalent writing authority collaborate
+        -- horizontally inside the granted relationship. Equality of permission
+        -- does not make every replica an origin or remove the source owner's
+        -- responsibility for the canonical history.
+
+    @invariant AReceivedCopyEntersAnotherSovereignty
+        -- A person, shared graph or site that synchronises content receives a
+        -- replica it can retain independently. While sharing remains active,
+        -- replicas point to the same logical page identity rather than becoming
+        -- unrelated documents. The source cannot silently erase a retained
+        -- replica or truthfully promise that withdrawal will recover it.
+
+    @invariant AuthorisedEditorsDoNotWaitToWork
+        -- A participant to whom the selection was shared with write authority
+        -- changes their replica without prior approval. Their hand does not wait
+        -- for the origin to be online or for its owner to review the difference.
+
+    @invariant TheOriginReviewsWhatReturns
+        -- A remote edit does not silently enter the source library's canonical
+        -- page. Synchronisation presents the differences to the sovereign owner,
+        -- who accepts or rejects them before they join the source history.
+
+    @invariant AcceptanceAndRejectionStayAttributed
+        -- Accepting records the remote author and the owner who accepted; it
+        -- never reattributes the contribution to the owner. Rejecting preserves
+        -- enough evidence to explain why replicas differ without adding the
+        -- proposed content to the canonical page.
+
+    @invariant AContributionArrivesAsACoherentBatch
+        -- Changes produced together travel together with their author, order and
+        -- dependencies. Synchronisation does not flatten them into unrelated
+        -- prompts that make the intention of the contribution unrecoverable.
+
+    @invariant ReviewCutsOnlyAtStructuralBoundaries
+        -- The owner may review the complete contribution, a dependency-closed
+        -- group or whole blocks. Vera never asks the owner to accept arbitrary
+        -- lines or an operation whose required operations were rejected.
+
+    @invariant PartialAcceptanceNeverInventsAnEdit
+        -- Whatever is accepted consists of edits the remote participant actually
+        -- submitted. Review can select coherent structural parts; it cannot
+        -- silently synthesise prose or a block state written by neither person.
+
+    @invariant UnsharingEndsTheRelationship
+        -- The owner can stop future synchronisation and editing authority by
+        -- withdrawing the distribution. This ends the relationship; it does not
+        -- erase replicas or observations recipients already retained.
+
+    @invariant WithdrawalDoesNotEndOtherPeoplesWork
+        -- A recipient may continue retained work after withdrawal as an editable
+        -- fork under new canonical custody. The source owner can end the sharing
+        -- relationship, not prohibit independent continuation of what was
+        -- already distributed.
+
+    @invariant ContinuationIsNewAndItsDerivationIsPermanent
+        -- The continuing fork receives a new identity and canonical history. It
+        -- permanently names the withdrawn distribution and original pages as
+        -- its derivation; it never presents itself as the still-synchronised
+        -- original or rewrites where sharing began.
+
+    @invariant PendingWorkSurvivesTheCut
+        -- Remote edits not yet reviewed when withdrawal occurs remain explicit
+        -- in the continuing fork or are deliberately discarded by its new
+        -- custodian. Withdrawal never makes pending work vanish silently.
+
+    @invariant ASharedSpaceContinuesTogether
+        -- When the withdrawn destination was one shared graph or shared site,
+        -- its normal continuation is one common fork governed by that space.
+        -- Withdrawal does not automatically create one fork per participant;
+        -- a participant may establish a separate fork only by an explicit later
+        -- decision.
+
+    @invariant ASharedSpaceHasAnOriginalHumanCustodian
+        -- A shared graph or site is constituted and sponsored by a human who
+        -- supplies its original custody, even when collaboration inside it is
+        -- horizontal. Collective governance does not make the infrastructure
+        -- ownerless or hide who remains responsible if the group cannot act.
+
+    @invariant TheAuthorisedGroupGovernsBeforeTheFallbackOwner
+        -- When a participant withdraws a contribution from a shared space, the
+        -- participants who retain governing authority over that space govern
+        -- its common continuation. If that group cannot exercise custody, the
+        -- space's original owner is the explicit fallback; the withdrawn
+        -- contribution's origin does not regain control merely by withdrawing.
+
+    @invariant WithdrawalStopsTheFutureNotThePast
+        -- Withdrawing stops future discovery and synchronisation from the
+        -- source and may propagate a request for recipients to remove retained
+        -- copies. It does not report those copies erased without acknowledgement
+        -- from every recipient that held one.
+
+    @invariant IrreversibilityIsKnownBeforeSharing
+        -- Before the first distribution, Vera tells the sovereign participant
+        -- that recipients may retain synchronised copies and that public access
+        -- can be observed or copied beyond Vera's control.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum DestinationKind { participant | participants | shared_graph | shared_site | public }
+enum DistributionStatus { offered | synchronised | withdrawn }
+enum ContributionStatus { local | awaiting_review | partially_reviewed | accepted | rejected }
+enum ReviewDecision { accept | reject }
+enum ReviewBoundary { whole_contribution | dependent_group | whole_block }
+
+------------------------------------------------------------
+-- Entities and Values
+------------------------------------------------------------
+
+entity SharedSelection {
+    source: core/Graph
+    pages: List<core/Page>
+    criterion: String?
+    selected_by: core/Participant
+}
+
+entity SharingDestination {
+    kind: DestinationKind
+    address: String
+    original_owner: core/Participant?
+    governors: List<core/Participant>
+}
+
+entity Distribution {
+    selection: SharedSelection
+    destination: SharingDestination
+    status: DistributionStatus
+    shared_at: Timestamp
+    withdrawal: Withdrawal?
+    edits: SharedEdit with distribution = this
+    contributions: Contribution with distribution = this
+    continuations: ContinuationFork with withdrawn_distribution = this
+}
+
+entity Withdrawal {
+    distribution: Distribution
+    requested_at: Timestamp
+    acknowledged_by: List<String>
+}
+
+entity SharedEdit {
+    distribution: Distribution
+    page: core/Page
+    author: core/Participant
+    recorded_at: Timestamp
+}
+
+entity Contribution {
+    distribution: Distribution
+    author: core/Participant
+    edits: List<SharedEdit>
+    status: ContributionStatus
+    submitted_at: Timestamp
+    reviews: ReviewOutcome with contribution = this
+}
+
+entity ReviewSelection {
+    contribution: Contribution
+    boundary: ReviewBoundary
+    edits: List<SharedEdit>
+}
+
+entity ReviewOutcome {
+    contribution: Contribution
+    selection: ReviewSelection
+    reviewer: core/Participant
+    decision: ReviewDecision
+    reviewed_at: Timestamp
+}
+
+entity ContinuationFork {
+    withdrawn_distribution: Distribution
+    canonical_custody: SharingDestination
+    derived_from: List<core/Page>
+    created_at: Timestamp
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant ASelectionNeverEscapesItsSourceGraph {
+    for selection in SharedSelections:
+        selection.pages.all(page => page in selection.source.pages)
+}
+
+invariant AWithdrawalNamesAWithdrawnDistribution {
+    for withdrawal in Withdrawals:
+        withdrawal.distribution.status = withdrawn
+}
+
+invariant ASharedEditBelongsToTheSharedSelection {
+    for edit in SharedEdits:
+        edit.page in edit.distribution.selection.pages
+}
+
+invariant AReviewSelectsOnlySubmittedEdits {
+    for selection in ReviewSelections:
+        selection.edits.all(edit => edit in selection.contribution.edits)
+}
+
+invariant AContinuationComesFromAWithdrawnDistribution {
+    for fork in ContinuationForks:
+        fork.withdrawn_distribution.status = withdrawn
+}
+
+invariant ASharedSpaceHasAtMostOneCommonContinuation {
+    for a in ContinuationForks:
+        for b in ContinuationForks:
+            a != b
+                and a.withdrawn_distribution = b.withdrawn_distribution
+                and a.withdrawn_distribution.destination.kind in {shared_graph, shared_site}
+                implies a.canonical_custody != b.canonical_custody
+}
+
+invariant EverySharedSpaceHasAFallbackOwner {
+    for destination in SharingDestinations:
+        destination.kind in {shared_graph, shared_site}
+            implies destination.original_owner != null
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+-- Answered: an authorised participant edits their replica directly; the source
+-- owner accepts or rejects the differences when they return.
+-- Answered: differences arrive as one coherent contribution. Review may accept
+-- the whole contribution, dependency-closed groups or whole blocks, never
+-- arbitrary lines or dependency-breaking operations.
+open question "When a shared selection criterion gains or loses a page, does synchronisation follow the criterion automatically or require a new sharing decision?"
+open question "What acknowledgement proves that a recipient honoured a withdrawal request, and how long is that evidence retained?"
+open question "Can a public destination synchronise canonical page identity, or does it receive only a publication projection?"
+-- Answered: recipients may continue as an editable fork with new identity and
+-- canonical custody, permanently derived from the immutable historical origin.
+-- Answered: a shared graph or site normally continues as one common fork under
+-- that space's custody. Separate participant forks require explicit decisions.
+-- Answered: the authorised group governs that common continuation; if it cannot
+-- act, custody falls back to the shared space's original human owner.

@@ -628,9 +628,22 @@ El **manual de uso** —cada tecla, cada comando, cada gesto— está en
 
 ## Método
 
-Primero se especifica comportamiento y casos límite en Allium. Después se elige
-arquitectura e implementación. Las decisiones técnicas deben servir a las
-garantías del producto, no sustituirlas.
+El trabajo comienza en conversación y deja tres rastros enlazados, cada uno con
+una responsabilidad distinta:
+
+1. **Vera conserva el razonamiento**: razones, alternativas, desacuerdos,
+   preguntas abiertas y decisiones pasadas al limpio.
+2. **Allium obliga el comportamiento acordado**: cuando una decisión ya afecta
+   lo que el producto debe hacer, se convierte en una spec verificable.
+3. **El repositorio explica la solución técnica**: README, documentos y
+   diagramas Mermaid describen la arquitectura elegida para cumplir esas specs.
+
+Vera enlaza las specs y los documentos técnicos pertinentes para que se pueda ir
+desde una decisión hasta su contrato y su realización sin convertir ninguno de
+los tres registros en una copia de los otros. Primero se especifican
+comportamiento y casos límite en Allium; después se eligen arquitectura e
+implementación. Las decisiones técnicas deben servir a las garantías del
+producto, no sustituirlas.
 
 Esto no es una preferencia de estilo: es cómo se trabaja en este repositorio, y
 es el criterio con que se revisa un pull request. Quien vaya a tocar `specs/`

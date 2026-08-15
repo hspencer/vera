@@ -88,6 +88,19 @@ contract FluidBlockEditing {
         -- The line being written remains visible, with room below it. A block
         -- taller than the view is brought to the caret and not to its own edge,
         -- and no keystroke leaves the caret where it cannot be seen.
+
+    @invariant StructuralEditingKeepsTheReadingPlace
+        -- Any edit that redraws the outline — removing, splitting, merging,
+        -- moving, indenting, marking or folding blocks, and editing their
+        -- properties — leaves the visible content at the same place in the
+        -- viewport. If the nearest visible block was removed, the next surviving
+        -- visible block holds its former position rather than sending the reader
+        -- to the beginning of the page.
+
+    @invariant FamiliarFormattingKeysEditMarkdown
+        -- Ctrl/Cmd-B toggles Markdown bold and Ctrl/Cmd-I toggles Markdown
+        -- italics around the current selection. With no selection each gesture
+        -- writes an empty pair and leaves the caret between its marks.
 }
 
 contract OutlineManipulation {
@@ -127,6 +140,11 @@ contract OutlineManipulation {
         -- Collapsing is what one participant is looking at, not what the graph
         -- says. It submits no operation, it appears in no revision, and two
         -- participants can hold different folds of the same block at once.
+
+    @invariant FoldingKeepsTheWritingPlace
+        -- Folding or unfolding a branch does not take focus or move the caret
+        -- from an editor that remains visible. If folding hides the edited
+        -- block, focus moves to the fold control that now represents it.
 
     @invariant OnlyParentsFold
         -- A block with no children has nothing to fold, and offering the control
