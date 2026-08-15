@@ -333,6 +333,23 @@ interface MenuAction {
 }
 
 /**
+ * Ejecuta una acción sin dejar que el clic que la eligió cierre también el
+ * menú que esa acción pueda abrir.
+ *
+ * El orden importa: un «Copiar…» crea otro menú durante `run`; si el clic
+ * alcanza después el listener global, ese listener ve el menú nuevo como algo
+ * ajeno al blanco original y lo elimina en el mismo gesto.
+ */
+export function invokeMenuAction(
+  event: Pick<Event, 'stopPropagation'>,
+  action: Pick<MenuAction, 'run'>,
+): void {
+  event.stopPropagation();
+  closeMenu();
+  void action.run();
+}
+
+/**
  * Un menú, por grupos.
  *
  * Los grupos son la firma y no una lista con separadores metidos dentro: así lo
@@ -373,10 +390,7 @@ function openBlockMenu(anchor: HTMLElement, groups: MenuAction[][]): void {
       const said = document.createElement('span');
       said.textContent = action.label;
       item.append(said);
-      item.addEventListener('click', () => {
-        closeMenu();
-        void action.run();
-      });
+      item.addEventListener('click', (event) => invokeMenuAction(event, action));
       menu.append(item);
     }
   }

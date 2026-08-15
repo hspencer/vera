@@ -6,7 +6,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildNeighbourhoods, buildTree, foldedState, matchingMovePages, nodeMarkdown } from '../src/outliner.ts';
+import {
+  buildNeighbourhoods,
+  buildTree,
+  foldedState,
+  invokeMenuAction,
+  matchingMovePages,
+  nodeMarkdown,
+} from '../src/outliner.ts';
 import type { BlockView } from '../src/api.ts';
 
 const block = (stableId: string, parent: string | null, position: number, content = stableId): BlockView => ({
@@ -14,6 +21,17 @@ const block = (stableId: string, parent: string | null, position: number, conten
   parent,
   position,
   content,
+});
+
+describe('menú encadenado', () => {
+  it('detiene el clic antes de abrir el siguiente menú', () => {
+    const order: string[] = [];
+    invokeMenuAction(
+      { stopPropagation: () => order.push('stop') },
+      { run: () => order.push('run') },
+    );
+    assert.deepEqual(order, ['stop', 'run']);
+  });
 });
 
 describe('buildTree', () => {
