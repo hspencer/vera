@@ -1,11 +1,5 @@
-// Lo que otra inteligencia puede hacer con esta memoria. De momento: leerla.
-//
-// Siete herramientas y ninguna escribe. No es una versión recortada a la espera
-// de la buena: es la frontera de M1, y la frontera está donde está porque
-// escribir por MCP tiene que entrar por una propuesta que quede escrita
-// —@invariant NothingIsWrittenBehindTheOwnersBack— y eso es M3 y M4, después de
-// que las lecturas autenticadas, la exposición, la idempotencia y los conflictos
-// tengan pruebas.
+// Lo que otra inteligencia puede hacer con esta memoria: leer y enviar cambios
+// no destructivos por la misma puerta canónica que usa la interfaz.
 //
 // La descripción de cada herramienta dice qué hace, qué límites tiene y qué
 // alcance necesita. No es cortesía: un modelo elige la herramienta leyendo su
@@ -22,13 +16,19 @@ export type Ask = <T>(
   parameters?: Record<string, string | number | undefined>,
 ) => Promise<T | Failure>;
 
+export type Write = (
+  origin: string,
+  change: Record<string, unknown>,
+) => Promise<{ status: 'applied' | 'duplicate'; sequence: number; subjectId: string } | Failure>;
+
 export interface VeraTool {
   name: string;
   title: string;
   description: string;
   /** JSON Schema en crudo: la forma que el protocolo pide, sin traductor. */
   inputSchema: Record<string, unknown>;
-  run(args: Record<string, unknown>, ask: Ask): Promise<string>;
+  readOnly?: boolean;
+  run(args: Record<string, unknown>, ask: Ask, write?: Write): Promise<string>;
 }
 
 /**
@@ -108,7 +108,7 @@ export const TOOLS: readonly VeraTool[] = [
         `Credencial: ${who.label ?? 'sin credencial: se entró como el dueño'}\n` +
         `Alcances: ${who.scopes === null ? 'todos, por ser el dueño' : who.scopes.join(', ')}` +
         size +
-        `\nEsta puerta es de sólo lectura: escribir en Vera no pasa por aquí.`
+        `\nEsta puerta puede escribir cuando la credencial tiene alcance write; no ofrece borrado.`
       );
     },
   },
@@ -335,6 +335,70 @@ export const TOOLS: readonly VeraTool[] = [
             .map((page) => `${page.title} — ${page.blockCount} bloques, ${page.linkCount} conexiones`)
             .join('\n') +
           more,
+      );
+    },
+  },
+
+  {
+    name: 'vera_escribir',
+    title: 'Escribir un cambio en Vera',
+    readOnly: false,
+    description:
+      'Aplica exactamente un cambio no destructivo mediante POST /operations. Todo queda en el ' +
+      'registro canónico con la identidad de la credencial y canal agent_generation. Antes de ' +
+      'añadir, lee la página para usar su identificador y calcular la posición final. `origen` es una ' +
+      'clave estable de idempotencia: reutiliza la misma al reintentar el mismo cambio y usa otra ' +
+      'para un cambio distinto. Esta primera superficie crea páginas y bloques; no edita, mueve ni borra.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        origen: {
+          type: 'string',
+          description: 'Identificador único y estable del cambio, por ejemplo codex:sesion:tarea:1.',
+          minLength: 1,
+        },
+        cambio: {
+          type: 'object',
+          description:
+            'Una operación canónica: create_page o create_block.',
+          properties: {
+            kind: {
+              type: 'string',
+              enum: ['create_page', 'create_block'],
+            },
+            title: { type: 'string' },
+            visibility: { type: 'string', enum: ['private', 'public'] },
+            page: { type: 'string', description: 'Identificador page:... cuando la operación lo requiere.' },
+            block: { type: 'string', description: 'Identificador block:... cuando la operación lo requiere.' },
+            parent: { type: ['string', 'null'], description: 'Padre block:... o null para un bloque raíz.' },
+            position: { type: 'integer', minimum: 0 },
+            content: { type: 'string' },
+            propertyKey: { type: 'string' },
+            propertyValue: { type: 'string' },
+          },
+          required: ['kind'],
+          additionalProperties: false,
+        },
+      },
+      required: ['origen', 'cambio'],
+      additionalProperties: false,
+    },
+    async run(args, _ask, write) {
+      const origin = say(args.origen).trim();
+      if (origin === '') return 'Falta `origen`: una clave estable para reintentar sin duplicar.';
+      if (write === undefined) return 'Esta conexión MCP no habilitó la puerta de escritura.';
+      if (typeof args.cambio !== 'object' || args.cambio === null || Array.isArray(args.cambio)) {
+        return 'Falta `cambio`: debe ser una operación canónica.';
+      }
+      const change = args.cambio as Record<string, unknown>;
+      if (change.kind !== 'create_page' && change.kind !== 'create_block') {
+        return 'Ese cambio no está disponible por MCP: esta puerta sólo crea páginas y bloques.';
+      }
+      const result = await write(origin, change);
+      if (failed(result)) return `No pude escribir eso: ${result.error}${result.status > 0 ? ` (${result.status})` : ''}`;
+      return (
+        `${result.status === 'duplicate' ? 'Ese cambio ya estaba aplicado' : 'Cambio aplicado'}: ` +
+        `${result.subjectId}, operación ${result.sequence}.`
       );
     },
   },

@@ -41,11 +41,7 @@ export interface Failure {
 const ok = <T>(value: T): T | Failure => value;
 
 /**
- * Una petición a Vera.
- *
- * Todo lo que pasa por aquí es de lectura. Escribir por MCP no está y no se
- * olvidó: es M3 y M4, y su puerta es una propuesta que queda escrita, no una
- * mutación silenciosa. Ver @invariant NothingIsWrittenBehindTheOwnersBack.
+ * Una petición de lectura a Vera.
  */
 export async function ask<T>(
   connection: Connection,
@@ -85,6 +81,53 @@ export async function ask<T>(
     return { status: response.status, error: said === '' ? response.statusText : said };
   }
   return ok((await response.json()) as T);
+}
+
+export interface WriteResult {
+  status: 'applied' | 'duplicate';
+  sequence: number;
+  subjectId: string;
+}
+
+/**
+ * Escribe por la única puerta canónica. La identidad y el canal no viajan en el
+ * cuerpo: Vera los deriva de la credencial.
+ */
+export async function submit(
+  connection: Connection,
+  originId: string,
+  change: Record<string, unknown>,
+): Promise<WriteResult | Failure> {
+  if (connection.token === null) {
+    return { status: 403, error: 'MCP sólo escribe con una credencial explícita de agente' };
+  }
+  const headers: Record<string, string> = {
+    accept: 'application/json',
+    'content-type': 'application/json',
+    'x-vera-client': connection.client,
+  };
+  headers.authorization = `Bearer ${connection.token}`;
+
+  let response: Response;
+  try {
+    response = await fetch(new URL('/operations', connection.url), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ originId, change }),
+    });
+  } catch (trouble) {
+    return { status: 0, error: `no hay nadie escuchando en ${connection.url} (${String(trouble)})` };
+  }
+
+  const body = await response.json().catch(async () => ({ error: await response.text().catch(() => '') }));
+  if (!response.ok) {
+    const said = body as { error?: unknown; reason?: unknown };
+    return {
+      status: response.status,
+      error: String(said.reason ?? said.error ?? response.statusText),
+    };
+  }
+  return body as WriteResult;
 }
 
 export const failed = (value: unknown): value is Failure =>

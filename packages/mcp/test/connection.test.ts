@@ -28,6 +28,7 @@ const HERE = fileURLToPath(new URL('../src/main.ts', import.meta.url));
 let vera: ReturnType<typeof listen>;
 let client: Client;
 let PORT: number;
+let PAGE: string;
 
 /*
  * Un puerto libre de verdad y no uno elegido a ojo.
@@ -71,16 +72,40 @@ before(async () => {
     return json.subjectId;
   };
 
-  const page = await write({ kind: 'create_page', title: 'La bitácora', visibility: 'private' });
-  const first = await write({ kind: 'create_block', page, parent: null, content: 'Un pensamiento' });
-  await write({ kind: 'create_block', page, parent: first, content: 'Y su matiz' });
+  PAGE = await write({ kind: 'create_page', title: 'La bitácora', visibility: 'private' });
+  const first = await write({ kind: 'create_block', page: PAGE, parent: null, content: 'Un pensamiento' });
+  await write({ kind: 'create_block', page: PAGE, parent: first, content: 'Y su matiz' });
+
+  const agent = await fetch(`http://127.0.0.1:${PORT}/agents`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 'participant:mcp-test', name: 'MCP de prueba' }),
+  });
+  assert.equal(agent.status, 201, await agent.text());
+  const issued = await fetch(`http://127.0.0.1:${PORT}/agents/credentials`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      participant: 'participant:mcp-test',
+      scopes: ['read', 'write'],
+      label: 'MCP de prueba',
+    }),
+  });
+  const credential = (await issued.json()) as { secret?: string; error?: string };
+  assert.equal(issued.status, 201, credential.error);
+  assert.ok(credential.secret !== undefined);
 
   client = new Client({ name: 'la prueba', version: '0' });
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
       args: ['--experimental-strip-types', '--no-warnings', HERE],
-      env: { ...process.env, VERA_URL: `http://127.0.0.1:${PORT}`, VERA_CLIENT: 'la prueba' },
+      env: {
+        ...process.env,
+        VERA_URL: `http://127.0.0.1:${PORT}`,
+        VERA_CLIENT: 'la prueba',
+        VERA_TOKEN: credential.secret,
+      },
     }),
   );
 });
@@ -93,14 +118,16 @@ after(async () => {
 describe('vera-mcp por stdio', () => {
   it('arranca y ofrece su catálogo', async () => {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 7);
-    assert.ok(tools.every((tool) => tool.annotations?.readOnlyHint === true));
+    assert.equal(tools.length, 8);
+    assert.equal(tools.find((tool) => tool.name === 'vera_escribir')?.annotations?.readOnlyHint, false);
+    assert.ok(tools.filter((tool) => tool.name !== 'vera_escribir').every((tool) => tool.annotations?.readOnlyHint === true));
   });
 
   it('lo primero que contesta es quién eres y qué tamaño tiene esto', async () => {
     const answer = await call('vera_quien_soy');
     assert.match(answer, /Conectado a Vera/);
-    assert.match(answer, new RegExp(OWNER));
+    assert.match(answer, /participant:mcp-test/);
+    assert.match(answer, /read, write/);
     assert.match(answer, /1 páginas, 2 bloques/);
   });
 
@@ -114,6 +141,21 @@ describe('vera-mcp por stdio', () => {
     const answer = await call('vera_leer_pagina', { pagina: 'La bitácora' });
     assert.match(answer, /# La bitácora/);
     assert.match(answer, /- Un pensamiento\n {2}- Y su matiz/);
+  });
+
+  it('escribe por la API y el cambio queda inmediatamente legible', async () => {
+    const answer = await call('vera_escribir', {
+      origen: 'mcp:connection:test:write',
+      cambio: {
+        kind: 'create_block',
+        page: PAGE,
+        parent: null,
+        position: 1,
+        content: 'Escrito por la puerta MCP',
+      },
+    });
+    assert.match(answer, /Cambio aplicado/);
+    assert.match(await call('vera_leer_pagina', { pagina: PAGE }), /Escrito por la puerta MCP/);
   });
 
   it('lo que no existe se contesta sin romper el turno', async () => {

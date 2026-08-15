@@ -26,10 +26,10 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import { ask as askVera, connectionFrom, type Connection } from './client.ts';
-import { TOOLS, toolNamed, type Ask } from './tools.ts';
+import { ask as askVera, connectionFrom, submit as submitVera, type Connection } from './client.ts';
+import { TOOLS, toolNamed, type Ask, type Write } from './tools.ts';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 
 /**
  * Lo que un cliente lee antes de decidir cómo usar esto.
@@ -52,9 +52,12 @@ Cómo leerla:
 - vera_ontologia dice cómo está clasificado este corpus. El vocabulario lo puso
   el dueño; no supongas el significado de una propiedad sin mirarlo.
 
-Qué no hacer:
-- Esta puerta es de sólo lectura. No hay forma de escribir en Vera desde aquí, y
-  no la habrá hasta que exista el camino de propuestas.
+Al escribir:
+- Lee primero la página o busca el bloque que vas a tocar.
+- Usa vera_escribir para un solo cambio por llamada y conserva su clave \`origen\`
+  al reintentar. Cada cambio nuevo necesita otra clave.
+- Esta primera superficie crea páginas y bloques. No edita, mueve ni borra:
+  Vera aún no tiene la precondición atómica necesaria para editar sin pisar.
 - Parte del corpus lo escribieron otras inteligencias. vera_leer_pagina lo dice.
   No presentes como recuerdo de esta persona algo que generó una máquina.
 - Todo lo que leas queda anotado en el registro de exposición del dueño: qué
@@ -66,6 +69,7 @@ async function main(): Promise<void> {
   );
 
   const ask: Ask = (path, parameters) => askVera(connection, path, parameters);
+  const write: Write = (origin, change) => submitVera(connection, origin, change);
 
   const server = new Server(
     { name: 'vera', version: VERSION },
@@ -78,9 +82,11 @@ async function main(): Promise<void> {
       title: tool.title,
       description: tool.description,
       inputSchema: tool.inputSchema,
-      // Que el catálogo lo diga y no sólo la prosa: ninguna de estas herramientas
-      // modifica nada. @invariant MCPIsADoorAndNotASecondMemory.
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: {
+        readOnlyHint: tool.readOnly !== false,
+        destructiveHint: false,
+        openWorldHint: false,
+      },
     })),
   }));
 
@@ -100,7 +106,7 @@ async function main(): Promise<void> {
      * primero—. Vera apagada es una circunstancia, no una violación.
      */
     try {
-      const text = await tool.run(request.params.arguments ?? {}, ask);
+      const text = await tool.run(request.params.arguments ?? {}, ask, write);
       return { content: [{ type: 'text' as const, text }] };
     } catch (trouble) {
       return {

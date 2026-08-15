@@ -11,7 +11,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { connectionFrom } from '../src/client.ts';
-import { TOOLS, outline, toolNamed, type Ask } from '../src/tools.ts';
+import { TOOLS, outline, toolNamed, type Ask, type Write } from '../src/tools.ts';
 
 /** Una Vera de mentira que anota lo que le preguntan. */
 function fakeVera(answers: Record<string, unknown>) {
@@ -25,27 +25,21 @@ function fakeVera(answers: Record<string, unknown>) {
   return { ask, asked };
 }
 
-const run = (name: string, args: Record<string, unknown>, ask: Ask): Promise<string> => {
+const run = (name: string, args: Record<string, unknown>, ask: Ask, write?: Write): Promise<string> => {
   const tool = toolNamed(name);
   assert.ok(tool !== undefined, `no existe la herramienta ${name}`);
-  return tool.run(args, ask);
+  return tool.run(args, ask, write);
 };
 
 describe('el catálogo', () => {
-  it('ninguna herramienta escribe', () => {
-    // @invariant MCPIsADoorAndNotASecondMemory. Cuando una escriba, será por una
-    // propuesta que quede escrita, y esta prueba tendrá que cambiar a mano: es
-    // el punto de que esté.
-    for (const tool of TOOLS) {
-      assert.ok(
-        !/escrib|crear|borrar|modificar/.test(tool.name),
-        `${tool.name} suena a escritura`,
-      );
-    }
+  it('ofrece una sola herramienta de escritura y ninguna de borrado', () => {
+    assert.deepEqual(TOOLS.filter((tool) => tool.readOnly === false).map((tool) => tool.name), ['vera_escribir']);
+    assert.ok(TOOLS.every((tool) => !/borrar|eliminar|descartar/.test(tool.name)));
     assert.deepEqual(
       TOOLS.map((tool) => tool.name).sort(),
       [
         'vera_buscar',
+        'vera_escribir',
         'vera_historia_bloque',
         'vera_indice',
         'vera_leer_pagina',
@@ -81,13 +75,49 @@ describe('quién soy', () => {
     assert.match(said, /read, write/);
     assert.match(said, /900 páginas/);
     // Se le dice al modelo lo que no puede hacer, o lo intenta.
-    assert.match(said, /sólo lectura/);
+    assert.match(said, /puede escribir/);
   });
 
   it('sin Vera, lo dice en vez de callarse', async () => {
     const { ask } = fakeVera({});
     const said = await run('vera_quien_soy', {}, ask);
     assert.match(said, /No pude leer eso/);
+  });
+});
+
+describe('escribir', () => {
+  it('envía una operación canónica con una clave de idempotencia', async () => {
+    const { ask } = fakeVera({});
+    const written: { origin: string; change: Record<string, unknown> }[] = [];
+    const write: Write = async (origin, change) => {
+      written.push({ origin, change });
+      return { status: 'applied', sequence: 77, subjectId: 'block:77' };
+    };
+    const said = await run('vera_escribir', {
+      origen: 'codex:tarea:1',
+      cambio: { kind: 'create_block', page: 'page:1', parent: null, position: 0, content: 'Texto' },
+    }, ask, write);
+    assert.deepEqual(written, [{
+      origin: 'codex:tarea:1',
+      change: { kind: 'create_block', page: 'page:1', parent: null, position: 0, content: 'Texto' },
+    }]);
+    assert.match(said, /Cambio aplicado/);
+    assert.match(said, /operación 77/);
+  });
+
+  it('rechaza edición y borrado antes de llamar a Vera', async () => {
+    const { ask } = fakeVera({});
+    let called = false;
+    const write: Write = async () => {
+      called = true;
+      return { status: 'applied', sequence: 1, subjectId: 'block:1' };
+    };
+    const said = await run('vera_escribir', {
+      origen: 'codex:tarea:2',
+      cambio: { kind: 'edit_block', block: 'block:1', content: 'Pisado' },
+    }, ask, write);
+    assert.equal(called, false);
+    assert.match(said, /sólo crea/);
   });
 });
 
