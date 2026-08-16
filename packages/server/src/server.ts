@@ -502,7 +502,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     ) {
       try {
         const reachable = new URL(options.reachableAt);
-        reachable.hostname = hostname();
+        const labels = reachable.hostname.split('.');
+        labels[0] = hostname().split('.')[0] ?? hostname();
+        reachable.hostname = labels.join('.');
         reachable.port = String(options.publicPreviewPort);
         reachable.pathname = '/';
         reachable.search = '';

@@ -3,7 +3,7 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { listen } from '../src/server.ts';
@@ -22,6 +22,7 @@ before(() => {
     databasePath: ':memory:',
     owner: { id: OWNER, name: 'Herbert' },
     publicSite: { title: 'Vera', canonicalDomain: 'https://vera.mediafranca.net' },
+    reachableAt: 'https://vera.tuatara-carat.ts.net',
     publicOutput: output,
     publicPreviewPort: PREVIEW_PORT,
   });
@@ -72,10 +73,15 @@ describe('publicación del sitio personal', () => {
     const configured = await configuredResponse.json() as {
       title: string;
       canonicalDomain: string;
+      previewUrl: string;
       publications: unknown[];
     };
     assert.equal(configured.title, 'Vera publicada');
     assert.equal(configured.canonicalDomain, 'https://publica.example');
+    assert.equal(
+      configured.previewUrl,
+      `https://${hostname().split('.')[0]?.toLowerCase()}.tuatara-carat.ts.net:${PREVIEW_PORT}/`,
+    );
     assert.deepEqual(configured.publications, []);
 
     const created = await write({
