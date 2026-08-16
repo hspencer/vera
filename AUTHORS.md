@@ -1,23 +1,20 @@
 # Autoría
 
 Este archivo es el **registro de autoría de Vera**. No es una lista de
-agradecimientos: es el documento que dice quién es autor, en qué proporción
-participa del fondo que recauda la
-[concesión de replicación](LICENSE-REPLICACION.md), y cómo se entra.
+agradecimientos: documenta quién responde por aportes originales y cómo se
+incorporan nuevas personas autoras.
 
 ## El registro
 
-| Autor | Desde | Participación | Rol |
-| --- | --- | ---: | --- |
-| Herbert Spencer González `<hspencer@ead.cl>` | 2026-08-01 | **100%** | Autor fundador. Specs, arquitectura, implementación. |
+| Autor | Desde | Rol |
+| --- | --- | --- |
+| Herbert Spencer González `<hspencer@ead.cl>` | 2026-08-01 | Autor fundador. Specs, arquitectura, implementación. |
 
-**Custodia:** [MediaFranca](https://mediafranca.net/) administra la licencia y el
-fondo de autoría. No es autora y no participa del fondo.
+**Custodia:** [MediaFranca](https://mediafranca.net/) administra los derechos
+patrimoniales y la licencia. No es autora.
 
 Estado al 2026-08-11, sobre `f721027`: 183 commits, 70.903 líneas vivas, 32
-especificaciones. Un solo autor. La estructura de abajo existe antes de hacer
-falta, a propósito: repartir es más fácil de acordar cuando todavía no hay nada
-que repartir.
+especificaciones. Un solo autor.
 
 ## Sobre el cálculo de autoría por commits
 
@@ -66,8 +63,7 @@ se implementa, quien escribe una spec decide *qué* hace Vera y quien la
 implementa decide *cómo*: las dos son autoría, y colapsarlas en un número
 borraría justamente la distinción que este proyecto sostiene.
 
-Esas cifras son **el insumo de la conversación, no su resultado**. Lo que reparte
-es la tabla de arriba.
+Esas cifras son **el insumo de la conversación, no su resultado**.
 
 ### Sobre el código escrito con asistencia de modelos
 
@@ -105,44 +101,21 @@ cuando se decida qué hace Vera a continuación.
    [`CONTRIBUTING.md`](CONTRIBUTING.md).
 2. Se corre `./scripts/autoria.sh` y se publica el resultado en la conversación.
 3. Herbert Spencer González, como autor fundador, y quienes ya figuren en el
-   registro **acuerdan una participación** con la persona que entra, mirando las
-   cifras y todo lo que las cifras no ven.
+   registro acuerdan con la persona cómo describir su aporte, mirando las cifras
+   y todo lo que las cifras no ven.
 4. El acuerdo se escribe **aquí**, en un commit propio, con fecha. Es el único
    sitio donde existe.
 
 No hay fórmula, y no la va a haber. Lo que hay es que el acuerdo se escribe, se
 firma en el historial y queda público.
 
-### Reglas del reparto
+## Derechos y licencia
 
-- **La suma es siempre 100%.** Incorporar a alguien diluye a todos los demás en
-  proporción, salvo que el acuerdo diga otra cosa.
-- **La participación fundacional no baja del 50%** sin acuerdo escrito y expreso
-  de Herbert Spencer González. Vera existe porque alguien la escribió entera
-  antes de que hubiera nada que repartir.
-- **Revisión anual**, en enero, con las cifras del año a la vista. Quien no haya
-  participado en veinticuatro meses puede ver reducida su participación por
-  acuerdo del resto; no se elimina, porque lo que escribió sigue ahí.
-- **La participación no se vende ni se transfiere en vida.** Se transmite por
-  causa de muerte según la ley aplicable a cada autor.
-- **Ninguna regla de esta sección toca la autoría.** La participación es sobre el
-  fondo; la autoría es de quien escribió, para siempre, y es inalienable —Ley
-  17.336, artículos 14 y 16—. Alguien puede llegar a 0% del fondo y seguir siendo
-  autor de Vera.
-
-## El fondo de autoría
-
-Lo que recaude §5 de la [concesión de replicación](LICENSE-REPLICACION.md) entra
-a un fondo que MediaFranca administra y **reparte según la tabla de arriba**,
-vigente al cierre de cada trimestre.
-
-- MediaFranca **publica anualmente** cuánto entró, de quién, y cómo se repartió.
-- MediaFranca **no participa** del fondo. Puede descontar los costos directos y
-  documentados de administrarlo y de defender la licencia, y debe declararlos.
-- Un autor puede **ceder su parte al mantenimiento** de Vera, por escrito y por
-  el período que decida.
-
-Hoy el fondo está en cero: no hay operadores comerciales declarados.
+Cada persona conserva la autoría y los derechos sobre su contribución, que se
+publica como parte de Vera bajo `AGPL-3.0-only`. Contribuir no cede derechos
+patrimoniales a MediaFranca ni crea un fondo o participación económica. La
+autoría permanece aunque una persona deje de participar —Ley 17.336, artículos
+14 y 16—.
 
 ## Reconocimientos
 

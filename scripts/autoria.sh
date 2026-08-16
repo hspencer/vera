@@ -8,8 +8,7 @@
 # de las tres sería una cuarta cifra que no mide nada y que, por venir de un
 # script, parecería objetiva.
 #
-# Lo que reparte el fondo de autoría es AUTHORS.md, que se escribe conversando.
-# Esto es lo que se lee antes de esa conversación.
+# AUTHORS.md registra la autoría; estas medidas sólo informan esa conversación.
 #
 #   ./scripts/autoria.sh              # sobre HEAD
 #   ./scripts/autoria.sh v0.3.0       # sobre una referencia

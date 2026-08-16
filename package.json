@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Memoria personal soberana: corpus versionado, editable, replicable y auditable",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=24"
   },

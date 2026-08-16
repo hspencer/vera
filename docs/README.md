@@ -49,7 +49,7 @@ Fuera de `docs/`, en la raíz:
 | **[ROADMAP.md](../ROADMAP.md)** | Los tres horizontes: que la mano no espere, que la espera se vea, y la federación. |
 | **[LICENCIA.md](../LICENCIA.md)** | Qué se puede y qué no, y por qué esta licencia y no otra. |
 | **[AUTHORS.md](../AUTHORS.md)** | El registro de autoría, cómo se entra, y por qué no existe un cálculo estándar por commits. |
-| **[LICENSE](../LICENSE)** · **[LICENSE-REPLICACION.md](../LICENSE-REPLICACION.md)** · **[NOTICE](../NOTICE)** | Los textos que obligan. |
+| **[LICENSE](../LICENSE)** · **[NOTICE](../NOTICE)** | La licencia del programa y los avisos de terceros. |
 
 ---
 

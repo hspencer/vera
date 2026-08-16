@@ -484,9 +484,8 @@ propietario, exponer Vera fuera de la máquina es exponer la firma.
 
 ## Lo que deliberadamente no está en esta hoja de ruta
 
-- **Una nube de Vera.** No hay un servicio central planeado, y la licencia está
-  escrita para que cualquiera pueda alojar el suyo — ver
-  [`LICENSE-REPLICACION.md`](LICENSE-REPLICACION.md). Si algún día existe una
+- **Una nube de Vera.** No hay un servicio central planeado, y AGPL permite que
+  cualquiera aloje el suyo conservando la reciprocidad del código. Si algún día existe una
   instancia alojada de MediaFranca, será una más y no la principal.
 - **Un modelo propio, ni entrenamiento con corpus ajenos.** Vera usa modelos que
   corren en la máquina de quien la habita. Lo que se escribe en un Vera no

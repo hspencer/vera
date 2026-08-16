@@ -266,18 +266,23 @@ incrustaciones; y todo lo que decide qué página es pública.
 
 ## 8. Contribuir y autoría
 
-Al enviar un cambio aceptas dos cosas, sin firmar nada más:
+Al enviar un cambio declaras tres cosas, sin CLA ni cesión adicional:
 
-1. **Tu contribución entra bajo la licencia del proyecto** —PolyForm
-   Noncommercial 1.0.0 y su [concesión de replicación](LICENSE-REPLICACION.md).
+1. **Tu contribución entra bajo la licencia del proyecto:** `AGPL-3.0-only`.
 2. **Conservas tu autoría** sobre lo que escribiste, y puedes pasar a figurar en
-   [`AUTHORS.md`](AUTHORS.md), que es donde se define la participación en el
-   fondo de royalty.
+   [`AUTHORS.md`](AUTHORS.md).
+3. **Tienes derecho a aportar ese material** y a conceder esos permisos; no
+   incorporas código incompatible ni secretos o corpus de terceros.
 
 No hay cesión de derechos patrimoniales a MediaFranca por contribuir. Quién entra
-al registro de autoría, con qué criterio y con qué participación está en
-[`AUTHORS.md`](AUTHORS.md). Por qué la licencia es la que es está en
+al registro de autoría y con qué criterio está en [`AUTHORS.md`](AUTHORS.md).
+Por qué la licencia es la que es está en
 [`LICENCIA.md`](LICENCIA.md).
+
+El proyecto aplica *inbound = outbound*: las contribuciones aceptadas reciben la
+misma licencia AGPL que el resto. No existe hoy licencia dual. Relicenciar una
+contribución bajo términos incompatibles requeriría el consentimiento de su
+titular.
 
 ## 9. Levantar una instancia para trabajar
 

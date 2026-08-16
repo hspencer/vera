@@ -300,6 +300,24 @@ Los paquetes previstos para las fases siguientes —medios, sincronización,
 importadores de Jekyll y Zotero, y el sitio público— se agregarán cuando exista
 el comportamiento que los justifique, no antes.
 
+## Frontera de licencia
+
+El monorepo y todos los paquetes `@vera/*` forman hoy un solo programa bajo
+`AGPL-3.0-only`. La frontera arquitectónica entre núcleo, superficies, puerta
+MCP e importadores no es una excepción de licencia: distribuir u operar por red
+una versión modificada debe conservar la reciprocidad que corresponda.
+
+Un futuro SDK, protocolo o plantilla de extensiones podría publicarse con una
+licencia permisiva para facilitar interoperabilidad, pero sólo mediante una
+decisión explícita, un paquete claramente separado y su propio archivo de
+licencia. Hasta entonces no existe esa excepción. Los plugins independientes
+no pasan a ser AGPL por el solo hecho de hablar un protocolo; su compatibilidad
+jurídica dependerá de cómo se vinculen y distribuyan, y debe auditarse antes de
+incorporarlos.
+
+Esta frontera no alcanza el corpus: notas, medios y datos de cada instalación
+son contenido de su propietario, no parte del programa.
+
 ## Decisiones deliberadamente diferidas
 
 - sintaxis de superficie del lenguaje de queries y su parser;

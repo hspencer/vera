@@ -415,6 +415,11 @@ Un monorepo de npm workspaces, en TypeScript, sin paso de build fuera de la PWA:
 | `@vera/mcp` | la puerta MCP: un proceso por cliente, sobre entrada y salida estándar |
 | `@vera/web` | el espacio de trabajo: outliner, grafo 2D y 3D, búsqueda, PWA |
 
+Todos estos paquetes forman actualmente un solo programa bajo
+`AGPL-3.0-only`. No hay una excepción implícita para MCP, la interfaz o futuros
+plugins. La frontera y las posibles licencias separadas para un SDK todavía no
+construido se explican en [la arquitectura](docs/architecture.md#frontera-de-licencia).
+
 `operations` es el registro canónico; las tablas de estado son su
 materialización y los índices derivados son reconstruibles. Nada fuera de
 `submitOperation()` escribe en ellas.
@@ -715,23 +720,14 @@ hspencer@ead.cl.
 
 ## Licencia y autoría
 
-Vera es **fuente disponible, no open source**, y conviene decirlo con todas las
-letras.
-
-- **Sin fines de lucro: libre.** Usarla, leerla, estudiarla, modificarla,
-  compartirla y publicar un fork. Incluidas escuelas, universidades, ONG,
-  organismos públicos y proyectos de investigación, expresamente.
-- **Con fines de lucro: no**, salvo una excepción.
-- **La excepción es replicar el servicio.** Cualquiera puede levantar máquinas y
-  cobrar por alojar Vera para otras personas, con cuatro condiciones: atribución
-  visible, publicar el código de lo que opera, garantizar a cada usuario la
-  exportación completa de su corpus en cualquier momento, y un **5% de royalty**
-  a los autores, exento bajo USD 10.000 anuales.
+Vera es **software libre y open source** bajo `AGPL-3.0-only`. Cualquiera puede
+usarla, estudiarla, modificarla y redistribuirla, también comercialmente. Quien
+distribuya una versión modificada o permita usarla por red debe ofrecer a esas
+personas el código fuente correspondiente bajo la misma licencia.
 
 | | |
 | --- | --- |
-| [LICENSE](LICENSE) | PolyForm Noncommercial License 1.0.0, sin modificar. |
-| [LICENSE-REPLICACION.md](LICENSE-REPLICACION.md) | La concesión de replicación del servicio, con sus condiciones y su royalty. |
+| [LICENSE](LICENSE) | GNU Affero General Public License v3.0 only. |
 | [LICENCIA.md](LICENCIA.md) | Qué se puede y qué no, y por qué esta licencia y no otra. |
 | [AUTHORS.md](AUTHORS.md) | El registro de autoría y cómo se entra a él. |
 | [NOTICE](NOTICE) | Los avisos que toda copia debe conservar. |
@@ -741,8 +737,7 @@ enumera las facultades morales del autor en su artículo 14 y las declara
 inalienables en el 16, siendo nulo cualquier pacto en contrario.
 
 **Custodia:** [MediaFranca](https://mediafranca.net/) administra los derechos
-patrimoniales, la licencia y el fondo de autoría. No es autora y no participa del
-fondo.
+patrimoniales y la licencia. No es autora.
 
 **El corpus no es del repositorio.** `data/`, `objects/` y `.env` están fuera de
 git desde el primer commit. Clonar Vera da el programa, no la memoria de nadie, y
