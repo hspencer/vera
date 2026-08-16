@@ -1082,6 +1082,10 @@ input {
   color: var(--text-dim);
 }
 
+.properties[hidden] {
+  display: none;
+}
+
 .properties dt {
   color: var(--accent);
 }

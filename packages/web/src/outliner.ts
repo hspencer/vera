@@ -119,6 +119,9 @@ const corpusNames = (): typeof names => names;
  */
 let embedHosts: readonly string[] = [];
 
+/** Preferencia local de lectura: nunca cambia ni vuelve a publicar la página. */
+let publicPropertiesVisible = false;
+
 export function allowEmbedsFrom(hosts: readonly string[]): void {
   embedHosts = [...hosts];
 }
@@ -2711,6 +2714,7 @@ export function renderOutliner(
   // El front matter no es decoración: son propiedades del grafo, y se editan.
   const properties = document.createElement('dl');
   properties.className = 'properties';
+  properties.hidden = readOnly && !publicPropertiesVisible;
 
   /*
    * Público o privado, entre las demás propiedades y no en un botón aparte.
@@ -3371,6 +3375,13 @@ export function renderOutliner(
     event.stopPropagation();
     if (readOnly) {
       openBlockMenu(more, [[
+        {
+          label: publicPropertiesVisible ? 'ocultar propiedades' : 'mostrar propiedades',
+          run: () => {
+            publicPropertiesVisible = !publicPropertiesVisible;
+            properties.hidden = !publicPropertiesVisible;
+          },
+        },
         {
           label: 'Copiar el Markdown de la página',
           icon: 'copy',

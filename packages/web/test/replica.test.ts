@@ -141,6 +141,32 @@ describe('sembrar la réplica', () => {
 });
 
 describe('aplicar en casa', () => {
+  it('tabular un padre lleva el mismo subárbol plegado o desplegado', () => {
+    const blocks: PageView['blocks'] = [
+      { stableId: 'block:a', parent: null, position: 0, content: 'encima' },
+      { stableId: 'block:b', parent: null, position: 1, content: 'padre' },
+      { stableId: 'block:b1', parent: 'block:b', position: 0, content: 'hijo' },
+      { stableId: 'block:b1a', parent: 'block:b1', position: 0, content: 'nieto' },
+    ];
+    const indent = (folded: string[]) => {
+      const replica = seed(view({ blocks, folded }));
+      const said = applyLocally(
+        replica,
+        { kind: 'move_block', block: 'block:b', page: 'page:1', parent: 'block:a', position: 0 },
+        'local:tab',
+      );
+      assert.equal(said.kind, 'applied');
+      return said.kind === 'applied' ? said.blocks : [];
+    };
+
+    const open = indent([]);
+    const folded = indent(['block:b']);
+    assert.deepEqual(folded, open);
+    assert.equal(open.find((one) => one.stableId === 'block:b')?.parent, 'block:a');
+    assert.equal(open.find((one) => one.stableId === 'block:b1')?.parent, 'block:b');
+    assert.equal(open.find((one) => one.stableId === 'block:b1a')?.parent, 'block:b1');
+  });
+
   it('un bloque nuevo nace con el nombre que se le dio, sin preguntar', () => {
     const replica = seed(view());
     const said = applyLocally(

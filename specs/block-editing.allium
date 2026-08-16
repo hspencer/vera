@@ -133,8 +133,10 @@ contract OutlineManipulation {
         -- declared for the ordinary case and no migration exists.
 
     @invariant SubtreesTravelWithTheirRoot
-        -- Moving a block moves everything under it. A block never overtakes its
-        -- own children, and no child is left behind at the old position.
+        -- Moving or indenting a block moves its whole descendant subtree while
+        -- preserving every parent-child relationship within it. The result is
+        -- identical whether the root was expanded or collapsed: a fold changes
+        -- what is visible, never which descendants travel with their root.
 
     @invariant FoldingIsNotAChange
         -- Collapsing is what one participant is looking at, not what the graph

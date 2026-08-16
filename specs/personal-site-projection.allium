@@ -183,6 +183,7 @@ entity PublicWorkspace {
     graph_view: workspace/GraphViewMode
     colour_scheme: workspace/ColourScheme
     reach: Integer
+    properties_visible: Boolean
     folded_blocks: Set<core/Block>
     local_tokens: List<PublicTokenOverride>
     navigation_history: List<core/Publication>
@@ -285,6 +286,7 @@ rule PublicReadingOpensInVera {
         graph_view: graph_2d,
         colour_scheme: dark,
         reach: 1,
+        properties_visible: false,
         folded_blocks: {},
         local_tokens: [],
         navigation_history: append([], entry),
@@ -337,6 +339,15 @@ rule AnybodyChangesPublicColourScheme {
     requires: public_workspace.reading.identity = reader
 
     ensures: public_workspace.colour_scheme = scheme
+}
+
+rule AnybodyChoosesWhetherToSeePublicProperties {
+    when: SetPublicPropertiesVisible(reader, public_workspace, visible)
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+
+    ensures: public_workspace.properties_visible = visible
 }
 
 rule AnybodyChangesALocalPublicToken {
@@ -805,6 +816,10 @@ surface PublicVeraWorkspace {
         public_workspace.graph_view
         public_workspace.colour_scheme
         public_workspace.reach
+        public_workspace.properties_visible
+        for property in public_page_properties(public_workspace.active_publication):
+            property.key when public_workspace.properties_visible
+            property.value when public_workspace.properties_visible
         for block in public_workspace.folded_blocks:
             block.stable_id
         public_workspace.local_tokens
@@ -822,6 +837,7 @@ surface PublicVeraWorkspace {
         ChangePublicGraphView(reader, public_workspace, mode)
         ChangePublicReach(reader, public_workspace, reach)
         ChangePublicColourScheme(reader, public_workspace, scheme)
+        SetPublicPropertiesVisible(reader, public_workspace, visible)
         SetPublicLocalToken(reader, public_workspace, name, value)
         SetPublicBlockFolded(reader, public_workspace, block, folded)
         NavigatePublicSite(reader, public_workspace, publication)
@@ -864,6 +880,17 @@ surface PublicVeraWorkspace {
     @guarantee PublicFoldingKeepsTheReadingPlace
         -- Folding or unfolding a published branch preserves its visible place
         -- in the viewport as well as any focus or caret that remains visible.
+
+    @guarantee PublicPropertiesBeginHidden
+        -- Page properties are hidden or collapsed when an `anybody` reading
+        -- session begins. The page menu then offers `mostrar propiedades`; while
+        -- they are shown it presents them with Vera's existing property
+        -- presentation and names the same switch `ocultar propiedades`.
+
+    @guarantee PublicPropertyVisibilityIsLocalReadingState
+        -- Showing or hiding properties changes only this PublicWorkspace. It
+        -- creates no graph mutation, publication, revision, operation or shared
+        -- preference, and it never enlarges which properties `anybody` may read.
 }
 
 -- The eye/map panel is where the owner already decides how much of the graph is
