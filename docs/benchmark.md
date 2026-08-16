@@ -25,6 +25,44 @@ Se distinguen tres estados de Vera:
 - **Parcial:** existe un camino completo limitado o falta una superficie.
 - **Visión:** está argumentado o especificado, pero todavía no existe.
 
+## Cómo se presentan
+
+Las portadas no venden arquitecturas completas. Cada producto elige una promesa
+que cabe en una respiración y usa sus funciones como prueba:
+
+- **Anytype:** «un refugio seguro para la colaboración digital»; propiedad,
+  privacidad y funcionamiento sin conexión.
+- **Notion:** «donde equipos y agentes piensan juntos»; captura, respuestas y
+  automatización dentro de un único espacio de trabajo con IA.
+- **SilverBullet:** notas privadas, autoalojadas y programables; convierte un
+  editor Markdown en un sistema que crece con quien lo usa.
+- **Logseq:** una base de conocimiento abierta y centrada en la privacidad;
+  subraya longevidad y control de la persona.
+- **Roam Research:** una herramienta para el pensamiento en red; promete la
+  facilidad de una lista y la potencia relacional de una base de grafos.
+- **Obsidian:** «afina tu pensamiento»; pensamientos privados en archivos que
+  pertenecen a la persona y deberían durar.
+- **AFFiNE:** una base de conocimiento abierta que unifica documentos, lienzos y
+  colaboración, con despliegue privado como opción empresarial.
+- **Tana Outliner:** «tus notas, con superpoderes»; captura rápida que se vuelve
+  conocimiento estructurado mediante nodos, supertags e IA.
+- **Capacities:** «un estudio para tu mente»; sustituye carpetas por objetos
+  conectados y promete exportación sin encierro.
+
+El espacio semántico está concurrido: privacidad, pensamiento, conexiones,
+productividad e IA ya son lemas genéricos. La diferencia comunicable de Vera es
+la combinación que los otros no ponen en el centro: **humanos y agentes pueden
+transformar una memoria común sin que esta pierda dueño, historia ni
+responsabilidad**.
+
+### Discurso breve de Vera
+
+> **Vera es una memoria viva para pensar con personas y agentes sin entregar el
+> control del conocimiento. Reúne notas, fuentes, medios y recorridos en un
+> grafo propio; conserva quién hizo cada cambio; y permite publicar sólo lo que
+> decides. No es un asistente que mira tu memoria desde afuera: es la casa
+> verificable donde esa memoria vive, cambia y puede circular.**
+
 ## Veredicto
 
 No hay una herramienta que reúna exactamente el contrato de Vera, pero casi
