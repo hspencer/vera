@@ -64,6 +64,14 @@ describe('routeTo', () => {
     assert.equal(routeTo(page), '/p/Lectogram');
   });
 
+  it('usa la dirección canónica limpia en el sitio público', () => {
+    assert.equal(routeTo(page, { publicPath: 'lectogram' }), '/lectogram/');
+    assert.equal(
+      routeTo(page, { publicPath: 'ensayos/lectogram', block: 'block:2' }),
+      '/ensayos/lectogram/#block%3A2',
+    );
+  });
+
   it('codifica lo que rompería la ruta', () => {
     const raro = { id: 'page:1', title: 'Uno / Dos ¿tres?' };
     const url = routeTo(raro);

@@ -13,6 +13,8 @@ export interface PageSummary {
   id: string;
   title: string;
   visibility: 'private' | 'public';
+  /** Ruta canónica sólo en el sitio público; nula en la memoria privada. */
+  publicationPath?: string | null;
   blockCount: number;
   linkCount: number;
 }

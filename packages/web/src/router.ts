@@ -55,8 +55,18 @@ export function parseRoute(url: URL): Route {
  */
 export function routeTo(
   page: { id: string; title: string },
-  options: { focus?: string | null; block?: string | null } = {},
+  options: { focus?: string | null; block?: string | null; publicPath?: string | null } = {},
 ): string {
+  if (options.publicPath != null && options.publicPath !== '') {
+    let url = `/${options.publicPath.replace(/^\/+|\/+$/g, '')}/`;
+    if (options.focus != null && options.focus !== '') {
+      url += `?focus=${encodeURIComponent(options.focus)}`;
+    }
+    if (options.block != null && options.block !== '') {
+      url += `#${encodeURIComponent(options.block)}`;
+    }
+    return url;
+  }
   // Sin título utilizable se cae a la identidad, que siempre resuelve.
   const named = page.title.trim() === '' ? page.id : page.title;
   let url = `/p/${encodeURIComponent(named)}`;

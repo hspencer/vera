@@ -480,6 +480,19 @@ export function createVeraServer(options: ServerOptions): VeraServer {
 
   const isPublicPage = (page: string): boolean => publicPageIds().has(page);
 
+  /** La publicación que ocupa una ruta canónica legible del sitio. */
+  const publicationAtPath = (pathname: string) => {
+    const site = publicSite();
+    if (site === undefined) return undefined;
+    let wanted: string;
+    try {
+      wanted = decodeURIComponent(pathname).replace(/^\/+|\/+$/g, '');
+    } catch {
+      return undefined;
+    }
+    return graph.publicationsOf(site.id).find((publication) => publication.path === wanted);
+  };
+
   /** Sólo los objetos nombrados desde una publicación explícita pueden salir. */
   const publicMediaHashes = (): ReadonlySet<string> =>
     new Set(
@@ -1037,6 +1050,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     }
 
     if (publicAccess) {
+      const canonicalPublication = publicationAtPath(path);
       const safe =
         path === '/' ||
         path === '/health' ||
@@ -1048,6 +1062,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         path.startsWith('/graph/') ||
         path.startsWith('/media/') ||
         path.startsWith('/p/') ||
+        canonicalPublication !== undefined ||
         path.startsWith('/build/') ||
         /^\/(?:manifest\.webmanifest|sw\.js|favicon\.ico|apple-touch-icon\.png|icon-[^/]+|fonts\/)/.test(path);
       if (!safe) {
@@ -3909,6 +3924,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             id: page.id,
             title: page.title,
             visibility: page.visibility,
+            publicationPath: publicAccess
+              ? graph.publicationsOf(publicSite()?.id ?? '').find((one) => one.page === page.id)?.path ?? null
+              : null,
             blockCount: graph.blocksOf(page.id).length,
             // Cuántas aristas toca. El cliente lo usa para no abrir de entrada
             // una página aislada, que se vería como un grafo vacío.

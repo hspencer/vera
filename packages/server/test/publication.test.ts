@@ -184,8 +184,11 @@ describe('publicación del sitio personal', () => {
     const visible = await fetch(`${previewBase}/pages`).then((response) => response.json()) as {
       id: string;
       title: string;
+      publicationPath: string | null;
     }[];
     assert.deepEqual(visible.map((one) => one.id), [page]);
+    assert.equal(visible[0]?.publicationPath, 'vera');
+    assert.equal((await fetch(`${previewBase}/vera/`)).status, 200);
     assert.equal((await fetch(`${previewBase}/pages/${encodeURIComponent(hidden.subjectId)}`)).status, 404);
     assert.equal((await fetch(`${previewBase}/exposures`)).status, 404);
     assert.equal((await fetch(`${previewBase}/operations`, { method: 'POST' })).status, 405);

@@ -880,7 +880,11 @@ async function openPage(
   // aquí: entonces escribirla otra vez apilaría una entrada por navegación y el
   // botón de atrás dejaría de deshacer un paso.
   if (options.fromUrl !== true) {
-    const url = routeTo(page, { focus: workspace.focusRoot, block: options.reveal ?? null });
+    const url = routeTo(page, {
+      focus: workspace.focusRoot,
+      block: options.reveal ?? null,
+      publicPath: isAnybody() ? (page.publication?.path ?? null) : null,
+    });
     if (window.location.pathname + window.location.search + window.location.hash !== url) {
       if (options.replaceRoute === true) window.history.replaceState({}, '', url);
       else window.history.pushState({}, '', url);
@@ -1244,7 +1248,24 @@ async function applyRoute(): Promise<void> {
     await openFilesAdministration();
     return;
   }
-  const route = parseRoute(new URL(window.location.href));
+  const here = new URL(window.location.href);
+  let route = parseRoute(here);
+  if (route.page === null && isAnybody() && here.pathname !== '/') {
+    let asked = '';
+    try {
+      asked = decodeURIComponent(here.pathname).replace(/^\/+|\/+$/g, '');
+    } catch {
+      asked = '';
+    }
+    const publication = pages.find((page) => page.publicationPath === asked);
+    if (publication !== undefined) {
+      route = {
+        page: publication.id,
+        focus: here.searchParams.get('focus'),
+        block: here.hash === '' ? null : decodeURIComponent(here.hash.slice(1)),
+      };
+    }
+  }
   if (route.page === null) {
     // La raíz es hoy. Antes era la página más conectada del corpus, que es una
     // buena portada y un mal sitio donde llegar: para escribir algo había que
