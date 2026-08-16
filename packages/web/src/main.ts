@@ -2419,7 +2419,8 @@ function wireTheme(): void {
       onScheme: (next) => {
         if (next === workspace.scheme) return;
         workspace.scheme = next;
-        session.setScheme(next);
+        if (isAnybody()) session.setPublicScheme(next);
+        else session.setScheme(next);
         applyTokens(tokens, next);
         void refreshGraph();
         // Se redibuja la página: el texto sigue al tema por variables CSS, pero
@@ -2726,7 +2727,7 @@ async function start(): Promise<void> {
   void syncPresentation().then((changed) => {
     if (!changed) return;
     tokens = loadTokens();
-    workspace.scheme = session.scheme();
+    workspace.scheme = isAnybody() ? session.publicScheme() : session.scheme();
     workspace.layout = session.layout();
     workspace.graphView = session.graphView();
     workspace.divider = session.divider();
@@ -2772,7 +2773,11 @@ async function start(): Promise<void> {
   try {
     corpus = await api.health();
     document.documentElement.dataset['access'] = corpus.access ?? 'owner';
-    if (isAnybody()) workspace.trace = [];
+    if (isAnybody()) {
+      workspace.trace = [];
+      workspace.scheme = session.publicScheme();
+      applyTokens(tokens, workspace.scheme);
+    }
     drawAudienceControl();
     if (isAnybody()) {
       $('#brand').title = 'Portada publicada';

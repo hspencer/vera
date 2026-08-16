@@ -135,6 +135,7 @@ export const DEFAULT_TOKENS: DesignToken[] = [
 
 const TOKENS_KEY = 'vera.tokens';
 const SCHEME_KEY = 'vera.scheme';
+const PUBLIC_SCHEME_KEY = 'vera.publicScheme';
 const DIVIDER_KEY = 'vera.divider';
 const LAYOUT_KEY = 'vera.layout';
 const VIEW_KEY = 'vera.graphView';
@@ -270,6 +271,12 @@ export const session = {
     localStorage.setItem(SCHEME_KEY, scheme);
     void push({ colourScheme: scheme });
   },
+
+  // La lectura pública nace oscura y recuerda su elección sólo en este origen.
+  // No comparte ni escribe la preferencia del dueño.
+  publicScheme: (): ColourScheme =>
+    (localStorage.getItem(PUBLIC_SCHEME_KEY) as ColourScheme | null) ?? 'dark',
+  setPublicScheme: (scheme: ColourScheme) => localStorage.setItem(PUBLIC_SCHEME_KEY, scheme),
 
   divider: (): number => Number(localStorage.getItem(DIVIDER_KEY) ?? '0.5'),
   setDivider: (at: number) => {

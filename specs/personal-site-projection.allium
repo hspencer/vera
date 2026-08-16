@@ -279,7 +279,7 @@ rule PublicReadingOpensInVera {
         layout: split,
         split_divider_position: 0.5,
         graph_view: graph_2d,
-        colour_scheme: light,
+        colour_scheme: dark,
         reach: 1,
         folded_blocks: {},
         local_tokens: [],
