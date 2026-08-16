@@ -1,6 +1,6 @@
 {
   "name": "@vera/mcp",
-  "version": "0.6.0",
+  "version": "0.6.0-alpha.1",
   "private": true,
   "type": "module",
   "description": "La puerta MCP de Vera: una memoria que otras inteligencias pueden leer y escribir con identidad",

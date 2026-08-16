@@ -62,6 +62,13 @@ Esta es una alfa en desarrollo activo, usable sobre un corpus real de más de mi
 páginas y decenas de miles de bloques, para **un grafo y una persona**. No es un
 producto terminado y no está pensada todavía para varios usuarios.
 
+> **Alfa de investigación, no servicio listo para producción.** La aplicación
+> privada debe permanecer en loopback, detrás de una frontera de red autenticada.
+> Las personas todavía no se autentican ante Vera: exponer directamente su
+> puerto privado permite que una petición sin credencial opere como la persona
+> propietaria. Consulta [SECURITY.md](SECURITY.md) antes de instalar o reportar
+> un hallazgo.
+
 Al momento de escribir esta versión:
 
 | Medida | Valor |

@@ -1,6 +1,6 @@
 {
   "name": "@vera/core",
-  "version": "0.6.0",
+  "version": "0.6.0-alpha.1",
   "private": true,
   "type": "module",
   "description": "Dominio de Vera: tipos, reglas e invariantes derivados de specs/*.allium",
