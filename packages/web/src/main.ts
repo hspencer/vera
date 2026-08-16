@@ -1984,7 +1984,7 @@ function drawTrail(): void {
     const clear = document.createElement('button');
     clear.type = 'button';
     clear.className = 'trail-clear';
-    clear.innerHTML = icon('trash-2');
+    clear.innerHTML = icon('wash-dryclean-off');
     clear.title = 'limpiar rastro';
     clear.setAttribute('aria-label', 'limpiar rastro');
     clear.addEventListener('click', () => {

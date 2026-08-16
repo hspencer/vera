@@ -1,9 +1,8 @@
 // Iconos de la interfaz.
 //
-// Son Feather (https://feathericons.com), de Cole Bemis, bajo licencia MIT. El
-// trazo va copiado literal desde el paquete original: no se redibuja a ojo,
-// porque un icono redibujado deja de ser el de la familia y empieza a
-// desalinearse del resto.
+// La interfaz migra a Tabler Icons (https://tabler.io/icons), bajo licencia
+// MIT. Los pictogramas nuevos conservan el lienzo original de 24 × 24 y Vera
+// gobierna su trazo fino de forma centralizada.
 //
 // Van aquí dentro y no en una CDN, por lo mismo que las tipografías: una
 // memoria privada no debería pedirle nada a un tercero cada vez que se abre.
@@ -39,15 +38,8 @@ const SHAPES = {
     '<line x1="21" y1="21" x2="16.65" y2="16.65"/>',
 
   settings:
-    '<circle cx="12" cy="12" r="3"/>' +
-    '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 ' +
-    '1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 ' +
-    '19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 ' +
-    '.33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 ' +
-    '0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 ' +
-    '1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 ' +
-    '1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 ' +
-    '0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    '<path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/>' +
+    '<path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/>',
 
   sun:
     '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/>' +
@@ -59,9 +51,8 @@ const SHAPES = {
   moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
 
   mic:
-    '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>' +
-    '<path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>' +
-    '<line x1="8" y1="23" x2="16" y2="23"/>',
+    '<path d="M9 5a3 3 0 0 1 3 -3a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3a3 3 0 0 1 -3 -3l0 -5"/>' +
+    '<path d="M5 10a7 7 0 0 0 14 0"/><path d="M8 21l8 0"/><path d="M12 17l0 4"/>',
 
   x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
 
@@ -119,7 +110,8 @@ const SHAPES = {
     '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>',
 
   eye:
-    '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+    '<path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/>' +
+    '<path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6"/>',
 
   // El ojo tachado: lo que está guardado y no se está mirando. La raya cruza
   // entero el icono para que la diferencia se vea de reojo y no haya que fijarse.
@@ -141,23 +133,22 @@ const SHAPES = {
     '<line x1="13.13" y1="14.55" x2="16.13" y2="9.45"/>' +
     '<line x1="7.88" y1="9.45" x2="10.88" y2="14.55"/>',
 
-  // El mapa: una constelación. Es el «ante», lo general, desde donde uno se ubica.
+  // Tabler topology-star-3: la vista del mapa.
   map:
-    '<line x1="5.14" y1="10.13" x2="8.36" y2="9.56"/>' +
-    '<polyline points="5.18 14.81 12.08 12.75 8.36 9.56 8.51 6.45"/>' +
-    '<polyline points="14.25 18.45 11.93 15.53 7.61 18.26"/>' +
-    '<polyline points="13.13 8.66 12.08 12.75 15 13.28"/>' +
-    '<line x1="12.08" y1="12.75" x2="11.93" y2="15.53"/>' +
-    '<polyline points="11.18 5.55 13.13 8.66 15.04 6.75"/>' +
-    '<polyline points="17.7 9.49 15 13.28 18.11 16.13"/>' +
-    '<line x1="18.86" y1="12.56" x2="15" y2="13.28"/>',
+    '<path d="M10 19a2 2 0 1 0 -4 0a2 2 0 0 0 4 0"/>' +
+    '<path d="M18 5a2 2 0 1 0 -4 0a2 2 0 0 0 4 0"/>' +
+    '<path d="M10 5a2 2 0 1 0 -4 0a2 2 0 0 0 4 0"/>' +
+    '<path d="M6 12a2 2 0 1 0 -4 0a2 2 0 0 0 4 0"/>' +
+    '<path d="M18 19a2 2 0 1 0 -4 0a2 2 0 0 0 4 0"/>' +
+    '<path d="M14 12a2 2 0 1 0 -4 0a2 2 0 0 0 4 0"/>' +
+    '<path d="M22 12a2 2 0 1 0 -4 0a2 2 0 0 0 4 0"/>' +
+    '<path d="M6 12h4M14 12h4M15 7l-2 3M9 7l2 3M11 14l-2 3M13 14l2 3"/>',
 
-  // Los dos juntos: un pliego abierto. El mapa a la izquierda y el texto a la
-  // derecha son las dos páginas de una misma extensión.
+  // Tabler book: la vista híbrida.
   spread:
-    '<path d="M12,8.21s3.38-1.5,6.15-1.5v9.94c-2.78,0-6.15,1.5-6.15,1.5,0,0-3.38-1.5-6.15-1.5v-9.94' +
-    'c2.78,0,6.15,1.5,6.15,1.5Z"/>' +
-    '<line x1="12" y1="18.15" x2="12" y2="8.21"/>',
+    '<path d="M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0"/>' +
+    '<path d="M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0"/>' +
+    '<path d="M3 6l0 13M12 6l0 13M21 6l0 13"/>',
 
   // Salir hacia allá. En el mapa, la flecha que aparece al lado de un nombre:
   // señalar un nodo es mirarlo, y esto es lo que hay que pulsar para entrar.
@@ -165,12 +156,15 @@ const SHAPES = {
     '<line x1="7" y1="17" x2="17" y2="7"/>' +
     '<polyline points="7 7 17 7 17 17"/>',
 
-  // El texto: el «dentro», lo particular, donde se lee y se escribe.
+  // Tabler article: la vista de sólo texto.
   text:
-    '<line x1="6.6" y1="7.69" x2="17.4" y2="7.69"/>' +
-    '<line x1="6.6" y1="10.58" x2="14.51" y2="10.58"/>' +
-    '<line x1="6.6" y1="13.43" x2="17.4" y2="13.43"/>' +
-    '<line x1="6.6" y1="16.31" x2="14.51" y2="16.31"/>',
+    '<path d="M3 6a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2l0 -12"/>' +
+    '<path d="M7 8h10M7 12h10M7 16h10"/>',
+
+  // Tabler wash-dryclean-off: vaciar el rastro local.
+  'wash-dryclean-off':
+    '<path d="M20.048 16.033a9 9 0 0 0 -12.094 -12.075m-2.321 1.682a9 9 0 0 0 12.733 12.723"/>' +
+    '<path d="M3 3l18 18"/>',
 
   'align-left':
     '<line x1="5" y1="6" x2="19" y2="6"/>' +
@@ -287,7 +281,7 @@ export function icon(name: IconName, options: IconOptions = {}): string {
   const extra = options.className === undefined ? '' : ` ${options.className}`;
   return (
     `<svg class="icon icon-${name}${extra}" viewBox="0 0 24 24" fill="none" ` +
-    'stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
+    'stroke="currentColor" stroke-width="1" stroke-linecap="round" ' +
     `stroke-linejoin="round" aria-hidden="true" focusable="false"><g${turn}>${SHAPES[name]}</g></svg>`
   );
 }
