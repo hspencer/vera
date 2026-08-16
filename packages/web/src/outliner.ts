@@ -2728,12 +2728,45 @@ export function renderOutliner(
       });
     });
   }
-  header.append(title);
+  const heading = document.createElement('div');
+  heading.className = 'page-heading';
+  heading.append(title);
+
+  /*
+   * Las propiedades acompañan al título, pero no tienen que competir con él.
+   *
+   * Una página suele abrirse para leer lo que dice, no para inspeccionar su
+   * ficha. La ficha sigue a un gesto de distancia y el control vive junto al
+   * título, que es donde se entiende qué está describiendo. Antes todo el front
+   * matter quedaba desplegado siempre en la aplicación privada y escondido tras
+   * el menú de tres puntos en la pública: dos interfaces para la misma cosa.
+   */
+  const propertiesToggle = document.createElement('button');
+  propertiesToggle.type = 'button';
+  propertiesToggle.className = 'properties-toggle';
+  propertiesToggle.innerHTML = icon('layout-navbar-expand');
+  propertiesToggle.setAttribute('aria-label', 'Mostrar propiedades');
+  propertiesToggle.setAttribute('aria-expanded', 'false');
+  propertiesToggle.title = 'Mostrar propiedades';
+  heading.append(propertiesToggle);
+  header.append(heading);
 
   // El front matter no es decoración: son propiedades del grafo, y se editan.
   const properties = document.createElement('dl');
   properties.className = 'properties';
-  properties.hidden = readOnly && !publicPropertiesVisible;
+
+  const metadata = document.createElement('div');
+  metadata.className = 'page-metadata';
+  metadata.hidden = true;
+
+  const showProperties = (open: boolean): void => {
+    metadata.hidden = !open;
+    propertiesToggle.setAttribute('aria-expanded', String(open));
+    propertiesToggle.setAttribute('aria-label', open ? 'Ocultar propiedades' : 'Mostrar propiedades');
+    propertiesToggle.title = open ? 'Ocultar propiedades' : 'Mostrar propiedades';
+    propertiesToggle.classList.toggle('open', open);
+  };
+  propertiesToggle.addEventListener('click', () => showProperties(metadata.hidden));
 
   /*
    * Público o privado, entre las demás propiedades y no en un botón aparte.
@@ -3371,8 +3404,9 @@ export function renderOutliner(
    * puede ofrecer quitar sin ofrecer poner. Lo que sigue fuera del día es la
    * marca de visibilidad, que no es una acción sino un estado.
    */
-  header.append(properties);
-  if (!readOnly) header.append(add);
+  metadata.append(properties);
+  if (!readOnly) metadata.append(add);
+  header.append(metadata);
 
   /*
    * Lo que se puede hacer con la página entera, en un menú.
@@ -3398,7 +3432,7 @@ export function renderOutliner(
           label: publicPropertiesVisible ? 'ocultar propiedades' : 'mostrar propiedades',
           run: () => {
             publicPropertiesVisible = !publicPropertiesVisible;
-            properties.hidden = !publicPropertiesVisible;
+            showProperties(publicPropertiesVisible);
           },
         },
         {

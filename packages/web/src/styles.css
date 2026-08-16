@@ -57,6 +57,12 @@
   box-sizing: border-box;
 }
 
+:root {
+  /* Una sola tinta para toda la familia. Los iconos de las tres vistas fijaron
+     el grosor correcto; cualquier pictograma nuevo lo hereda de aquí. */
+  --icon-stroke-width: 1.65;
+}
+
 /*
  * `hidden` significa oculto, dígalo quien lo diga.
  *
@@ -242,6 +248,13 @@ input {
   width: 1em;
   height: 1em;
   display: block;
+  stroke-width: var(--icon-stroke-width);
+}
+
+/* También gobierna las formas interiores: así un SVG incorporado no puede
+   reintroducir por accidente su propio grosor y separarse de la familia. */
+.icon * {
+  stroke-width: var(--icon-stroke-width);
   /* El trazo no se estira al escalar: un icono grande con la línea gruesa deja
      de pertenecer a la familia. `vector-effect` mantiene el grosor. */
   vector-effect: non-scaling-stroke;
@@ -1018,10 +1031,6 @@ input {
 #view-switch .icon {
   width: 1.3rem;
   height: 1.3rem;
-  /* Los tres dibujos propios tienen una silueta más compacta que Feather.
-     Un trazo apenas más fino conserva su tamaño y los deja respirar en la
-     misma barra sin adelgazar el botón que los contiene. */
-  stroke-width: 1.65;
 }
 
 #sync-state {
@@ -1146,12 +1155,50 @@ input {
   position: relative;
 }
 
+.page-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding-right: 2rem;
+}
+
 .page-header h1 {
-  font-size: 1.7rem;
+  font-size: clamp(2rem, 3.2vw, 2.65rem);
+  line-height: 1.08;
   font-weight: 400;
   margin: 0 0 0.4rem;
-  /* Sitio para el menú, para que un título largo no se le meta debajo. */
-  padding-right: 2rem;
+  padding-right: 0;
+}
+
+.properties-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-top: -0.15rem;
+  padding: 0.28rem;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.properties-toggle:hover,
+.properties-toggle.open {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.properties-toggle .icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.page-metadata[hidden] {
+  display: none;
 }
 
 .properties {
@@ -1711,7 +1758,7 @@ input {
   line-height: 1;
   padding: 0 0.2rem;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.5;
 }
 
 .property-value:hover .property-drop,
@@ -1736,6 +1783,7 @@ input {
 }
 
 .property-add {
+  display: block;
   font-family: var(--font-ui);
   font-size: 0.78rem;
   color: var(--text-dim);
@@ -1743,7 +1791,7 @@ input {
   border: 1px dashed var(--rule);
   border-radius: 3px;
   padding: 0.15rem 0.5rem;
-  margin-top: 0.4rem;
+  margin: 0.4rem 0 0 auto;
   cursor: pointer;
 }
 

@@ -374,6 +374,24 @@ contract PageFrontMatter {
         -- has always written. A redesign of the header that changed the Markdown
         -- would be a migration wearing an interface's clothes, and would have to
         -- be reviewed as one.
+
+    @invariant MetadataWaitsBehindTheTitle
+        -- Opening a page presents its title as the primary heading and leaves its
+        -- properties collapsed. A labelled control beside that title reveals or
+        -- hides the complete property sheet without changing the page. The same
+        -- control and state are used in private and public reading surfaces.
+
+    @invariant EveryWrittenPropertyCanBeRemovedWhereItIsRead
+        -- Every editable property row presents a visible removal control beside
+        -- its value, including without pointer hover. Removing it submits the
+        -- canonical remove-property change and does not erase any block content.
+        -- A governed or indispensable property may omit the control only when the
+        -- domain would reject its removal.
+
+    @invariant AddingAPropertyFinishesThePropertySheet
+        -- The action for adding another property is placed at the right-hand end
+        -- of the expanded property sheet. It opens the same completion-aware
+        -- naming field as before; moving the action changes no stored form.
 }
 
 contract ResponsiveWorkspace {
@@ -1059,6 +1077,12 @@ surface VeraWorkspace {
     @guarantee EditableDesignSystem
         -- General styles and design tokens are editable from within Vera and
         -- remain accessible as source rather than opaque application state.
+
+    @guarantee OneStrokeWeightJoinsTheIconFamily
+        -- Every outlined interface icon uses the same stroke weight, including
+        -- the text, map and hybrid view controls. A new icon joins that shared
+        -- measure rather than carrying an isolated thickness of its own; size
+        -- and silhouette may differ without making it look like another family.
 
     @guarantee ResponsiveSinglePaneNavigation
         -- Narrow screens offer text or graph as exclusive views. Choosing a

@@ -41,6 +41,10 @@ const SHAPES = {
     '<path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065"/>' +
     '<path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/>',
 
+  'layout-navbar-expand':
+    '<path d="M4 18v-12a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2"/>' +
+    '<path d="M4 9h16"/><path d="M10 14l2 2l2 -2"/>',
+
   sun:
     '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/>' +
     '<line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>' +
@@ -74,16 +78,14 @@ const SHAPES = {
    * Tres pasos unidos: convertir el rastro del mapa en un recorrido.
    *
    * Es Steps 1 de Streamline Plump, llevado de su lienzo 48 × 48 al de 24 de
-   * Vera. Conserva su trazo original de 3/48 (= 1.5/24), pero usa
-   * `currentColor` por herencia para responder al tema como el resto.
+   * Vera. El grosor no viaja con el dibujo: lo hereda de la misma variable que
+   * gobierna el resto de la familia.
    */
   'steps-1':
-    '<g stroke-width="1.5">' +
     '<circle cx="4" cy="12" r="2.5"/><circle cx="12" cy="12" r="2.5"/>' +
     '<circle cx="20" cy="12" r="2.5"/>' +
     '<line x1="6.5" y1="12" x2="9.5" y2="12"/>' +
-    '<line x1="14.5" y1="12" x2="17.5" y2="12"/>' +
-    '</g>',
+    '<line x1="14.5" y1="12" x2="17.5" y2="12"/>',
 
   /*
    * El lápiz solo, sin la hoja debajo: entrar a un dibujo que ya existe.
@@ -300,7 +302,7 @@ export function icon(name: IconName, options: IconOptions = {}): string {
   const extra = options.className === undefined ? '' : ` ${options.className}`;
   return (
     `<svg class="icon icon-${name}${extra}" viewBox="0 0 24 24" fill="none" ` +
-    'stroke="currentColor" stroke-width="1" stroke-linecap="round" ' +
+    'stroke="currentColor" stroke-linecap="round" ' +
     `stroke-linejoin="round" aria-hidden="true" focusable="false"><g${turn}>${SHAPES[name]}</g></svg>`
   );
 }
