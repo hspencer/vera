@@ -4,6 +4,15 @@
 /** `[[Página]]` — referencias a páginas. */
 const LINK = /\[\[([^\]]+)\]\]/g;
 
+/** Separa el destino de las palabras visibles de `[[Página|estas palabras]]`. */
+export function wikiReference(inner: string): { title: string; label: string } | null {
+  const divider = inner.indexOf('|');
+  const title = (divider < 0 ? inner : inner.slice(0, divider)).trim();
+  if (title === '') return null;
+  const writtenLabel = divider < 0 ? title : inner.slice(divider + 1).trim();
+  return { title, label: writtenLabel === '' ? title : writtenLabel };
+}
+
 /** `#tag` — etiquetas libres. */
 const TAG = /(?:^|\s)#([\p{L}\p{N}_-]+)/gu;
 
@@ -18,8 +27,10 @@ export function referencedTitles(content: string): string[] {
   const seen = new Set<string>();
   const titles: string[] = [];
   for (const match of content.matchAll(LINK)) {
-    const title = match[1]?.trim();
-    if (!title || seen.has(title)) continue;
+    const reference = wikiReference(match[1] ?? '');
+    if (reference === null) continue;
+    const { title } = reference;
+    if (seen.has(title)) continue;
     seen.add(title);
     titles.push(title);
   }
@@ -44,9 +55,12 @@ export function referencedTitles(content: string): string[] {
  */
 export function retitleLinks(content: string, from: string, to: string): string {
   const wanted = from.trim().toLowerCase();
-  return content.replace(LINK, (whole, inner: string) =>
-    inner.trim().toLowerCase() === wanted ? `[[${to}]]` : whole,
-  );
+  return content.replace(LINK, (whole, inner: string) => {
+    const reference = wikiReference(inner);
+    if (reference === null || reference.title.toLowerCase() !== wanted) return whole;
+    const divider = inner.indexOf('|');
+    return divider < 0 ? `[[${to}]]` : `[[${to}|${inner.slice(divider + 1)}]]`;
+  });
 }
 
 /** Etiquetas de un bloque, sin repetir. */

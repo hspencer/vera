@@ -24,6 +24,13 @@ value OriginEvidence {
     captured_at: Timestamp
 }
 
+value PageReference {
+    -- El título gobierna identidad, navegación, backlinks y renombre; el rótulo
+    -- permite que la referencia se lea como parte natural de una frase.
+    target_title: String
+    label: String
+}
+
 ------------------------------------------------------------
 -- Enumerations
 ------------------------------------------------------------

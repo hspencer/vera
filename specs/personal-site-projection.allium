@@ -94,6 +94,10 @@ contract PersonalWebsiteProjection {
         -- the public projection neither confirms a node exists nor exposes a
         -- route, backlink, search result or graph edge for it.
 
+    @invariant AuthoredReferenceLabelsSurviveProjection
+        -- A reference written as [[target|label]] navigates by target while its
+        -- authored label remains the visible text in private and public reading.
+
     @invariant OneVeraWithSmallerAuthority
         -- The public site is the same Vera web application, page renderer and
         -- text, graph and split layout system the author uses. It is not a

@@ -36,6 +36,7 @@
  * specs/executable-content-sandbox.allium.
  */
 import { drawingSvg, readDrawing } from './drawing.ts';
+import { wikiReference } from './text.ts';
 
 const EMBED = /^\s*<iframe\b([^>]*)>\s*<\/iframe>\s*$/i;
 const ATTRIBUTE = /(\w[\w-]*)\s*=\s*"([^"]*)"/g;
@@ -400,7 +401,10 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
 
   html = html.replace(/#\[\[([^\]]+)\]\]/g, (_whole, title: string) => hold(tagLink(title)));
 
-  html = html.replace(/\[\[([^\]]+)\]\]/g, (_whole, title: string) => hold(wikiLink(title)));
+  html = html.replace(/\[\[([^\]]+)\]\]/g, (whole, inner: string) => {
+    const reference = wikiReference(inner);
+    return reference === null ? whole : hold(wikiLink(reference.title, '', reference.label));
+  });
 
   html = html.replace(
     /\[([^\]]*)\]\(([^)\n]+?)(?:\s+"[^"]*")?\)/g,

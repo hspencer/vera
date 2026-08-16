@@ -20,6 +20,13 @@ describe('inlineMarkdown', () => {
     );
   });
 
+  it('separa el destino de las palabras visibles de un enlace wiki', () => {
+    assert.equal(
+      inlineMarkdown('participan como [[Vera: Puerta MCP|agentes identificables]]'),
+      'participan como <a class="wiki" data-page="Vera: Puerta MCP" href="#">agentes identificables</a>',
+    );
+  });
+
   it('enlaza las etiquetas a su página, con la almohadilla dentro', () => {
     // Una etiqueta es el nombre de una página: `#diseño` y `[[diseño]]` nombran
     // lo mismo, así que van al mismo sitio y por el mismo camino. La almohadilla
