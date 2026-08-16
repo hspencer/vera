@@ -494,12 +494,31 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             entryPoint: site.entryPoint === publication.page,
           };
         });
+    let previewUrl = options.publicPreviewUrl ?? null;
+    if (
+      previewUrl === null &&
+      options.reachableAt !== undefined &&
+      options.publicPreviewPort !== undefined
+    ) {
+      try {
+        const reachable = new URL(options.reachableAt);
+        reachable.hostname = hostname();
+        reachable.port = String(options.publicPreviewPort);
+        reachable.pathname = '/';
+        reachable.search = '';
+        reachable.hash = '';
+        previewUrl = reachable.toString();
+      } catch {
+        // Una dirección operativa mal declarada no invalida la configuración
+        // editorial: simplemente no se ofrece un enlace que no se conoce.
+      }
+    }
     return {
       site: site?.id ?? null,
       title,
       canonicalDomain,
       entryPoint: site?.entryPoint ?? null,
-      previewUrl: options.publicPreviewUrl ?? null,
+      previewUrl,
       publications,
     };
   };
