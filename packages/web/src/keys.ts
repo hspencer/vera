@@ -89,13 +89,28 @@ export function resolveFormat(
 
 /** Alterna un prefijo de bloque; los encabezados se sustituyen entre sí. */
 export function resolveBlockFormat(
-  prefix: '# ' | '## ' | '### ' | '> ',
+  prefix: '# ' | '## ' | '### ' | '#### ' | '##### ' | '###### ' | '> ',
   buffer: string,
 ): FormatOutcome {
-  const heading = /^#{1,3} /.exec(buffer)?.[0] ?? '';
+  const heading = /^#{1,6} /.exec(buffer)?.[0] ?? '';
   const current = prefix.startsWith('#') ? heading : buffer.startsWith(prefix) ? prefix : '';
   const next = current === prefix ? buffer.slice(current.length) : prefix + buffer.slice(current.length);
   return { buffer: next, selectionStart: 0, selectionEnd: next.length };
+}
+
+/** Convierte la selección en un enlace a otra página de Vera. */
+export function resolveInternalLink(
+  buffer: string,
+  selectionStart: number,
+  selectionEnd: number,
+): FormatOutcome {
+  const selected = buffer.slice(selectionStart, selectionEnd);
+  const written = `[[${selected}]]`;
+  return {
+    buffer: buffer.slice(0, selectionStart) + written + buffer.slice(selectionEnd),
+    selectionStart: selectionStart + 2,
+    selectionEnd: selectionStart + 2 + selected.length,
+  };
 }
 
 /** Convierte la selección en un enlace Markdown portable. */

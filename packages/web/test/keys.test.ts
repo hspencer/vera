@@ -13,6 +13,7 @@ import {
   resolveEnter,
   resolveFormat,
   resolveBlockFormat,
+  resolveInternalLink,
   resolveLink,
   resolveTab,
   type Neighbourhood,
@@ -287,9 +288,22 @@ describe('formato Markdown', () => {
   });
 
   it('cambia el nivel de título del bloque completo sin apilar marcas', () => {
-    assert.deepEqual(resolveBlockFormat('### ', '## Título'), {
-      buffer: '### Título',
+    assert.deepEqual(resolveBlockFormat('###### ', '## Título'), {
+      buffer: '###### Título',
       selectionStart: 0,
+      selectionEnd: 13,
+    });
+  });
+
+  it('crea un enlace interno y deja el cursor dentro de los corchetes', () => {
+    assert.deepEqual(resolveInternalLink('ver ', 4, 4), {
+      buffer: 'ver [[]]',
+      selectionStart: 6,
+      selectionEnd: 6,
+    });
+    assert.deepEqual(resolveInternalLink('ver Vera', 4, 8), {
+      buffer: 'ver [[Vera]]',
+      selectionStart: 6,
       selectionEnd: 10,
     });
   });

@@ -90,6 +90,7 @@ import {
   resolveEnter,
   resolveBlockFormat,
   resolveFormat,
+  resolveInternalLink,
   resolveLink,
   resolveTab,
   type KeyOutcome,
@@ -5830,24 +5831,30 @@ function startEditing(
 
   type FormatAction =
     | { label: string; title: string; marker: string }
-    | { label: string; title: string; prefix: '# ' | '## ' | '### ' | '> ' }
-    | { label: string; title: string; link: true };
+    | { label: string; title: string; prefix: '> ' }
+    | { icon: IconName; title: string; link: 'internal' | 'external' };
   const formatActions: FormatAction[] = [
     { label: 'B', title: 'negrita', marker: '**' },
     { label: 'I', title: 'cursiva', marker: '*' },
     { label: 'S', title: 'tachado', marker: '~~' },
-    { label: 'H₁', title: 'título', prefix: '# ' },
-    { label: 'H₂', title: 'subtítulo', prefix: '## ' },
-    { label: 'H₃', title: 'título de tercer nivel', prefix: '### ' },
     { label: '❝', title: 'cita', prefix: '> ' },
     { label: '</>', title: 'código en línea', marker: '`' },
-    { label: '↗', title: 'enlace', link: true },
+    { icon: 'brackets', title: 'enlace interno', link: 'internal' },
+    { icon: 'external-link', title: 'enlace externo', link: 'external' },
   ];
+  const applyFormat = (formatted: ReturnType<typeof resolveFormat>): void => {
+    editor.value = formatted.buffer;
+    editor.setSelectionRange(formatted.selectionStart, formatted.selectionEnd);
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    editor.focus();
+  };
+
   for (const action of formatActions) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'format-action';
-    button.textContent = action.label;
+    if ('icon' in action) button.innerHTML = icon(action.icon);
+    else button.textContent = action.label;
     button.title = action.title;
     button.setAttribute('aria-label', action.title);
     // Mantener la selección del textarea es parte del gesto de formato.
@@ -5857,14 +5864,68 @@ function startEditing(
         ? resolveFormat(action.marker, editor.value, editor.selectionStart, editor.selectionEnd)
         : 'prefix' in action
           ? resolveBlockFormat(action.prefix, editor.value)
-          : resolveLink(editor.value, editor.selectionStart, editor.selectionEnd);
-      editor.value = formatted.buffer;
-      editor.setSelectionRange(formatted.selectionStart, formatted.selectionEnd);
-      editor.dispatchEvent(new Event('input', { bubbles: true }));
-      editor.focus();
+          : action.link === 'internal'
+            ? resolveInternalLink(editor.value, editor.selectionStart, editor.selectionEnd)
+            : resolveLink(editor.value, editor.selectionStart, editor.selectionEnd);
+      applyFormat(formatted);
     });
     formatBar.append(button);
   }
+
+  const headings = document.createElement('div');
+  headings.className = 'format-heading';
+  const headingButtons: HTMLButtonElement[] = [];
+  const updateHeadingState = (): void => {
+    const level = /^#{1,6} /.exec(editor.value)?.[0].trim().length ?? 0;
+    for (const [index, button] of headingButtons.entries()) {
+      button.setAttribute('aria-pressed', String(level === index + 1));
+    }
+  };
+  const chooseHeading = (
+    prefix: '# ' | '## ' | '### ' | '#### ' | '##### ' | '###### ',
+  ): void => {
+    applyFormat(resolveBlockFormat(prefix, editor.value));
+    updateHeadingState();
+  };
+  const headingMain = document.createElement('button');
+  headingMain.type = 'button';
+  headingMain.className = 'format-action format-heading-main';
+  headingMain.textContent = 'H₁';
+  headingMain.title = 'encabezado de nivel 1';
+  headingMain.setAttribute('aria-label', 'encabezado de nivel 1');
+  headingMain.addEventListener('mousedown', (event) => event.preventDefault());
+  headingMain.addEventListener('click', () => chooseHeading('# '));
+  headingButtons.push(headingMain);
+
+  const headingChoices = document.createElement('details');
+  headingChoices.className = 'format-heading-choices';
+  const headingToggle = document.createElement('summary');
+  headingToggle.className = 'format-action format-heading-toggle';
+  headingToggle.innerHTML = icon('chevron-down');
+  headingToggle.title = 'otros niveles de encabezado';
+  headingToggle.setAttribute('aria-label', 'otros niveles de encabezado');
+  headingToggle.addEventListener('mousedown', (event) => event.preventDefault());
+  const headingMenu = document.createElement('div');
+  headingMenu.className = 'format-heading-menu';
+  const headingLevels = ['## ', '### ', '#### ', '##### ', '###### '] as const;
+  for (const [index, prefix] of headingLevels.entries()) {
+    const heading = document.createElement('button');
+    heading.type = 'button';
+    heading.className = 'format-heading-option';
+    heading.textContent = `H${index + 2}`;
+    heading.setAttribute('aria-label', `encabezado de nivel ${index + 2}`);
+    heading.addEventListener('mousedown', (event) => event.preventDefault());
+    heading.addEventListener('click', () => {
+      headingChoices.removeAttribute('open');
+      chooseHeading(prefix);
+    });
+    headingButtons.push(heading);
+    headingMenu.append(heading);
+  }
+  headingChoices.append(headingToggle, headingMenu);
+  headings.append(headingMain, headingChoices);
+  updateHeadingState();
+  formatBar.insertBefore(headings, formatBar.children[3] ?? null);
 
   const at = Math.min(caret, editor.value.length);
   /*

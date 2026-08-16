@@ -110,15 +110,28 @@ contract NativeMarkdownEditing {
 
     @invariant FormattingIsOneEditingTool
         -- While a Markdown block is being edited, `/formato` reveals one bar
-        -- above its source for bold, italic, strikethrough, links, quotation,
-        -- code and H1–H3 headings. Those choices do not compete as separate
-        -- first-level block commands; closing the bar leaves the same source and
-        -- caret in place.
+        -- above its source for bold, italic, strikethrough, Vera internal links,
+        -- external web links, quotation, code and one split heading control. H1
+        -- is its visible primary action; the adjacent arrow reveals H2 through H6
+        -- in a vertical list. Those levels do not compete as six permanent
+        -- controls or first-level block commands. Closing the bar leaves the same
+        -- source and caret in place.
 
     @invariant FormattingWritesPortableMarkdown
-        -- Inline formatting wraps or rewrites the selected source, while choosing
-        -- H1, H2 or H3 transforms the whole block. The resulting Markdown source
-        -- is what Vera preserves; the toolbar never stores an opaque rich-text form.
+        -- An internal link wraps selected text as `[[…]]`; with no selection it
+        -- inserts `[[]]`, leaves the caret between the brackets and opens page
+        -- completion. An external web link remains ordinary `[…](https://…)`
+        -- Markdown. Choosing H1 through H6 transforms the whole block by replacing
+        -- any existing H1–H6 prefix with exactly the selected level, never by
+        -- stacking another run of heading marks. The resulting Markdown source is
+        -- what Vera preserves; the toolbar stores no opaque rich-text form.
+
+    @invariant FormattingControlsAreUnambiguousAndAccessible
+        -- Internal and external link actions have distinct accessible names and
+        -- remain distinguishable without relying on their icons. The formatting
+        -- bar, the primary H1 action and the adjacent H2–H6 menu are distinguishable,
+        -- reachable and operable by keyboard, preserve focus, and expose which
+        -- control and heading level is selected.
 
     @invariant FormattingNeverRetypesContentByAccident
         -- Formatting a Markdown block cannot turn it into HTML, p5.js, a query,

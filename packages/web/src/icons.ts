@@ -243,6 +243,16 @@ const SHAPES = {
     '<path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"/>' +
     '<line x1="8" y1="12" x2="16" y2="12"/>',
 
+  // Dos pares de corchetes: la sintaxis propia con que Vera enlaza sus páginas.
+  brackets:
+    '<path d="M7 4H4v16h3M17 4h3v16h-3"/>' +
+    '<path d="M10 7H8v10h2M14 7h2v10h-2"/>',
+
+  // Un enlace que sale del espacio de Vera hacia la web.
+  'external-link':
+    '<path d="M14 3h7v7M10 14L21 3"/>' +
+    '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+
   // La almohadilla: el identificador desnudo, que no es un enlace sino un nombre.
   hash:
     '<line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/>' +
