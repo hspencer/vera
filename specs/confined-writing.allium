@@ -417,10 +417,11 @@ surface ConfinementAdministration {
         -- oyó: peor que no poder decirlo, porque además parecía que servía.
 
     @guarantee BorrarSigueSiendoUnActoDeliberado
-        -- Que la lista exista no convierte borrar en un trámite de una tecla
-        -- para todo el montón. Lo que la máquina propone se acepta de a una,
-        -- porque cada página que se va deja una ausencia y la ausencia es lo
-        -- único que el registro no puede enseñar después.
+        -- Que la lista exista no crea «borrar todo». Cada fila recibe una
+        -- decisión explícita —borrar o se queda— antes de que una confirmación
+        -- aplique juntas las decisiones marcadas. Lo que no se marcó no se toca:
+        -- cada página que se va deja una ausencia y la ausencia es lo único que
+        -- el registro no puede enseñar después.
 }
 
 ------------------------------------------------------------

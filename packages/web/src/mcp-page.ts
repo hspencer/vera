@@ -16,6 +16,7 @@
 import {
   api,
   type Change,
+  type DiscardDecision,
   type DiscardRequest,
   type MCPConnect,
   type MCPConnection,
@@ -23,7 +24,6 @@ import {
 } from './api.ts';
 import { cellIn, editableCell, observedCell, rowIn, section } from './table.ts';
 import { when } from './dates.ts';
-import { removePageAndBlocks } from './remove-page.ts';
 
 /** ¿Esta página gobierna la puerta MCP? Se responde con lo que la página trae. */
 export function isMCPPage(properties: readonly { key: string; value: string }[]): boolean {
@@ -506,7 +506,7 @@ export async function renderMCP(
 
   connectForm(element, door.connect ?? null, notify);
   await credentialsSection(element, notify);
-  markedSection(element, door, write, notify);
+  markedSection(element, door, notify);
 
   if (declaring.size === 0 && door.undeclared.length === 0) return null;
   return { element, declaring };
@@ -765,33 +765,53 @@ async function credentialsSection(
  * Lo que las máquinas pidieron que se fuera.
  *
  * @guarantee WhatWasMarkedIsFoundWithoutLookingForIt. Y @guarantee
- * BorrarSigueSiendoUnActoDeliberado: se acepta de a una. Que la lista exista no
- * convierte borrar en una tecla para todo el montón — cada página que se va deja
- * una ausencia, y la ausencia es lo único que el registro no puede enseñar
- * después.
+ * BorrarSigueSiendoUnActoDeliberado: cada fila recibe una decisión explícita.
+ * Aplicarlas juntas evita quince viajes y no convierte la lista en «borrar
+ * todo»: lo que no se marcó no se toca.
  */
 function markedSection(
   host: HTMLElement,
-  door: { marked?: DiscardRequest[]; markKey?: string },
-  write: Write,
+  door: { marked?: DiscardRequest[] },
   notify: (message: string) => void,
 ): void {
   const marked = door.marked ?? [];
   if (marked.length === 0) return;
 
-  const table = section(host, {
+  const wrapper = document.createElement('section');
+  host.append(wrapper);
+  const table = section(wrapper, {
     title: 'Pedidas para borrar',
     note:
       'Una credencial cercada no borra: marca, y dice por qué. Aquí decides tú. ' +
-      'Quitar la marca no hay que explicarlo — que una página se quede es la respuesta ' +
-      'normal a que alguien proponga que se vaya.',
+      'Marca «borrar» o «se queda» en cada fila y aplica las decisiones juntas. ' +
+      'Lo que no marques no se toca.',
     headers: ['Página', 'Por qué', 'Quién lo pidió', 'Cuándo', ''],
     // El motivo es lo que se lee para decidir, así que se lleva la mitad.
     widths: [22, 40, 14, 10, 14],
   });
 
+  const chosen = new Map<string, DiscardDecision['decision']>();
+  const rows = new Map<string, HTMLTableRowElement>();
+  const buttons: HTMLButtonElement[] = [];
+
+  const actions = document.createElement('p');
+  actions.className = 'discard-actions';
+  const apply = document.createElement('button');
+  apply.type = 'button';
+  apply.className = 'connect-copy';
+  apply.textContent = 'aplicar';
+  apply.disabled = true;
+  actions.append(apply);
+  wrapper.append(actions);
+
+  const updateApply = (): void => {
+    apply.disabled = chosen.size === 0;
+    apply.textContent = chosen.size === 0 ? 'aplicar' : `aplicar (${chosen.size})`;
+  };
+
   for (const one of marked) {
     const row = rowIn(table);
+    rows.set(one.page, row);
     let at = 0;
 
     // El título lleva a la página: decidir sobre algo que no se ha leído no es
@@ -814,65 +834,63 @@ function markedSection(
     keep.className = 'connect-copy';
     keep.textContent = 'se queda';
     keep.title = 'Quita la marca. La página no se toca.';
-    keep.addEventListener('click', () => {
-      keep.disabled = true;
-      drop.disabled = true;
-      void write({
-        kind: 'remove_property',
-        page: one.page,
-        propertyKey: door.markKey ?? 'por borrar',
-      }).then((done) => {
-        if (done) {
-          row.remove();
-          notify(`«${one.title}» se queda`);
-          return;
-        }
-        keep.disabled = false;
-        drop.disabled = false;
-        notify('no se pudo quitar la marca');
-      });
-    });
 
     const drop = document.createElement('button');
     drop.type = 'button';
     drop.className = 'connect-copy';
     drop.textContent = 'borrar';
-    /*
-     * Y una confirmación, que aquí no es ceremonia.
-     *
-     * Borrar es el único acto que el registro no puede enseñar después: deja una
-     * ausencia. En todo lo demás de Vera lo que quedó mal se corrige escribiendo,
-     * y por eso nada más pregunta.
-     */
     drop.title = 'Deja una ausencia. Es lo único que el registro no puede enseñarte después.';
-    drop.addEventListener('click', () => {
-      if (!window.confirm(`¿Borrar «${one.title}»? Es lo único que no se puede deshacer leyendo.`)) {
-        return;
-      }
-      keep.disabled = true;
-      drop.disabled = true;
-      void api
-        .page(one.page)
-        .then((page) => removePageAndBlocks(page, write))
-        .then((done) => {
-          if (done) {
-            row.remove();
-            notify(`«${one.title}» borrada`);
-            return;
-          }
-          keep.disabled = false;
-          drop.disabled = false;
-          notify('no se pudo completar el borrado');
-        })
-        .catch(() => {
-          keep.disabled = false;
-          drop.disabled = false;
-          notify('no se pudo leer la página para borrarla');
-        });
-    });
+
+    const choose = (decision: DiscardDecision['decision']): void => {
+      chosen.set(one.page, decision);
+      keep.setAttribute('aria-pressed', String(decision === 'keep'));
+      drop.setAttribute('aria-pressed', String(decision === 'delete'));
+      updateApply();
+    };
+    keep.setAttribute('aria-pressed', 'false');
+    drop.setAttribute('aria-pressed', 'false');
+    keep.addEventListener('click', () => choose('keep'));
+    drop.addEventListener('click', () => choose('delete'));
 
     acts.append(keep, drop);
+    buttons.push(keep, drop);
   }
+
+  apply.addEventListener('click', () => {
+    const decisions = [...chosen].map(([page, decision]) => ({ page, decision }));
+    const deleting = decisions.filter((one) => one.decision === 'delete').length;
+    if (
+      deleting > 0 &&
+      !window.confirm(
+        `¿Aplicar ${decisions.length} ${decisions.length === 1 ? 'decisión' : 'decisiones'}? ` +
+          `Se ${deleting === 1 ? 'borrará una página' : `borrarán ${deleting} páginas`} y no se puede deshacer leyendo.`,
+      )
+    ) {
+      return;
+    }
+
+    apply.disabled = true;
+    for (const button of buttons) button.disabled = true;
+    void api
+      .applyDiscards(decisions)
+      .then((result) => {
+        for (const one of result.applied) {
+          rows.get(one.page)?.remove();
+          chosen.delete(one.page);
+        }
+        if (table.body.rows.length === 0) wrapper.remove();
+        else {
+          for (const button of buttons) button.disabled = false;
+          updateApply();
+        }
+        notify(`${result.applied.length} ${result.applied.length === 1 ? 'decisión aplicada' : 'decisiones aplicadas'}`);
+      })
+      .catch((error: unknown) => {
+        for (const button of buttons) button.disabled = false;
+        updateApply();
+        notify(error instanceof Error ? error.message : 'no se pudieron aplicar las decisiones');
+      });
+  });
 }
 
 export type { MCPConnection };

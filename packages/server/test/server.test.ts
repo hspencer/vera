@@ -130,6 +130,61 @@ describe('POST /operations', () => {
   });
 });
 
+describe('POST /mcp/discards', () => {
+  it('aplica en una petición decisiones distintas sobre páginas marcadas', async () => {
+    const gone = await write({
+      kind: 'create_page',
+      title: `Marcada para borrar ${Date.now()}`,
+      visibility: 'private',
+    });
+    const parent = await write({
+      kind: 'create_block',
+      page: gone,
+      parent: null,
+      position: 0,
+      content: 'padre',
+    });
+    await write({ kind: 'create_block', page: gone, parent, position: 0, content: 'hijo' });
+    await write({
+      kind: 'set_property',
+      page: gone,
+      propertyKey: 'por borrar',
+      propertyValue: 'duplicada',
+    });
+
+    const kept = await write({
+      kind: 'create_page',
+      title: `Marcada para quedarse ${Date.now()}`,
+      visibility: 'private',
+    });
+    await write({
+      kind: 'set_property',
+      page: kept,
+      propertyKey: 'por borrar',
+      propertyValue: 'duda resuelta',
+    });
+
+    const response = await fetch(`${base}/mcp/discards`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        decisions: [
+          { page: gone, decision: 'delete' },
+          { page: kept, decision: 'keep' },
+        ],
+      }),
+    });
+    assert.equal(response.status, 200, await response.text());
+
+    const pages = (await get('/pages')) as { id: string }[];
+    assert.equal(pages.some((page) => page.id === gone), false);
+    const keptView = (await get(`/pages/${encodeURIComponent(kept)}`)) as {
+      properties: { key: string }[];
+    };
+    assert.equal(keptView.properties.some((one) => one.key === 'por borrar'), false);
+  });
+});
+
 describe('lecturas', () => {
   it('entrega una página con sus bloques, propiedades y backlinks', async () => {
     const page = await write({ kind: 'create_page', title: 'Travesia', visibility: 'private' });

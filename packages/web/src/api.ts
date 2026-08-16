@@ -667,6 +667,12 @@ export const api = {
    */
   mcp: () => json<MCPView>('/mcp'),
 
+  applyDiscards: (decisions: readonly DiscardDecision[]) =>
+    json<{ applied: DiscardDecision[] }>('/mcp/discards', {
+      method: 'POST',
+      body: JSON.stringify({ decisions }),
+    }),
+
   /*
    * Las credenciales, sin secretos: @guarantee TheSecretIsShownOnce.
    *
@@ -1279,6 +1285,11 @@ export interface DiscardRequest {
   by: string | null;
   byName: string | null;
   at: number | null;
+}
+
+export interface DiscardDecision {
+  page: string;
+  decision: 'delete' | 'keep';
 }
 
 export interface MCPView {

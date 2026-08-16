@@ -1143,6 +1143,126 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         ? null
         : { error: 'sólo el dueño administra credenciales, y no lo hace con una credencial' };
 
+    /*
+     * Resolver juntas las decisiones sobre las páginas marcadas.
+     *
+     * Es una sola petición, no una operación opaca: cada bloque, página y marca
+     * sigue saliendo por submitOperation y conserva su lugar propio en el
+     * registro. Se valida el lote entero antes de tocar nada para que una página
+     * ya resuelta no deje las demás decisiones a medias.
+     */
+    if (request.method === 'POST' && path === '/mcp/discards') {
+      const blocked = ownerOnly();
+      if (blocked !== null) {
+        send(response, 403, blocked);
+        return;
+      }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { decisions?: unknown };
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+        if (!Array.isArray(body.decisions) || body.decisions.length === 0) {
+          send(response, 400, { error: 'decisions must be a non-empty array' });
+          return;
+        }
+
+        const markKey = propertyNames().discard_request;
+        const seen = new Set<string>();
+        const plans: {
+          page: string;
+          decision: 'delete' | 'keep';
+          blocks: ReturnType<typeof graph.blocksOf>;
+        }[] = [];
+        for (const raw of body.decisions) {
+          const said = raw as { page?: unknown; decision?: unknown };
+          const page = typeof said.page === 'string' ? said.page : '';
+          const decision = said.decision;
+          if (page === '' || (decision !== 'delete' && decision !== 'keep')) {
+            send(response, 400, { error: 'each decision needs a page and delete or keep' });
+            return;
+          }
+          if (seen.has(page)) {
+            send(response, 400, { error: `la página ${page} aparece dos veces` });
+            return;
+          }
+          seen.add(page);
+          if (graph.page(page) === undefined) {
+            send(response, 409, { error: `la página ${page} ya no existe` });
+            return;
+          }
+          const marked = graph
+            .propertiesOf(page)
+            .some((one) => one.key.trim().toLowerCase() === markKey.trim().toLowerCase());
+          if (!marked) {
+            send(response, 409, { error: `la página ${page} ya no está marcada para borrar` });
+            return;
+          }
+          plans.push({ page, decision, blocks: graph.blocksOf(page) });
+        }
+
+        const stamp = Date.now();
+        let step = 0;
+        const write = (change: Change): void => {
+          const outcome = graph.submitOperation({
+            originId: `discard-review:${stamp}:${(step += 1)}`,
+            participant: owner.id,
+            channel: 'typed_text',
+            change,
+          });
+          if (outcome.status !== 'applied') {
+            throw new Error(outcome.status === 'rejected' ? outcome.reason : 'operación duplicada');
+          }
+          recordOperation(store, graph, outcome.operation);
+        };
+
+        try {
+          for (const plan of plans) {
+            if (plan.decision === 'keep') {
+              write({ kind: 'remove_property', page: plan.page, propertyKey: markKey });
+              continue;
+            }
+
+            const parents = new Map(plan.blocks.map((block) => [block.stableId, block.parent]));
+            const depthOf = (id: string): number => {
+              let depth = 0;
+              let at = parents.get(id) ?? null;
+              while (at !== null && depth < 1000) {
+                depth += 1;
+                at = parents.get(at) ?? null;
+              }
+              return depth;
+            };
+            const deepestFirst = [...plan.blocks].sort(
+              (left, right) => depthOf(right.stableId) - depthOf(left.stableId),
+            );
+            for (const block of deepestFirst) {
+              write({ kind: 'remove_block', block: block.stableId });
+            }
+            write({ kind: 'remove_page', page: plan.page });
+          }
+          rebuildPublicSite();
+        } catch (error) {
+          graph = loadGraph(store, 'mind');
+          send(response, 500, {
+            error: 'no se pudieron aplicar todas las decisiones',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+
+        send(response, 200, {
+          applied: plans.map(({ page, decision }) => ({ page, decision })),
+        });
+      });
+      return;
+    }
+
     const publicationPage = path.startsWith('/publications/')
       ? decodeURIComponent(path.slice('/publications/'.length))
       : null;

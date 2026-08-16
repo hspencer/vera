@@ -5794,6 +5794,23 @@ code {
   border-color: var(--accent);
 }
 
+.connect-copy[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.connect-copy:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.discard-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0.65rem 0 0;
+}
+
 /* El único campo que se escribe, porque es lo único que aquí es una decisión. */
 .connect-client {
   font: inherit;
