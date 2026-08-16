@@ -189,6 +189,11 @@ describe('publicación del sitio personal', () => {
     assert.deepEqual(visible.map((one) => one.id), [page]);
     assert.equal(visible[0]?.publicationPath, 'vera');
     assert.equal((await fetch(`${previewBase}/vera/`)).status, 200);
+    assert.equal(
+      (await fetch(`${previewBase}/p/Vera`)).status,
+      404,
+      'el prefijo técnico de la aplicación privada no es una dirección pública',
+    );
     assert.equal((await fetch(`${previewBase}/pages/${encodeURIComponent(hidden.subjectId)}`)).status, 404);
     assert.equal((await fetch(`${previewBase}/exposures`)).status, 404);
     assert.equal((await fetch(`${previewBase}/operations`, { method: 'POST' })).status, 405);
@@ -219,6 +224,7 @@ describe('publicación del sitio personal', () => {
     assert.equal(canonicalHealth.access, 'anybody');
     assert.equal(canonicalHealth.canViewOwner, false);
     assert.equal(canonicalHealth.pages, 1);
+    assert.equal((await throughCanonical('/p/Vera')).status, 404);
     assert.equal(
       (await throughCanonical('/operations', 'POST')).status,
       405,

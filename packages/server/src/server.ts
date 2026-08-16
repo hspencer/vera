@@ -1061,7 +1061,6 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         path.startsWith('/pages/') ||
         path.startsWith('/graph/') ||
         path.startsWith('/media/') ||
-        path.startsWith('/p/') ||
         canonicalPublication !== undefined ||
         path.startsWith('/build/') ||
         /^\/(?:manifest\.webmanifest|sw\.js|favicon\.ico|apple-touch-icon\.png|icon-[^/]+|fonts\/)/.test(path);
