@@ -11,7 +11,9 @@ incorporan nuevas personas autoras.
 | Herbert Spencer González `<hspencer@ead.cl>` | 2026-08-01 | Autor fundador. Specs, arquitectura, implementación. |
 
 **Custodia:** [MediaFranca](https://mediafranca.net/) administra los derechos
-patrimoniales y la licencia. No es autora.
+patrimoniales de la obra fundacional que le han sido confiados y la publicación
+del proyecto bajo AGPL. No es autora ni adquiere por omisión derechos sobre las
+contribuciones de terceros.
 
 Estado al 2026-08-11, sobre `f721027`: 183 commits, 70.903 líneas vivas, 32
 especificaciones. Un solo autor.

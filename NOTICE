@@ -6,8 +6,10 @@ Autor: Herbert Spencer González <hspencer@ead.cl>
 Proyecto: https://github.com/hspencer/vera
 Licencia del programa: GNU Affero General Public License v3.0 only
 
-MediaFranca administra los derechos patrimoniales y la licencia. No es autora;
-la autoría de Herbert Spencer González permanece inalienable.
+MediaFranca administra los derechos patrimoniales de la obra fundacional que le
+han sido confiados y su publicación bajo AGPL. No es autora; la autoría de
+Herbert Spencer González permanece inalienable. Las contribuciones de terceros
+permanecen bajo la titularidad de quienes las aportan, según CONTRIBUTING.md.
 
 El corpus de cada instalación —notas, medios y datos personales— no forma parte
 del repositorio ni queda cubierto por la licencia del programa.

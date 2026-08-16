@@ -737,7 +737,10 @@ enumera las facultades morales del autor en su artículo 14 y las declara
 inalienables en el 16, siendo nulo cualquier pacto en contrario.
 
 **Custodia:** [MediaFranca](https://mediafranca.net/) administra los derechos
-patrimoniales y la licencia. No es autora.
+patrimoniales de la obra fundacional que le han sido confiados y la publicación
+del proyecto bajo AGPL. No es autora ni adquiere por omisión los derechos sobre
+contribuciones de terceros; ese régimen está en
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 **El corpus no es del repositorio.** `data/`, `objects/` y `.env` están fuera de
 git desde el primer commit. Clonar Vera da el programa, no la memoria de nadie, y
