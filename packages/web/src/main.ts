@@ -884,8 +884,8 @@ async function openPage(
     }
   }
 
-  // El rastro guarda llegadas, no páginas, y no deduplica: volver a un sitio por
-  // otro camino es una segunda llegada y dice algo. Ver trace.ts.
+  // El breadcrumb guarda una sola llegada por página. Volver a un sitio mueve
+  // su paso al final y reemplaza el gesto anterior; nunca suma otra instancia.
   if (options.gesture !== undefined) {
     workspace.trace = walked(workspace.trace, {
       page: id,

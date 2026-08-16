@@ -479,14 +479,35 @@ input {
 }
 
 .format-bar {
+  --format-bar-height: 2.15rem;
+  --format-bar-gap: 0.45rem;
+  /*
+   * La barra pertenece al bloque, pero no ocupa una línea suya.
+   *
+   * `sticky` la deja alineada con la caja de edición y, al recorrer un bloque
+   * largo, la detiene arriba del panel de texto. La traslación la pone sobre el
+   * bloque; el margen negativo devuelve exactamente su alto al flujo. Abrirla y
+   * cerrarla no desplaza ni el editor ni ninguno de los bloques que siguen.
+   *
+   * El `top` incluye la misma altura y distancia que luego se restan con el
+   * transform: la posición visible resultante queda a .65rem del borde superior
+   * del panel, nunca fuera de la pantalla.
+   */
+  position: sticky;
+  top: calc(0.65rem + var(--format-bar-height) + var(--format-bar-gap));
+  z-index: 12;
   display: flex;
+  box-sizing: border-box;
   width: max-content;
   max-width: 100%;
-  margin: 0 0 .3rem;
+  height: var(--format-bar-height);
+  margin: 0 0 calc(-1 * var(--format-bar-height));
+  transform: translateY(calc(-100% - var(--format-bar-gap)));
   overflow-x: auto;
   border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
   border-radius: 5px;
   background: var(--bg-raised);
+  box-shadow: 0 0.3rem 1rem color-mix(in srgb, var(--text) 14%, transparent);
   scrollbar-width: none;
 }
 
@@ -497,7 +518,7 @@ input {
 .format-action {
   flex: 0 0 auto;
   min-width: 2.35rem;
-  height: 2.15rem;
+  height: 100%;
   border: 0;
   border-right: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
   background: transparent;
@@ -2510,7 +2531,7 @@ code {
   margin: 0.9em 0;
 }
 
-/* Código en bloque: desborda dentro de su caja y no estira la columna.
+/* Código en bloque: conserva sus blancos, pero se pliega al ancho de lectura.
    Sin `background: none` heredaría la píldora del código en línea. */
 .body pre {
   margin: 0.5em 0;
@@ -2518,7 +2539,7 @@ code {
   background: var(--bg-raised);
   border: 1px solid var(--rule);
   border-radius: 4px;
-  overflow-x: auto;
+  overflow-x: visible;
 }
 
 .body pre code {
@@ -2526,7 +2547,8 @@ code {
   padding: 0;
   font-size: 0.85em;
   line-height: 1.5;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* La tabla se desborda sola: si empujara el ancho de la página, el
