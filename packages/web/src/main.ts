@@ -81,6 +81,8 @@ interface Workspace {
   activePage: string | null;
   layout: WorkspaceLayout;
   graphView: GraphViewMode;
+  /** Qué parte del grafo mira el dueño; no cambia quién es ni qué puede hacer. */
+  mapScope: 'own_space' | 'published';
   /** Bloque en el que está enraizada la vista, o null para la página entera. */
   focusRoot: string | null;
   scheme: ColourScheme;
@@ -97,6 +99,7 @@ const workspace: Workspace = {
   activePage: null,
   layout: session.layout(),
   graphView: session.graphView(),
+  mapScope: 'own_space',
   focusRoot: null,
   scheme: session.scheme(),
   divider: session.divider(),
@@ -264,22 +267,12 @@ const isAnybody = (): boolean => corpus?.access === 'anybody';
 function drawAudienceControl(): void {
   const control = document.querySelector<HTMLElement>('#map-audience');
   if (control === null || corpus === null) return;
-  // En el origen público no se ofrece una elevación que el servidor negaría.
-  control.hidden = corpus.canViewOwner === false;
-  for (const button of control.querySelectorAll<HTMLButtonElement>('[data-audience]')) {
-    const active = button.dataset['audience'] === (isAnybody() ? 'anybody' : 'owner');
+  // Anybody ya está dentro del subgrafo público y no puede pedir el espacio del dueño.
+  control.hidden = isAnybody();
+  for (const button of control.querySelectorAll<HTMLButtonElement>('[data-map-scope]')) {
+    const active = button.dataset['mapScope'] === workspace.mapScope;
     button.setAttribute('aria-pressed', String(active));
   }
-}
-
-function viewAs(audience: 'owner' | 'anybody'): void {
-  if (audience === 'owner') {
-    document.cookie = 'vera-view=; Path=/; Max-Age=0; SameSite=Strict';
-  } else {
-    document.cookie = 'vera-view=anybody; Path=/; SameSite=Strict';
-  }
-  // La raíz correcta difiere: hoy para el dueño, entryPoint para anybody.
-  window.location.assign('/');
 }
 
 async function openHome(): Promise<void> {
@@ -1786,9 +1779,21 @@ async function drawGraph(): Promise<void> {
   if (workspace.activePage === null) return;
   const container = $('#graph');
   const turn = ++graphTurn;
+  if (
+    workspace.mapScope === 'published' &&
+    openView?.publication?.publishedAt == null
+  ) {
+    workspace.mapScope = 'own_space';
+    drawAudienceControl();
+    notice('Esta página no está publicada; el mapa vuelve a mostrar tu espacio.');
+  }
   let data;
   try {
-    data = await api.graph(workspace.activePage, workspace.depth);
+    data = await api.graph(
+      workspace.activePage,
+      workspace.depth,
+      workspace.mapScope === 'published',
+    );
   } catch {
     /*
      * El mapa es lo único que no se puede leer sin corpus, y hay que decirlo.
@@ -2321,10 +2326,20 @@ function wireTheme(): void {
     drawPanel();
   };
 
-  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-audience]')) {
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-map-scope]')) {
     button.addEventListener('click', () => {
-      const audience = button.dataset['audience'];
-      if (audience === 'owner' || audience === 'anybody') viewAs(audience);
+      const scope = button.dataset['mapScope'];
+      if (scope !== 'own_space' && scope !== 'published') return;
+      if (scope === 'published' && openView?.publication?.publishedAt == null) {
+        notice('Publica esta página para verla como centro del mapa publicado.');
+        return;
+      }
+      if (scope === workspace.mapScope) return;
+      workspace.mapScope = scope;
+      drawAudienceControl();
+      forgetPositions();
+      forgetCamera();
+      void refreshGraph();
     });
   }
 

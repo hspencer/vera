@@ -1028,13 +1028,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     } catch {
       canonicalHost = '';
     }
-    // El dueño puede bajar voluntariamente su autoridad para previsualizar.
-    // La cookie sólo sabe pedir `anybody`; nunca puede pedir ni recuperar dueño.
-    const requestedPublic = (request.headers.cookie ?? '')
-      .split(';')
-      .some((part) => part.trim() === 'vera-view=anybody');
     const publicOrigin = forcedPublic || (canonicalHost !== '' && host === canonicalHost);
-    const publicAccess = publicOrigin || requestedPublic;
+    const publicAccess = publicOrigin;
 
     if (publicAccess && request.method !== 'GET' && request.method !== 'HEAD') {
       send(response, 405, { error: 'anybody sólo puede leer' });
@@ -4495,7 +4490,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       if (path.startsWith('/graph/')) {
         const centre = decodeURIComponent(path.slice('/graph/'.length));
         const depth = Number(url.searchParams.get('depth') ?? '2');
-        if (publicAccess) {
+        // El dueño puede mirar el mismo subgrafo publicado sin dejar de ser
+        // dueño. Esto filtra sólo el mapa; no cambia la autoridad de la petición.
+        const publishedMap = publicAccess || url.searchParams.get('published') === '1';
+        if (publishedMap) {
           const centred = graph.page(centre) ?? graph.pageTitled(centre);
           if (centred === undefined || !isPublicPage(centred.id)) {
             send(response, 404, { error: 'no such page' });

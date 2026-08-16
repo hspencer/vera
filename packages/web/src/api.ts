@@ -1048,8 +1048,10 @@ export const api = {
       body: JSON.stringify({ block, folded }),
     }),
 
-  graph: (centre: string, depth: number) =>
-    json<GraphData>(`/graph/${encodeURIComponent(centre)}?depth=${depth}`),
+  graph: (centre: string, depth: number, published = false) =>
+    json<GraphData>(
+      `/graph/${encodeURIComponent(centre)}?depth=${depth}${published ? '&published=1' : ''}`,
+    ),
 
   /**
    * Qué ha pasado en el corpus desde una posición del registro.

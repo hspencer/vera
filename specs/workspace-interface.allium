@@ -397,6 +397,7 @@ contract InstallableWebApplication {
 enum WorkspaceLayout { text_only | graph_only | split }
 enum GraphViewMode { graph_2d | graph_3d }
 enum ColourScheme { light | dark }
+enum MapContentScope { own_space | published }
 enum BlockBehaviour { markdown | html | audio | video | drawing | p5js | query | mermaid | table }
 
 -- Qué hizo alguien para llegar a la página en la que está.
@@ -437,6 +438,7 @@ entity Workspace {
     layout: WorkspaceLayout
     split_divider_position: Decimal
     graph_view: GraphViewMode
+    map_content_scope: MapContentScope
     colour_scheme: ColourScheme
     navigation_history: List<TraceStep>
     theme: Theme
@@ -567,6 +569,30 @@ rule ParticipantChangesGraphView {
     requires: workspace.participant = participant
 
     ensures: workspace.graph_view = graph_view
+}
+
+rule ParticipantReturnsToTheirOwnMap {
+    when: ChangeMapContentScope(participant, workspace, scope)
+
+    requires: workspace.participant = participant
+    requires: scope = own_space
+
+    ensures: workspace.map_content_scope = own_space
+}
+
+rule OwnerFiltersTheMapToPublishedPages {
+    when: ChangeMapContentScope(participant, workspace, scope)
+
+    requires: workspace.participant = participant
+    requires: scope = published
+    requires: workspace.active_page != null
+
+    let central_publication = core/Publication{page: workspace.active_page}
+
+    requires: exists central_publication
+    requires: central_publication.site.owner = participant
+
+    ensures: workspace.map_content_scope = published
 }
 
 rule ParticipantChangesColourScheme {
@@ -930,6 +956,7 @@ surface VeraWorkspace {
         workspace.layout
         workspace.split_divider_position
         workspace.graph_view
+        workspace.map_content_scope
         workspace.colour_scheme
         workspace.navigation_history
         workspace.theme
@@ -938,6 +965,7 @@ surface VeraWorkspace {
         ChangeWorkspaceLayout(participant, workspace, layout)
         MoveSplitDivider(participant, workspace, position)
         ChangeGraphView(participant, workspace, graph_view)
+        ChangeMapContentScope(participant, workspace, scope)
         ChangeColourScheme(participant, workspace, colour_scheme)
         ApplyTheme(participant, workspace)
         NavigateToPage(participant, workspace, page, gesture)
@@ -1014,6 +1042,29 @@ surface VeraWorkspace {
         -- in the map and not in a bar shared with everything else. A control
         -- placed away from what it governs makes a reader learn a mapping that
         -- the layout could have told them.
+
+    @guarantee PublishedIsAMapFilterNotAnIdentity
+        -- In the authenticated PWA, the eye/map panel offers `Mi espacio` and
+        -- `Publicado`. Changing that choice filters the owner's map and workspace
+        -- context locally; the participant, credential and authority do not
+        -- change, and no `anybody` session is created.
+
+    @guarantee PublishedStartsFromAPublishedCentre
+        -- `Publicado` is available only while the central page is an explicit
+        -- Publication of a site owned by the participant. Its map is the induced
+        -- subgraph of that site's Publications reachable from the central page
+        -- within the map's current reach; private and unassigned pages are absent.
+
+    @guarantee PublishedKeepsTheOwnersTools
+        -- Filtering to `Publicado` removes nodes from the map, not capabilities
+        -- from the owner. Every published page shown there remains readable and
+        -- editable through the same authenticated workspace, with ordinary
+        -- attributed operations.
+
+    @guarantee MapScopeIsLocalWorkspaceState
+        -- `Mi espacio` or `Publicado` changes no Page, Publication, Membership,
+        -- credential, revision or operation. Returning to `Mi espacio` restores
+        -- the owner's ordinary reachable graph without authentication.
 
     @guarantee TheMapCanStepAside
         -- The map can be collapsed and brought back without losing where one is.

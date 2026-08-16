@@ -893,37 +893,6 @@ surface PublicVeraWorkspace {
         -- preference, and it never enlarges which properties `anybody` may read.
 }
 
--- The eye/map panel is where the owner already decides how much of the graph is
--- visible. Public preview belongs there because it changes the authority of the
--- whole reading surface, not merely the styling of one page.
-surface OwnerPublicPreviewSwitch {
-    facing owner: SiteOwner
-    context site: core/PersonalSite
-    let active_previews = active_owner_previews(site, owner)
-
-    provides:
-        identity/EnterPublicPreview(owner, site, origin)
-        for preview in active_previews:
-            identity/LeavePublicPreview(owner, preview)
-
-    @guarantee PropioAndPublicoLiveInTheEyePanel
-        -- In the authenticated Vera, the eye/map panel offers `propio` and
-        -- `público`. Choosing `público` opens an identity/PublicReadingSession
-        -- as `anybody`; choosing `propio` closes that preview and returns to the
-        -- owner's already authenticated workspace.
-
-    @guarantee PreviewTraversesTheRealPublicBoundary
-        -- The preview asks the server again as `anybody` and receives only the
-        -- explicit Publications. It does not hide private nodes after the owner
-        -- application has fetched them, so what the owner sees is evidence of
-        -- what an external reader can receive.
-
-    @guarantee PublicOriginsOfferNoPropio
-        -- This owner-facing switch is absent at a true public origin. There the
-        -- reading session entered as `public_origin`, has no previewed_by owner,
-        -- and cannot display or invoke the return to `propio`.
-}
-
 surface HistoricalSiteMigration {
     facing owner: SiteOwner
     context site: core/PersonalSite

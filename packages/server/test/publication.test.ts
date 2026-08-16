@@ -190,18 +190,21 @@ describe('publicación del sitio personal', () => {
     assert.equal((await fetch(`${previewBase}/exposures`)).status, 404);
     assert.equal((await fetch(`${previewBase}/operations`, { method: 'POST' })).status, 405);
 
-    const ownerPreview = await fetch(`${base}/health`, {
+    // La cookie de la antigua previsualización no puede dejar al dueño pegado
+    // en sólo lectura: el ojo ahora filtra el mapa, no la identidad.
+    const ownerWithOldCookie = await fetch(`${base}/health`, {
       headers: { cookie: 'vera-view=anybody' },
     }).then((response) => response.json()) as { access: string; canViewOwner: boolean; pages: number };
-    assert.equal(ownerPreview.access, 'anybody');
-    assert.equal(ownerPreview.canViewOwner, true);
-    assert.equal(ownerPreview.pages, 1);
+    assert.equal(ownerWithOldCookie.access, 'owner');
+
+    const publishedMap = await fetch(
+      `${base}/graph/${encodeURIComponent(page)}?depth=2&published=1`,
+    ).then((response) => response.json()) as { nodes: { id: string }[] };
+    assert.deepEqual(publishedMap.nodes.map((node) => node.id), [page]);
     assert.equal(
-      (await fetch(`${base}/operations`, {
-        method: 'POST',
-        headers: { cookie: 'vera-view=anybody' },
-      })).status,
-      405,
+      (await write({ kind: 'edit_block', block, content: 'Segunda versión y [[Secreta]]' })).httpStatus,
+      201,
+      'filtrar el mapa no quita la autoridad para editar',
     );
 
     const canonical = await throughCanonical('/health');

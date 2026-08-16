@@ -140,8 +140,8 @@ contract OwnerPublicPreviewAccess {
     return_to_owner: (owner: core/Participant, reading: PublicReadingSession) -> VeraInstance
 
     @invariant PreviewIsARealAuthorityReduction
-        -- Choosing the public view from the authenticated workshop creates the
-        -- same `anybody` session and traverses the same server-side publication
+        -- An explicitly requested strict public preview creates the same
+        -- `anybody` session and traverses the same server-side publication
         -- boundary as an external public request. It is not a client-side filter
         -- over data the owner already received.
 
@@ -149,6 +149,11 @@ contract OwnerPublicPreviewAccess {
         -- A session entered as an owner preview may return to that already
         -- authenticated owner's workshop. A session born at a public origin has
         -- no owner to return to and exposes no elevation operation.
+
+    @invariant StrictPreviewIsNotThePublishedMapFilter
+        -- Strict preview is a separately named action. The authenticated map's
+        -- `Mi espacio` / `Publicado` control changes only its local visible
+        -- subgraph and never invokes this contract or changes identity.
 }
 
 ------------------------------------------------------------
@@ -249,8 +254,8 @@ rule PublicOriginBeginsAnonymousReading {
     )
 }
 
--- `público` en el taller no simula a anybody después de haber leído como dueño:
--- abre la misma frontera con la autoridad ya rebajada en el servidor.
+-- Esta previsualización estricta se pide por su nombre y queda separada del
+-- filtro `Mi espacio` / `Publicado` del mapa autenticado.
 rule OwnerBeginsExactPublicPreview {
     when: EnterPublicPreview(owner, site, origin)
 
@@ -436,6 +441,11 @@ surface OwnerPublicPreviewBoundary {
         -- The owner-preview operations belong only to an already authenticated
         -- owner workspace. `anybody` at the public origin cannot enumerate or
         -- invoke them, including by submitting their request shape directly.
+
+    @guarantee ThisIsNotTheEyeMapControl
+        -- Entering or leaving strict preview requires this explicit owner action.
+        -- The eye/map `Mi espacio` / `Publicado` choice never appears here and
+        -- never changes the identity of its authenticated workspace.
 }
 
 ------------------------------------------------------------
