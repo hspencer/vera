@@ -101,7 +101,8 @@ contract SelfDescription {
 -- they may do and what they took: one page, one row per connection. Four pages
 -- would be four copies of the same three fields.
 enum SpecialKind {
-    ontology | properties | objects | presentation | instructions | service | mcp
+    ontology | properties | objects | presentation | instructions | publication |
+    service | mcp
 }
 
 enum ProposalStatus { proposed | accepted | rejected }
@@ -214,6 +215,20 @@ invariant OneKindPerSpecialPage {
     for special in SpecialPages:
         for other in SpecialPages:
             other.page = special.page implies other = special
+}
+
+-- La publicación tiene una sola puerta de gobierno por grafo. Su título no es
+-- una clave oculta —el kind sigue siendo la autoridad—, pero sí la dirección
+-- humana estable desde la que el dueño reconoce y enlaza esa configuración.
+invariant OneCanonicalPublicationPagePerGraph {
+    for special in SpecialPages:
+        special.kind = publication implies
+            special.page.title = "Vera:Publicación" and
+            SpecialPages.all(other =>
+                other.kind != publication or
+                other.graph != special.graph or
+                other = special
+            )
 }
 
 invariant DecidedProposalsNameTheirDecider {

@@ -13,6 +13,7 @@
 --   project, not a projection of Herbert's public identity or other projects
 
 use "./core.allium" as core
+use "./special-pages.allium" as special
 
 ------------------------------------------------------------
 -- Contracts
@@ -191,6 +192,54 @@ rule ImportHistoricalContentIntoGraph {
     )
 }
 
+-- `Vera:Publicación` es la superficie canónica de estas decisiones, no una
+-- segunda copia de ellas. Aplicar lo que el dueño decidió allí cambia el
+-- PersonalSite existente; el sitio, sus publicaciones y sus revisiones siguen
+-- siendo las entidades gobernadas por core.allium.
+rule ConfigurePersonalSiteFromPublicationPage {
+    when: ConfigurePersonalSite(owner, publication_page, site, title, canonical_domain, entry_point)
+
+    requires: owner = site.owner
+    requires: owner.kind = human
+    requires: publication_page.kind = publication
+    requires: publication_page.graph = site.graph
+    requires: publication_page.page.title = "Vera:Publicación"
+    requires: non_blank(title)
+    requires: is_absolute_https_origin(canonical_domain)
+    requires: entry_point.graph = site.graph
+    requires: entry_point.visibility = public
+    requires: exists core/Publication{site: site, page: entry_point}
+
+    ensures:
+        site.title = title
+        site.canonical_domain = canonical_domain
+        site.entry_point = entry_point
+
+    @guidance
+        -- canonical_domain names an origin only: scheme and host, with no path,
+        -- query or fragment. A preview may be served elsewhere without changing
+        -- the canonical public address written here.
+}
+
+-- La tabla de páginas de `Vera:Publicación` no inventa otra colección. Publicar
+-- desde ella encadena el mismo acto humano de core y crea la misma Publication
+-- con su frontera histórica, ruta y autor.
+rule PublishPageFromPublicationPage {
+    when: PublishFromPublicationPage(owner, publication_page, site, page, path)
+
+    requires: owner = site.owner
+    requires: owner.kind = human
+    requires: publication_page.kind = publication
+    requires: publication_page.graph = site.graph
+    requires: publication_page.page.title = "Vera:Publicación"
+    requires: page.graph = site.graph
+    requires: page.visibility = public
+    requires: valid_publication_path(path)
+    requires: not exists core/Publication{site: site, page: page}
+
+    ensures: core/PublishPage(owner, site, page, path)
+}
+
 ------------------------------------------------------------
 -- Invariants
 ------------------------------------------------------------
@@ -299,6 +348,71 @@ surface HistoricalSiteMigration {
         -- Import preserves Markdown source, relevant metadata and the original
         -- public URL while making the resulting page part of Vera's graph.
 }
+
+-- La página especial no es un panel que guarda su propia configuración. Es la
+-- vista legible y editable de las entidades de publicación ya gobernadas por
+-- core: el sitio, su portada y la colección explícita de Publication.
+surface VeraPublicationPage {
+    facing owner: SiteOwner
+    context site: core/PersonalSite
+        where exists special/SpecialPage{graph: site.graph, kind: publication}
+    let publication_page = special/SpecialPage{graph: site.graph, kind: publication}
+
+    exposes:
+        publication_page.page
+        site.title
+        site.canonical_domain
+        site.entry_point
+        for publication in site.publications:
+            publication.page
+            publication.path
+            publication.first_revision
+            publication.published_at
+            publication.published_by
+
+    provides:
+        ConfigurePersonalSite(owner, publication_page, site, title, canonical_domain, entry_point)
+        PublishFromPublicationPage(owner, publication_page, site, page, path)
+
+    contracts:
+        fulfils special/SelfDescription
+
+    @guarantee CanonicalSpecialPage
+        -- The owner's publication configuration is reached at exactly
+        -- `Vera:Publicación`, declared with special kind `publication`. The kind,
+        -- not a private title check, is what gives the page authority.
+
+    @guarantee ExistingDomainIsTheOnlyConfigurationState
+        -- The page edits the existing PersonalSite and Publication entities. It
+        -- does not maintain a second settings record, publication list or copied
+        -- homepage that could drift from the graph.
+
+    @guarantee SettingsUseStableHumanNames
+        -- The page names its three required settings `title`, `url` and
+        -- `entryPoint`. `url` is the human-facing name of canonical_domain; it
+        -- accepts one absolute HTTPS origin, while `entryPoint` selects a Page
+        -- rather than storing a title or URL that could later resolve elsewhere.
+
+    @guarantee InvalidSettingsRemainVisibleAndInactive
+        -- An empty title, a URL that is not an absolute HTTPS origin, a private
+        -- or foreign entry point, or a page not already published in this site
+        -- does not become effective. The rejected value and its reason remain
+        -- visible on `Vera:Publicación`; the last valid configuration continues.
+
+    @guarantee PublicationMembershipAndPathsAreExplicit
+        -- Public visibility makes a page eligible but never publishes it. Each
+        -- row names one Publication, its unique site-relative path, the revision
+        -- from which its public history begins, and the human act that opened it.
+
+    @guarantee EntryPointIsTheRootDocument
+        -- The chosen entry point is an already published page of this same site
+        -- and graph. Its document occupies the canonical origin root without a
+        -- copied homepage or an automatically selected fallback.
+
+    @guarantee PreviewDoesNotRewriteCanonicalIdentity
+        -- Serving the projection at an internal preview address changes neither
+        -- canonical_domain nor the canonical URLs and citations emitted by the
+        -- public projection.
 
 ------------------------------------------------------------
 -- Deferred Specifications
