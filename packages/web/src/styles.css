@@ -537,6 +537,24 @@ input {
   outline: none;
 }
 
+.format-italic {
+  font-style: italic;
+}
+
+.format-strike {
+  text-decoration: line-through;
+}
+
+.format-underline {
+  text-decoration: underline;
+  text-underline-offset: 0.14em;
+}
+
+.format-superscript,
+.format-subscript {
+  font-size: 0.78rem;
+}
+
 .format-heading {
   display: flex;
   flex: 0 0 auto;

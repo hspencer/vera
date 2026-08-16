@@ -73,6 +73,13 @@ describe('inlineMarkdown', () => {
     assert.equal(inlineMarkdown('~~ido~~ y ==esto=='), '<del>ido</del> y <mark>esto</mark>');
   });
 
+  it('presenta subrayado, superíndice y subíndice sin guardar HTML', () => {
+    assert.equal(
+      inlineMarkdown('++debajo++ ^arriba^ ~abajo~'),
+      '<u>debajo</u> <sup>arriba</sup> <sub>abajo</sub>',
+    );
+  });
+
   describe('imágenes', () => {
     it('emite una imagen remota', () => {
       assert.equal(

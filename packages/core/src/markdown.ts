@@ -249,6 +249,9 @@ function decorate(html: string): string {
   return html
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+    .replace(/(?<!~)~([^~\n]+)~(?!~)/g, '<sub>$1</sub>')
+    .replace(/\^([^\^\n]+)\^/g, '<sup>$1</sup>')
+    .replace(/\+\+([^+\n]+)\+\+/g, '<u>$1</u>')
     .replace(/==([^=]+)==/g, '<mark>$1</mark>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');

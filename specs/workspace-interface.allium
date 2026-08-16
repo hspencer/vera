@@ -110,20 +110,28 @@ contract NativeMarkdownEditing {
 
     @invariant FormattingIsOneEditingTool
         -- While a Markdown block is being edited, `/formato` reveals one bar
-        -- above its source for bold, italic, strikethrough, Vera internal links,
-        -- external web links, quotation, code and one split heading control. H1
-        -- is its visible primary action; the adjacent arrow reveals H2 through H6
-        -- in a vertical list. Those levels do not compete as six permanent
-        -- controls or first-level block commands. Closing the bar leaves the same
-        -- source and caret in place.
+        -- above its source. Its observable order is the split heading control;
+        -- bold, italic, strikethrough, underline, superscript and subscript;
+        -- quotation and code; then Vera internal link and external web link. H1
+        -- is the heading control's visible primary action; the adjacent arrow
+        -- reveals H2 through H6 in a vertical list. Italic is presented as an
+        -- italic `I`, strikethrough as a struck `S`, and underline as an
+        -- underlined `U`. These appearances do not replace accessible names.
+        -- Closing the bar leaves the same source, selection and caret in place.
 
     @invariant FormattingWritesPortableMarkdown
         -- An internal link wraps selected text as `[[…]]`; with no selection it
         -- inserts `[[]]`, leaves the caret between the brackets and opens page
         -- completion. An external web link remains ordinary `[…](https://…)`
-        -- Markdown. Choosing H1 through H6 transforms the whole block by replacing
-        -- any existing H1–H6 prefix with exactly the selected level, never by
-        -- stacking another run of heading marks. The resulting Markdown source is
+        -- Markdown. Underline, superscript and subscript preserve reversible
+        -- textual source as `++…++`, `^…^` and `~…~` respectively; Vera
+        -- renders those spans as underlined, superscript and subscript, while the
+        -- source remains legible text in readers that do not recognise the
+        -- extensions. Choosing H1 through H6 transforms the whole block by
+        -- replacing any existing H1–H6 prefix with exactly the selected level,
+        -- never by stacking another run of heading marks. Formatting a selection
+        -- preserves that selection, and formatting without one leaves the caret
+        -- at the corresponding source position. The resulting Markdown source is
         -- what Vera preserves; the toolbar stores no opaque rich-text form.
 
     @invariant FormattingControlsAreUnambiguousAndAccessible

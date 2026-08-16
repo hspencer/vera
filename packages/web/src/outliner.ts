@@ -5829,14 +5829,18 @@ function startEditing(
 
   autosize();
 
-  type FormatAction =
+  type FormatAction = (
     | { label: string; title: string; marker: string }
     | { label: string; title: string; prefix: '> ' }
-    | { icon: IconName; title: string; link: 'internal' | 'external' };
+    | { icon: IconName; title: string; link: 'internal' | 'external' }
+  ) & { className?: string };
   const formatActions: FormatAction[] = [
     { label: 'B', title: 'negrita', marker: '**' },
-    { label: 'I', title: 'cursiva', marker: '*' },
-    { label: 'S', title: 'tachado', marker: '~~' },
+    { label: 'I', title: 'cursiva', marker: '*', className: 'format-italic' },
+    { label: 'S', title: 'tachado', marker: '~~', className: 'format-strike' },
+    { label: 'U', title: 'subrayado', marker: '++', className: 'format-underline' },
+    { label: 'X²', title: 'superíndice', marker: '^', className: 'format-superscript' },
+    { label: 'X₂', title: 'subíndice', marker: '~', className: 'format-subscript' },
     { label: '❝', title: 'cita', prefix: '> ' },
     { label: '</>', title: 'código en línea', marker: '`' },
     { icon: 'brackets', title: 'enlace interno', link: 'internal' },
@@ -5852,7 +5856,7 @@ function startEditing(
   for (const action of formatActions) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'format-action';
+    button.className = `format-action${action.className === undefined ? '' : ` ${action.className}`}`;
     if ('icon' in action) button.innerHTML = icon(action.icon);
     else button.textContent = action.label;
     button.title = action.title;
@@ -5925,7 +5929,7 @@ function startEditing(
   headingChoices.append(headingToggle, headingMenu);
   headings.append(headingMain, headingChoices);
   updateHeadingState();
-  formatBar.insertBefore(headings, formatBar.children[3] ?? null);
+  formatBar.prepend(headings);
 
   const at = Math.min(caret, editor.value.length);
   /*

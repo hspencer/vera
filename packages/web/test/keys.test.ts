@@ -308,6 +308,24 @@ describe('formato Markdown', () => {
     });
   });
 
+  it('los formatos tipográficos nuevos conservan la selección', () => {
+    assert.deepEqual(resolveFormat('++', 'uno dos', 4, 7), {
+      buffer: 'uno ++dos++',
+      selectionStart: 6,
+      selectionEnd: 9,
+    });
+    assert.deepEqual(resolveFormat('^', 'x2', 1, 2), {
+      buffer: 'x^2^',
+      selectionStart: 2,
+      selectionEnd: 3,
+    });
+    assert.deepEqual(resolveFormat('~', 'H2O', 1, 2), {
+      buffer: 'H~2~O',
+      selectionStart: 2,
+      selectionEnd: 3,
+    });
+  });
+
   it('convierte la selección en un enlace y conserva el texto seleccionado', () => {
     assert.deepEqual(resolveLink('ver sitio', 4, 9), {
       buffer: 'ver [sitio](https://)',
