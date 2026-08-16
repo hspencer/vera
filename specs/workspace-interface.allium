@@ -83,6 +83,12 @@ contract NativeMarkdownEditing {
         -- headings, lists, quotations, code, tables, images, horizontal rules and
         -- footnote references read as themselves rather than as their marks.
 
+    @invariant CodeBlocksWrapWithoutHorizontalScrolling
+        -- Block code preserves authored whitespace and line breaks, but a line
+        -- wider than the reading column wraps inside its code block. Reading code
+        -- never requires a separate horizontal scrollbar, including when one
+        -- uninterrupted token is wider than the available space.
+
     @invariant OrderedListsKeepTheirSequence
         -- Numbered items separated by blank source lines remain one ordered
         -- list rather than restarting at one. When the first authored ordinal
@@ -118,6 +124,14 @@ contract NativeMarkdownEditing {
         -- Formatting a Markdown block cannot turn it into HTML, p5.js, a query,
         -- Mermaid, drawing or media. Executable and specialised behaviours begin
         -- only through their explicit block command or recognised attachment.
+
+    @invariant FormattingFloatsWithoutMovingTheText
+        -- The formatting bar floats above the block being edited and occupies no
+        -- space in the document flow: opening or closing it moves neither that
+        -- block's source nor any block below it. It stays horizontally aligned
+        -- with the editor. While a block taller than the viewport is edited, the
+        -- bar remains at the top of the visible text pane instead of scrolling
+        -- outside the screen.
 }
 
 -- A block has one primary way of being read, but no stored type field is needed.
@@ -428,12 +442,13 @@ entity Workspace {
     theme: Theme
 }
 
--- Un paso del rastro: no una página, sino una llegada a una página.
+-- Un paso del rastro: la llegada más reciente a una página.
 --
--- El cambio respecto de guardar sólo la página es el que decide todo lo que
--- trail.allium hace después. Una lista de páginas dice por dónde se pasó; una
--- lista de llegadas dice cómo se pasó de cada una a la siguiente, y eso es lo
--- único que hay de un cruce mientras nadie escriba sobre él.
+-- El paso conserva cómo se llegó, pero el breadcrumb no colecciona instancias de
+-- una página. Cada página aparece una sola vez. Volver a una ya presente mueve
+-- ese paso al final y reemplaza su llegada anterior por la actual; no aumenta la
+-- cantidad de pasos. Así el rastro dice qué páginas componen el recorrido y cuál
+-- fue la llegada vigente a cada una, sin convertir cada vuelta en otro nodo.
 --
 -- `from` es la página desde la que se llegó, nula en el primer paso. Que el
 -- primer paso no tenga origen no es una carencia que haya que rellenar: todo
@@ -632,7 +647,7 @@ rule ParticipantNavigatesToPage {
     ensures:
         workspace.active_page = page
         workspace.navigation_history = latest(
-            append(workspace.navigation_history,
+            append(without_page(workspace.navigation_history, page),
             TraceStep{
                 page: page,
                 from: workspace.active_page,
@@ -661,12 +676,15 @@ rule ParticipantNavigatesToPage {
         -- deja paso. Un rastro que contara los redibujados diría dónde estuvo el
         -- programa, no dónde estuvo quien lee.
         --
-        -- Es la distinción que el código tenía por accidente, quedándose sólo con
-        -- la página nueva si era distinta de la última. Funcionaba y decía otra
-        -- cosa: que llegar dos veces seguidas al mismo sitio es imposible. Y sí es
-        -- posible —se puede volver a una página desde otra y luego regresar— así
-        -- que lo que hay que preguntar no es si la página cambió sino si alguien
-        -- se movió.
+        -- Navegar de vuelta a una página que ya está en el rastro sí es moverse,
+        -- pero tampoco crea otra instancia: actualiza su llegada y la mueve al
+        -- final. Redibujar no hace siquiera eso, porque no hubo navegación.
+
+    @invariant RevisitingReordersInsteadOfRepeating
+        -- Antes de agregar la llegada, se quita del breadcrumb cualquier paso de
+        -- la misma página. El paso nuevo queda al final con el gesto y el origen
+        -- actuales. Una revisita cambia el orden y la llegada conservada; nunca
+        -- cambia el número de páginas del breadcrumb.
 }
 
 rule ParticipantOpensGraphNodeOnPhone {
@@ -679,7 +697,7 @@ rule ParticipantOpensGraphNodeOnPhone {
         workspace.active_page = page
         workspace.layout = text_only
         workspace.navigation_history = latest(
-            append(workspace.navigation_history,
+            append(without_page(workspace.navigation_history, page),
             TraceStep{
                 page: page,
                 from: workspace.active_page,
@@ -858,6 +876,13 @@ invariant ActivePageBelongsToWorkspaceGraph {
 invariant TraceRemainsBounded {
     for workspace in Workspaces:
         workspace.navigation_history.count <= config.max_trace_steps
+}
+
+invariant TraceContainsEachPageOnce {
+    for workspace in Workspaces:
+        for a in workspace.navigation_history:
+            for b in workspace.navigation_history:
+                a != b implies a.page != b.page
 }
 
 invariant SearchSuggestionsBelongToTheirGraph {
@@ -1043,9 +1068,10 @@ surface VeraWorkspace {
 
     @guarantee TheTraceSurvivesRefresh
         -- El rastro completo sobrevive a recargar o cerrar la interfaz. La última
-        -- parada sigue siendo donde el participante está, pero no reemplaza a las
-        -- anteriores: regresar al taller devuelve la secuencia que se estaba
-        -- componiendo, con sus repeticiones, podas y orden manual.
+        -- parada sigue siendo donde el participante está. Regresar al taller
+        -- devuelve la secuencia única de páginas que se estaba componiendo, con
+        -- sus podas y orden manual. Si una versión anterior guardó duplicados, al
+        -- abrir se conserva sólo la llegada más reciente de cada página.
         --
         -- Esta durabilidad no convierte el rastro en corpus. Sigue siendo estado
         -- privado del taller, sin página, autor ni historial de revisiones; sólo
@@ -1053,8 +1079,8 @@ surface VeraWorkspace {
         -- siendo el gesto que lo vuelve texto compartible y auditable.
 
     @guarantee TheTraceIsBoundedAndClearable
-        -- El rastro conserva las llegadas más recientes hasta un límite visible
-        -- del taller y ofrece un gesto para vaciarlo entero. Limpiarlo no borra
+        -- El rastro conserva hasta un límite visible de páginas únicas del taller
+        -- y ofrece un gesto para vaciarlo entero. Limpiarlo no borra
         -- páginas ni recorridos ya promovidos: sólo descarta el rastro privado de
         -- este dispositivo, sin dejar un historial de lo descartado.
 

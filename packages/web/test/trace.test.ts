@@ -28,7 +28,7 @@ function memoryStorage(): Storage {
 const steps: TraceStep[] = [
   { page: 'a', from: null, gesture: 'opened_directly', at: 1 },
   { page: 'b', from: 'a', gesture: 'followed_reference', at: 2 },
-  { page: 'a', from: 'b', gesture: 'returned', at: 3 },
+  { page: 'c', from: 'b', gesture: 'followed_reference', at: 3 },
 ];
 
 afterEach(() => {
@@ -36,29 +36,31 @@ afterEach(() => {
 });
 
 describe('rastro durable y componible', () => {
-  it('sobrevive completo, incluyendo llegadas repetidas', () => {
+  it('sobrevive completo cuando cada página aparece una sola vez', () => {
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: memoryStorage() });
     saveTrace(steps);
     assert.deepEqual(loadTrace(), steps);
   });
 
-  it('al volver a abrir limpia repintados antiguos, pero conserva los regresos reales', () => {
+  it('al volver a abrir migra duplicados conservando sólo la llegada más reciente', () => {
     const storage = memoryStorage();
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
-    saveTrace([
+    storage.setItem('vera.navigationTrace', JSON.stringify([
       steps[0]!,
       { ...steps[0]!, at: 2 },
       steps[1]!,
-      steps[2]!,
-    ]);
-    assert.deepEqual(loadTrace().map((step) => step.page), ['a', 'b', 'a']);
-    assert.deepEqual(JSON.parse(storage.getItem('vera.navigationTrace') ?? '[]').map((step: TraceStep) => step.page), ['a', 'b', 'a']);
+      { page: 'a', from: 'b', gesture: 'returned', at: 4 },
+    ]));
+    const loaded = loadTrace();
+    assert.deepEqual(loaded.map((step) => step.page), ['b', 'a']);
+    assert.equal(loaded.at(-1)?.gesture, 'returned');
+    assert.deepEqual(JSON.parse(storage.getItem('vera.navigationTrace') ?? '[]').map((step: TraceStep) => step.page), ['b', 'a']);
   });
 
   it('conserva el gesto al reordenar y permite podar una llegada', () => {
     const arranged = movedTo(steps, 2, 0);
-    assert.equal(arranged[0]?.gesture, 'returned');
-    assert.deepEqual(dropped(arranged, 1).map((step) => step.page), ['a', 'b']);
+    assert.equal(arranged[0]?.page, 'c');
+    assert.deepEqual(dropped(arranged, 1).map((step) => step.page), ['c', 'b']);
   });
 
   it('un valor local roto no impide abrir Vera', () => {
@@ -95,11 +97,11 @@ describe('rastro durable y componible', () => {
 });
 
 describe('lo que es andar y lo que no', () => {
-  it('un bucle son dos llegadas y las dos cuentan', () => {
-    // La razón de que esto no deduplique: volver a una página por otro camino
-    // dice algo, y colapsar las dos llegadas en una lo borraría justo ahí.
-    const walking = walked(steps, { page: 'b', from: 'a', gesture: 'followed_reference', at: 4 });
-    assert.deepEqual(walking.map((step) => step.page), ['a', 'b', 'a', 'b']);
+  it('revisitar una página la mueve al final sin repetirla', () => {
+    const walking = walked(steps, { page: 'a', from: 'c', gesture: 'returned', at: 4 });
+    assert.deepEqual(walking.map((step) => step.page), ['b', 'c', 'a']);
+    assert.equal(walking.length, steps.length);
+    assert.equal(walking.at(-1)?.gesture, 'returned');
   });
 
   it('pero llegar donde ya se estaba no es llegar', () => {
@@ -110,19 +112,19 @@ describe('lo que es andar y lo que no', () => {
      * el enrutador lo leía como una llegada, y el rastro terminaba con la misma
      * página repetida una vez por clic.
      */
-    const still = walked(steps, { page: 'a', from: 'a', gesture: 'followed_reference', at: 4 });
+    const still = walked(steps, { page: 'c', from: 'c', gesture: 'followed_reference', at: 4 });
     assert.deepEqual(still, steps);
   });
 
   it('ni volver a abrir por la dirección la que ya estaba abierta', () => {
     // Sin `from` no hay de dónde venir, así que lo dice el rastro: si el último
     // paso ya estaba ahí, nadie anduvo.
-    const same = walked(steps, { page: 'a', from: null, gesture: 'opened_directly', at: 4 });
+    const same = walked(steps, { page: 'c', from: null, gesture: 'opened_directly', at: 4 });
     assert.deepEqual(same, steps);
   });
 
   it('y llegar de fuera a otra página sigue siendo llegar', () => {
-    const arrived = walked(steps, { page: 'c', from: null, gesture: 'opened_directly', at: 4 });
+    const arrived = walked(steps, { page: 'd', from: null, gesture: 'opened_directly', at: 4 });
     assert.equal(arrived.length, 4);
   });
 

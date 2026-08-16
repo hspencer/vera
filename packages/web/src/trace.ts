@@ -4,11 +4,11 @@
 // partir del paso 2 se poda y se reordena, y esas son operaciones sobre una
 // lista que conviene poder probar sin un DOM delante.
 //
-// Lo que este módulo defiende, dicho una vez: un paso no es una página, es una
-// llegada a una página. La diferencia decide todo lo demás. Una lista de páginas
-// dice por dónde se pasó; una lista de llegadas dice cómo se pasó de cada una a
-// la siguiente, y eso es lo único que hay de un cruce mientras nadie escriba
-// sobre él. Ver trail.allium.
+// Lo que este módulo defiende, dicho una vez: el breadcrumb contiene páginas,
+// no una bitácora de visitas. Cada página aparece una sola vez. El paso conserva
+// la llegada más reciente porque su gesto sí importa, pero volver a una página
+// mueve ese único paso al final en vez de sumar otra instancia. Ver
+// workspace-interface.allium.
 
 /**
  * Qué hizo alguien para llegar a la página en la que está.
@@ -52,6 +52,19 @@ const GESTURES = new Set<NavigationGesture>([
   'opened_directly',
 ]);
 
+/** Conserva sólo la llegada más reciente de cada página y su orden relativo. */
+function uniqueMostRecent(trace: readonly TraceStep[]): TraceStep[] {
+  const seen = new Set<string>();
+  const unique: TraceStep[] = [];
+  for (let index = trace.length - 1; index >= 0; index -= 1) {
+    const step = trace[index];
+    if (step === undefined || seen.has(step.page)) continue;
+    seen.add(step.page);
+    unique.push(step);
+  }
+  return unique.reverse();
+}
+
 /** Recupera el taller local sin permitir que datos viejos o rotos impidan abrir Vera. */
 export function loadTrace(): TraceStep[] {
   try {
@@ -71,16 +84,11 @@ export function loadTrace(): TraceStep[] {
     });
 
     /*
-     * Antes de RedrawingAPageIsNotWalkingToIt, pulsar un ancla podía guardar la
-     * página corriente otra vez. `walked` ya impide producir ese estado, pero el
-     * rastro es durable: sin migrarlo, cada recarga resucita para siempre los
-     * duplicados que la versión vieja dejó en localStorage.
-     *
-     * Sólo se colapsan llegadas contiguas a la misma página. A → B → A sigue
-     * entero, porque volver después de haber ido a otra parte sí es un recorrido.
+     * Versiones anteriores guardaban una instancia por llegada. La migración se
+     * queda con la llegada más reciente de cada página: A → B → A pasa a B → A,
+     * el mismo reordenamiento que produce una revisita desde ahora.
      */
-    const deduplicated = valid.filter((step, index) => index === 0 || valid[index - 1]?.page !== step.page);
-    const migrated = deduplicated.slice(-TRACE_LIMIT);
+    const migrated = uniqueMostRecent(valid).slice(-TRACE_LIMIT);
     if (migrated.length !== valid.length) saveTrace(migrated);
     return migrated;
   } catch {
@@ -90,7 +98,7 @@ export function loadTrace(): TraceStep[] {
 
 /** El rastro es local-first: cada gesto queda durable antes de volver a la red. */
 export function saveTrace(trace: readonly TraceStep[]): void {
-  localStorage.setItem(TRACE_KEY, JSON.stringify(trace.slice(-TRACE_LIMIT)));
+  localStorage.setItem(TRACE_KEY, JSON.stringify(uniqueMostRecent(trace).slice(-TRACE_LIMIT)));
 }
 
 /** Vacía el rastro local: todavía no es corpus y por eso no deja historial. */
@@ -99,15 +107,13 @@ export function clearTrace(): void {
 }
 
 /**
- * Añade una llegada.
+ * Registra la llegada más reciente a una página.
  *
- * No deduplica, y es una decisión y no un descuido. El objeto es un *walk*:
- * repite páginas y las repite a propósito. Llegar a una página, recorrer un
- * argumento y volver a ella por otro camino es exactamente lo que un bucle es
- * en el plano del sentido, y colapsar las dos llegadas en una lo borraría justo
- * donde importa.
+ * @invariant RevisitingReordersInsteadOfRepeating: si la página ya estaba, se
+ * quita su paso anterior y la llegada nueva ocupa el final. Cambian el orden, el
+ * origen y el gesto conservado; la cantidad de páginas no aumenta.
  *
- * Conserva como máximo las últimas TRACE_LIMIT llegadas. El rastro orienta el
+ * Conserva como máximo las últimas TRACE_LIMIT páginas. El rastro orienta el
  * taller y puede promoverse, pero no es un archivo ilimitado de actividad: para
  * guardar un tramo como argumento existe el gesto de promoverlo a recorrido.
  */
@@ -121,15 +127,14 @@ export function walked(trace: readonly TraceStep[], step: TraceStep): TraceStep[
    * el fragmento de la dirección, el enrutador lo leía como una llegada, y el
    * rastro se llenaba de la misma página tantas veces como clics hubo.
    *
-   * No contradice lo de arriba y es la otra mitad de lo mismo. Un bucle son dos
-   * llegadas con algo en medio; esto es no haberse movido. La pregunta no es si
-   * la página cambió, sino si alguien anduvo.
+   * Esto no es una revisita: no hubo movimiento, por lo que tampoco hay nada que
+   * reordenar ni una llegada nueva que conservar.
    */
   if (step.from === step.page) return [...trace];
   // Y sin `from` —una dirección pegada, el botón de atrás— lo dice el rastro:
   // si el último paso ya estaba ahí, nadie se movió.
   if (step.from === null && trace[trace.length - 1]?.page === step.page) return [...trace];
-  return [...trace, step].slice(-TRACE_LIMIT);
+  return [...trace.filter((existing) => existing.page !== step.page), step].slice(-TRACE_LIMIT);
 }
 
 /**
