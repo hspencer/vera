@@ -206,6 +206,39 @@ describe('invariant PrivatePagesAreNeverPublished', () => {
 // publique ahí. @guarantee HumanPublicationAuthority, @invariant
 // SiteMembershipIsExplicit (personal-site-projection.allium).
 describe('rule PublishVisiblePage', () => {
+  it('lets only the owner correct the site title and canonical URL', () => {
+    const graph = inhabitedGraph();
+    const site = makeSite(graph);
+
+    const configured = graph.configureSite({
+      site,
+      participant: OWNER,
+      title: '  Vera pública  ',
+      canonicalDomain: 'https://publica.example/',
+    });
+
+    assert.equal(configured.title, 'Vera pública');
+    assert.equal(configured.canonicalDomain, 'https://publica.example');
+    assert.throws(
+      () => graph.configureSite({
+        site,
+        participant: AGENT,
+        title: 'Otra',
+        canonicalDomain: 'https://otra.example',
+      }),
+      /owner/i,
+    );
+    assert.throws(
+      () => graph.configureSite({
+        site,
+        participant: OWNER,
+        title: 'Vera',
+        canonicalDomain: 'javascript:alert(1)',
+      }),
+      /HTTP/i,
+    );
+  });
+
   it('keeps the first public revision while later revisions join the public life', () => {
     const graph = inhabitedGraph();
     const site = makeSite(graph);

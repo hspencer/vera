@@ -6,7 +6,7 @@
 // ninguno tiene una puerta trasera.
 
 import { answersIn } from './vocabulary.ts';
-import { normalisePublicPath } from './site.ts';
+import { normaliseCanonicalDomain, normalisePublicPath } from './site.ts';
 import { looksLikeQuery } from './query-source.ts';
 import { relationKeyOf, senseIn, titleIn } from './relations.ts';
 import type { Crossing } from './relations.ts';
@@ -1552,12 +1552,18 @@ export class VeraGraph {
       throw new Error('the site owner is not an active member of this graph');
     }
     if (input.id !== undefined) this.#observeId(input.id);
+    const title = input.title.trim();
+    if (title === '') throw new Error('a personal site needs a title');
+    const canonicalDomain = normaliseCanonicalDomain(input.canonicalDomain);
+    if (this.sites().some((candidate) => candidate.canonicalDomain === canonicalDomain)) {
+      throw new Error(`a site already uses ${canonicalDomain}`);
+    }
     const site: PersonalSite = {
       id: input.id ?? this.#nextId('site'),
       graph: this.id,
       owner: input.owner,
-      title: input.title,
-      canonicalDomain: input.canonicalDomain,
+      title,
+      canonicalDomain,
       entryPoint: null,
     };
     this.#sites.set(site.id, site);
@@ -1574,8 +1580,38 @@ export class VeraGraph {
 
   /** El sitio nombrado por su dominio canónico, que es como lo nombra quien publica. */
   siteByDomain(domain: string): PersonalSite | undefined {
-    const wanted = domain.replace(/\/$/, '');
-    return this.sites().find((site) => site.canonicalDomain.replace(/\/$/, '') === wanted);
+    let wanted: string;
+    try {
+      wanted = normaliseCanonicalDomain(domain);
+    } catch {
+      return undefined;
+    }
+    return this.sites().find((site) => site.canonicalDomain === wanted);
+  }
+
+  /** El dueño corrige la identidad pública del sitio sin reemplazarlo. */
+  configureSite(input: {
+    site: PersonalSiteId;
+    participant: ParticipantId;
+    title: string;
+    canonicalDomain: string;
+  }): PersonalSite {
+    const site = this.#sites.get(input.site);
+    if (site === undefined) throw new Error(`no such site ${input.site}`);
+    if (site.owner !== input.participant) throw new Error('only the site owner configures it');
+    const title = input.title.trim();
+    if (title === '') throw new Error('a personal site needs a title');
+    const canonicalDomain = normaliseCanonicalDomain(input.canonicalDomain);
+    if (
+      this.sites().some(
+        (candidate) => candidate.id !== site.id && candidate.canonicalDomain === canonicalDomain,
+      )
+    ) {
+      throw new Error(`a site already uses ${canonicalDomain}`);
+    }
+    site.title = title;
+    site.canonicalDomain = canonicalDomain;
+    return site;
   }
 
   /** La portada siempre es una página que este mismo sitio ya publica. */

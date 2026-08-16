@@ -220,6 +220,8 @@ export interface ServerOptions {
   publicBranding?: string;
   /** Puerto loopback que sirve sólo la proyección, para una vista previa privada. */
   publicPreviewPort?: number;
+  /** Dirección privada que el dueño puede abrir para ver esa proyección. */
+  publicPreviewUrl?: string;
 }
 
 export interface VeraServer {
@@ -442,28 +444,63 @@ export function createVeraServer(options: ServerOptions): VeraServer {
   const webRoot = options.webRoot === undefined ? null : resolve(options.webRoot);
   const objectsRoot = options.objectsRoot === undefined ? null : resolve(options.objectsRoot);
 
-  const publicSite = () =>
-    options.publicSite === undefined
+  const publicSite = () => {
+    const owned = graph.sites().filter((site) => site.owner === owner.id);
+    const declared = options.publicSite === undefined
       ? undefined
       : graph.siteByDomain(options.publicSite.canonicalDomain);
+    return declared ?? (owned.length === 1 ? owned[0] : undefined);
+  };
 
   const publicationView = (pageId: string) => {
-    if (options.publicSite === undefined) return null;
     const site = publicSite();
     const page = graph.page(pageId);
     if (page === undefined) return null;
+    const title = site?.title ?? options.publicSite?.title;
+    const domain = site?.canonicalDomain ?? options.publicSite?.canonicalDomain;
+    if (title === undefined || domain === undefined) return null;
     const publication = site === undefined
       ? undefined
       : graph.publicationsOf(site.id).find((candidate) => candidate.page === pageId);
     const path = publication?.path ?? suggestedPathFor(page.title);
     return {
       site: site?.id ?? null,
-      siteTitle: options.publicSite.title,
-      canonicalDomain: options.publicSite.canonicalDomain,
+      siteTitle: title,
+      canonicalDomain: domain,
       path,
-      url: canonicalUrl(options.publicSite.canonicalDomain, path),
+      url: canonicalUrl(domain, path),
       publishedAt: publication?.publishedAt ?? null,
       entryPoint: site?.entryPoint === pageId,
+    };
+  };
+
+  /** La página Vera:Publicación lee esta vista; no guarda una segunda copia. */
+  const publicationSiteView = () => {
+    const site = publicSite();
+    const title = site?.title ?? options.publicSite?.title ?? '';
+    const canonicalDomain = site?.canonicalDomain ?? options.publicSite?.canonicalDomain ?? '';
+    const publications = site === undefined
+      ? []
+      : graph.publicationsOf(site.id).map((publication) => {
+          const page = graph.page(publication.page);
+          return {
+            page: publication.page,
+            title: page?.title ?? publication.page,
+            path: publication.path,
+            url: canonicalUrl(site.canonicalDomain, publication.path),
+            firstRevision: publication.firstRevision,
+            publishedAt: publication.publishedAt,
+            publishedBy: publication.publishedBy,
+            entryPoint: site.entryPoint === publication.page,
+          };
+        });
+    return {
+      site: site?.id ?? null,
+      title,
+      canonicalDomain,
+      entryPoint: site?.entryPoint ?? null,
+      previewUrl: options.publicPreviewUrl ?? null,
+      publications,
     };
   };
 
@@ -1271,6 +1308,81 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       ? decodeURIComponent(path.slice('/publications/'.length))
       : null;
 
+    /** La configuración editorial del único sitio que esta instancia proyecta. */
+    if (request.method === 'GET' && path === '/publication-site') {
+      send(response, 200, publicationSiteView());
+      return;
+    }
+
+    if (request.method === 'PUT' && path === '/publication-site') {
+      const blocked = ownerOnly();
+      if (blocked !== null) {
+        send(response, 403, blocked);
+        return;
+      }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: { title?: unknown; canonicalDomain?: unknown; entryPoint?: unknown };
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as typeof body;
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+        if (typeof body.title !== 'string' || typeof body.canonicalDomain !== 'string') {
+          send(response, 400, { error: 'title and canonicalDomain must be strings' });
+          return;
+        }
+        if (body.entryPoint !== null && typeof body.entryPoint !== 'string') {
+          send(response, 400, { error: 'entryPoint must be a page id or null' });
+          return;
+        }
+
+        store.db.exec('SAVEPOINT configure_public_site');
+        try {
+          let site = publicSite();
+          if (site === undefined) {
+            site = graph.createSite({
+              owner: owner.id,
+              title: body.title,
+              canonicalDomain: body.canonicalDomain,
+            });
+          } else {
+            graph.configureSite({
+              site: site.id,
+              participant: owner.id,
+              title: body.title,
+              canonicalDomain: body.canonicalDomain,
+            });
+          }
+          graph.setSiteEntryPoint({
+            site: site.id,
+            participant: owner.id,
+            page: body.entryPoint as string | null,
+          });
+          saveSite(store, site);
+          store.db.exec('RELEASE configure_public_site');
+        } catch (error) {
+          store.db.exec('ROLLBACK TO configure_public_site');
+          store.db.exec('RELEASE configure_public_site');
+          graph = loadGraph(store, 'mind');
+          send(response, 422, { error: error instanceof Error ? error.message : String(error) });
+          return;
+        }
+        try {
+          rebuildPublicSite();
+          send(response, 200, publicationSiteView());
+        } catch (error) {
+          send(response, 200, {
+            ...publicationSiteView(),
+            projectionError: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+      return;
+    }
+
     /** Publicar es un acto del dueño distinto de declarar la página pública. */
     if (request.method === 'POST' && publicationPage !== null) {
       const blocked = ownerOnly();
@@ -1278,8 +1390,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         send(response, 403, blocked);
         return;
       }
-      if (options.publicSite === undefined) {
-        send(response, 409, { error: 'esta instancia no tiene VERA_PUBLIC_DOMAIN configurado' });
+      if (publicSite() === undefined && options.publicSite === undefined) {
+        send(response, 409, { error: 'configura primero el sitio en Vera:Publicación' });
         return;
       }
       const page = graph.page(publicationPage);

@@ -46,6 +46,7 @@ import { icon, type IconName } from './icons.ts';
 import { when } from './dates.ts';
 import { isMCPPage, renderMCP } from './mcp-page.ts';
 import { isServicePage, pickBibliography, renderService } from './service-page.ts';
+import { isPublicationPage, renderPublicationPage } from './publication-page.ts';
 import {
   DEADLINE_KEY,
   LIST_KEY,
@@ -3464,6 +3465,15 @@ export function renderOutliner(
         if (applied) callbacks.onReload(null);
         return applied;
       }),
+    ).then((panel) => {
+      if (panel !== null) header.after(panel);
+    });
+  }
+
+  if (isPublicationPage(page.properties)) {
+    void renderPublicationPage(
+      toast,
+      (target) => callbacks.onOpen(target, 'followed_reference'),
     ).then((panel) => {
       if (panel !== null) header.after(panel);
     });

@@ -133,7 +133,12 @@ export {
  * la usan quien publica y el generador del sitio, y dos versiones de la misma
  * regla acabarían sirviendo una URL distinta de la que se prometió.
  */
-export { canonicalUrl, normalisePublicPath, suggestedPathFor } from './site.ts';
+export {
+  canonicalUrl,
+  normaliseCanonicalDomain,
+  normalisePublicPath,
+  suggestedPathFor,
+} from './site.ts';
 
 export {
   CHANGE_KINDS,

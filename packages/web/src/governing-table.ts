@@ -51,6 +51,7 @@ export const GOVERNING_KINDS: { key: string; label: string; what: string }[] = [
   { key: 'instructions', label: 'Instrucciones', what: 'lo que el bibliotecario tiene dicho' },
   { key: 'presentation', label: 'Presentación', what: 'los tokens de diseño' },
   { key: 'service', label: 'Servicio', what: 'con qué servicio de fuera habla el corpus' },
+  { key: 'publication', label: 'Publicación', what: 'qué sitio se proyecta y qué páginas lo componen' },
 ];
 
 /** Cómo se lee una clase de gobierno, cuando este cliente la conoce. */

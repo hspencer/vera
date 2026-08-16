@@ -5625,6 +5625,54 @@ code {
   max-width: 44rem;
 }
 
+.publication-form {
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.8fr) minmax(16rem, 1.5fr) minmax(12rem, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+  margin: 0.6rem 0 0.85rem;
+}
+
+.publication-field {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--text-dim);
+  font: 0.72rem var(--font-mono);
+}
+
+.publication-field input,
+.publication-field select {
+  min-width: 0;
+  height: 2.25rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0 0.65rem;
+  background: var(--surface);
+  color: var(--text);
+  font: 0.82rem var(--font-ui);
+}
+
+.publication-preview { margin-bottom: 1rem; }
+.publication-preview a { color: var(--accent); }
+
+.publication-page-link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.publication-table td:nth-child(2) { font-family: var(--font-mono); }
+.publication-table td:nth-child(2) a { color: inherit; }
+
+@media (max-width: 820px) {
+  .publication-form { grid-template-columns: 1fr; align-items: stretch; }
+}
+
 /*
  * De qué cuelga y qué papel cumple: estructura, no contenido.
  *

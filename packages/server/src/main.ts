@@ -75,6 +75,7 @@ const publicDomain = setting('VERA_PUBLIC_DOMAIN');
 const publicTitle = setting('VERA_PUBLIC_TITLE') ?? 'Vera';
 const publicOutput = setting('VERA_PUBLIC_OUTPUT');
 const publicPreviewPort = setting('VERA_PUBLIC_PREVIEW_PORT');
+const publicPreviewUrl = setting('VERA_PUBLIC_PREVIEW_URL');
 
 const { vera } = listen({
   port,
@@ -94,6 +95,7 @@ const { vera } = listen({
         ...(publicPreviewPort === undefined
           ? {}
           : { publicPreviewPort: Number(publicPreviewPort) }),
+        ...(publicPreviewUrl === undefined ? {} : { publicPreviewUrl }),
       }),
   ...(declaredOwner === undefined ? {} : { owner: declaredOwner }),
 });

@@ -49,7 +49,27 @@ export function suggestedPathFor(title: string): string {
 
 /** La URL canónica de una publicación: un dominio, una ruta, una sola forma. */
 export function canonicalUrl(domain: string, path: string): string {
-  const base = domain.replace(/\/$/, '');
+  const base = normaliseCanonicalDomain(domain);
   const route = normalisePublicPath(path);
   return route === '' ? `${base}/` : `${base}/${route}/`;
+}
+
+/** La raíz pública del sitio, guardada en una sola forma. */
+export function normaliseCanonicalDomain(domain: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(domain.trim());
+  } catch {
+    throw new Error('the canonical domain must be an absolute HTTP(S) URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('the canonical domain must use HTTP or HTTPS');
+  }
+  if (parsed.username !== '' || parsed.password !== '' || parsed.search !== '' || parsed.hash !== '') {
+    throw new Error('the canonical domain does not contain credentials, a query, or a fragment');
+  }
+  if (parsed.pathname !== '/' && parsed.pathname !== '') {
+    throw new Error('the canonical domain does not contain a path');
+  }
+  return parsed.origin;
 }

@@ -59,6 +59,25 @@ async function write(change: unknown): Promise<{
 
 describe('publicación del sitio personal', () => {
   it('publica, reconstruye al editar y retira sin borrar la página', async () => {
+    const configuredResponse = await fetch(`${base}/publication-site`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title: 'Vera publicada',
+        canonicalDomain: 'https://publica.example',
+        entryPoint: null,
+      }),
+    });
+    assert.equal(configuredResponse.status, 200);
+    const configured = await configuredResponse.json() as {
+      title: string;
+      canonicalDomain: string;
+      publications: unknown[];
+    };
+    assert.equal(configured.title, 'Vera publicada');
+    assert.equal(configured.canonicalDomain, 'https://publica.example');
+    assert.deepEqual(configured.publications, []);
+
     const created = await write({
       kind: 'create_page',
       title: 'Vera',
@@ -96,6 +115,14 @@ describe('publicación del sitio personal', () => {
     assert.equal(published.path, 'vera');
     assert.equal(published.entryPoint, true);
     assert.equal(typeof published.publishedAt, 'number');
+    const governed = await fetch(`${base}/publication-site`).then((response) => response.json()) as {
+      entryPoint: string;
+      publications: { page: string; url: string; firstRevision: string }[];
+    };
+    assert.equal(governed.entryPoint, page);
+    assert.equal(governed.publications[0]?.page, page);
+    assert.equal(governed.publications[0]?.url, 'https://publica.example/vera/');
+    assert.equal(typeof governed.publications[0]?.firstRevision, 'string');
     assert.match(readFileSync(join(output, 'index.html'), 'utf8'), /Primera versión/);
     const preview = await fetch(`http://localhost:${PREVIEW_PORT}/`);
     assert.equal(preview.status, 200);
