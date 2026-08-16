@@ -80,14 +80,19 @@ matter hace el segundo gesto: asigna una dirección estable, la publica, permite
 elegirla como portada y permite retirarla. Cada cambio posterior de una página
 publicada reconstruye el sitio.
 
-La configuración vive junto al servidor:
+La decisión editorial vive en la página especial `Vera:Publicación`: ahí se
+definen el título, la URL canónica y el punto de entrada, y se ve el inventario
+de páginas publicadas con su ruta, frontera y autoría. El entorno conserva sólo
+la infraestructura que no forma parte del corpus:
 
 ```sh
-VERA_PUBLIC_DOMAIN=https://vera.mediafranca.net
-VERA_PUBLIC_TITLE=Vera
 VERA_PUBLIC_OUTPUT=/home/hspencer/Sites/vera-public-preview
 VERA_PUBLIC_PREVIEW_PORT=4174
+VERA_PUBLIC_PREVIEW_URL=https://vera-preview.tu-tailnet.ts.net
 ```
+
+`VERA_PUBLIC_DOMAIN` y `VERA_PUBLIC_TITLE` siguen aceptándose únicamente como
+valores de arranque para instalaciones que todavía no hayan creado su sitio.
 
 También se puede reconstruir a mano desde los hechos ya guardados:
 
