@@ -4182,6 +4182,12 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             if (!isConcept) return null;
 
             const needle = titleKey(page.title);
+            // El índice inverso ya sabe qué páginas enlazan este concepto. No
+            // se vuelve a materializar y recorrer la colección completa de
+            // enlaces por cada página candidata: en un corpus de dos mil
+            // páginas eso multiplicaba decenas de miles de enlaces dos mil
+            // veces, retenía gigabytes y hacía parecer caído al servicio.
+            const linkedPages = new Set(graph.backlinks(page.id).map((link) => link.sourcePage));
             const members = graph.pages().flatMap((candidate) => {
               if (candidate.id === page.id || (publicAccess && !isPublicPage(candidate.id))) return [];
               const blocks = graph.blocksOf(candidate.id);
@@ -4190,9 +4196,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                   property.key === names.topic &&
                   answersIn(property.value).some((value) => titleKey(value) === needle),
               );
-              const linked = graph.links().some(
-                (link) => link.sourcePage === candidate.id && link.target === page.id,
-              );
+              const linked = linkedPages.has(candidate.id);
               const matchingBlock = blocks.find((block) => titleKey(block.content).includes(needle));
               const matchingGloss = blocks
                 .map((block) => graph.gloss(block.stableId))
