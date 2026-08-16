@@ -95,10 +95,62 @@ contract NativeMarkdownEditing {
         -- the renderer and no rendering step can rewrite what was written.
 
     @invariant EmbeddedMarkupIsInert
-        -- Markup written inside content is presented as text, not as markup.
-        -- Media that Vera presents natively is governed by content-media.allium
-        -- and reaches the page under that contract's isolation, never by way of
-        -- the Markdown renderer.
+        -- Markup written inside ordinary Markdown content is presented as text,
+        -- not as active markup. Only a whole block deliberately created as
+        -- executable HTML may cross that boundary, under
+        -- executable-content-sandbox.allium. Media that Vera presents natively
+        -- is governed by content-media.allium and never reaches the page by way
+        -- of the Markdown renderer.
+
+    @invariant FormattingIsOneEditingTool
+        -- While a Markdown block is being edited, `/formato` reveals one bar
+        -- above its source for bold, italic, strikethrough, links, quotation,
+        -- code and H1–H3 headings. Those choices do not compete as separate
+        -- first-level block commands; closing the bar leaves the same source and
+        -- caret in place.
+
+    @invariant FormattingWritesPortableMarkdown
+        -- Inline formatting wraps or rewrites the selected source, while choosing
+        -- H1, H2 or H3 transforms the whole block. The resulting Markdown source
+        -- is what Vera preserves; the toolbar never stores an opaque rich-text form.
+
+    @invariant FormattingNeverRetypesContentByAccident
+        -- Formatting a Markdown block cannot turn it into HTML, p5.js, a query,
+        -- Mermaid, drawing or media. Executable and specialised behaviours begin
+        -- only through their explicit block command or recognised attachment.
+}
+
+-- A block has one primary way of being read, but no stored type field is needed.
+-- Vera derives that behaviour from the source deliberately written in the block
+-- or from the native media attached to it. The source remains the authority.
+contract BlockBehaviourPresentation {
+    behaviour_of: (block: core/Block) -> BlockBehaviour
+
+    @invariant TheCurrentBlockBehavioursAreNamed
+        -- Vera distinguishes standard Markdown, explicit executable HTML, audio,
+        -- video, hand drawing, p5.js, query, Mermaid and Markdown table blocks.
+        -- Each is presented and edited according to its own behaviour.
+
+    @invariant BehaviourIsDerivedRatherThanDuplicated
+        -- Markdown tables, queries, Mermaid, drawings, HTML and p5.js are
+        -- recognised from their complete preserved source; audio and video are
+        -- recognised from their native attachment. Vera does not keep a second
+        -- mutable type label that can disagree with the content.
+
+    @invariant MarkdownIsTheSafeDefault
+        -- A block that does not unambiguously satisfy one specialised form is
+        -- standard Markdown. Malformed or merely suggestive source is shown for
+        -- editing and never executed, queried or silently repaired.
+
+    @invariant ATableRemainsMarkdown
+        -- A table receives table-aware presentation and editing because its
+        -- complete source is a Markdown table. It remains portable Markdown and
+        -- changing it back to ordinary prose needs no conversion or lost data.
+
+    @invariant SpecialisedBlocksKeepTheirOwnEditor
+        -- Editing opens the source, canvas or media controls appropriate to the
+        -- derived behaviour. It never sends drawing coordinates, executable
+        -- source or a query through the ordinary prose formatter.
 }
 
 contract BlockManipulation {
@@ -106,6 +158,7 @@ contract BlockManipulation {
     copy_block: (block: core/Block) -> String
     move_to_page: (block: core/Block, page: core/Page) -> core/Block
     discard_empty: (participant: core/Participant, block: core/Block) -> core/Page
+    discard_subtree: (participant: core/Participant, block: core/Block, confirmed_descendant_count: Integer) -> core/Page
     select_range: (from: core/Block, to: core/Block) -> BlockSelection
     discard_selection: (participant: core/Participant, selection: BlockSelection) -> core/Page
     shift_selection: (participant: core/Participant, selection: BlockSelection, deeper: Bool) -> core/Page
@@ -142,6 +195,18 @@ contract BlockManipulation {
         -- Removing a block from the workspace submits the same remove_block
         -- operation as any other participant would, with the same provenance and
         -- the same ordering. The interface has no shorter path to the graph.
+
+    @invariant DiscardingAParentNamesEverythingThatWillGo
+        -- Before a participant can discard a block with descendants, Vera warns
+        -- "vas a borrar este bloque con n hijos", where n is the exact number of
+        -- descendants at every depth that will also be removed. Confirmation is
+        -- valid only for that block and that count; if the subtree changes, Vera
+        -- presents its new count and asks again.
+
+    @invariant DiscardingAParentRemovesTheWholeSubtree
+        -- A confirmed parent discard removes every descendant and then the chosen
+        -- block, deepest leaves first. Each removal remains an ordinary auditable
+        -- remove_block operation, and no surviving block is left without its parent.
 
     @invariant ASelectionIsWhatIsOnScreenBetweenTwoBlocks
         -- A range runs over the blocks as they are read, in the order they are
@@ -318,6 +383,7 @@ contract InstallableWebApplication {
 enum WorkspaceLayout { text_only | graph_only | split }
 enum GraphViewMode { graph_2d | graph_3d }
 enum ColourScheme { light | dark }
+enum BlockBehaviour { markdown | html | audio | video | drawing | p5js | query | mermaid | table }
 
 -- Qué hizo alguien para llegar a la página en la que está.
 --
@@ -531,8 +597,30 @@ rule ParticipantDiscardsEmptyBlock {
         -- Emptying a block and then pressing delete once more is how a participant
         -- discards it. The block must already be empty, so the keystroke can never
         -- take text with it, and it must be a leaf, which is the same condition
-        -- remove_block carries in change-application.allium. A block with children
-        -- stays until its children are gone.
+        -- remove_block carries in change-application.allium. Under this empty-block
+        -- keystroke, a block with children stays until its children are gone; the
+        -- explicit subtree discard below is a separate, confirmed act.
+}
+
+rule ParticipantDiscardsBlockSubtree {
+    when: DiscardBlockSubtree(participant, workspace, block, confirmed_descendant_count)
+
+    let descendants = descendants_of(block)
+
+    requires: workspace.participant = participant
+    requires: descendants.count > 0
+    requires: confirmed_descendant_count = descendants.count
+
+    ensures:
+        for descendant in descendants:
+            not exists descendant
+        not exists block
+
+    @guidance
+        -- The confirmation belongs to the exact subtree the participant saw.
+        -- Submit one ordinary remove_block change per block, from the deepest
+        -- leaves towards the root, so every accepted change still removes a leaf
+        -- and an interrupted sequence can never leave an orphan behind.
 }
 
 rule ParticipantNavigatesToPage {
@@ -842,6 +930,7 @@ surface VeraWorkspace {
         fulfils GraphQuerySupport
         fulfils EditablePresentation
         fulfils NativeMarkdownEditing
+        fulfils BlockBehaviourPresentation
         fulfils BlockManipulation
         fulfils PageFrontMatter
         fulfils ResponsiveWorkspace

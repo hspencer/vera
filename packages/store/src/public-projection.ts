@@ -14,6 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { canonicalUrl, renderMarkdown, suggestedPathFor } from '@vera/core';
 import type { Block, Page, PersonalSite, Publication, VeraGraph } from '@vera/core';
@@ -41,6 +42,20 @@ function escapeHtml(text: string): string {
 }
 
 export const publicPathFor = suggestedPathFor;
+
+/** Únicos dos artefactos que necesita un sketch; ambos viajan con Vera. */
+export const p5RuntimePath = fileURLToPath(new URL('../lib/p5.min.js', import.meta.resolve('p5')));
+export const p5FrameDocument = `<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; connect-src 'none'">
+<style>html,body{margin:0;min-height:100%;overflow:auto}canvas{display:block;max-width:100%;height:auto!important}pre{white-space:pre-wrap;color:#a00;padding:1rem}</style>
+<script src="/p5.min.js"></script></head><body><script>
+const source = decodeURIComponent(location.hash.slice(1));
+const fail = error => { document.body.innerHTML = '<pre></pre>'; document.querySelector('pre').textContent = String(error?.message ?? error) + '\\n\\n' + source; };
+addEventListener('error', event => fail(event.error ?? event.message));
+try { (0, eval)(source); } catch (error) { fail(error); }
+</script></body></html>`;
 
 function sorted(blocks: Block[]): Block[] {
   return [...blocks].sort(
@@ -133,6 +148,7 @@ function document(input: {
     'li>ul{border-left:1px solid color-mix(in srgb,currentColor 20%,transparent);padding-left:1.25rem}',
     'a{color:inherit;text-decoration-thickness:.08em;text-underline-offset:.18em}',
     '.unavailable{color:color-mix(in srgb,currentColor 72%,transparent)}',
+    '.executable{margin:1.25rem 0}.executable iframe{display:block;width:100%;height:460px;border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:.3rem;background:white}.executable summary{cursor:pointer;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.85rem;margin-top:.45rem}.executable pre{overflow:auto}',
     'nav{border-top:1px solid color-mix(in srgb,currentColor 20%,transparent);margin-top:4rem;padding-top:2rem;font-family:ui-sans-serif,system-ui,sans-serif}',
     '@media(prefers-color-scheme:dark){:root{background:#1c1b18;color:#ece8df}}',
     '</style>',
@@ -273,6 +289,14 @@ export function projectPublicSite(
     'utf8',
   );
   files.unshift('index.html');
+  const needsP5 = pages.some(({ page }) =>
+    graph.blocksOf(page.id).some((block) => /^\s*(`{3,}|~{3,})\s*p5js\s*$/im.test(block.content))
+  );
+  if (needsP5) {
+    copyFileSync(p5RuntimePath, join(target, 'p5.min.js'));
+    writeFileSync(join(target, 'p5-frame.html'), p5FrameDocument, 'utf8');
+    files.push('p5.min.js', 'p5-frame.html');
+  }
   if (options.brandingAssets !== undefined) {
     files.push(...projectBranding(target, options.brandingAssets, options.site.title));
   }

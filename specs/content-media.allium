@@ -9,6 +9,8 @@
 --   - Codec and compression implementation
 --   - Canvas library selection
 --   - Sandbox implementation
+--   - The deliberate act that makes authored HTML or p5.js executable
+--     (see executable-content-sandbox.allium)
 -- Dependencies: Page and Participant are governed by core.allium
 
 use "./core.allium" as core
@@ -37,7 +39,17 @@ contract NativeMediaSupport {
 
     @invariant ExecutableContentIsolation
         -- Presenting SVG, Mermaid or JavaScript canvas content cannot grant that
-        -- content access to private graph data not explicitly supplied to it.
+        -- content access to Vera, its session or private graph data. Authored HTML
+        -- and p5.js obey the same boundary under executable-content-sandbox.allium.
+
+    @invariant MermaidRemainsSource
+        -- A Mermaid block is recognised from its complete textual source. The
+        -- diagram is a view onto that source: editing, copying and exporting give
+        -- the source back, and a malformed diagram remains readable as source.
+
+    @invariant P5RuntimeIsSovereign
+        -- A CanvasSketch explicitly authored as p5.js uses the runtime bundled
+        -- with Vera. Reading it works offline and never depends on a CDN.
 }
 
 ------------------------------------------------------------

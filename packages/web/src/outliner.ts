@@ -86,7 +86,9 @@ import {
   resolveDelimiter,
   resolveDrawingKey,
   resolveEnter,
+  resolveBlockFormat,
   resolveFormat,
+  resolveLink,
   resolveTab,
   type KeyOutcome,
   type Neighbourhood,
@@ -647,21 +649,34 @@ function markMissingImages(root: HTMLElement): void {
  * y el mismo orden. La interfaz no tiene un camino más corto hasta el grafo.
  */
 async function removeBlock(
-  block: BlockView,
+  node: Node,
   callbacks: OutlinerCallbacks,
 ): Promise<void> {
-  let result;
-  try {
-    result = await api.submit({ kind: 'remove_block', block: block.stableId });
-  } catch {
-    toast('no se pudo eliminar: sin conexión con el servidor');
+  const order = blockRemovalOrder(node);
+  const children = order.length - 1;
+  if (
+    children > 0 &&
+    !window.confirm(
+      `Vas a borrar este bloque con ${children} ${children === 1 ? 'hijo' : 'hijos'}. No se puede deshacer.`,
+    )
+  ) {
     return;
   }
 
-  if (result.status === 'rejected') {
-    // El dominio manda. Si dice que no, se dice por qué y no se toca la vista.
-    toast(`rechazado: ${result.reason}`);
-    return;
+  for (const block of order) {
+    let result;
+    try {
+      result = await api.submit({ kind: 'remove_block', block });
+    } catch {
+      toast('no se pudo eliminar: sin conexión con el servidor');
+      return;
+    }
+
+    if (result.status === 'rejected') {
+      // El dominio manda. Si dice que no, se dice por qué y no se toca la vista.
+      toast(`rechazado: ${result.reason}`);
+      return;
+    }
   }
 
   /*
@@ -2111,6 +2126,11 @@ async function redraw(
 export interface Node {
   block: BlockView;
   children: Node[];
+}
+
+/** El orden auditable en que desaparece un subárbol: hojas antes que padres. */
+export function blockRemovalOrder(node: Node): string[] {
+  return [...node.children.flatMap(blockRemovalOrder), node.block.stableId];
 }
 
 /**
@@ -3796,10 +3816,6 @@ export function renderOutliner(
 
     bullet.addEventListener('click', (event) => {
       event.stopPropagation();
-      // Un bloque con hijos no es hoja, y remove_block sólo acepta hojas. Se
-      // muestra igual, con el motivo: ocultarla dejaría al participante sin
-      // saber por qué no puede borrar esto y sí lo de al lado.
-      const leaf = node.children.length === 0;
       /*
        * Cinco grupos, y el orden de los cinco es un argumento.
        *
@@ -3941,8 +3957,7 @@ export function renderOutliner(
           {
             label: 'Eliminar bloque',
             icon: 'trash-2',
-            ...(leaf ? {} : { blocked: 'un bloque con hijos no se puede eliminar todavía' }),
-            run: () => removeBlock(node.block, callbacks),
+            run: () => removeBlock(node, callbacks),
           },
         ],
       ]);
@@ -5666,9 +5681,13 @@ function startEditing(
    * audio no es texto de nadie.
    */
   const spoken = body.querySelector('.audio-block');
+  const formatBar = document.createElement('div');
+  formatBar.className = 'format-bar';
+  formatBar.setAttribute('role', 'toolbar');
+  formatBar.setAttribute('aria-label', 'formato del bloque');
   body.innerHTML = '';
   if (spoken !== null) body.append(spoken);
-  body.append(editor);
+  body.append(formatBar, editor);
   body.classList.add('editing');
 
   /**
@@ -5693,6 +5712,44 @@ function startEditing(
   };
 
   autosize();
+
+  type FormatAction =
+    | { label: string; title: string; marker: string }
+    | { label: string; title: string; prefix: '# ' | '## ' | '### ' | '> ' }
+    | { label: string; title: string; link: true };
+  const formatActions: FormatAction[] = [
+    { label: 'B', title: 'negrita', marker: '**' },
+    { label: 'I', title: 'cursiva', marker: '*' },
+    { label: 'S', title: 'tachado', marker: '~~' },
+    { label: 'H₁', title: 'título', prefix: '# ' },
+    { label: 'H₂', title: 'subtítulo', prefix: '## ' },
+    { label: 'H₃', title: 'título de tercer nivel', prefix: '### ' },
+    { label: '❝', title: 'cita', prefix: '> ' },
+    { label: '</>', title: 'código en línea', marker: '`' },
+    { label: '↗', title: 'enlace', link: true },
+  ];
+  for (const action of formatActions) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'format-action';
+    button.textContent = action.label;
+    button.title = action.title;
+    button.setAttribute('aria-label', action.title);
+    // Mantener la selección del textarea es parte del gesto de formato.
+    button.addEventListener('mousedown', (event) => event.preventDefault());
+    button.addEventListener('click', () => {
+      const formatted = 'marker' in action
+        ? resolveFormat(action.marker, editor.value, editor.selectionStart, editor.selectionEnd)
+        : 'prefix' in action
+          ? resolveBlockFormat(action.prefix, editor.value)
+          : resolveLink(editor.value, editor.selectionStart, editor.selectionEnd);
+      editor.value = formatted.buffer;
+      editor.setSelectionRange(formatted.selectionStart, formatted.selectionEnd);
+      editor.dispatchEvent(new Event('input', { bubbles: true }));
+      editor.focus();
+    });
+    formatBar.append(button);
+  }
 
   const at = Math.min(caret, editor.value.length);
   /*
@@ -5924,6 +5981,14 @@ function startEditing(
     // grabación necesita un bloque vacío que le guarde el lugar.
     if (acts === 'hablar') {
       void callbacks.onSpeak?.(block.stableId, editor.value.trim());
+      return;
+    }
+
+    // La barra ya pertenece al bloque que se está editando. `/formato` sólo la
+    // nombra y devuelve el foco al texto; no inventa una segunda interfaz.
+    if (acts === 'formato') {
+      scheduleSave();
+      editor.focus();
       return;
     }
 

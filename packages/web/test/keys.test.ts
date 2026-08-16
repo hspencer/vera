@@ -12,6 +12,8 @@ import {
   resolveDrawingKey,
   resolveEnter,
   resolveFormat,
+  resolveBlockFormat,
+  resolveLink,
   resolveTab,
   type Neighbourhood,
 } from '../src/keys.ts';
@@ -281,6 +283,22 @@ describe('formato Markdown', () => {
       buffer: 'uno dos',
       selectionStart: 4,
       selectionEnd: 7,
+    });
+  });
+
+  it('cambia el nivel de título del bloque completo sin apilar marcas', () => {
+    assert.deepEqual(resolveBlockFormat('### ', '## Título'), {
+      buffer: '### Título',
+      selectionStart: 0,
+      selectionEnd: 10,
+    });
+  });
+
+  it('convierte la selección en un enlace y conserva el texto seleccionado', () => {
+    assert.deepEqual(resolveLink('ver sitio', 4, 9), {
+      buffer: 'ver [sitio](https://)',
+      selectionStart: 5,
+      selectionEnd: 10,
     });
   });
 });

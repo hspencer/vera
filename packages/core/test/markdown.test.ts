@@ -350,6 +350,25 @@ describe('renderMarkdown', () => {
       const source = '```mermaid\ngraph TD\nA-->B\n```';
       assert.ok(renderMarkdown(source).includes('graph TD'));
     });
+
+    it('sólo ejecuta HTML creado con la valla explícita', () => {
+      const live = renderMarkdown('```html-live\n<button onclick="x()">sí</button>\n```');
+      assert.match(live, /<iframe sandbox="allow-scripts"/);
+      assert.match(live, /srcdoc=/);
+      assert.ok(!live.includes('allow-same-origin'));
+      assert.match(live, /fuente HTML/);
+
+      assert.ok(!renderMarkdown('<button>histórico</button>').includes('<iframe'));
+      assert.ok(!renderMarkdown('```html\n<button>ejemplo</button>\n```').includes('<iframe'));
+    });
+
+    it('ejecuta p5.js contra el runtime local dentro del sandbox', () => {
+      const html = renderMarkdown('```p5js\ncreateCanvas(40, 40)\n```');
+      assert.match(html, /sandbox="allow-scripts"/);
+      assert.match(html, /src="\/p5-frame\.html#/);
+      assert.ok(!html.includes('allow-same-origin'));
+      assert.match(html, /createCanvas\(40, 40\)/);
+    });
   });
 
   describe('tablas', () => {

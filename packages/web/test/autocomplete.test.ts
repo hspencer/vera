@@ -203,14 +203,16 @@ describe('completionFor', () => {
 });
 
 describe('matchingCommands', () => {
-  it('sin consulta ofrece todos', () => {
+  it('sin consulta agrupa el formato en una sola entrada', () => {
     assert.ok(matchingCommands('').length > 8);
+    assert.ok(matchingCommands('').some((command) => command.name === 'formato'));
+    assert.ok(!matchingCommands('').some((command) => command.name === 'titulo'));
   });
 
   it('filtra por nombre', () => {
     // «cita» encuentra también a `/zotero`, que dice servir para citar. Es lo
     // que se quiere: quien busca «cita» está buscando las dos cosas.
-    assert.deepEqual(matchingCommands('cita').map((c) => c.name), ['cita', 'zotero']);
+    assert.deepEqual(matchingCommands('cita').map((c) => c.name), ['formato', 'cita', 'zotero']);
   });
 
   it('filtra también por lo que hace', () => {
@@ -219,5 +221,16 @@ describe('matchingCommands', () => {
 
   it('una consulta que no encaja no ofrece nada', () => {
     assert.deepEqual(matchingCommands('zzzz'), []);
+  });
+
+  it('conserva accesibles los comandos de formato por su nombre', () => {
+    assert.ok(matchingCommands('titulo').some((command) => command.name === 'titulo'));
+  });
+
+  it('ofrece los bloques ejecutables explícitos', () => {
+    assert.deepEqual(
+      matchingCommands('aislado').map((command) => command.name),
+      ['html', 'p5js'],
+    );
   });
 });

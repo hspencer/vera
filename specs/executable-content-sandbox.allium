@@ -1,10 +1,11 @@
 -- allium: 3
 -- executable-content-sandbox.allium
 
--- Scope: Contenido de fuera que se presenta dentro de una página y corre —lo
---   embebido— y bajo qué aislamiento se le deja correr
--- Includes: Qué bloque cuenta como incrustación, qué se le permite a lo
---   incrustado, qué no puede alcanzar nunca, y qué se ve de dónde viene
+-- Scope: Contenido que se presenta dentro de una página y corre —tanto lo
+--   embebido desde fuera como HTML y p5.js escritos deliberadamente— y bajo qué
+--   aislamiento se le deja correr
+-- Includes: Qué bloque cuenta como incrustación o ejecutable local, qué se le
+--   permite, qué no puede alcanzar nunca, y qué se ve de dónde viene
 -- Excludes:
 --   - El renderizado de Markdown, que no produce marcado activo
 --     (ver workspace-interface.allium)
@@ -102,6 +103,49 @@ contract EmbeddedContentIsSandboxed {
         -- @invariant EditingRevealsTheSource hace para todo lo demás.
 }
 
+-- HTML y p5.js escritos dentro de Vera no son incrustaciones remotas. Son fuente
+-- del propio bloque que Vera acepta ejecutar sólo porque alguien eligió ese acto.
+contract AuthoredExecutableBlocks {
+    present: (block: core/Block) -> AuthoredExecutableView
+
+    @invariant ExecutionRequiresAnExplicitWholeBlock
+        -- Sólo corre la fuente completa de un bloque creado expresamente mediante
+        -- `/html` o `/p5js`. Pegar HTML crudo, JavaScript o una valla parecida en
+        -- un bloque Markdown no lo convierte en ejecutable, y cambiar formato no
+        -- puede cruzar esta frontera.
+
+    @invariant HistoricalMarkupRemainsInert
+        -- El HTML que el corpus ya guardaba como texto continúa presentándose
+        -- inerte. Adoptar bloques HTML ejecutables no reinterpreta retrospectivamente
+        -- ningún bloque ni obliga a migrar las ciento ocho apariciones existentes.
+
+    @invariant AuthoredSourceSurvivesExecution
+        -- La fuente exacta sigue siendo el contenido del bloque. Ejecutarla no la
+        -- reescribe ni guarda el resultado como sustituto; editar devuelve esa
+        -- fuente, y copiar o exportar el bloque se la lleva completa.
+
+    @invariant AuthoredCodeCannotReachVera
+        -- HTML y p5.js corren sin acceso al grafo, la sesión, el almacenamiento,
+        -- las credenciales ni el documento que los contiene. Sólo reciben aquello
+        -- que su propia fuente define dentro de su recinto.
+
+    @invariant P5TravelsWithVera
+        -- El runtime p5.js que ejecuta un bloque `/p5js` viene incluido con Vera.
+        -- Presentar o editar el sketch funciona sin red y no contacta un CDN ni
+        -- convierte la lectura de una página en una petición a un tercero.
+
+    @invariant FailureReturnsToReadableSource
+        -- Fuente inválida o una ejecución fallida se presenta como fuente legible
+        -- con su error; nunca como un vacío, una corrección automática o un bloque
+        -- que dejó de poder editarse.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum AuthoredExecutableKind { html | p5js }
+
 ------------------------------------------------------------
 -- Entities
 ------------------------------------------------------------
@@ -117,6 +161,13 @@ value Embed {
     -- Cuánto ocupa. Lo dice quien lo escribió; sin decirlo, todo el ancho y un
     -- alto que no tape lo que viene después.
     height: Integer
+}
+
+-- Una vista derivada de la fuente del bloque, no un tipo guardado junto a ella.
+value AuthoredExecutableView {
+    block: core/Block
+    kind: AuthoredExecutableKind
+    source: String
 }
 
 ------------------------------------------------------------
@@ -138,6 +189,16 @@ rule PresentingAnEmbedNamesItsHost {
         -- Vera, y no lo es.
 }
 
+rule PresentAuthoredExecutableBlock {
+    when: RenderBlock(participant, block)
+
+    let executable = AuthoredExecutableBlocks.present(block)
+
+    requires: exists executable
+
+    ensures: shown(executable)
+}
+
 ------------------------------------------------------------
 -- Surfaces
 ------------------------------------------------------------
@@ -149,9 +210,11 @@ surface EmbeddedContent {
     exposes:
         block.content
         Embed
+        AuthoredExecutableView
 
     contracts:
         fulfils EmbeddedContentIsSandboxed
+        fulfils AuthoredExecutableBlocks
 
     @guarantee WhatRunsIsSeenToRun
         -- Una incrustación se distingue de lo que Vera dibuja: tiene su marco,
@@ -162,6 +225,11 @@ surface EmbeddedContent {
         -- Pulsar el bloque devuelve el texto tal como se escribió, con sus
         -- corchetes angulares y su dirección entera, y se corrige como cualquier
         -- otro texto. No hay un editor de incrustaciones.
+
+    @guarantee AuthoredExecutionIsVisiblyDifferentFromMarkdown
+        -- Un HTML o p5.js ejecutable se reconoce como bloque que corre y siempre
+        -- ofrece volver a su fuente. El mismo texto dentro de Markdown se ve como
+        -- texto, haciendo visible la decisión que separa ambos comportamientos.
 }
 
 ------------------------------------------------------------

@@ -462,6 +462,24 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
 // --------------------------------------------------------------------------
 
 const FENCE = /^\s*(`{3,}|~{3,})\s*([\w+-]*)\s*$/;
+
+function executableBlock(language: string, source: string): string | null {
+  const kind = language.trim().toLowerCase();
+  if (kind !== 'html-live' && kind !== 'p5js') return null;
+
+  const title = kind === 'p5js' ? 'sketch p5.js' : 'HTML';
+  const frame = kind === 'p5js'
+    ? `<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" title="${title}" src="/p5-frame.html#${encodeURIComponent(source)}"></iframe>`
+    : `<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" title="${title}" srcdoc="${quoteAttribute(escapeHtml([
+        '<!doctype html><meta charset="utf-8">',
+        `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; connect-src 'none'">`,
+        source,
+      ].join('\n')))}"></iframe>`;
+
+  // La fuente queda siempre al alcance: es la salida segura si el recinto no
+  // puede ejecutarla y el camino para inspeccionar exactamente qué se escribió.
+  return `<figure class="executable executable-${kind}">${frame}<details><summary>fuente ${title}</summary><pre><code>${escapeHtml(source)}</code></pre></details></figure>`;
+}
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
@@ -594,6 +612,12 @@ export function renderMarkdown(source: string, options: RenderOptions = {}): str
           html += `<figure class="drawn">${drawn.svg}</figure>`;
           continue;
         }
+      }
+
+      const executable = executableBlock(language, body.join('\n'));
+      if (executable !== null) {
+        html += executable;
+        continue;
       }
 
       // El lenguaje viene de la línea cruda, así que aquí sí hay que escapar

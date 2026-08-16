@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {
   buildNeighbourhoods,
   buildTree,
+  blockRemovalOrder,
   externalDestination,
   foldedState,
   invokeMenuAction,
@@ -75,6 +76,19 @@ describe('buildTree', () => {
     const count = (nodes: ReturnType<typeof buildTree>): number =>
       nodes.reduce((n, node) => n + 1 + count(node.children), 0);
     assert.equal(count(buildTree(blocks)), blocks.length);
+  });
+});
+
+describe('borrar un subárbol', () => {
+  it('quita cada hoja antes que su padre y deja la raíz para el final', () => {
+    const tree = buildTree([
+      block('raíz', null, 0),
+      block('hijo', 'raíz', 0),
+      block('nieto', 'hijo', 0),
+      block('otro', 'raíz', 1),
+    ]);
+
+    assert.deepEqual(blockRemovalOrder(tree[0]!), ['nieto', 'hijo', 'otro', 'raíz']);
   });
 });
 

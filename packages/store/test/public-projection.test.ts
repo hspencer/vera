@@ -86,6 +86,29 @@ describe('proyección pública', () => {
     assert.match(page, /https:\/\/vera\.mediafranca\.net\/pagina-publica\//);
   });
 
+  it('lleva el runtime p5 local sólo cuando una página publicada lo usa', () => {
+    const target = scratch();
+    const corpus = graph();
+    const page = publicPage(corpus);
+    const created = corpus.submitOperation({
+      originId: 'public:p5', participant: OWNER,
+      change: {
+        kind: 'create_block', page, parent: null, position: 3,
+        content: '```p5js\nfunction setup(){ createCanvas(40, 40) }\n```',
+      },
+    });
+    assert.equal(created.status, 'applied');
+
+    const summary = projectPublicSite(corpus, target, published(corpus));
+    assert.ok(summary.files.includes('p5.min.js'));
+    assert.ok(summary.files.includes('p5-frame.html'));
+    assert.ok(readFileSync(join(target, 'p5.min.js')).byteLength > 100_000);
+    assert.match(
+      readFileSync(join(target, 'pagina-publica', 'index.html'), 'utf8'),
+      /src="\/p5-frame\.html#/,
+    );
+  });
+
   it('no filtra título, contenido ni manifiesto de páginas privadas', () => {
     const target = scratch();
     const corpus = graph();

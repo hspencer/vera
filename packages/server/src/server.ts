@@ -129,7 +129,11 @@ import { describeStructure, readingPasses, readStructure } from './structure.ts'
 import { describePlan, planTabularity } from './tabularity.ts';
 import { transcribeAudio } from './transcribe.ts';
 import { renderPage } from '@vera/store/projection';
-import { projectPublicSiteAtomically } from '@vera/store/public-projection';
+import {
+  p5FrameDocument,
+  p5RuntimePath,
+  projectPublicSiteAtomically,
+} from '@vera/store/public-projection';
 
 const CHANGE_KINDS = new Set<string>(CORE_CHANGE_KINDS);
 
@@ -4204,6 +4208,27 @@ export function createVeraServer(options: ServerOptions): VeraServer {
 
       if (path === '/invariants') {
         send(response, 200, checkInvariants(graph));
+        return;
+      }
+
+      if (path === '/p5-frame.html') {
+        response.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'content-length': Buffer.byteLength(p5FrameDocument),
+          'cache-control': IMMUTABLE,
+          'x-content-type-options': 'nosniff',
+        });
+        response.end(p5FrameDocument);
+        return;
+      }
+
+      if (path === '/p5.min.js') {
+        response.writeHead(200, {
+          'content-type': 'text/javascript; charset=utf-8',
+          'cache-control': IMMUTABLE,
+          'x-content-type-options': 'nosniff',
+        });
+        createReadStream(p5RuntimePath).pipe(response);
         return;
       }
 

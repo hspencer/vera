@@ -210,7 +210,17 @@ export interface Command {
    * ese punto de la escritura, y quien atiende el comando es el outliner, porque
    * el hecho ocurre en el grafo y no en el texto.
    */
-  acts?: 'hablar' | 'elegir-fecha' | 'poner-plazo' | 'importar' | 'adjuntar' | 'zotero' | 'dibujar';
+  acts?:
+    | 'hablar'
+    | 'elegir-fecha'
+    | 'poner-plazo'
+    | 'importar'
+    | 'adjuntar'
+    | 'zotero'
+    | 'dibujar'
+    | 'formato';
+  /** Se oculta de la portada del menú, pero sigue disponible por su nombre. */
+  group?: 'formato';
 }
 
 /**
@@ -221,18 +231,26 @@ export interface Command {
  * pusiera un atributo estaría inventando un modelo que la spec no tiene.
  */
 export const COMMANDS: Command[] = [
-  { name: 'titulo', hint: 'encabezado de primer nivel', inserts: '# ', caret: 2 },
-  { name: 'subtitulo', hint: 'encabezado de segundo nivel', inserts: '## ', caret: 3 },
-  { name: 'cita', hint: 'cita', inserts: '> ', caret: 2 },
-  { name: 'codigo', hint: 'bloque de código', inserts: '```\n\n```', caret: 4 },
+  { name: 'formato', hint: 'negrita, títulos, cita, código y enlace', inserts: '', caret: 0, acts: 'formato' },
+  { name: 'titulo', hint: 'encabezado de primer nivel', inserts: '# ', caret: 2, group: 'formato' },
+  { name: 'subtitulo', hint: 'encabezado de segundo nivel', inserts: '## ', caret: 3, group: 'formato' },
+  { name: 'cita', hint: 'cita', inserts: '> ', caret: 2, group: 'formato' },
+  { name: 'codigo', hint: 'bloque de código', inserts: '```\n\n```', caret: 4, group: 'formato' },
+  { name: 'html', hint: 'HTML ejecutable y aislado', inserts: '```html-live\n\n```', caret: 13 },
+  {
+    name: 'p5js',
+    hint: 'sketch p5.js local y aislado',
+    inserts: '```p5js\nfunction setup() {\n  createCanvas(400, 400);\n}\n\nfunction draw() {\n  background(240);\n}\n```',
+    caret: 52,
+  },
   { name: 'mermaid', hint: 'diagrama', inserts: '```mermaid\n\n```', caret: 11 },
   { name: 'tabla', hint: 'tabla de dos columnas', inserts: '| a | b |\n| --- | --- |\n|  |  |', caret: 2 },
-  { name: 'linea', hint: 'línea horizontal', inserts: '---', caret: 3 },
-  { name: 'lista', hint: 'lista con viñetas', inserts: '- ', caret: 2 },
-  { name: 'numerada', hint: 'lista numerada', inserts: '1. ', caret: 3 },
-  { name: 'tarea', hint: 'casilla por hacer', inserts: '- [ ] ', caret: 6 },
-  { name: 'nota', hint: 'referencia a nota al pie', inserts: '[^1]', caret: 3 },
-  { name: 'pagina', hint: 'enlace a otra página', inserts: '[[]]', caret: 2 },
+  { name: 'linea', hint: 'línea horizontal', inserts: '---', caret: 3, group: 'formato' },
+  { name: 'lista', hint: 'lista con viñetas', inserts: '- ', caret: 2, group: 'formato' },
+  { name: 'numerada', hint: 'lista numerada', inserts: '1. ', caret: 3, group: 'formato' },
+  { name: 'tarea', hint: 'casilla por hacer', inserts: '- [ ] ', caret: 6, group: 'formato' },
+  { name: 'nota', hint: 'referencia a nota al pie', inserts: '[^1]', caret: 3, group: 'formato' },
+  { name: 'pagina', hint: 'enlace a otra página', inserts: '[[]]', caret: 2, group: 'formato' },
   /*
    * Preguntarle al grafo.
    *
@@ -324,7 +342,7 @@ export function actionOf(name: string): Command['acts'] | undefined {
 /** Filtra por lo escrito. Sin consulta se ofrecen todos. */
 export function matchingCommands(query: string): Command[] {
   const needle = query.trim().toLowerCase();
-  if (needle === '') return COMMANDS;
+  if (needle === '') return COMMANDS.filter((command) => command.group === undefined);
   return COMMANDS.filter(
     (command) =>
       command.name.toLowerCase().includes(needle) || command.hint.toLowerCase().includes(needle),

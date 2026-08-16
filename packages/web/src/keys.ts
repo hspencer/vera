@@ -51,7 +51,7 @@ export interface FormatOutcome {
 
 /** Alterna un delimitador Markdown conservando el texto escogido. */
 export function resolveFormat(
-  marker: '*' | '**',
+  marker: string,
   buffer: string,
   selectionStart: number,
   selectionEnd: number,
@@ -84,6 +84,32 @@ export function resolveFormat(
     buffer: buffer.slice(0, selectionStart) + marker + selected + marker + buffer.slice(selectionEnd),
     selectionStart: selectionStart + width,
     selectionEnd: selectionEnd + width,
+  };
+}
+
+/** Alterna un prefijo de bloque; los encabezados se sustituyen entre sí. */
+export function resolveBlockFormat(
+  prefix: '# ' | '## ' | '### ' | '> ',
+  buffer: string,
+): FormatOutcome {
+  const heading = /^#{1,3} /.exec(buffer)?.[0] ?? '';
+  const current = prefix.startsWith('#') ? heading : buffer.startsWith(prefix) ? prefix : '';
+  const next = current === prefix ? buffer.slice(current.length) : prefix + buffer.slice(current.length);
+  return { buffer: next, selectionStart: 0, selectionEnd: next.length };
+}
+
+/** Convierte la selección en un enlace Markdown portable. */
+export function resolveLink(
+  buffer: string,
+  selectionStart: number,
+  selectionEnd: number,
+): FormatOutcome {
+  const selected = buffer.slice(selectionStart, selectionEnd) || 'texto';
+  const written = `[${selected}](https://)`;
+  return {
+    buffer: buffer.slice(0, selectionStart) + written + buffer.slice(selectionEnd),
+    selectionStart: selectionStart + 1,
+    selectionEnd: selectionStart + 1 + selected.length,
   };
 }
 
