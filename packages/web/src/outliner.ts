@@ -81,6 +81,7 @@ import {
 import { audioUrl, voice, type Recording } from './voice.ts';
 import { type NavigationGesture } from './trace.ts';
 import { openMediaDetails } from './media-dialog.ts';
+import { holdViewport, restoreViewport } from './viewport.ts';
 import {
   resolveArrow,
   resolveBackspaceAtStart,
@@ -3631,10 +3632,12 @@ export function renderOutliner(
       fold.addEventListener('click', (event) => {
         event.stopPropagation();
         if (readOnly) {
+          const viewport = holdViewport(container);
           page.folded = shut
             ? page.folded.filter((id) => id !== node.block.stableId)
             : [...page.folded, node.block.stableId];
           renderOutliner(container, page, callbacks, focus, focusRoot, true);
+          restoreViewport(container, viewport);
           return;
         }
         void toggleFold(

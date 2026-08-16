@@ -142,9 +142,10 @@ contract OutlineManipulation {
         -- participants can hold different folds of the same block at once.
 
     @invariant FoldingKeepsTheWritingPlace
-        -- Folding or unfolding a branch does not take focus or move the caret
-        -- from an editor that remains visible. If folding hides the edited
-        -- block, focus moves to the fold control that now represents it.
+        -- Folding or unfolding a branch preserves the reader's visible place in
+        -- the viewport as well as focus and the caret in an editor that remains
+        -- visible. If folding hides the edited block, focus moves to the fold
+        -- control that now represents it without sending the viewport elsewhere.
 
     @invariant OnlyParentsFold
         -- A block with no children has nothing to fold, and offering the control

@@ -860,6 +860,10 @@ surface PublicVeraWorkspace {
         -- Layout, divider, reach, folding, light/dark choice and token overrides
         -- change only this local reading session. They create no Revision,
         -- Submission, operation, exposure or shared theme change.
+
+    @guarantee PublicFoldingKeepsTheReadingPlace
+        -- Folding or unfolding a published branch preserves its visible place
+        -- in the viewport as well as any focus or caret that remains visible.
 }
 
 -- The eye/map panel is where the owner already decides how much of the graph is
