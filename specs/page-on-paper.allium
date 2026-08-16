@@ -8,8 +8,8 @@
 -- Excludes:
 --   - La proyección Markdown del corpus, que es otro modo de salir y viaja a git
 --     (ver personal-site-projection.allium)
---   - Publicar una página, que la pone donde otros la lean
---     (ver personal-site-projection.allium)
+--   - Decidir qué página se publica, aunque la composición pública respeta el
+--     conjunto ya decidido por personal-site-projection.allium
 --   - Cómo se dibuja un bloque en pantalla (ver workspace-interface.allium)
 --   - Lo incrustado y su encierro (ver executable-content-sandbox.allium)
 -- Dependencies: Page y Block los gobierna core.allium
@@ -35,6 +35,7 @@ use "./core.allium" as core
 -- cuando deja de ser una herramienta.
 contract APageBecomesADocument {
     compose: (page: core/Page) -> Paper
+    compose_publication: (publication: core/Publication, readable_pages: Set<core/Page>) -> Paper
 
     @invariant TheSameDocumentEveryTime
         -- El tamaño, los márgenes y la tipografía los decide Vera y no el
@@ -166,6 +167,14 @@ contract APageBecomesADocument {
         -- A diferencia de dibujos y diagramas, encoger una tabla larga hasta
         -- una sola hoja volvería ilegible su texto; por eso aquí se conserva el
         -- tamaño de lectura y se permite la partición.
+
+    @invariant PublicPaperKeepsThePublicBoundary
+        -- Cuando el papel se compone para `anybody`, cada resolución auxiliar
+        -- —enlace, cita de bloque, imagen, diagrama y consulta— recibe como
+        -- universo el conjunto explícito de páginas publicadas del mismo sitio.
+        -- Una referencia fuera de él conserva sólo las palabras ya visibles en
+        -- la página; no trae contenido, metadatos ni una señal de que el destino
+        -- privado existe. El PDF no es una puerta lateral al grafo.
 }
 
 ------------------------------------------------------------

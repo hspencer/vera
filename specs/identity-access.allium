@@ -3,15 +3,17 @@
 
 -- Scope: Identity and access boundaries for one personal Vera library and the
 --   instance that currently serves it
--- Includes: One sovereign human owner, single-graph instance ownership and the
---   boundary for human and agent participation
+-- Includes: One sovereign human owner, single-graph instance ownership, the
+--   boundary for human and agent participation, and the anonymous read-only
+--   identity used at a site's public origin
 -- Excludes:
 --   - Hosting several private graphs inside one Vera instance
 --   - Closing the current graph and opening or switching to another graph
 --   - Collective ownership; collective work is composed between sovereign
 --     personal libraries and belongs to federation specifications
 --   - Authentication protocol and credential storage implementation
---   - Public anonymous access to the projected personal website
+--   - Which pages belong to a public site and how they are presented
+--     (see personal-site-projection.allium)
 -- Dependencies: Participant, Graph and Membership are governed by core.allium
 
 use "./core.allium" as core
@@ -95,6 +97,66 @@ contract ParticipantAdministration {
         -- human owner of either person's context.
 }
 
+-- The public door has an identity, but not a participant.
+--
+-- Calling it `anybody` is not a convenience alias for the owner, a guest
+-- membership or a participant with fewer scopes. It is the positive identity of
+-- an unauthenticated reader at a public origin. This lets the same Vera server
+-- and application answer both doors without ever confusing what each may know
+-- or do.
+contract AnonymousPublicAccess {
+    enter: (instance: VeraInstance, site: core/PersonalSite, origin: String) -> PublicReadingSession
+
+    @invariant AnybodyIsNotAParticipant
+        -- `anybody` has no Participant and no Membership. Public reading leaves
+        -- no attributed operation, grants no corpus access and cannot later be
+        -- interpreted as participation.
+
+    @invariant MissingCredentialsNeverMeanOwner
+        -- A request without a valid credential is never treated as the owner,
+        -- including when it reaches the same server, process or application the
+        -- owner uses. Network location and possession of an origin are not proof
+        -- of authorship.
+
+    @invariant TheOriginChoosesTheBoundaryNotTheCorpus
+        -- A serving origin selects the anonymous public reading boundary. It
+        -- does not select another corpus, replica or renderer; the instance still
+        -- serves its one graph through Vera, under a smaller authority.
+
+    @invariant TheSameServerAnswersBothDoors
+        -- The author's authenticated origin and the public origin route to the
+        -- same running Vera server and application. The request origin and valid
+        -- credential decide the boundary; no second public server is required.
+
+    @invariant PublicFailureRevealsNothingPrivate
+        -- A request outside the public projection receives the same absence
+        -- whether the named thing is private, public but not assigned to this
+        -- site, or nonexistent.
+
+}
+
+contract OwnerPublicPreviewAccess {
+    preview: (owner: core/Participant, instance: VeraInstance, site: core/PersonalSite, origin: String) -> PublicReadingSession
+    return_to_owner: (owner: core/Participant, reading: PublicReadingSession) -> VeraInstance
+
+    @invariant PreviewIsARealAuthorityReduction
+        -- Choosing the public view from the authenticated workshop creates the
+        -- same `anybody` session and traverses the same server-side publication
+        -- boundary as an external public request. It is not a client-side filter
+        -- over data the owner already received.
+
+    @invariant OnlyTheOwnerWhoSteppedDownCanReturn
+        -- A session entered as an owner preview may return to that already
+        -- authenticated owner's workshop. A session born at a public origin has
+        -- no owner to return to and exposes no elevation operation.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum PublicReadingEntry { public_origin | owner_preview }
+
 ------------------------------------------------------------
 -- Entities and Variants
 ------------------------------------------------------------
@@ -103,6 +165,28 @@ entity VeraInstance {
     graph: core/Graph
     owner: core/Participant
 }
+
+-- Deliberately separate from core/Participant. There is exactly one anonymous
+-- public identity and it cannot acquire a graph membership.
+entity PublicIdentity {
+    name: String
+}
+
+entity PublicReadingSession {
+    instance: VeraInstance
+    site: core/PersonalSite
+    identity: PublicIdentity
+    origin: String
+    entry: PublicReadingEntry
+    previewed_by: core/Participant?
+    active: Boolean
+}
+
+------------------------------------------------------------
+-- Defaults
+------------------------------------------------------------
+
+default PublicIdentity anybody = { name: "anybody" }
 
 ------------------------------------------------------------
 -- Rules
@@ -142,6 +226,60 @@ rule UnauthenticatedSubmissionIsRefused {
     requires: not exists AuthenticatedAs(participant)
 
     refuses: "who is writing is decided by a credential; without one there is nobody to attribute this to"
+}
+
+-- The same running Vera may answer an authenticated workshop origin and one or
+-- more public serving origins. Reaching the latter creates only a reading
+-- session for `anybody`; it does not authenticate a participant behind the
+-- scenes.
+rule PublicOriginBeginsAnonymousReading {
+    when: ReadPublicSite(site, origin)
+
+    requires: site.graph = instance.graph
+    requires: is_public_serving_origin(site, origin)
+
+    ensures: PublicReadingSession.created(
+        instance: instance,
+        site: site,
+        identity: anybody,
+        origin: origin,
+        entry: public_origin,
+        previewed_by: null,
+        active: true
+    )
+}
+
+-- `público` en el taller no simula a anybody después de haber leído como dueño:
+-- abre la misma frontera con la autoridad ya rebajada en el servidor.
+rule OwnerBeginsExactPublicPreview {
+    when: EnterPublicPreview(owner, site, origin)
+
+    requires: instance.owner = owner
+    requires: owner.kind = human
+    requires: site.owner = owner
+    requires: site.graph = instance.graph
+    requires: is_authenticated_serving_origin(instance, origin)
+
+    ensures: PublicReadingSession.created(
+        instance: instance,
+        site: site,
+        identity: anybody,
+        origin: origin,
+        entry: owner_preview,
+        previewed_by: owner,
+        active: true
+    )
+}
+
+rule OwnerReturnsFromExactPublicPreview {
+    when: LeavePublicPreview(owner, reading)
+
+    requires: reading.entry = owner_preview
+    requires: reading.previewed_by = owner
+    requires: reading.active
+    requires: reading.instance.owner = owner
+
+    ensures: reading.active = false
 }
 
 -- The escape hatch, and its shape.
@@ -186,6 +324,22 @@ invariant SuspendedMembershipCannotParticipate {
         membership.status = suspended implies membership.participant != instance.owner
 }
 
+invariant PublicReadingUsesTheServedGraph {
+    for session in PublicReadingSessions:
+        session.site.graph = session.instance.graph
+}
+
+invariant EveryAnonymousReadingIsAnybody {
+    for session in PublicReadingSessions:
+        session.identity = anybody
+}
+
+invariant OnlyOwnerPreviewsRememberAnOwner {
+    for session in PublicReadingSessions:
+        (session.entry = owner_preview and session.previewed_by = session.instance.owner) or
+        (session.entry = public_origin and session.previewed_by = null)
+}
+
 ------------------------------------------------------------
 -- Actor Declarations
 ------------------------------------------------------------
@@ -193,6 +347,10 @@ invariant SuspendedMembershipCannotParticipate {
 actor SovereignOwner {
     within: VeraInstance
     identified_by: core/Participant where this = within.owner and this.kind = human
+}
+
+actor AnybodyReader {
+    identified_by: PublicIdentity where this = anybody
 }
 
 ------------------------------------------------------------
@@ -231,6 +389,53 @@ surface LocalOwnerRecovery {
         -- Recovery is not an HTTP surface. It opens the owner's corpus from the
         -- machine itself, so a reverse proxy on that same machine cannot turn a
         -- network request into an apparently local recovery request.
+}
+
+surface PublicReadBoundary {
+    facing reader: AnybodyReader
+    context session: PublicReadingSession where identity = reader and active
+
+    exposes:
+        session.identity.name
+        session.origin
+
+    contracts:
+        fulfils AnonymousPublicAccess
+
+    @guarantee ReadingProvidesNoMutation
+        -- This boundary exposes no operation that changes the graph, submits a
+        -- change, edits presentation shared by others, records an exposure or
+        -- administers the instance. A write-shaped request is refused rather
+        -- than retried under another identity.
+
+    @guarantee PrivateWorkshopAuthorityNeverLeaksAcrossOrigins
+        -- Cookies, cached credentials or an authenticated workshop open in the
+        -- same browser do not enlarge `anybody`. Every public-origin request is
+        -- authorized afresh against the public reading boundary.
+}
+
+surface OwnerPublicPreviewBoundary {
+    facing owner: SovereignOwner
+    context instance: VeraInstance
+
+    provides:
+        EnterPublicPreview(owner, site, origin)
+            when site.owner = owner and site.graph = instance.graph
+        LeavePublicPreview(owner, reading)
+            when reading.entry = owner_preview and reading.previewed_by = owner and reading.active
+
+    contracts:
+        fulfils OwnerPublicPreviewAccess
+
+    @guarantee ReturningRestoresAnExistingOwnerSession
+        -- Leaving preview returns to the authenticated workshop session from
+        -- which this owner stepped down. It does not authenticate anybody, mint
+        -- a credential or infer ownership from the network.
+
+    @guarantee APublicOriginCannotSeeThisBoundary
+        -- The owner-preview operations belong only to an already authenticated
+        -- owner workspace. `anybody` at the public origin cannot enumerate or
+        -- invoke them, including by submitting their request shape directly.
 }
 
 ------------------------------------------------------------

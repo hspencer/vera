@@ -2,9 +2,10 @@
 
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { request } from 'node:http';
 
 import { listen } from '../src/server.ts';
 
@@ -12,15 +13,18 @@ const PORT = 4284;
 const PREVIEW_PORT = 4285;
 const OWNER = 'participant:herbert';
 const output = mkdtempSync(join(tmpdir(), 'vera-public-http-'));
+const web = mkdtempSync(join(tmpdir(), 'vera-public-web-'));
 let base: string;
 let running: ReturnType<typeof listen>;
 let sequence = 0;
 
 before(() => {
+  writeFileSync(join(web, 'index.html'), '<!doctype html><title>La misma Vera</title><div id="vera-root"></div>');
   running = listen({
     port: PORT,
     databasePath: ':memory:',
     owner: { id: OWNER, name: 'Herbert' },
+    webRoot: web,
     publicSite: { title: 'Vera', canonicalDomain: 'https://vera.mediafranca.net' },
     reachableAt: 'https://vera.tuatara-carat.ts.net',
     publicOutput: output,
@@ -32,6 +36,7 @@ before(() => {
 after(async () => {
   await running.close();
   rmSync(output, { recursive: true, force: true });
+  rmSync(web, { recursive: true, force: true });
 });
 
 async function write(change: unknown): Promise<{
@@ -56,6 +61,24 @@ async function write(change: unknown): Promise<{
     subjectId: string;
     reason?: string;
   };
+}
+
+async function throughCanonical(path: string, method = 'GET'): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const asked = request(
+      { host: '127.0.0.1', port: PORT, path, method, headers: { host: 'publica.example' } },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+        response.on('end', () => resolve({
+          status: response.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString('utf8'),
+        }));
+      },
+    );
+    asked.on('error', reject);
+    asked.end();
+  });
 }
 
 describe('publicación del sitio personal', () => {
@@ -130,18 +153,83 @@ describe('publicación del sitio personal', () => {
     assert.equal(governed.publications[0]?.url, 'https://publica.example/vera/');
     assert.equal(typeof governed.publications[0]?.firstRevision, 'string');
     assert.match(readFileSync(join(output, 'index.html'), 'utf8'), /Primera versión/);
-    const preview = await fetch(`http://localhost:${PREVIEW_PORT}/`);
+    const hidden = await write({
+      kind: 'create_page',
+      title: 'Secreta',
+      visibility: 'private',
+    });
+    await write({
+      kind: 'create_block',
+      page: hidden.subjectId,
+      parent: null,
+      position: 0,
+      content: 'arsenal privado',
+    });
+    await write({ kind: 'edit_block', block, content: 'Segunda versión y [[Secreta]]' });
+
+    const previewBase = `http://localhost:${PREVIEW_PORT}`;
+    const preview = await fetch(`${previewBase}/`);
     assert.equal(preview.status, 200);
-    assert.match(await preview.text(), /Primera versión/);
+    assert.match(await preview.text(), /La misma Vera/);
+
+    const health = await fetch(`${previewBase}/health`).then((response) => response.json()) as {
+      access: string;
+      entryPoint: string;
+      pages: number;
+    };
+    assert.equal(health.access, 'anybody');
+    assert.equal(health.entryPoint, page);
+    assert.equal(health.pages, 1);
+
+    const visible = await fetch(`${previewBase}/pages`).then((response) => response.json()) as {
+      id: string;
+      title: string;
+    }[];
+    assert.deepEqual(visible.map((one) => one.id), [page]);
+    assert.equal((await fetch(`${previewBase}/pages/${encodeURIComponent(hidden.subjectId)}`)).status, 404);
+    assert.equal((await fetch(`${previewBase}/exposures`)).status, 404);
+    assert.equal((await fetch(`${previewBase}/operations`, { method: 'POST' })).status, 405);
+
+    const ownerPreview = await fetch(`${base}/health`, {
+      headers: { cookie: 'vera-view=anybody' },
+    }).then((response) => response.json()) as { access: string; canViewOwner: boolean; pages: number };
+    assert.equal(ownerPreview.access, 'anybody');
+    assert.equal(ownerPreview.canViewOwner, true);
+    assert.equal(ownerPreview.pages, 1);
     assert.equal(
-      (await fetch(`http://localhost:${PREVIEW_PORT}/pages`)).status,
-      404,
-      'the preview has no Vera API',
+      (await fetch(`${base}/operations`, {
+        method: 'POST',
+        headers: { cookie: 'vera-view=anybody' },
+      })).status,
+      405,
     );
 
-    const edited = await write({ kind: 'edit_block', block, content: 'Segunda versión' });
+    const canonical = await throughCanonical('/health');
+    const canonicalHealth = JSON.parse(canonical.body) as {
+      access: string;
+      canViewOwner: boolean;
+      pages: number;
+    };
+    assert.equal(canonicalHealth.access, 'anybody');
+    assert.equal(canonicalHealth.canViewOwner, false);
+    assert.equal(canonicalHealth.pages, 1);
+    assert.equal(
+      (await throughCanonical('/operations', 'POST')).status,
+      405,
+    );
+
+    const publicPage = await fetch(`${previewBase}/pages/${encodeURIComponent(page)}`).then(
+      (response) => response.json(),
+    ) as { pendingLinks: string[]; references: { title: string; page: string | null }[] };
+    assert.deepEqual(publicPage.pendingLinks, ['Secreta']);
+    assert.equal(publicPage.references.find((one) => one.title === 'Secreta')?.page, null);
+
+    const search = await fetch(`${previewBase}/search?q=arsenal`).then((response) => response.json()) as unknown[];
+    assert.deepEqual(search, []);
+
+    const edited = await write({ kind: 'edit_block', block, content: 'Tercera versión' });
     assert.equal(edited.httpStatus, 201);
-    assert.match(readFileSync(join(output, 'index.html'), 'utf8'), /Segunda versión/);
+    assert.match(readFileSync(join(output, 'index.html'), 'utf8'), /Tercera versión/);
     assert.doesNotMatch(readFileSync(join(output, 'index.html'), 'utf8'), /Primera versión/);
 
     const refused = await write({ kind: 'set_page_visibility', page, visibility: 'private' });
@@ -158,7 +246,7 @@ describe('publicación del sitio personal', () => {
     };
     assert.equal(withdrawn.publishedAt, null);
     assert.equal(withdrawn.entryPoint, false);
-    assert.doesNotMatch(readFileSync(join(output, 'index.html'), 'utf8'), /Segunda versión/);
+    assert.doesNotMatch(readFileSync(join(output, 'index.html'), 'utf8'), /Tercera versión/);
 
     const privateNow = await write({ kind: 'set_page_visibility', page, visibility: 'private' });
     assert.equal(privateNow.httpStatus, 201);

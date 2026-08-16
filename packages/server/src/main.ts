@@ -92,11 +92,9 @@ const { vera } = listen({
     : {
         publicOutput,
         publicBranding: join(ROOT, 'packages/web/public'),
-        ...(publicPreviewPort === undefined
-          ? {}
-          : { publicPreviewPort: Number(publicPreviewPort) }),
-        ...(publicPreviewUrl === undefined ? {} : { publicPreviewUrl }),
       }),
+  ...(publicPreviewPort === undefined ? {} : { publicPreviewPort: Number(publicPreviewPort) }),
+  ...(publicPreviewUrl === undefined ? {} : { publicPreviewUrl }),
   ...(declaredOwner === undefined ? {} : { owner: declaredOwner }),
 });
 

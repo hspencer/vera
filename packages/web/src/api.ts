@@ -644,6 +644,12 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
  */
 export interface CorpusHealth {
   graph: string;
+  /** `anybody` es la sesión pública anónima y nunca puede escribir. */
+  access?: 'owner' | 'anybody';
+  /** Falso en el origen público: anybody nunca puede elevarse desde allí. */
+  canViewOwner?: boolean;
+  /** Portada del sitio cuando la lectura ocurre por el origen público. */
+  entryPoint?: string | null;
   pages: number;
   blocks: number;
   lastSequence: number;

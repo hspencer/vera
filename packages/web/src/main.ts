@@ -259,6 +259,37 @@ function closeSettings(): void {
 /** Lo que el grafo tiene. Se pide al arrancar y se enseña en Memoria. */
 let corpus: CorpusHealth | null = null;
 
+const isAnybody = (): boolean => corpus?.access === 'anybody';
+
+function drawAudienceControl(): void {
+  const control = document.querySelector<HTMLElement>('#map-audience');
+  if (control === null || corpus === null) return;
+  // En el origen público no se ofrece una elevación que el servidor negaría.
+  control.hidden = corpus.canViewOwner === false;
+  for (const button of control.querySelectorAll<HTMLButtonElement>('[data-audience]')) {
+    const active = button.dataset['audience'] === (isAnybody() ? 'anybody' : 'owner');
+    button.setAttribute('aria-pressed', String(active));
+  }
+}
+
+function viewAs(audience: 'owner' | 'anybody'): void {
+  if (audience === 'owner') {
+    document.cookie = 'vera-view=; Path=/; Max-Age=0; SameSite=Strict';
+  } else {
+    document.cookie = 'vera-view=anybody; Path=/; SameSite=Strict';
+  }
+  // La raíz correcta difiere: hoy para el dueño, entryPoint para anybody.
+  window.location.assign('/');
+}
+
+async function openHome(): Promise<void> {
+  if (isAnybody() && corpus?.entryPoint != null) {
+    await openPage(corpus.entryPoint);
+    return;
+  }
+  await openToday();
+}
+
 /**
  * Lo que este aparato ya tenía guardado de lo leído.
  *
@@ -748,7 +779,7 @@ async function openPage(
    * Lo que va detrás no es volver a pedir la página: es la pregunta barata de qué
    * ha pasado desde el cursor. Ver `catchUpWithCorpus`.
    */
-  let kept = here ? null : await held.page(id);
+  let kept = here || isAnybody() ? null : await held.page(id);
   /*
    * Una copia anterior al arreglo puede haber sobrevivido con el cursor ya
    * avanzado. El índice trae el número canónico de bloques y permite reconocer
@@ -773,7 +804,7 @@ async function openPage(
     if (page === undefined) {
       page = await api.page(id);
       // Leerla es lo que hace que se retenga. rule RetainDeliveredPage.
-      void held.keepPage(page);
+      if (!isAnybody()) void held.keepPage(page);
     }
   } catch (error) {
     /*
@@ -787,7 +818,7 @@ async function openPage(
      * página— salta el atajo a propósito: al guardar hay que volver a mirar el
      * corpus, y si el corpus no está, lo retenido sigue siendo la respuesta.
      */
-    const remembered = await held.page(id);
+    const remembered = isAnybody() ? null : await held.page(id);
     if (remembered === null) {
       // Una página que no se pudo traer ni se tenía se dice; no se deja la vista
       // anterior fingiendo que la navegación ocurrió.
@@ -895,7 +926,7 @@ async function openPage(
   derivedStale = false;
   window.clearTimeout(catchUpTimer);
 
-  renderOutliner(text, page, callbacksFor(page), focus, workspace.focusRoot);
+  renderOutliner(text, page, callbacksFor(page), focus, workspace.focusRoot, isAnybody());
   showingKept = fromKept;
   markShowing(text, fromKept);
 
@@ -1030,7 +1061,7 @@ function continueBackwards(from: string, keptScroll: number): void {
         // Cada tramo se dibuja con el mismo outliner que el día de arriba: se
         // edita igual, se pliega igual y habla con las mismas teclas. Un diario
         // que sólo se pudiera leer hacia atrás sería un archivo, no un cuaderno.
-        renderOutliner(slice, older, callbacksFor(older), null, null);
+        renderOutliner(slice, older, callbacksFor(older), null, null, isAnybody());
         text.append(slice);
         journalDepth += 1;
         if (journalDepth >= refill) settle();
@@ -1130,7 +1161,7 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
         openView.blockProperties = blockPropertiesOf(replica);
         openView.properties = pagePropertiesOf(replica);
         openView.visibility = replica.graph.page(replica.page)?.visibility ?? openView.visibility;
-        renderOutliner(text, openView, callbacksFor(openView), focus, workspace.focusRoot);
+        renderOutliner(text, openView, callbacksFor(openView), focus, workspace.focusRoot, isAnybody());
         restoreTextViewport(text, viewport);
         catchUp();
         return;
@@ -1198,7 +1229,7 @@ async function applyRoute(): Promise<void> {
     // La raíz es hoy. Antes era la página más conectada del corpus, que es una
     // buena portada y un mal sitio donde llegar: para escribir algo había que
     // decidir primero dónde, y esa decisión es justo la que un diario ahorra.
-    await openToday();
+    await openHome();
     return;
   }
 
@@ -1288,7 +1319,7 @@ async function loadPages(): Promise<void> {
    * lista de verdad, unos segundos después. Abrirla por su título sigue
    * funcionando, porque eso lo resuelve el servidor y no la lista.
    */
-  const remembered = await held.index();
+  const remembered = isAnybody() ? null : await held.index();
   if (remembered !== null) {
     pages = byWeight(remembered);
     // Y detrás, la de verdad, sin que nadie la espere.
@@ -1296,7 +1327,7 @@ async function loadPages(): Promise<void> {
       .pages()
       .then((fresh) => {
         pages = byWeight(fresh);
-        void held.keepIndex(fresh);
+        if (!isAnybody()) void held.keepIndex(fresh);
       })
       .catch(() => undefined);
     return;
@@ -1304,7 +1335,7 @@ async function loadPages(): Promise<void> {
 
   try {
     pages = byWeight(await api.pages());
-    void held.keepIndex(pages);
+    if (!isAnybody()) void held.keepIndex(pages);
     return;
   } catch (error) {
     /*
@@ -1315,7 +1346,7 @@ async function loadPages(): Promise<void> {
      * crearla. Sin lista, abrir sin red dejaría a Vera sabiendo leer una página y
      * sin saber cómo se llama ninguna otra.
      */
-    const otra = await held.index();
+    const otra = isAnybody() ? null : await held.index();
     if (otra === null) throw error;
     pages = byWeight(otra);
   }
@@ -1326,6 +1357,11 @@ async function openTitle(title: string, gesture: NavigationGesture): Promise<voi
   const found = pages.find((page) => page.title.toLowerCase() === title.toLowerCase());
   if (found !== undefined) {
     await openPage(found.id, null, { gesture });
+    return;
+  }
+
+  if (isAnybody()) {
+    notice(`«${title}» no forma parte de este sitio público.`);
     return;
   }
 
@@ -1491,6 +1527,7 @@ let contested = new Set<string>();
  * @guarantee KnowingIsCheapAndTakingIsNot.
  */
 async function catchUpWithCorpus(): Promise<void> {
+  if (isAnybody()) return;
   if (!navigator.onLine) return;
 
   const cursor = await held.cursor();
@@ -2255,7 +2292,7 @@ function wireTheme(): void {
   // El icono no puede quedar viejo: nombra el destino, no lo enseña.
   $('#back').addEventListener('click', () => window.history.back());
   $('#forward').addEventListener('click', () => window.history.forward());
-  $('#brand').addEventListener('click', () => void openToday());
+  $('#brand').addEventListener('click', () => void openHome());
 
   /*
    * El ojo abre y cierra el panel de controles del mapa.
@@ -2283,6 +2320,13 @@ function wireTheme(): void {
     mapPanelOpen = open;
     drawPanel();
   };
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-audience]')) {
+    button.addEventListener('click', () => {
+      const audience = button.dataset['audience'];
+      if (audience === 'owner' || audience === 'anybody') viewAs(audience);
+    });
+  }
 
   panelToggle.addEventListener('click', (event) => {
     // Sin esto, el mismo clic que lo abre llega al documento y lo cierra.
@@ -2368,6 +2412,7 @@ function wireTheme(): void {
 
 
   const openSettings = (): void => {
+    if (isAnybody()) section = 'apariencia';
     renderSettings(panel, tokens, section, {
       drawMemory,
       scheme: () => workspace.scheme,
@@ -2403,6 +2448,9 @@ function wireTheme(): void {
     });
     // Recordar la sección entre aperturas: se vuelve a la misma que se dejó.
     panel.querySelectorAll('.settings-tab').forEach((tab, at) => {
+      if (isAnybody() && tab.textContent !== 'Apariencia') {
+        (tab as HTMLElement).hidden = true;
+      }
       tab.addEventListener('click', () => {
         section = (['memoria', 'archivos', 'teclado', 'apariencia'] as Section[])[at] ?? 'memoria';
       });
@@ -2461,6 +2509,7 @@ function wireTheme(): void {
   onRecording((on) => $('#insert-voice').classList.toggle('live', on));
 
   $('#insert-voice').addEventListener('click', () => {
+    if (isAnybody()) return;
     void (async () => {
       const block = await startDay(today());
       if (block === null) return;
@@ -2722,7 +2771,16 @@ async function start(): Promise<void> {
   // Memoria y se pinta cuando alguien lo abre.
   try {
     corpus = await api.health();
-    void held.keepCorpus(corpus);
+    document.documentElement.dataset['access'] = corpus.access ?? 'owner';
+    if (isAnybody()) workspace.trace = [];
+    drawAudienceControl();
+    if (isAnybody()) {
+      $('#brand').title = 'Portada publicada';
+      $('#brand').setAttribute('aria-label', 'Ir a la portada publicada');
+    }
+    $('#insert-voice').hidden = isAnybody();
+    $('#sync-state').hidden = isAnybody();
+    if (!isAnybody()) void held.keepCorpus(corpus);
   } catch (error) {
     /*
      * El servidor no está. Si este aparato ya abrió Vera alguna vez, se sigue.
@@ -2732,7 +2790,7 @@ async function start(): Promise<void> {
      * corpus vacío sería peor que decir que no se pudo: enseñaría una Vera sin
      * páginas a quien tiene mil novecientas.
      */
-    const remembered = await held.corpus();
+    const remembered = isAnybody() ? null : await held.corpus();
     if (remembered === null) throw error;
     corpus = remembered;
     showingKept = true;

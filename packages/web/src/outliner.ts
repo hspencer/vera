@@ -2275,8 +2275,20 @@ export function renderOutliner(
   callbacks: OutlinerCallbacks,
   focus: { block: string; at: number | null } | null = null,
   focusRoot: string | null = null,
+  readOnly = false,
 ): void {
   container.innerHTML = '';
+  container.classList.toggle('read-only', readOnly);
+  if (container.dataset['readOnlyGuard'] !== 'true') {
+    container.dataset['readOnlyGuard'] = 'true';
+    container.addEventListener('click', (event) => {
+      if (!container.classList.contains('read-only')) return;
+      const target = event.target as HTMLElement;
+      if (target.closest('.page-title, .properties, .bullet, .drawn-edit, .gloss-text') === null) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, { capture: true });
+  }
   dropPickedKeys?.();
   dropPickedKeys = null;
   // Una seleccion nombra bloques de una pagina; en otra no quiere decir nada.
@@ -2680,7 +2692,7 @@ export function renderOutliner(
   const title = document.createElement('h1');
   title.className = day ? 'page-title day' : 'page-title';
   title.textContent = page.title;
-  if (!day) {
+  if (!day && !readOnly) {
     title.tabIndex = 0;
     title.title = 'renombrar la página';
     title.addEventListener('click', () => {
@@ -3335,7 +3347,8 @@ export function renderOutliner(
    * puede ofrecer quitar sin ofrecer poner. Lo que sigue fuera del día es la
    * marca de visibilidad, que no es una acción sino un estado.
    */
-  header.append(properties, add);
+  header.append(properties);
+  if (!readOnly) header.append(add);
 
   /*
    * Lo que se puede hacer con la página entera, en un menú.
@@ -3355,6 +3368,26 @@ export function renderOutliner(
   more.innerHTML = icon('more-vertical');
   more.addEventListener('click', (event) => {
     event.stopPropagation();
+    if (readOnly) {
+      openBlockMenu(more, [[
+        {
+          label: 'Copiar el Markdown de la página',
+          icon: 'copy',
+          run: () => void copyPageMarkdown(page.id),
+        },
+        {
+          label: 'Descargar como .md',
+          icon: 'download',
+          run: () => void downloadPage(page),
+        },
+        {
+          label: 'Exportar a PDF',
+          icon: 'file-text',
+          run: () => void downloadPdf(page, toast),
+        },
+      ]]);
+      return;
+    }
     // Un solo grupo, todavía: el de la página no se ha ordenado ni se le han
     // puesto iconos, y media reforma se ve peor que ninguna.
     openBlockMenu(more, [
@@ -3459,7 +3492,7 @@ export function renderOutliner(
    * fuera del corpus —no viaja con la página— y esperarlo para enseñar el texto
    * dejaría la página en blanco mientras tanto. Ver service-page.ts.
    */
-  if (isServicePage(page.properties)) {
+  if (!readOnly && isServicePage(page.properties)) {
     void renderService(page.id, toast, (change) =>
       submitQuietly(change).then((applied) => {
         if (applied) callbacks.onReload(null);
@@ -3470,7 +3503,7 @@ export function renderOutliner(
     });
   }
 
-  if (isPublicationPage(page.properties)) {
+  if (!readOnly && isPublicationPage(page.properties)) {
     void renderPublicationPage(
       toast,
       (target) => callbacks.onOpen(target, 'followed_reference'),
@@ -3597,6 +3630,13 @@ export function renderOutliner(
       fold.addEventListener('mousedown', (event) => event.preventDefault());
       fold.addEventListener('click', (event) => {
         event.stopPropagation();
+        if (readOnly) {
+          page.folded = shut
+            ? page.folded.filter((id) => id !== node.block.stableId)
+            : [...page.folded, node.block.stableId];
+          renderOutliner(container, page, callbacks, focus, focusRoot, true);
+          return;
+        }
         void toggleFold(
           node.block.stableId,
           !shut,
@@ -4000,6 +4040,7 @@ export function renderOutliner(
       // Pulsar el reproductor o sus botones no abre el editor; pulsar el texto
       // sí, que es lo que se espera de un texto.
       if (target.closest('.audio-block') !== null) return;
+      if (readOnly) return;
 
       /*
        * Con Shift se escoge el tramo en vez de abrir el bloque.

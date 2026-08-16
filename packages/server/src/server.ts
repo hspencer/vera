@@ -7,7 +7,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createReadStream, existsSync, readFileSync, statSync, unlinkSync } from 'node:fs';
-import { extname, join, normalize, resolve, sep } from 'node:path';
+import { extname, join, normalize, resolve } from 'node:path';
 import { hostname, userInfo } from 'node:os';
 
 import {
@@ -146,6 +146,14 @@ const CHANGE_KINDS = new Set<string>(CORE_CHANGE_KINDS);
  */
 const MOST_ANSWERS = 200;
 
+/**
+ * La lectura pública no suplanta a una persona del grafo.
+ *
+ * Es una identidad de frontera: sirve para decidir y auditar el alcance de una
+ * petición, pero no se admite como participante ni puede firmar operaciones.
+ */
+const ANYBODY = 'participant:anybody' as ParticipantId;
+
 // Del dominio y no repetida aquí: una lista copiada es una lista que se queda
 // atrás el día que el vocabulario crece, y el borde HTTP rechazaría por
 // desconocido algo que @vera/core acepta.
@@ -226,6 +234,8 @@ export interface ServerOptions {
 
 export interface VeraServer {
   handle(request: IncomingMessage, response: ServerResponse): void;
+  /** La misma aplicación, atravesando obligatoriamente la frontera pública. */
+  handlePublic(request: IncomingMessage, response: ServerResponse): void;
   graph: VeraGraph;
   store: Store;
   close(): void;
@@ -451,6 +461,36 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       : graph.siteByDomain(options.publicSite.canonicalDomain);
     return declared ?? (owned.length === 1 ? owned[0] : undefined);
   };
+
+  const publicPageIds = (): ReadonlySet<string> => {
+    const site = publicSite();
+    return new Set(
+      site === undefined
+        ? []
+        : graph.publicationsOf(site.id)
+            // Las páginas que gobiernan Vera no forman parte de su discurso
+            // público aunque alguien las marque por error.
+            .filter((one) =>
+              !graph.propertiesOf(one.page).some((property) => property.key === SPECIAL_KIND),
+            )
+            .map((one) => one.page),
+    );
+  };
+
+  const isPublicPage = (page: string): boolean => publicPageIds().has(page);
+
+  /** Sólo los objetos nombrados desde una publicación explícita pueden salir. */
+  const publicMediaHashes = (): ReadonlySet<string> =>
+    new Set(
+      [...publicPageIds()].flatMap((page) =>
+        [
+          ...assetsOf(page).map((asset) => asset.url.slice('/media/'.length)),
+          ...recordingsInPage(store, page).flatMap((recording) =>
+            recording.audioHash === null ? [] : [recording.audioHash],
+          ),
+        ],
+      ),
+    );
 
   const publicationView = (pageId: string) => {
     const site = publicSite();
@@ -888,7 +928,11 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     response.end(body);
   };
 
-  const serveStatic = (response: ServerResponse, pathname: string): boolean => {
+  const serveStatic = (
+    response: ServerResponse,
+    pathname: string,
+    publicResponse = false,
+  ): boolean => {
     if (webRoot === null) return false;
     const wanted = pathname === '/' ? '/index.html' : pathname;
     // normalize + prefijo: sin esto, `..` en la ruta saldría del directorio.
@@ -899,6 +943,15 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     response.writeHead(200, {
       'content-type': MIME[extname(target)] ?? 'application/octet-stream',
       'cache-control': wanted.startsWith(FINGERPRINTED) ? IMMUTABLE : REVALIDATE,
+      ...(publicResponse
+        ? {
+            'content-security-policy':
+              "default-src 'self'; connect-src 'self'; img-src 'self' data: blob: https:; " +
+              "media-src 'self' blob:; frame-src 'self' https:; style-src 'self' 'unsafe-inline'; " +
+              "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
+            'x-content-type-options': 'nosniff',
+          }
+        : {}),
     });
     createReadStream(target).pipe(response);
     return true;
@@ -953,9 +1006,59 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     return one === undefined ? null : one.slice(0, 200);
   };
 
-  const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+  const handle = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    forcedPublic = false,
+  ): Promise<void> => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     const path = url.pathname;
+
+    /*
+     * Un origen público no es una segunda aplicación: es esta misma Vera bajo
+     * otra autoridad. El dominio canónico decide la frontera en producción y
+     * el segundo listener loopback la fuerza para la previsualización privada.
+     * Una cabecera del cliente nunca puede elegirla.
+     */
+    const host = (request.headers.host ?? '').split(':')[0]?.toLowerCase() ?? '';
+    let canonicalHost = '';
+    try {
+      canonicalHost = new URL(publicSite()?.canonicalDomain ?? '').hostname.toLowerCase();
+    } catch {
+      canonicalHost = '';
+    }
+    // El dueño puede bajar voluntariamente su autoridad para previsualizar.
+    // La cookie sólo sabe pedir `anybody`; nunca puede pedir ni recuperar dueño.
+    const requestedPublic = (request.headers.cookie ?? '')
+      .split(';')
+      .some((part) => part.trim() === 'vera-view=anybody');
+    const publicOrigin = forcedPublic || (canonicalHost !== '' && host === canonicalHost);
+    const publicAccess = publicOrigin || requestedPublic;
+
+    if (publicAccess && request.method !== 'GET' && request.method !== 'HEAD') {
+      send(response, 405, { error: 'anybody sólo puede leer' });
+      return;
+    }
+
+    if (publicAccess) {
+      const safe =
+        path === '/' ||
+        path === '/health' ||
+        path === '/pages' ||
+        path === '/search' ||
+        path === '/p5-frame.html' ||
+        path === '/p5.min.js' ||
+        path.startsWith('/pages/') ||
+        path.startsWith('/graph/') ||
+        path.startsWith('/media/') ||
+        path.startsWith('/p/') ||
+        path.startsWith('/build/') ||
+        /^\/(?:manifest\.webmanifest|sw\.js|favicon\.ico|apple-touch-icon\.png|icon-[^/]+|fonts\/)/.test(path);
+      if (!safe) {
+        send(response, 404, { error: 'not found' });
+        return;
+      }
+    }
 
     /*
      * Quién lee, resuelto una vez y antes de nada.
@@ -967,7 +1070,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
      * Y una sola vez por petición, porque `resolveSecret` marca la credencial
      * como usada: resolverla dos veces contaría dos usos donde hubo uno.
      */
-    const who = reader(request.headers.authorization);
+    const who = publicAccess
+      ? { ok: true as const, participant: ANYBODY, credential: null }
+      : reader(request.headers.authorization);
     if (!who.ok) {
       /*
        * No se anota en el registro de exposición, y no por descuido.
@@ -997,6 +1102,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       delivered: readonly string[] = [],
       outcome = 'served',
     ): void => {
+      // `anybody` no es un participante del grafo. El registro nominal actual
+      // exige uno; el tráfico público tendrá su contador agregado sin inventar
+      // una autoría ni una membresía.
+      if (publicAccess) return;
       recordExposure(store, {
         participant: who.participant,
         credential: who.credential,
@@ -3763,12 +3872,19 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       return;
     }
 
-    const participant = url.searchParams.get('participant') ?? owner.id;
+    const participant = publicAccess ? ANYBODY : (url.searchParams.get('participant') ?? owner.id);
 
     try {
       if (path === '/health') {
+        const visiblePages = publicAccess
+          ? graph.pages().filter((page) => isPublicPage(page.id))
+          : graph.pages();
+        const siteEntry = publicSite()?.entryPoint ?? null;
         send(response, 200, {
           graph: graph.name,
+          access: publicAccess ? 'anybody' : 'owner',
+          canViewOwner: !publicOrigin,
+          entryPoint: publicAccess && siteEntry !== null && isPublicPage(siteEntry) ? siteEntry : null,
           /*
            * Cómo llama este corpus a las propiedades que Vera necesita conocer.
            *
@@ -3778,18 +3894,22 @@ export function createVeraServer(options: ServerOptions): VeraServer {
            */
           names: propertyNames(),
           embedHosts: embedHosts(),
-          pages: graph.pages().length,
-          blocks: graph.allBlocks().length,
-          lastSequence: graph.log().lastSequence,
+          pages: visiblePages.length,
+          blocks: visiblePages.reduce((count, page) => count + graph.blocksOf(page.id).length, 0),
+          // El cursor del log privado no es información de la publicación.
+          lastSequence: publicAccess ? 0 : graph.log().lastSequence,
         });
         return;
       }
 
       if (path === '/pages') {
+        const visible = publicAccess
+          ? graph.pages().filter((page) => isPublicPage(page.id))
+          : graph.pages();
         send(
           response,
           200,
-          graph.pages().map((page) => ({
+          visible.map((page) => ({
             id: page.id,
             title: page.title,
             visibility: page.visibility,
@@ -3797,11 +3917,14 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             // Cuántas aristas toca. El cliente lo usa para no abrir de entrada
             // una página aislada, que se vería como un grafo vacío.
             linkCount:
-              graph.backlinks(page.id).length +
+              graph.backlinks(page.id).filter((link) => !publicAccess || isPublicPage(link.sourcePage)).length +
               graph
                 .blocksOf(page.id)
                 .reduce(
-                  (n, block) => n + graph.linksOf(block.stableId).filter((l) => l.target !== null).length,
+                  (n, block) =>
+                    n + graph.linksOf(block.stableId).filter(
+                      (link) => link.target !== null && (!publicAccess || isPublicPage(link.target)),
+                    ).length,
                   0,
                 ),
           })),
@@ -3830,6 +3953,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         );
         const page = graph.page(named) ?? graph.pageTitled(named);
         if (page === undefined) {
+          send(response, 404, { error: 'no such page' });
+          return;
+        }
+        if (publicAccess && !isPublicPage(page.id)) {
           send(response, 404, { error: 'no such page' });
           return;
         }
@@ -3873,7 +4000,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
              */
             resolveBlock: (stableId) => {
               const cited = graph.block(stableId);
-              if (cited === undefined) return null;
+              if (cited === undefined || (publicAccess && !isPublicPage(cited.page))) return null;
               const from = graph.page(cited.page);
               return { page: from?.title ?? cited.page, excerpt: cited.content };
             },
@@ -3906,7 +4033,13 @@ export function createVeraServer(options: ServerOptions): VeraServer {
          * origen, y mirar el papel en una pestaña y componerlo en un PDF son la
          * misma página y no dos parecidas.
          */
-        const port = request.socket.localPort ?? 4173;
+        if (publicAccess && options.publicPreviewPort === undefined) {
+          send(response, 503, { error: 'la salida pública para componer PDF no está configurada' });
+          return;
+        }
+        const port = publicAccess
+          ? options.publicPreviewPort!
+          : (request.socket.localPort ?? 4173);
         const suffix = url.searchParams.get('sangria') !== null ? '?sangria=1' : '';
         const where = `http://127.0.0.1:${port}/pages/${encodeURIComponent(page.id)}/paper${suffix}`;
         void toPdf(where).then((made) => {
@@ -3938,6 +4071,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           send(response, 404, { error: 'no such page' });
           return;
         }
+        if (publicAccess && !isPublicPage(page.id)) {
+          send(response, 404, { error: 'no such page' });
+          return;
+        }
         const { text } = renderPage(graph, page);
         const body = Buffer.from(text, 'utf8');
         // Esto es la página entera en texto plano, lista para pegarse en otra
@@ -3961,6 +4098,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           send(response, 404, { error: 'no such page' });
           return;
         }
+        if (publicAccess && !isPublicPage(page.id)) {
+          send(response, 404, { error: 'no such page' });
+          return;
+        }
         deliver({
           id: page.id,
           title: page.title,
@@ -3972,7 +4113,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
            * su hilo llegaran en momentos distintos y la página parpadeara al
            * abrirse. Cuando la página no lo declara, viaja nulo y no cuesta nada.
            */
-          trail: trailOf(page.id),
+          // Un recorrido puede atravesar páginas que no pertenecen al sitio.
+          // Hasta tener una proyección parcial honesta, no se entrega a anybody.
+          trail: publicAccess ? null : trailOf(page.id),
           visibility: page.visibility,
           publication: publicationView(page.id),
           createdAt: page.createdAt,
@@ -3983,12 +4126,14 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           // vocabulario observado, no uno declarado: mientras no haya ontología
           // es lo único que hay, y cuando la haya seguirá siendo la evidencia
           // desde la que se propone. Sólo viajan las claves de esta página.
-          domains: Object.fromEntries(
-            [...new Set(graph.propertiesOf(page.id).map((p) => p.key))].map((key) => [
-              key,
-              graph.observedValuesOf(key),
-            ]),
-          ),
+          domains: publicAccess
+            ? {}
+            : Object.fromEntries(
+                [...new Set(graph.propertiesOf(page.id).map((p) => p.key))].map((key) => [
+                  key,
+                  graph.observedValuesOf(key),
+                ]),
+              ),
           blocks: graph
             .blocksOf(page.id)
             .map((block) => ({
@@ -4036,13 +4181,17 @@ export function createVeraServer(options: ServerOptions): VeraServer {
            * que es contradicha por A. Enseñarlo tal cual invertiría el sujeto de
            * la afirmación sin avisar.
            */
-          crossingsOut: graph.crossingsOut(page.id).map((crossing) => ({
+          crossingsOut: graph.crossingsOut(page.id)
+            .filter((crossing) => !publicAccess || (crossing.toPage !== null && isPublicPage(crossing.toPage)))
+            .map((crossing) => ({
             ...crossing,
             title: crossing.toPage === null ? crossing.targetTitle : (graph.page(crossing.toPage)?.title ?? crossing.targetTitle),
             reads: crossing.term,
             says: excerpt(graph.block(crossing.fromBlock)?.content ?? ''),
           })),
-          crossingsIn: graph.crossingsIn(page.id).map((crossing) => ({
+          crossingsIn: graph.crossingsIn(page.id)
+            .filter((crossing) => !publicAccess || isPublicPage(crossing.fromPage))
+            .map((crossing) => ({
             ...crossing,
             title: graph.page(crossing.fromPage)?.title ?? crossing.fromPage,
             reads: inverseOf(crossing.term, relationVocabulary()),
@@ -4090,7 +4239,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           ),
           // @invariant FoldingIsNotAChange: qué tiene plegado ESTE participante.
           // No sale del registro de operaciones porque nunca entró en él.
-          folded: foldedOnPage(store, participant, page.id),
+          folded: publicAccess ? [] : foldedOnPage(store, participant, page.id),
           // @invariant ReferenceResolvesToItsBlock. Las referencias que esta
           // página nombra viajan resueltas: quién es el bloque, en qué página
           // vive y qué dice. Sin esto el cliente tendría que pedir una por una
@@ -4104,7 +4253,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 if (id === '' || seen.has(id)) continue;
                 seen.add(id);
                 const target = graph.block(id);
-                if (target === undefined) continue;
+                if (target === undefined || (publicAccess && !isPublicPage(target.page))) continue;
                 found.push({ id, page: target.page, excerpt: excerpt(target.content) });
               }
             }
@@ -4120,12 +4269,16 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             const pending = new Set<string>();
             for (const block of graph.blocksOf(page.id)) {
               for (const link of graph.linksOf(block.stableId)) {
-                if (link.target === null) pending.add(link.targetTitle);
+                if (link.target === null || (publicAccess && !isPublicPage(link.target))) {
+                  pending.add(link.targetTitle);
+                }
               }
             }
             return [...pending];
           })(),
-          backlinks: graph.backlinks(page.id).map((link) => {
+          backlinks: graph.backlinks(page.id)
+            .filter((link) => !publicAccess || isPublicPage(link.sourcePage))
+            .map((link) => {
             const source = graph.page(link.sourcePage);
             const block = link.sourceBlock === null ? undefined : graph.block(link.sourceBlock);
             return {
@@ -4160,7 +4313,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 const key = titleKey(target?.title ?? link.targetTitle);
                 if (key === '' || seen.has(key)) continue;
                 seen.set(key, {
-                  page: link.target,
+                  page: publicAccess && (link.target === null || !isPublicPage(link.target))
+                    ? null
+                    : link.target,
                   title: target?.title ?? link.targetTitle,
                   block: block.stableId,
                   excerpt: excerpt(block.content),
@@ -4183,7 +4338,11 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       // nunca cambia: se puede cachear para siempre.
       if (path.startsWith('/media/')) {
         const hash = path.slice('/media/'.length);
-        if (objectsRoot === null || !HASH.test(hash)) {
+        if (
+          objectsRoot === null ||
+          !HASH.test(hash) ||
+          (publicAccess && !publicMediaHashes().has(hash))
+        ) {
           send(response, 404, { error: 'no such media' });
           return;
         }
@@ -4210,16 +4369,22 @@ export function createVeraServer(options: ServerOptions): VeraServer {
 
       if (path === '/search') {
         const asked = url.searchParams.get('q') ?? '';
-        const outcome = graph.search({ text: asked, participant });
+        // La búsqueda pública usa el algoritmo canónico, pero la identidad de
+        // frontera `anybody` no se admite al grafo. El resultado se recorta por
+        // publicación antes de salir; no se inventa una membresía anónima.
+        const outcome = graph.search({ text: asked, participant: publicAccess ? owner.id : participant });
+        const hits = publicAccess
+          ? outcome.hits.filter((hit) => isPublicPage(hit.page))
+          : outcome.hits;
         /*
          * Una búsqueda que devolvió doce extractos expuso doce cosas, y el
          * registro tiene que poder nombrarlas: buscar es la manera barata de
          * llevarse el corpus a trozos sin abrir una sola página.
          */
-        deliver(outcome.hits, {
+        deliver(hits, {
           surface: 'GET /search',
           subject: asked,
-          delivered: outcome.hits.map((hit) => hit.block ?? hit.page),
+          delivered: hits.map((hit) => hit.block ?? hit.page),
         });
         return;
       }
@@ -4249,6 +4414,59 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       if (path.startsWith('/graph/')) {
         const centre = decodeURIComponent(path.slice('/graph/'.length));
         const depth = Number(url.searchParams.get('depth') ?? '2');
+        if (publicAccess) {
+          const centred = graph.page(centre) ?? graph.pageTitled(centre);
+          if (centred === undefined || !isPublicPage(centred.id)) {
+            send(response, 404, { error: 'no such page' });
+            return;
+          }
+
+          // El mapa público se calcula sobre el subgrafo inducido. Filtrar un
+          // vecindario privado después de recorrerlo revelaría que dos páginas
+          // públicas están conectadas por algo oculto.
+          const allowed = publicPageIds();
+          const neighbours = new Map<string, Set<string>>();
+          for (const id of allowed) neighbours.set(id, new Set());
+          for (const id of allowed) {
+            for (const block of graph.blocksOf(id)) {
+              for (const link of graph.linksOf(block.stableId)) {
+                if (link.target === null || !allowed.has(link.target)) continue;
+                neighbours.get(id)?.add(link.target);
+                neighbours.get(link.target)?.add(id);
+              }
+            }
+          }
+          const distances = new Map<string, number>([[centred.id, 0]]);
+          const queue = [centred.id];
+          while (queue.length > 0) {
+            const current = queue.shift()!;
+            const distance = distances.get(current)!;
+            if (distance >= depth) continue;
+            for (const next of neighbours.get(current) ?? []) {
+              if (distances.has(next)) continue;
+              distances.set(next, distance + 1);
+              queue.push(next);
+            }
+          }
+          const shown = new Set(distances.keys());
+          const links: { source: string; target: string }[] = [];
+          for (const source of shown) {
+            for (const target of neighbours.get(source) ?? []) {
+              if (shown.has(target) && source.localeCompare(target) < 0) links.push({ source, target });
+            }
+          }
+          send(response, 200, {
+            nodes: [...shown].map((id) => ({
+              id,
+              name: graph.page(id)?.title ?? id,
+              central: id === centred.id,
+              degree: neighbours.get(id)?.size ?? 0,
+              blockCount: graph.blocksOf(id).length,
+            })),
+            links,
+          });
+          return;
+        }
         const hood = graph.neighbourhood({ centre, depth, participant });
         // El vecindario entrega títulos y aristas de páginas que nadie pidió por
         // su nombre: pedir profundidad 4 desde una página es llevarse el mapa.
@@ -4365,13 +4583,17 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         return;
       }
 
-      if (serveStatic(response, path)) return;
+      if (serveStatic(response, path, publicAccess)) return;
 
       // Reserva para las rutas de la aplicación. `/p/Lectogram` no es un archivo
       // y nunca lo será: es la propia aplicación pidiendo abrirse en esa página.
       // Sin esto, escribir la dirección a mano o recargar devolvía un 404, que
       // es tanto como no tener enrutado.
-      if (webRoot !== null && !path.startsWith('/api') && serveStatic(response, '/index.html')) {
+      if (
+        webRoot !== null &&
+        !path.startsWith('/api') &&
+        serveStatic(response, '/index.html', publicAccess)
+      ) {
         return;
       }
 
@@ -4384,7 +4606,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
   // El grafo se expone por función y no por valor: puede reconstruirse, y quien
   // lo tuviera capturado se quedaría mirando el de antes.
   return {
-    handle,
+    handle: (request, response) => void handle(request, response, false),
+    handlePublic: (request, response) => void handle(request, response, true),
     get graph() {
       return graph;
     },
@@ -4404,47 +4627,9 @@ export function listen(options: ServerOptions & { port: number; host?: string })
   // en la red física. Quien la publique elige el frente (p. ej. tailscale serve,
   // que termina TLS y reenvía desde esta misma máquina).
   http.listen(options.port, options.host ?? '127.0.0.1');
-  const preview =
-    options.publicOutput === undefined || options.publicPreviewPort === undefined
-      ? null
-      : createServer((request, response) => {
-          if (request.method !== 'GET' && request.method !== 'HEAD') {
-            response.writeHead(405, { allow: 'GET, HEAD' });
-            response.end();
-            return;
-          }
-
-          const root = resolve(options.publicOutput!);
-          let pathname: string;
-          try {
-            pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
-          } catch {
-            response.writeHead(400);
-            response.end();
-            return;
-          }
-          let target = resolve(root, pathname.replace(/^\/+/, ''));
-          if (target !== root && !target.startsWith(`${root}${sep}`)) {
-            response.writeHead(404);
-            response.end();
-            return;
-          }
-          if (existsSync(target) && statSync(target).isDirectory()) target = join(target, 'index.html');
-          if (!existsSync(target) || !statSync(target).isFile()) {
-            response.writeHead(404);
-            response.end();
-            return;
-          }
-
-          response.writeHead(200, {
-            'content-type': MIME[extname(target)] ?? 'application/octet-stream',
-            'cache-control': REVALIDATE,
-            'content-security-policy': "default-src 'self'; style-src 'unsafe-inline'; img-src 'self' data: https:",
-            'x-content-type-options': 'nosniff',
-          });
-          if (request.method === 'HEAD') response.end();
-          else createReadStream(target).pipe(response);
-        });
+  const preview = options.publicPreviewPort === undefined
+    ? null
+    : createServer((request, response) => vera.handlePublic(request, response));
   preview?.listen(options.publicPreviewPort, '127.0.0.1');
   const servers = preview === null ? [http] : [http, preview];
   return {

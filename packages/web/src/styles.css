@@ -643,6 +643,10 @@ input {
   gap: 0.25rem;
 }
 
+.map-field[hidden] {
+  display: none;
+}
+
 .map-field-name {
   font-family: var(--font-ui);
   font-size: 0.68rem;
@@ -1639,6 +1643,27 @@ input {
 .property-add:hover {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/*
+ * `anybody` mira el mismo documento, no una maqueta paralela. Las señales de
+ * escritura desaparecen, mientras navegación, plegado y extracción quedan.
+ */
+#text.read-only .page-title,
+#text.read-only .property-key,
+#text.read-only .property-value,
+#text.read-only .body {
+  cursor: default;
+}
+
+#text.read-only .page-title:hover,
+#text.read-only .property-key:hover,
+#text.read-only .property-value:hover {
+  background: transparent;
+}
+
+#text.read-only :is(.property-drop, .property-add, .publication-action, .publication-entry, .drawn-edit) {
+  display: none !important;
 }
 
 /* El campo hereda el tamaño de donde está, para que editar no dé un salto. */

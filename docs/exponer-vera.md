@@ -82,13 +82,16 @@ publicada reconstruye el sitio.
 
 La decisión editorial vive en la página especial `Vera:Publicación`: ahí se
 definen el título, la URL canónica y el punto de entrada, y se ve el inventario
-de páginas publicadas con su ruta, frontera y autoría. El entorno conserva sólo
-la infraestructura que no forma parte del corpus:
+de páginas publicadas con su ruta, frontera y autoría. El mismo servidor sirve
+la misma aplicación bajo dos autoridades: el origen privado conserva al dueño;
+el público entra como `anybody`, sólo lectura y sólo sobre publicaciones
+explícitas. El entorno conserva únicamente el último kilómetro:
 
 ```sh
-VERA_PUBLIC_OUTPUT=/home/hspencer/Sites/vera-public-preview
 VERA_PUBLIC_PREVIEW_PORT=4174
 VERA_PUBLIC_PREVIEW_URL=https://vera-preview.tu-tailnet.ts.net
+# Opcional: adaptador de exportación estática, no la interfaz canónica.
+VERA_PUBLIC_OUTPUT=/home/hspencer/Sites/vera-public-export
 ```
 
 `VERA_PUBLIC_DOMAIN` y `VERA_PUBLIC_TITLE` siguen aceptándose únicamente como
@@ -100,21 +103,18 @@ También se puede reconstruir a mano desde los hechos ya guardados:
 npm run project:public -- data/vera.sqlite ../vera-public-preview https://vera.mediafranca.net
 ```
 
-La salida contiene portada y una carpeta por publicación explícita. No contiene
-base, API, manifiesto reconstruible ni identificadores de página o bloque. Usa
-las rutas persistidas aunque después cambie un título, reutiliza el renderer
-Markdown de Vera y reemplaza la salida anterior sólo cuando el build nuevo
-terminó.
+La salida estática sigue existiendo como adaptador portable para alojamientos
+sin Node. No define la interfaz pública: es una exportación degradada.
 
-Antes de internet se puede servir esa carpeta sólo en Tailscale, como servicio
-separado de la aplicación viva:
+Antes de internet se puede enviar el listener público a Tailscale:
 
 ```sh
 tailscale serve --service=svc:vera-preview --https=443 http://127.0.0.1:4174
 ```
 
-Así la revisión mira exactamente los archivos que algún día irían al alojamiento
-público, mientras la API y el corpus siguen fuera de esa superficie.
+Así la revisión usa el workspace real de Vera y la frontera real de `anybody`:
+mapa, vista híbrida, texto, búsqueda, navegación, tokens locales y PDF. El
+servidor niega escrituras y rutas administrativas antes de consultar el corpus.
 
 ### Lo que falta
 
@@ -123,8 +123,8 @@ posibilidad; `personal_sites` y `publications` guardan el sitio, la dirección,
 quién publicó y cuándo. Hacer privada o borrar una página publicada se rechaza
 hasta que la persona la retire.
 
-**b) Un camino de lectura separado — construido.** Éste es el punto importante
-de todo el documento.
+**b) Una autoridad de lectura separada — construida.** Éste es el punto
+importante de todo el documento.
 
 Si lo resuelves poniendo `WHERE visibility = 'public'` en los endpoints que ya
 hay, el día que añadas el endpoint número treinta y cuatro se te olvida, y el
@@ -136,13 +136,14 @@ Es la misma lección que ya se aprendió una vez en este repositorio, en el
 en cuanto apareció una lectura nueva, y hubo que invertirla. Una lista de lo que
 se permite envejece mal; una regla sobre la forma de la cosa, no.
 
-**c) La forma es estática — construida.** Se genera HTML y se sirven archivos.
-La cara pública no tiene base de datos, API, proceso de Node ni sesiones: no hay
-superficie de escritura que endurecer.
+**c) La forma canónica es la misma Vera — construida.** No hay segundo diseño ni
+segundo cliente. `anybody` recibe sólo el subgrafo inducido por las publicaciones;
+un enlace privado conserva sus palabras y pierde toda capacidad de confirmar un
+nodo, una ruta, un retroenlace, una búsqueda o una arista.
 
-**d) Presentación — parcial.** Ya hay URL canónica, metadatos básicos, marca y
-HTML adaptable. Faltan notas al pie completas, citas configurables y el mapa de
-URLs históricas al migrar un sitio anterior.
+**d) Presentación — compartida.** Las vistas y los tokens son los del workspace
+privado. Se retiran grabación, edición, importación y administración. Exportar
+Markdown o PDF sigue disponible y atraviesa la misma frontera pública.
 
 **e) La fuga clásica: el índice de búsqueda.** La spec la nombra aparte
 —`SearchReturnsOnlyPublicPages`— porque es el error que se comete incluso
@@ -151,9 +152,12 @@ corpus entero y los extractos cuentan lo que la página oculta no dejaba ver.
 
 ### Requisitos de seguridad
 
-Casi ninguno, y ése es el argumento entero a favor de este modo. Con proyección
-estática: TLS (Funnel o cualquier alojamiento lo da), y nada más. Sin proceso no
-hay autenticación, ni sesiones, ni límites de tasa, ni credenciales que rotar.
+La seguridad no descansa en los botones. El origen público debe llegar al
+listener `anybody` o conservar el `Host` canónico para que Vera lo reconozca;
+TLS lo termina el adaptador de despliegue. Toda petición no-GET se rechaza, y la
+lista de rutas públicas es cerrada. DNS sigue delegado al proveedor: Vera lo
+configura o diagnostica mediante un adaptador, pero no opera un servidor DNS
+autoritativo.
 
 ---
 
@@ -204,12 +208,12 @@ La versión soberana para la web separa el despliegue por propósito:
 
 | Superficie | Audiencia | Autoridad |
 | --- | --- | --- |
-| `vera.mediafranca.net` | cualquiera | sólo la proyección de páginas públicas |
+| `vera.mediafranca.net` | cualquiera | workspace Vera como `anybody`, sólo publicaciones explícitas |
 | aplicación viva | personas autenticadas | lectura y escritura según su credencial |
 | MCP remoto | inteligencias y clientes autorizados | herramientas y recursos según su credencial |
 
-Pueden compartir un túnel y una implementación, pero no una política. La
-proyección pública nunca consulta el corpus privado; la aplicación requiere una
+Comparten proceso e implementación, pero no una política. La autoridad pública
+nunca entrega el corpus privado; la aplicación de autor requiere una
 sesión humana; MCP usa OAuth o una credencial de máquina y conserva identidad,
 alcance y exposición en cada llamada.
 

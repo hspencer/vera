@@ -13,7 +13,32 @@
 --   project, not a projection of Herbert's public identity or other projects
 
 use "./core.allium" as core
+use "./identity-access.allium" as identity
+use "./page-on-paper.allium" as paper
 use "./special-pages.allium" as special
+use "./workspace-interface.allium" as workspace
+
+------------------------------------------------------------
+-- Value Types
+------------------------------------------------------------
+
+value PublicTokenOverride {
+    name: String
+    value: String
+}
+
+value DeploymentProbe {
+    application_ready: Boolean
+    public_boundary_ready: Boolean
+    dns_resolves: Boolean
+    https_ready: Boolean
+    message: String
+}
+
+value DeploymentOutcome {
+    success: Boolean
+    message: String
+}
 
 ------------------------------------------------------------
 -- Contracts
@@ -24,6 +49,8 @@ contract PersonalWebsiteProjection {
     metadata: (publication: core/Publication) -> HtmlMetadata
     search: (site: core/PersonalSite, text: String) -> PublicSearchResult
     citation: (publication: core/Publication, style: String) -> PublicationCitation
+    map: (reading: identity/PublicReadingSession, focus: core/Publication, reach: Integer, mode: workspace/GraphViewMode) -> PublicGraphView
+    export_pdf: (reading: identity/PublicReadingSession, publication: core/Publication) -> paper/Paper
 
     @invariant SameCorpus
         -- Every public document is projected from a page in Vera's graph.
@@ -54,7 +81,7 @@ contract PersonalWebsiteProjection {
 
     @invariant SiteMembershipIsExplicit
         -- Public visibility makes a page eligible for publication; it does not
-        -- put that page into every site. A build receives only publications
+        -- put that page into every site. The public boundary receives only publications
         -- explicitly assigned to that site. Vera's project site therefore does
         -- not inherit Herbert's other public pages, projects or personal work.
 
@@ -66,6 +93,70 @@ contract PersonalWebsiteProjection {
         -- Words that name a private page remain readable as authored text, but
         -- the public projection neither confirms a node exists nor exposes a
         -- route, backlink, search result or graph edge for it.
+
+    @invariant OneVeraWithSmallerAuthority
+        -- The public site is the same Vera web application, page renderer and
+        -- text, graph and split layout system the author uses. It is not a
+        -- second editorial template. What changes at the public origin is the
+        -- identity (`anybody`), the observable subgraph and the operations that
+        -- authority permits.
+
+    @invariant EveryPublicReadingUsesTheSameBoundary
+        -- Pages, search, navigation, 2D and 3D maps, reach, backlinks, citations
+        -- and PDF export all receive the site's explicit Publications as their
+        -- complete universe. No capability begins from the private Graph and
+        -- promises to filter it afterwards.
+
+    @invariant PublicGraphIsInducedByPublications
+        -- A public map contains exactly the publications in scope and an edge
+        -- only when both endpoints are among them. An authored reference to a
+        -- private, unassigned or nonexistent page creates no public node, edge
+        -- or evidence that distinguishes those three cases.
+
+    @invariant SafeControlsRemainUseful
+        -- `anybody` can use page navigation, search, text/graph/split views, 2D
+        -- and 3D maps, reach, folding, light/dark presentation, local design
+        -- token overrides and PDF export. These controls alter only the reader's
+        -- local reading state and never the graph or shared presentation.
+
+    @invariant AuthoringCapabilitiesAreAbsent
+        -- The public boundary offers no mutation, editor, voice recording,
+        -- import, administration, shared configuration, operation or exposure
+        -- history, participant management or special-page surface. A request for
+        -- one is refused under `anybody`; it never falls back to the owner.
+
+    @invariant PublishedBlocksCannotWidenTheProjection
+        -- A query, block reference, media reference or executable block inside a
+        -- published page is rendered only with public inputs and the ordinary
+        -- sandbox. It cannot use its block type as a server-side path back to the
+        -- private graph, filesystem, credentials or administration surfaces.
+}
+
+-- Vera owns the capability to present and verify a public origin without owning
+-- the world's naming system. A concrete host may change; this boundary does not.
+contract PublicOriginDeployment {
+    diagnose: (site: core/PersonalSite) -> DeploymentProbe
+    publish: (site: core/PersonalSite, adapter_name: String) -> DeploymentOutcome
+
+    @invariant ProviderNeutral
+        -- Publication behaviour is independent of a hosting or DNS provider.
+        -- A deployment adapter translates the same site and safety boundary to
+        -- the chosen provider without changing Vera's publication semantics.
+
+    @invariant DNSRemainsDelegated
+        -- Vera records the canonical origin and diagnoses whether it resolves,
+        -- but authoritative DNS remains with the delegated DNS service. A Vera
+        -- instance does not become an authoritative DNS server.
+
+    @invariant PublicHTTPSIsVerifiedBeforeSuccess
+        -- A deployment is successful only when the canonical HTTPS origin
+        -- reaches this site's public `anybody` boundary and cannot reach private
+        -- graph capabilities.
+
+    @invariant DeploymentRequiresTheHumanOwner
+        -- Inspecting readiness is harmless; publishing or changing external
+        -- hosting is an explicit act of the human site owner, never an automatic
+        -- consequence of editing a page or changing its visibility.
 }
 
 ------------------------------------------------------------
@@ -76,6 +167,37 @@ entity PublicDocument {
     publication: core/Publication
     canonical_url: String
     html: String
+}
+
+-- Local reading state for the public identity. It belongs to the reading
+-- session, not to the corpus, and disappears without leaving an operation.
+entity PublicWorkspace {
+    reading: identity/PublicReadingSession
+    active_publication: core/Publication
+    layout: workspace/WorkspaceLayout
+    split_divider_position: Decimal
+    graph_view: workspace/GraphViewMode
+    colour_scheme: workspace/ColourScheme
+    reach: Integer
+    folded_blocks: Set<core/Block>
+    local_tokens: List<PublicTokenOverride>
+    navigation_history: List<core/Publication>
+    navigation_position: Integer
+}
+
+entity PublicGraphView {
+    reading: identity/PublicReadingSession
+    focus: core/Publication
+    reach: Integer
+    mode: workspace/GraphViewMode
+    publications: Set<core/Publication>
+    links: PublicGraphLink with view = this
+}
+
+entity PublicGraphLink {
+    view: PublicGraphView
+    from: core/Publication
+    to: core/Publication
 }
 
 entity HtmlMetadata {
@@ -117,14 +239,238 @@ entity LegacyMigration {
     preserved_public_url: String
 }
 
+entity PublicationDeploymentDiagnostic {
+    site: core/PersonalSite
+    checked_at: Timestamp
+    application_ready: Boolean
+    public_boundary_ready: Boolean
+    dns_resolves: Boolean
+    https_ready: Boolean
+    message: String
+}
+
+entity PublicationDeploymentResult {
+    site: core/PersonalSite
+    adapter_name: String
+    published_by: core/Participant
+    published_at: Timestamp
+    success: Boolean
+    message: String
+}
+
 ------------------------------------------------------------
 -- Rules
 ------------------------------------------------------------
+
+rule PublicReadingOpensInVera {
+    when: reading: identity/PublicReadingSession.created
+
+    let entry = core/Publication{site: reading.site, page: reading.site.entry_point}
+
+    requires: reading.identity = identity/anybody
+    requires: reading.active
+    requires: reading.site.entry_point != null
+    requires: exists entry
+    requires: not exists special/SpecialPage{page: entry.page}
+
+    ensures: PublicWorkspace.created(
+        reading: reading,
+        active_publication: entry,
+        layout: split,
+        split_divider_position: 0.5,
+        graph_view: graph_2d,
+        colour_scheme: light,
+        reach: 1,
+        folded_blocks: {},
+        local_tokens: [],
+        navigation_history: append([], entry),
+        navigation_position: 0
+    )
+}
+
+rule AnybodyChangesPublicLayout {
+    when: ChangePublicLayout(reader, public_workspace, layout)
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+
+    ensures: public_workspace.layout = layout
+}
+
+rule AnybodyMovesPublicSplitDivider {
+    when: MovePublicSplitDivider(reader, public_workspace, position)
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+
+    ensures: public_workspace.split_divider_position = position
+}
+
+rule AnybodyChangesPublicGraphView {
+    when: ChangePublicGraphView(reader, public_workspace, mode)
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+
+    ensures: public_workspace.graph_view = mode
+}
+
+rule AnybodyChangesPublicReach {
+    when: ChangePublicReach(reader, public_workspace, reach)
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+    requires: reach >= 1
+    requires: reach <= 3
+
+    ensures: public_workspace.reach = reach
+}
+
+rule AnybodyChangesPublicColourScheme {
+    when: ChangePublicColourScheme(reader, public_workspace, scheme)
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+
+    ensures: public_workspace.colour_scheme = scheme
+}
+
+rule AnybodyChangesALocalPublicToken {
+    when: SetPublicLocalToken(reader, public_workspace, name, value)
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+
+    ensures:
+        public_workspace.local_tokens = set_token(
+            public_workspace.local_tokens,
+            PublicTokenOverride{name: name, value: value}
+        )
+}
+
+rule AnybodyFoldsAPublicBlock {
+    when: SetPublicBlockFolded(reader, public_workspace, block, folded)
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+    requires: block.page = public_workspace.active_publication.page
+
+    ensures:
+        if folded:
+            public_workspace.folded_blocks = public_workspace.folded_blocks + {block}
+        else:
+            public_workspace.folded_blocks = public_workspace.folded_blocks - {block}
+}
+
+rule AnybodyNavigatesWithinThePublicSite {
+    when: NavigatePublicSite(reader, public_workspace, publication)
+
+    let next_history = append_after_current(
+        public_workspace.navigation_history,
+        public_workspace.navigation_position,
+        publication
+    )
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+    requires: publication.site = public_workspace.reading.site
+    requires: not exists special/SpecialPage{page: publication.page}
+
+    ensures:
+        public_workspace.active_publication = publication
+        public_workspace.navigation_history = next_history
+        public_workspace.navigation_position = next_history.count - 1
+}
+
+rule AnybodyReturnsWithinThePublicSite {
+    when: ReturnWithinPublicSite(reader, public_workspace)
+
+    let previous_position = public_workspace.navigation_position - 1
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+    requires: public_workspace.navigation_position > 0
+
+    ensures:
+        public_workspace.navigation_position = previous_position
+        public_workspace.active_publication = item_at(
+            public_workspace.navigation_history,
+            previous_position
+        )
+}
+
+rule AnybodyAdvancesWithinThePublicSite {
+    when: AdvanceWithinPublicSite(reader, public_workspace)
+
+    let next_position = public_workspace.navigation_position + 1
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+    requires: next_position < public_workspace.navigation_history.count
+
+    ensures:
+        public_workspace.navigation_position = next_position
+        public_workspace.active_publication = item_at(
+            public_workspace.navigation_history,
+            next_position
+        )
+}
+
+rule DrawPublicGraphView {
+    when: RenderPublicMap(reader, public_workspace)
+
+    let publications = public_neighbourhood(
+        public_workspace.reading.site,
+        public_workspace.active_publication,
+        public_workspace.reach
+    )
+
+    requires: reader = identity/anybody
+    requires: public_workspace.reading.identity = reader
+
+    ensures:
+        let view = PublicGraphView.created(
+            reading: public_workspace.reading,
+            focus: public_workspace.active_publication,
+            reach: public_workspace.reach,
+            mode: public_workspace.graph_view,
+            publications: publications
+        )
+        for link in induced_public_links(publications):
+            PublicGraphLink.created(
+                view: view,
+                from: link.from,
+                to: link.to
+            )
+}
+
+rule AnybodyExportsAPublishedPage {
+    when: ExportPublishedPage(reader, reading, publication)
+
+    let document = paper/APageBecomesADocument.compose_publication(
+        publication,
+        published_pages(reading.site)
+    )
+
+    requires: reader = identity/anybody
+    requires: reading.identity = reader
+    requires: publication.site = reading.site
+    requires: not exists special/SpecialPage{page: publication.page}
+    requires: exists document
+
+    ensures: downloaded(document)
+
+    @guidance
+        -- Composition stays on the Vera instance and uses the same page renderer
+        -- as authenticated export. Its input is the Publication, never a page
+        -- looked up afresh in the private graph.
+}
 
 rule RenderPublishedPage {
     when: RenderPublication(publication)
 
     requires: publication.page.visibility = public
+    requires: not exists special/SpecialPage{page: publication.page}
 
     ensures: PublicDocument.created(
         publication: publication,
@@ -137,6 +483,7 @@ rule GeneratePublishedPageMetadata {
     when: GenerateHtmlMetadata(publication)
 
     requires: publication.page.visibility = public
+    requires: not exists special/SpecialPage{page: publication.page}
 
     ensures: HtmlMetadata.created(
         publication: publication,
@@ -163,6 +510,7 @@ rule GeneratePublicationCitation {
     when: CitePublication(publication, style)
 
     requires: publication.page.visibility = public
+    requires: not exists special/SpecialPage{page: publication.page}
 
     ensures: PublicationCitation.created(
         publication: publication,
@@ -208,6 +556,7 @@ rule ConfigurePersonalSiteFromPublicationPage {
     requires: is_absolute_https_origin(canonical_domain)
     requires: entry_point.graph = site.graph
     requires: entry_point.visibility = public
+    requires: not exists special/SpecialPage{page: entry_point}
     requires: exists core/Publication{site: site, page: entry_point}
 
     ensures:
@@ -234,10 +583,56 @@ rule PublishPageFromPublicationPage {
     requires: publication_page.page.title = "Vera:Publicación"
     requires: page.graph = site.graph
     requires: page.visibility = public
+    requires: not exists special/SpecialPage{page: page}
     requires: valid_publication_path(path)
     requires: not exists core/Publication{site: site, page: page}
 
     ensures: core/PublishPage(owner, site, page, path)
+}
+
+-- Readiness is visible where publication is governed. It distinguishes the
+-- application boundary, delegated naming and HTTPS so a failed origin says what
+-- is missing instead of collapsing every failure into "not published".
+rule DiagnosePublicOriginFromPublicationPage {
+    when: DiagnosePublication(owner, publication_page, site)
+
+    let probe = PublicOriginDeployment.diagnose(site)
+
+    requires: owner = site.owner
+    requires: owner.kind = human
+    requires: publication_page.kind = publication
+    requires: publication_page.graph = site.graph
+
+    ensures: PublicationDeploymentDiagnostic.created(
+        site: site,
+        checked_at: now,
+        application_ready: probe.application_ready,
+        public_boundary_ready: probe.public_boundary_ready,
+        dns_resolves: probe.dns_resolves,
+        https_ready: probe.https_ready,
+        message: probe.message
+    )
+}
+
+rule OwnerPublishesThroughADeploymentAdapter {
+    when: DeployPublication(owner, publication_page, site, adapter_name)
+
+    let outcome = PublicOriginDeployment.publish(site, adapter_name)
+
+    requires: owner = site.owner
+    requires: owner.kind = human
+    requires: publication_page.kind = publication
+    requires: publication_page.graph = site.graph
+    requires: non_blank(adapter_name)
+
+    ensures: PublicationDeploymentResult.created(
+        site: site,
+        adapter_name: adapter_name,
+        published_by: owner,
+        published_at: now,
+        success: outcome.success,
+        message: outcome.message
+    )
 }
 
 ------------------------------------------------------------
@@ -246,7 +641,8 @@ rule PublishPageFromPublicationPage {
 
 invariant PublicDocumentsComeFromPublicPages {
     for document in PublicDocuments:
-        document.publication.page.visibility = public
+        document.publication.page.visibility = public and
+        not exists special/SpecialPage{page: document.publication.page}
 }
 
 invariant MetadataUsesCanonicalDocumentUrl {
@@ -261,12 +657,44 @@ invariant HistoricalUrlsArePreserved {
 
 invariant SearchReturnsOnlyPublicPages {
     for result in PublicSearchResults:
-        result.matching_publications.all(p => p.page.visibility = public)
+        result.matching_publications.all(p =>
+            p.page.visibility = public and
+            p.site = result.site and
+            not exists special/SpecialPage{page: p.page}
+        )
 }
 
 invariant CitationsUseCanonicalDocumentUrl {
     for citation in PublicationCitations:
         citation.stable_url = canonical_url(citation.publication.site, citation.publication.path)
+}
+
+invariant PublicWorkspaceStaysInsideItsSite {
+    for public_workspace in PublicWorkspaces:
+        public_workspace.active_publication.site = public_workspace.reading.site and
+        public_workspace.navigation_history.all(p => p.site = public_workspace.reading.site)
+}
+
+invariant PublicNavigationPositionIsValid {
+    for public_workspace in PublicWorkspaces:
+        public_workspace.navigation_history.count > 0 and
+        public_workspace.navigation_position >= 0 and
+        public_workspace.navigation_position < public_workspace.navigation_history.count
+}
+
+invariant PublicMapContainsOnlySitePublications {
+    for view in PublicGraphViews:
+        view.publications.all(p => p.site = view.reading.site)
+}
+
+invariant PublicMapLinksStayInsideTheVisibleMap {
+    for link in PublicGraphLinks:
+        link.from in link.view.publications and link.to in link.view.publications
+}
+
+invariant EveryPublicWorkspaceBelongsToAnybody {
+    for public_workspace in PublicWorkspaces:
+        public_workspace.reading.identity = identity/anybody
 }
 
 ------------------------------------------------------------
@@ -283,17 +711,24 @@ actor SiteOwner {
 ------------------------------------------------------------
 
 surface PersonalWebsite {
+    facing reader: identity/AnybodyReader
     context site: core/PersonalSite
+        where entry_point != null and not exists special/SpecialPage{page: entry_point}
+    let readable_publications = public_readable_publications(site)
 
     exposes:
         site.title
         site.canonical_domain
-        site.entry_point
-        site.publications
+        site.entry_point.title
+        for publication in readable_publications:
+            publication.path
+            publication.page.title
+            publication.page.blocks
 
     provides:
         SearchPublishedPages(site, text)
         CitePublication(publication, style)
+            when publication.site = site and not exists special/SpecialPage{page: publication.page}
 
     contracts:
         fulfils PersonalWebsiteProjection
@@ -309,28 +744,149 @@ surface PersonalWebsite {
     @guarantee BrandSurvivesEveryPublicSurface
         -- The same recognisable mark appears as favicon, touch icon, installable
         -- application icon and public preview without depending on private assets.
+
+    @guarantee TheReaderIsAnybody
+        -- This surface is present only through an identity/PublicReadingSession
+        -- whose identity is `anybody`. It never borrows the authenticated owner
+        -- that may be using another origin of the same Vera application.
 }
 
-surface StaticSiteBuild {
+-- The bounded input that the shared Vera application receives at a public
+-- origin. It may be prepared ahead of time or read on demand; either way it is
+-- a projection, not a second public application.
+surface PublicApplicationProjection {
     facing owner: SiteOwner
     context site: core/PersonalSite
+    let readable_publications = public_readable_publications(site)
 
     exposes:
-        site.publications
+        for publication in readable_publications:
+            publication.path
+            publication.page.title
+            publication.page.blocks
 
     provides:
-        RenderPublication(publication) when publication.site = site and site.owner = owner
-        GenerateHtmlMetadata(publication) when publication.site = site and site.owner = owner
+        RenderPublication(publication)
+            when publication.site = site and site.owner = owner and not exists special/SpecialPage{page: publication.page}
+        GenerateHtmlMetadata(publication)
+            when publication.site = site and site.owner = owner and not exists special/SpecialPage{page: publication.page}
 
-    @guarantee BuildHasNoPrivateInput
-        -- Building the public site receives only the site's explicit
-        -- publications. It cannot enumerate the graph and then remember to
-        -- filter private pages afterwards.
+    @guarantee ProjectionHasNoPrivateInput
+        -- The shared application receives only the site's explicit publications
+        -- at its public boundary. It cannot enumerate the graph and then remember
+        -- to filter private pages afterwards.
 
-    @guarantee BuildHasNoUnassignedPublicInput
-        -- A public page assigned to another site is as absent from this build as
+    @guarantee ProjectionHasNoUnassignedPublicInput
+        -- A public page assigned to another site is as absent from this projection as
         -- a private page. Visibility and membership in a publication are
         -- independent decisions.
+
+    @guarantee ProjectionDoesNotCreateASecondVera
+        -- Preparing a bounded public input does not introduce another renderer,
+        -- layout or server-side feature set. The ordinary Vera application reads
+        -- it under `anybody` and presents its existing reading surfaces.
+}
+
+surface PublicVeraWorkspace {
+    facing reader: identity/AnybodyReader
+    context public_workspace: PublicWorkspace
+        where reading.identity = reader and reading.active
+
+    exposes:
+        public_workspace.active_publication.path
+        public_workspace.active_publication.page.title
+        public_workspace.active_publication.page.blocks
+        public_workspace.layout
+        public_workspace.split_divider_position
+        public_workspace.graph_view
+        public_workspace.colour_scheme
+        public_workspace.reach
+        for block in public_workspace.folded_blocks:
+            block.stable_id
+        public_workspace.local_tokens
+        for publication in public_workspace.navigation_history:
+            publication.path
+            publication.page.title
+        public_workspace.navigation_position
+
+    provides:
+        SearchPublishedPages(public_workspace.reading.site, text)
+        CitePublication(publication, style)
+            when publication.site = public_workspace.reading.site and not exists special/SpecialPage{page: publication.page}
+        ChangePublicLayout(reader, public_workspace, layout)
+        MovePublicSplitDivider(reader, public_workspace, position)
+        ChangePublicGraphView(reader, public_workspace, mode)
+        ChangePublicReach(reader, public_workspace, reach)
+        ChangePublicColourScheme(reader, public_workspace, scheme)
+        SetPublicLocalToken(reader, public_workspace, name, value)
+        SetPublicBlockFolded(reader, public_workspace, block, folded)
+        NavigatePublicSite(reader, public_workspace, publication)
+            when publication.site = public_workspace.reading.site and not exists special/SpecialPage{page: publication.page}
+        ReturnWithinPublicSite(reader, public_workspace)
+            when public_workspace.navigation_position > 0
+        AdvanceWithinPublicSite(reader, public_workspace)
+            when public_workspace.navigation_position + 1 < public_workspace.navigation_history.count
+        RenderPublicMap(reader, public_workspace)
+        ExportPublishedPage(reader, public_workspace.reading, publication)
+            when publication.site = public_workspace.reading.site and not exists special/SpecialPage{page: publication.page}
+
+    @guarantee SameApplicationSameReadingSystem
+        -- Header, page rendering, responsive layout and text, graph and split
+        -- views are Vera's ordinary reading system. Public reading does not
+        -- substitute a differently designed site template.
+
+    @guarantee UsefulReadOnlyGraph
+        -- Search, 2D and 3D maps, one-to-three-hop reach, navigation, folding,
+        -- light/dark mode, local token controls and PDF export remain available
+        -- because each is useful without changing shared state.
+
+    @guarantee PrivateNamesArePlainWords
+        -- A wikilink whose target is not a Publication of this site is rendered
+        -- as its authored words without link affordance. Following its would-be
+        -- address, searching for it and asking the map for it all return the same
+        -- absence as a name that never existed.
+
+    @guarantee NoAuthoringOrAdministrationSurface
+        -- Mutation, block and page editors, recording, import, participant and
+        -- site administration, shared configuration, operation and exposure
+        -- history, and every special page are absent. Sending their requests
+        -- directly is still refused under `anybody`.
+
+    @guarantee PresentationChangesStayInTheReadingSession
+        -- Layout, divider, reach, folding, light/dark choice and token overrides
+        -- change only this local reading session. They create no Revision,
+        -- Submission, operation, exposure or shared theme change.
+}
+
+-- The eye/map panel is where the owner already decides how much of the graph is
+-- visible. Public preview belongs there because it changes the authority of the
+-- whole reading surface, not merely the styling of one page.
+surface OwnerPublicPreviewSwitch {
+    facing owner: SiteOwner
+    context site: core/PersonalSite
+    let active_previews = active_owner_previews(site, owner)
+
+    provides:
+        identity/EnterPublicPreview(owner, site, origin)
+        for preview in active_previews:
+            identity/LeavePublicPreview(owner, preview)
+
+    @guarantee PropioAndPublicoLiveInTheEyePanel
+        -- In the authenticated Vera, the eye/map panel offers `propio` and
+        -- `público`. Choosing `público` opens an identity/PublicReadingSession
+        -- as `anybody`; choosing `propio` closes that preview and returns to the
+        -- owner's already authenticated workspace.
+
+    @guarantee PreviewTraversesTheRealPublicBoundary
+        -- The preview asks the server again as `anybody` and receives only the
+        -- explicit Publications. It does not hide private nodes after the owner
+        -- application has fetched them, so what the owner sees is evidence of
+        -- what an external reader can receive.
+
+    @guarantee PublicOriginsOfferNoPropio
+        -- This owner-facing switch is absent at a true public origin. There the
+        -- reading session entered as `public_origin`, has no previewed_by owner,
+        -- and cannot display or invoke the return to `propio`.
 }
 
 surface HistoricalSiteMigration {
@@ -357,6 +913,8 @@ surface VeraPublicationPage {
     context site: core/PersonalSite
         where exists special/SpecialPage{graph: site.graph, kind: publication}
     let publication_page = special/SpecialPage{graph: site.graph, kind: publication}
+    let deployment_diagnostics = diagnostics_for(site)
+    let deployment_results = deployment_results_for(site)
 
     exposes:
         publication_page.page
@@ -369,12 +927,17 @@ surface VeraPublicationPage {
             publication.first_revision
             publication.published_at
             publication.published_by
+        deployment_diagnostics
+        deployment_results
 
     provides:
         ConfigurePersonalSite(owner, publication_page, site, title, canonical_domain, entry_point)
         PublishFromPublicationPage(owner, publication_page, site, page, path)
+        DiagnosePublication(owner, publication_page, site)
+        DeployPublication(owner, publication_page, site, adapter_name)
 
     contracts:
+        demands PublicOriginDeployment
         fulfils special/SelfDescription
 
     @guarantee CanonicalSpecialPage
@@ -414,12 +977,28 @@ surface VeraPublicationPage {
         -- canonical_domain nor the canonical URLs and citations emitted by the
         -- public projection.
 
+    @guarantee DeploymentReadinessIsLegibleHere
+        -- `Vera:Publicación` reports separately whether the shared Vera
+        -- application is ready, the `anybody` boundary excludes private data,
+        -- delegated DNS resolves and HTTPS reaches that boundary. A failure says
+        -- which layer failed and preserves the last known result.
+
+    @guarantee DNSIsObservedAndNeverImpersonated
+        -- The page records the canonical origin and can ask a deployment adapter
+        -- to inspect or publish it. Vera does not answer as an authoritative DNS
+        -- server; DNS delegation and provider credentials remain with the
+        -- external service chosen by the owner.
+
+    @guarantee DeploymentIsAnExplicitOwnerAct
+        -- A diagnostic may run without changing external state. Deployment runs
+        -- only after the human owner chooses an adapter and asks to apply it;
+        -- publishing a page or editing this special page never deploys by itself.
+}
+
 ------------------------------------------------------------
 -- Deferred Specifications
 ------------------------------------------------------------
 
-deferred PublicPresentation.render -- see: public-presentation.allium
-deferred SearchIndex.publish       -- see: public-search-index.allium
 deferred JekyllMigration.ingest    -- see: jekyll-migration.allium
 
 ------------------------------------------------------------
@@ -427,4 +1006,7 @@ deferred JekyllMigration.ingest    -- see: jekyll-migration.allium
 ------------------------------------------------------------
 
 open question "Which current HTML metadata fields and structured data must be preserved exactly?"
-open question "Should the first migration preserve the existing visual design exactly or reproduce its editorial character with Vera's token system?"
+-- Answered: the public origin uses Vera's existing application, page renderer
+-- and layout system under `anybody`; it is not a visual reinterpretation or a
+-- separate site template. See OneVeraWithSmallerAuthority and
+-- SameApplicationSameReadingSystem.
