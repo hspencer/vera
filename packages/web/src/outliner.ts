@@ -233,7 +233,10 @@ export interface OutlinerCallbacks {
    * vista se rehace desde el grafo en vez de intentar parchearla: el grafo es
    * quien sabe cómo quedó el árbol.
    */
-  onReload(focus: { block: string; at: number | null } | null): void;
+  onReload(
+    focus: { block: string; at: number | null } | null,
+    options?: ReloadOptions,
+  ): void;
   /** Reenraizar la vista en un bloque; sin bloque, volver a la página entera. */
   onFocusBlock?(block: string | null): void;
   /**
@@ -244,6 +247,18 @@ export interface OutlinerCallbacks {
    * lugar sin que la transcripción caiga encima de lo escrito.
    */
   onSpeak?(block: string, rest: string): Promise<void>;
+}
+
+export interface ReloadOptions {
+  fromCorpus?: boolean;
+  replaceRoute?: boolean;
+}
+
+/** Renombrar alcanza fuera de la réplica de una página y exige volver al corpus. */
+export function reloadOptionsFor(change: Change): ReloadOptions | undefined {
+  return change.kind === 'rename_page'
+    ? { fromCorpus: true, replaceRoute: true }
+    : undefined;
 }
 
 /**
@@ -996,9 +1011,12 @@ async function submitQuietly(change: Change): Promise<boolean> {
 }
 
 /** Envía un cambio y rehace la página desde el grafo. */
-async function submitAndReload(change: Change, callbacks: OutlinerCallbacks): Promise<boolean> {
+async function submitAndReload(
+  change: Change,
+  callbacks: OutlinerCallbacks,
+): Promise<boolean> {
   const applied = await submitQuietly(change);
-  if (applied) callbacks.onReload(null);
+  if (applied) callbacks.onReload(null, reloadOptionsFor(change));
   return applied;
 }
 

@@ -15,6 +15,7 @@ import {
   invokeMenuAction,
   matchingMovePages,
   nodeMarkdown,
+  reloadOptionsFor,
 } from '../src/outliner.ts';
 import type { BlockView } from '../src/api.ts';
 
@@ -33,6 +34,22 @@ describe('enlaces salientes', () => {
     assert.equal(externalDestination('/p/Otra', here), null);
     assert.equal(externalDestination('#seccion', here), null);
     assert.equal(externalDestination('mailto:alguien@ejemplo.cl', here), null);
+  });
+});
+
+describe('redibujar después de escribir', () => {
+  it('un renombrado vuelve al corpus y reemplaza la ruta actual', () => {
+    assert.deepEqual(
+      reloadOptionsFor({ kind: 'rename_page', page: 'page:1', title: 'Nombre definitivo' }),
+      { fromCorpus: true, replaceRoute: true },
+    );
+  });
+
+  it('una edición local sigue redibujándose desde la réplica', () => {
+    assert.equal(
+      reloadOptionsFor({ kind: 'edit_block', block: 'block:1', content: 'texto' }),
+      undefined,
+    );
   });
 });
 

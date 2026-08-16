@@ -705,10 +705,12 @@ async function openPage(
     gesture?: NavigationGesture;
     /** Cómo se llama lo que viene, cuando quien llama ya lo sabe. */
     title?: string;
+    /** Un renombrado corrige la dirección actual; no es una navegación nueva. */
+    replaceRoute?: boolean;
   } = {},
 ): Promise<void> {
   $('#vera-root').classList.remove('special-surface');
-  let page;
+  let page: PageView | undefined;
   /*
    * Si el corpus tarda, se dice qué se está abriendo.
    *
@@ -838,6 +840,13 @@ async function openPage(
   // De dónde se venía, antes de que activePage deje de decirlo.
   const from = workspace.activePage;
 
+  // El índice local debe aprender el título canónico a la vez que la página.
+  // Mapa, rastro y resolución por nombre leen esta lista; dejar aquí el nombre
+  // anterior hacía que un renombrado pareciera ocurrir en unas vistas y no en
+  // otras hasta el siguiente refresco del corpus.
+  const listed = pages.find((one) => one.id === page.id);
+  if (listed !== undefined) listed.title = page.title;
+
   /*
    * Redibujar la página en la que ya se está no debe mover la vista.
    *
@@ -873,7 +882,8 @@ async function openPage(
   if (options.fromUrl !== true) {
     const url = routeTo(page, { focus: workspace.focusRoot, block: options.reveal ?? null });
     if (window.location.pathname + window.location.search + window.location.hash !== url) {
-      window.history.pushState({}, '', url);
+      if (options.replaceRoute === true) window.history.replaceState({}, '', url);
+      else window.history.pushState({}, '', url);
     }
   }
 
@@ -1146,9 +1156,26 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
      * Lo derivado —quién nombra a esta página, qué cruces tiene— no sale de una
      * página sola, así que se pone al día aparte y sin prisa. Ver `catchUp`.
      */
-    onReload: (focus) => {
+    onReload: (focus, options) => {
       const text = $('#text');
       const viewport = holdTextViewport(text);
+      /*
+       * Renombrar es el único cambio corriente que la réplica de una página
+       * difiere a propósito: también reescribe referencias del resto del grafo.
+       * Si se redibuja desde esa réplica, reaparece el título provisional aunque
+       * el servidor ya haya aceptado el nuevo. En ese caso se vuelve al corpus
+       * por la identidad estable y se reemplaza la ruta actual.
+       */
+      if (options?.fromCorpus === true) {
+        if (workspace.activePage !== null) {
+          void openPage(
+            workspace.activePage,
+            focus,
+            options.replaceRoute === true ? { replaceRoute: true } : {},
+          );
+        }
+        return;
+      }
       if (replica !== null && openView !== null && workspace.activePage === replica.page) {
         openView.blocks = blocksOf(replica);
         openView.blockProperties = blockPropertiesOf(replica);

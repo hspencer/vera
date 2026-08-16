@@ -1014,6 +1014,16 @@ surface VeraWorkspace {
         -- Text and graph views share the same active page and navigation history.
         -- Changing layout does not discard the participant's place in the graph.
 
+    @guarantee ConfirmedRenameConvergesEveryNameWithoutMovingTheReader
+        -- Confirming a page title with Enter makes its canonical title, visible
+        -- heading, current address, page catalogue, map label and every trail name
+        -- converge on the new title. The current address is replaced in place; the
+        -- rename does not append an artificial navigation step. A local replica
+        -- that explicitly defers the applied rename_page cannot redraw the
+        -- page or revive its provisional title. The same Page identity, blocks,
+        -- promoted trail and route, map position, reading viewport and reading
+        -- state remain in place throughout the rename.
+
     @guarantee RememberedSessionPresentation
         -- Split view begins evenly divided for a participant with no saved
         -- preference. Subsequent divider position, light or dark colour scheme
