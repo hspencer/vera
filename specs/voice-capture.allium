@@ -341,6 +341,11 @@ surface VoiceCapture {
         -- appear together immediately on the open page. A device must not show
         -- the old action again while the words already exist in the corpus.
 
+    @guarantee TheWholeRecordingIsTranscribed
+        -- A finished transcript covers the recording from its beginning to its
+        -- end. A long recording may take longer or be processed in parts, but
+        -- Vera never presents an early fragment as the completed transcript.
+
     @guarantee SpeakingReachesTheDayFromAnywhere
         -- Recording is available wherever one is, and what is recorded without a
         -- stated place lands on the day in progress. Speaking is the mode that

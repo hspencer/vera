@@ -139,6 +139,7 @@ export async function transcribeAudio(
     work = await mkdtemp(join(tmpdir(), 'vera-voz-'));
     const source = join(work, 'origen');
     const wav = join(work, 'audio.wav');
+    const transcript = join(work, 'transcript');
     await writeFile(source, audio);
 
     try {
@@ -148,14 +149,21 @@ export async function transcribeAudio(
     }
 
     try {
-      // `-nt` quita las marcas de tiempo y `-np` el progreso: lo que sale por
-      // la salida estándar es el texto y nada más.
-      const { stdout } = await run(
+      /*
+       * El archivo de texto y no stdout.
+       *
+       * Con `-nt`, whisper.cpp 1.8.2 deja de recorrer algunas grabaciones
+       * largas y devuelve sólo el primer minuto como si estuviera completo. Con
+       * timestamps sí llega al final, y `-otxt` escribe esa misma transcripción
+       * completa sin las marcas. stdout no sirve como respaldo: puede contener
+       * sólo el fragmento que precisamente estamos evitando.
+       */
+      await run(
         command,
-        ['-m', model, '-l', language, '-nt', '-np', wav],
+        ['-m', model, '-l', language, '-np', '-otxt', '-of', transcript, wav],
         { timeout, maxBuffer: 32 * 1024 * 1024 },
       );
-      const text = stdout.trim();
+      const text = (await readFile(`${transcript}.txt`, 'utf8')).replace(/\s+/g, ' ').trim();
       return text === '' ? { error: 'la transcripción salió vacía' } : { text };
     } catch (error) {
       return { error: `whisper no pudo transcribir: ${whyFailed(error)}` };
