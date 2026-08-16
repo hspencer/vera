@@ -38,8 +38,9 @@ con IA». Es esta:
 Hoy Anytype supera ampliamente a Vera en sincronización soberana y colaboración;
 SilverBullet, en extensibilidad convivial y transparencia del soporte; Obsidian,
 en madurez y ecosistema; Logseq y Roam, en fluidez del gesto por bloques; AFFiNE,
-en colaboración visual; Tana, en experiencia de agentes. Solid ofrece la base
-protocolar más seria para una federación de datos soberanos.
+en colaboración visual; Tana, en experiencia de agentes; y Notion, en madurez
+comercial, colaboración y composición de documentos y bases. Solid ofrece la
+base protocolar más seria para una federación de datos soberanos.
 
 La estrategia correcta no es imitarlos todos. Es **adoptar protocolos y
 componentes abiertos allí donde ya son bienes comunes, y conservar como núcleo
@@ -58,6 +59,7 @@ propio el contrato editorial de Vera**.
 | **Tana** | alta capacidad, baja apropiación del sistema | baja: servicio centralizado | muy alta: agentes, herramientas, voz y horarios | limitada por exportación y servicio | configurabilidad alta; plataforma cerrada | referencia de interacción con agentes, no dependencia |
 | **Capacities** | buena composición por objetos | baja-media: servicio y APIs externas | integrada, opt-in y con herramientas de escritura | exportación disponible, no independencia operativa | media | referencia de objetos y consentimiento de IA |
 | **Roam** | alta fluidez intelectual | baja: servicio propietario | extensiones y APIs | menor que sistemas basados en archivos | media-alta | referencia histórica del gesto, no infraestructura |
+| **Notion** | muy alta para equipos; baja para transformar el soporte | baja: servicio centralizado y nube del proveedor | IA y agentes integrados al servicio | exporta HTML, Markdown y CSV, pero la exportación no reconstruye instantáneamente el espacio | API e integraciones sobre una plataforma cerrada | competencia comercial de referencia; aprender de su superficie sin arrendarle el corpus |
 
 La tabla no usa «open source» como adjetivo publicitario. Anytype publica y deja
 compilar sus clientes, pero estos usan **Any Source Available License 1.0**:
@@ -151,6 +153,14 @@ Solid no resuelve por sí solo procedencia, semántica de bifurcación, retracta
 ni experiencia de escritura. Tampoco impide que un receptor copie lo que pudo
 leer. Por eso es sustrato, no producto sustituto.
 
+Vera está pensada para una federación, pero todavía no ha decidido su unidad ni
+su protocolo de intercambio. Quedan separados tres gestos: publicar una
+proyección legible por cualquiera; compartir una página, rama o recorrido con
+participantes determinados; y federar entre grafos conservando origen, permiso,
+versiones y posibilidad de retractación. Las páginas públicas pueden copiarse;
+las privadas exigen autorización revocable; ninguna de las dos cosas resuelve
+por sí sola cómo una copia remota recibe cambios sin volverse una segunda verdad.
+
 ### Edición colaborativa y superficies visuales — AFFiNE
 
 AFFiNE prueba la integración de documentos por bloques, bases y canvas con
@@ -184,6 +194,22 @@ un servicio centralizado.
 debe ser participante, mandato y credencial: quién es, qué puede leer, qué puede
 proponer o escribir, con qué presupuesto y por cuánto tiempo. Su configuración
 debe ser portable y auditable; su secreto, revocable.
+
+### Espacio de trabajo comercial — Notion
+
+Notion es la comparación comercial más reconocible: integra documentos, bases,
+publicación, colaboración, automatizaciones e IA con una experiencia madura. Su
+fortaleza es reducir la fricción de coordinar un equipo dentro de un mismo
+servicio. Su límite para Vera es igualmente claro: el espacio vive y se gobierna
+en la nube del proveedor. La exportación entrega HTML, Markdown y CSV, pero la
+propia documentación advierte que esos archivos no recrean instantáneamente el
+workspace original.
+
+**Decisión:** tratar Notion como referencia de interacción y como prueba de
+honestidad comercial, no como infraestructura. Vera no necesita vencerlo en
+cantidad de funciones; necesita demostrar qué conserva cuando se apaga el
+proveedor: identidad de bloques, operaciones, procedencia, relaciones,
+recorridos y autoridad editorial reconstruibles.
 
 ## Arquitectura de incorporación propuesta
 
@@ -280,7 +306,7 @@ procedencia.
 ## Benchmark ejecutable
 
 La comparación real debe usar el mismo corpus de muestra y medir tareas, no
-promesas. Candidatos mínimos: Vera, Anytype, SilverBullet, Logseq, Obsidian,
+promesas. Candidatos mínimos: Vera, Notion, Anytype, SilverBullet, Logseq, Obsidian,
 AFFiNE, Tana y Capacities. Solid se evalúa como infraestructura mediante un
 prototipo de publicación federada, no como editor.
 
@@ -342,5 +368,7 @@ en su constitución.
 - [Tana Agents](https://tana.inc/learn/features/agents).
 - [Capacities: tipos](https://docs.capacities.io/reference/content-types) y
   [privacidad de IA](https://docs.capacities.io/more/ai-privacy).
+- [Notion: exportar contenido](https://www.notion.com/help/export-your-content)
+  — formatos disponibles y límites de reconstrucción del espacio.
 
-Consulta de fuentes: 11 de agosto de 2026.
+Consulta de fuentes: 16 de agosto de 2026.
