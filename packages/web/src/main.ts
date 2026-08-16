@@ -2295,7 +2295,7 @@ function wireTheme(): void {
   $('#brand').addEventListener('click', () => void openHome());
 
   /*
-   * Affiliate abre y cierra el panel de controles del mapa.
+   * El ojo abre y cierra el panel de controles del mapa.
    *
    * No oculta el mapa: lo que se aparta es lo que se le pone encima. Un mapa es
    * para mirarlo, y sus propios controles no pueden quedarse ocupando sitio
@@ -2308,9 +2308,9 @@ function wireTheme(): void {
   const drawPanel = (): void => {
     mapPanel.hidden = !mapPanelOpen;
     panelToggle.setAttribute('aria-expanded', String(mapPanelOpen));
-    // Siempre el mismo signo de relaciones: el estado del menú ya lo dice el
-    // propio panel, que está o no está.
-    panelToggle.innerHTML = icon('affiliate');
+    // Siempre el mismo ojo. Tacharlo diría «no se ve» de algo que sí se ve —el
+    // mapa— y el estado del menú ya lo dice el menú, que está o no está.
+    panelToggle.innerHTML = icon('eye');
     panelToggle.title = mapPanelOpen ? 'Ocultar los controles' : 'Controles del mapa';
   };
   drawPanel();
@@ -2396,7 +2396,7 @@ function wireTheme(): void {
 
   // El switch de la vista, en el orden del espacio que gobierna.
   const SWITCH: Record<string, IconName> = {
-    graph_only: 'map',
+    graph_only: 'affiliate',
     split: 'spread',
     text_only: 'text',
   };

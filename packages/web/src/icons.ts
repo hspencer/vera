@@ -113,8 +113,7 @@ const SHAPES = {
     '<path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/>' +
     '<path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6"/>',
 
-  // Tabler affiliate: abre y cierra los controles que permiten leer y
-  // configurar las relaciones del mapa.
+  // Tabler affiliate: la vista del grafo y sus relaciones.
   affiliate:
     '<path d="M5.931 6.936l1.275 4.249m5.607 5.609l4.251 1.275"/>' +
     '<path d="M11.683 12.317l5.759 -5.759"/>' +
