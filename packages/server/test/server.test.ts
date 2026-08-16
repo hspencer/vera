@@ -247,6 +247,41 @@ describe('lecturas', () => {
     assert.ok(onlyGlosses.matches.some((match) => match.block === block));
   });
 
+  it('deriva una relación cuando la glosa enlaza otra página', async () => {
+    const target = await write({ kind: 'create_page', title: 'Destino glosado', visibility: 'private' });
+    const source = await write({ kind: 'create_page', title: 'Origen glosado', visibility: 'private' });
+    const block = await write({ kind: 'create_block', page: source, parent: null, position: 0, content: 'pasaje fuente' });
+    await write({ kind: 'set_block_gloss', block, content: 'esta observación conduce a [[Destino glosado]]' });
+
+    const outgoing = (await get(`/pages/${encodeURIComponent(source)}`)) as {
+      crossingsOut: { toPage: string | null; said: string }[];
+    };
+    const incoming = (await get(`/pages/${encodeURIComponent(target)}`)) as {
+      crossingsIn: { fromPage: string; said: string }[];
+    };
+    assert.ok(outgoing.crossingsOut.some((one) => one.toPage === target && /observación/.test(one.said)));
+    assert.ok(incoming.crossingsIn.some((one) => one.fromPage === source && /observación/.test(one.said)));
+  });
+
+  it('una página concepto reúne declaraciones, enlaces y menciones potenciales', async () => {
+    const concept = await write({ kind: 'create_page', title: 'Hospitalidad radical', visibility: 'private' });
+    await write({ kind: 'set_property', page: concept, propertyKey: 'tipo', propertyValue: 'concepto' });
+
+    const declared = await write({ kind: 'create_page', title: 'Declaración conceptual', visibility: 'private' });
+    await write({ kind: 'set_property', page: declared, propertyKey: 'concepto', propertyValue: 'Hospitalidad radical' });
+    const linked = await write({ kind: 'create_page', title: 'Enlace conceptual', visibility: 'private' });
+    await write({ kind: 'create_block', page: linked, parent: null, position: 0, content: 'ver [[Hospitalidad radical]]' });
+    const mentioned = await write({ kind: 'create_page', title: 'Mención conceptual', visibility: 'private' });
+    await write({ kind: 'create_block', page: mentioned, parent: null, position: 0, content: 'la hospitalidad radical aparece sin enlace' });
+
+    const detail = (await get(`/pages/${encodeURIComponent(concept)}`)) as {
+      concept: { members: { page: string; declared: boolean; linked: boolean; mentioned: boolean }[] };
+    };
+    assert.equal(detail.concept.members.find((one) => one.page === declared)?.declared, true);
+    assert.equal(detail.concept.members.find((one) => one.page === linked)?.linked, true);
+    assert.equal(detail.concept.members.find((one) => one.page === mentioned)?.mentioned, true);
+  });
+
   it('entrega el grafo en la forma que consume constel', async () => {
     const a = await write({ kind: 'create_page', title: 'NodoA', visibility: 'private' });
     await write({ kind: 'create_page', title: 'NodoB', visibility: 'private' });

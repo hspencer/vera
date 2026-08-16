@@ -29,6 +29,7 @@ import {
   readPropertyDeclarations,
   readPropertyNames,
   readQuery,
+  referencedTitles,
   canonicalUrl,
   suggestedPathFor,
   titleKey,
@@ -4102,6 +4103,34 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           send(response, 404, { error: 'no such page' });
           return;
         }
+        const glossCrossings = graph.glosses().flatMap((gloss) => {
+          const block = graph.block(gloss.block);
+          if (block === undefined) return [];
+          return referencedTitles(gloss.content).map((targetTitle) => {
+            const target = graph.pageTitled(targetTitle);
+            return {
+              connective: block.stableId,
+              said: gloss.content,
+              fromBlock: block.stableId,
+              fromPage: block.page,
+              targetTitle,
+              toPage: target?.id ?? null,
+              sense: 'directed' as const,
+              term: null,
+            };
+          });
+        });
+        const crossingRow = (crossing: (typeof glossCrossings)[number], outgoing: boolean) => ({
+          ...crossing,
+          title: outgoing
+            ? (crossing.toPage === null
+                ? crossing.targetTitle
+                : (graph.page(crossing.toPage)?.title ?? crossing.targetTitle))
+            : (graph.page(crossing.fromPage)?.title ?? crossing.fromPage),
+          reads: null,
+          says: excerpt(graph.block(crossing.fromBlock)?.content ?? ''),
+        });
+
         deliver({
           id: page.id,
           title: page.title,
@@ -4143,6 +4172,44 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               content: block.content,
             }))
             .sort((a, b) => a.position - b.position),
+          concept: (() => {
+            const names = graph.propertyNames;
+            const isConcept = graph.propertiesOf(page.id).some(
+              (property) =>
+                property.key === names.kind &&
+                answersIn(property.value).some((value) => titleKey(value) === titleKey('concepto')),
+            );
+            if (!isConcept) return null;
+
+            const needle = titleKey(page.title);
+            const members = graph.pages().flatMap((candidate) => {
+              if (candidate.id === page.id || (publicAccess && !isPublicPage(candidate.id))) return [];
+              const blocks = graph.blocksOf(candidate.id);
+              const declared = graph.propertiesOf(candidate.id).some(
+                (property) =>
+                  property.key === names.topic &&
+                  answersIn(property.value).some((value) => titleKey(value) === needle),
+              );
+              const linked = graph.links().some(
+                (link) => link.sourcePage === candidate.id && link.target === page.id,
+              );
+              const matchingBlock = blocks.find((block) => titleKey(block.content).includes(needle));
+              const matchingGloss = blocks
+                .map((block) => graph.gloss(block.stableId))
+                .find((gloss) => gloss !== undefined && titleKey(gloss.content).includes(needle));
+              const mentioned = matchingBlock !== undefined || matchingGloss !== undefined;
+              if (!declared && !linked && !mentioned) return [];
+              return [{
+                page: candidate.id,
+                title: candidate.title,
+                excerpt: excerpt(matchingBlock?.content ?? matchingGloss?.content ?? ''),
+                declared,
+                linked,
+                mentioned,
+              }];
+            }).sort((a, b) => a.title.localeCompare(b.title));
+            return { members };
+          })(),
           /*
            * Lo que cuelga de cada bloque.
            *
@@ -4188,7 +4255,12 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             title: crossing.toPage === null ? crossing.targetTitle : (graph.page(crossing.toPage)?.title ?? crossing.targetTitle),
             reads: crossing.term,
             says: excerpt(graph.block(crossing.fromBlock)?.content ?? ''),
-          })),
+          })).concat(
+            glossCrossings
+              .filter((crossing) => crossing.fromPage === page.id)
+              .filter((crossing) => !publicAccess || (crossing.toPage !== null && isPublicPage(crossing.toPage)))
+              .map((crossing) => crossingRow(crossing, true)),
+          ),
           crossingsIn: graph.crossingsIn(page.id)
             .filter((crossing) => !publicAccess || isPublicPage(crossing.fromPage))
             .map((crossing) => ({
@@ -4196,7 +4268,12 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             title: graph.page(crossing.fromPage)?.title ?? crossing.fromPage,
             reads: inverseOf(crossing.term, relationVocabulary()),
             says: excerpt(graph.block(crossing.fromBlock)?.content ?? ''),
-          })),
+          })).concat(
+            glossCrossings
+              .filter((crossing) => crossing.toPage === page.id)
+              .filter((crossing) => !publicAccess || isPublicPage(crossing.fromPage))
+              .map((crossing) => crossingRow(crossing, false)),
+          ),
           // La denominación de origen de los bloques hablados de esta página.
           spokenOrigins: spokenOriginsOnPage(store, page.id),
           // @guarantee NothingSpokenIsStrandedFromTheWriting: lo hablado dentro

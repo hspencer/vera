@@ -104,9 +104,11 @@ entity CategoryAssignment {
 -- hacían falta. Se conservan como fuente y su normalización se propone.
 entity Concept {
     ontology: Ontology
-    -- El nombre por el que se le llama, uno solo.
-    preferred_label: String
-    definition: String
+    -- El concepto vive en el corpus: su título es el nombre canónico y sus
+    -- bloques son el espacio, posiblemente vacío, donde se desarrolla.
+    page: core/Page
+    preferred_label: page.title
+    definition: page.blocks
     -- Los demás nombres del mismo concepto. Absorbe mayúsculas, idioma y
     -- variantes ortográficas sin multiplicar identidades: el corpus ya escribe
     -- `lang` y `language`, `status` y `Estado`, y son uno.
@@ -150,10 +152,12 @@ entity RelationDefinition {
 -- Una relación afirmada entre dos cosas concretas.
 entity RelationAssertion {
     definition: RelationDefinition
-    from: core/Page
+    -- Una relación a nivel de bloque no se guarda aparte. La glosa es la
+    -- relación: sale de la página del bloque y llega a cada página enlazada en
+    -- su contenido. Editar la glosa edita la relación; borrarla la retira.
+    gloss_block: core/Block
+    from: gloss_block.page
     to: core/Page
-    status: AssignmentStatus
-    asserted_by: core/Participant
 }
 
 -- Una reescritura de citas, mirada antes de correr.
@@ -551,32 +555,6 @@ rule ParticipantProcessesAPage {
         -- says plainly which part it could not do.
 }
 
--- Decir que una cosa se relaciona con otra.
---
--- Se guarda en la dirección canónica de la definición y nada más: preguntar al
--- revés lo responde un índice. Como todo lo que propone una máquina, nace
--- sugerida; a diferencia de un tipo, la puede escribir una persona directamente
--- porque es una afirmación sobre el mundo y no sobre el vocabulario.
-rule AssertRelation {
-    when: AssertRelated(participant, ontology, definition, from, to)
-
-    requires: definition.ontology = ontology
-    requires: definition.status != deprecated
-    -- Una relación que sale de donde no puede salir no es un error del corpus:
-    -- casi siempre es una ontología que se quedó corta. Se declara igual y la
-    -- discrepancia queda a la vista, en vez de perderse la afirmación.
-    requires: exists from
-    requires: exists to
-
-    ensures: RelationAssertion.created(
-        definition: definition,
-        from: from,
-        to: to,
-        status: suggested,
-        asserted_by: participant
-    )
-}
-
 -- Que un concepto sea más amplio que otro, o vecino suyo.
 rule RelateConcepts {
     when: RelateConcept(participant, ontology, from, to, kind)
@@ -790,7 +768,6 @@ surface OntologyCuration {
         ProcessPage(participant, ontology, page)
         SuggestPageType(participant, ontology, semantic_type, page, rationale)
         SuggestBlockType(participant, ontology, semantic_type, block, rationale)
-        AssertRelated(participant, ontology, definition, from, to)
         RelateConcept(participant, ontology, from, to, kind)
         MergeConcept(participant, ontology, absorbed, surviving)
         MigrateCitationsTo(participant, migration)
@@ -912,13 +889,23 @@ surface OntologyCuration {
         -- A word of the vocabulary is reached at the page that bears its name.
         -- Not a namespace, not a settings screen: the page `proyecto`, which one
         -- can write on, link to, and read the history of, exactly like any
-        -- other. That is what a Concept is for, and the corpus already half
+        -- other. A Concept therefore has a corpus Page as its identity; it is
+        -- never a second record beside that page. The corpus already half
         -- believes it — `Memex` arrived as both a tag and a page.
         --
-        -- What that page presents beyond what is written on it is the set of
-        -- pages that answer a property with its name. That is derived and
-        -- standing, in the same way backlinks are derived and standing, and it
-        -- is not a query anyone has to author.
+        -- What that page presents beyond what is written on it is every page
+        -- that declares the concept, links to it, or merely mentions its name
+        -- as a potential undeclared link. The list is derived and standing, in
+        -- the same way backlinks are, and includes a search bounded to exactly
+        -- that list. Neither the listing nor the search is copied into Markdown.
+
+    @guarantee TechnicalKeysAndCorpusWordsSpeakDifferentLanguages
+        -- Stable program roles are named in English; the words a participant
+        -- reads and writes as values belong to the corpus and are Spanish:
+        -- `person`, `concept` and `daily_log` govern `persona`, `concepto` and
+        -- `bitácora`. Existing forms such as `public:: false` remain legible and
+        -- are not silently migrated. Normalising them is a later, explicit,
+        -- previewable migration governed by VocabularyChangesAreMigrationsAndNotRewrites.
 
     @guarantee APropertyKeyIsAPageToo
         -- `status` is not only a word in a header: it is the page `status`,

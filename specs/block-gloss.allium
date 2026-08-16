@@ -31,7 +31,15 @@ contract BlockGlossing {
     @invariant TheGlossIsNotBlockContent
         -- A gloss neither changes the text it accompanies nor becomes a child
         -- block. It can be read and revised separately without altering the
-        -- outline, references or Markdown of the block.
+        -- outline or Markdown of the block. Its own page links remain distinct
+        -- from links in the annotated text.
+
+    @invariant ALinkedPageInAGlossIsTheRelationship
+        -- A gloss that links to another page is itself the relation from the
+        -- annotated block's page to that page. There is no second relation
+        -- record to edit or reconcile: changing the gloss changes what is said,
+        -- and removing the link removes the derived relation. Links in ordinary
+        -- block content remain references, not relations with an invented sense.
 
     @invariant GlossWritingHasHistoryAndProvenance
         -- Creating or revising a gloss uses Vera's authenticated operation path

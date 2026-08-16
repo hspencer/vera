@@ -4679,6 +4679,56 @@ export function renderOutliner(
   if (!progressive) void renderMermaid(list);
 
   /*
+   * Una página `tipo:: concepto` es, además de su escritura ordinaria, el lugar
+   * donde el grafo reúne todo lo que usa o menciona ese concepto. La lista no
+   * se guarda en la página: llega derivada y se puede buscar sin salir de ella.
+   */
+  if (page.concept !== undefined && page.concept !== null) {
+    const members = page.concept.members;
+    const whole = document.createElement('section');
+    whole.className = 'concept-members';
+    const heading = document.createElement('h2');
+    heading.textContent = `En el grafo (${members.length})`;
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.placeholder = 'Buscar dentro de estas páginas';
+    search.setAttribute('aria-label', 'buscar dentro de las páginas vinculadas a este concepto');
+    const results = document.createElement('ul');
+
+    const draw = (): void => {
+      const query = search.value.trim().toLocaleLowerCase();
+      results.replaceChildren();
+      for (const member of members.filter((one) =>
+        query === '' || `${one.title} ${one.excerpt}`.toLocaleLowerCase().includes(query),
+      )) {
+        const row = document.createElement('li');
+        const link = document.createElement('button');
+        link.type = 'button';
+        link.textContent = member.title;
+        link.addEventListener('click', () => callbacks.onOpen(member.page, 'followed_reference'));
+        const modes = document.createElement('span');
+        modes.className = 'concept-member-kinds';
+        modes.textContent = [
+          member.declared ? 'declarado' : '',
+          member.linked ? 'enlazado' : '',
+          member.mentioned && !member.linked ? 'mención potencial' : '',
+        ].filter(Boolean).join(' · ');
+        row.append(link, modes);
+        if (member.excerpt !== '') {
+          const said = document.createElement('p');
+          said.textContent = member.excerpt;
+          row.append(said);
+        }
+        results.append(row);
+      }
+    };
+    search.addEventListener('input', draw);
+    draw();
+    whole.append(heading, search, results);
+    container.append(whole);
+  }
+
+  /*
    * Las dos columnas: lo que esta página afirma y lo que afirman sobre ella.
    *
    * Van antes de las referencias y no después, y son cosa distinta de ellas. Un

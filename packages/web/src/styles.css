@@ -4589,6 +4589,33 @@ code {
   margin: 2rem 0 0;
 }
 
+.concept-members {
+  margin: 2rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+
+.concept-members h2 { margin: 0 0 0.8rem; }
+.concept-members input { width: min(100%, 30rem); }
+.concept-members ul { list-style: none; padding: 0; }
+.concept-members li { margin: 0.9rem 0; }
+.concept-members button {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.concept-members button:hover { text-decoration: underline; }
+.concept-member-kinds {
+  margin-left: 0.55rem;
+  color: var(--text-dim);
+  font: 0.72rem var(--font-mono);
+}
+.concept-members p { margin: 0.2rem 0 0; color: var(--text-dim); }
+
 
 
 .relations ul {

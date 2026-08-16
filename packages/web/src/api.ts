@@ -133,6 +133,17 @@ export interface PageView {
    */
   domains: Record<string, { value: string; uses: number }[]>;
   blocks: BlockView[];
+  /** Vista derivada de una página cuyo tipo es `concepto`. */
+  concept?: {
+    members: {
+      page: string;
+      title: string;
+      excerpt: string;
+      declared: boolean;
+      linked: boolean;
+      mentioned: boolean;
+    }[];
+  } | null;
   assets: AssetView[];
   blockRefs: BlockRefView[];
   /** Los bloques que este participante tiene plegados. No es contenido. */
