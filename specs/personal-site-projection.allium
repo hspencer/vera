@@ -283,7 +283,7 @@ rule PublicReadingOpensInVera {
         active_publication: entry,
         layout: split,
         split_divider_position: 0.5,
-        graph_view: graph_2d,
+        graph_view: graph_3d,
         colour_scheme: dark,
         reach: 1,
         properties_visible: false,

@@ -136,6 +136,7 @@ export const DEFAULT_TOKENS: DesignToken[] = [
 const TOKENS_KEY = 'vera.tokens';
 const SCHEME_KEY = 'vera.scheme';
 const PUBLIC_SCHEME_KEY = 'vera.publicScheme';
+const PUBLIC_VIEW_KEY = 'vera.publicGraphView';
 const DIVIDER_KEY = 'vera.divider';
 const LAYOUT_KEY = 'vera.layout';
 const VIEW_KEY = 'vera.graphView';
@@ -277,6 +278,12 @@ export const session = {
   publicScheme: (): ColourScheme =>
     (localStorage.getItem(PUBLIC_SCHEME_KEY) as ColourScheme | null) ?? 'dark',
   setPublicScheme: (scheme: ColourScheme) => localStorage.setItem(PUBLIC_SCHEME_KEY, scheme),
+
+  // La cara publicada nace como mapa espacial. Su elección se recuerda sólo
+  // para lectores anónimos y no pisa la vista de trabajo del dueño.
+  publicGraphView: (): GraphViewMode =>
+    (localStorage.getItem(PUBLIC_VIEW_KEY) as GraphViewMode | null) ?? 'graph_3d',
+  setPublicGraphView: (view: GraphViewMode) => localStorage.setItem(PUBLIC_VIEW_KEY, view),
 
   divider: (): number => Number(localStorage.getItem(DIVIDER_KEY) ?? '0.5'),
   setDivider: (at: number) => {

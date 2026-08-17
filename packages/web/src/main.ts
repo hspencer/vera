@@ -2840,7 +2840,7 @@ async function start(): Promise<void> {
     tokens = loadTokens();
     workspace.scheme = isAnybody() ? session.publicScheme() : session.scheme();
     workspace.layout = session.layout();
-    workspace.graphView = session.graphView();
+    workspace.graphView = isAnybody() ? session.publicGraphView() : session.graphView();
     workspace.divider = session.divider();
     applyTokens(tokens, workspace.scheme);
     applyLayout();
@@ -2854,7 +2854,8 @@ async function start(): Promise<void> {
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-view]')) {
     button.addEventListener('click', () => {
       workspace.graphView = button.dataset['view'] as GraphViewMode;
-      session.setGraphView(workspace.graphView);
+      if (isAnybody()) session.setPublicGraphView(workspace.graphView);
+      else session.setGraphView(workspace.graphView);
       applyLayout();
     });
   }
@@ -2887,6 +2888,7 @@ async function start(): Promise<void> {
     if (isAnybody()) {
       workspace.trace = [];
       workspace.scheme = session.publicScheme();
+      workspace.graphView = session.publicGraphView();
       applyTokens(tokens, workspace.scheme);
     }
     drawAudienceControl();
