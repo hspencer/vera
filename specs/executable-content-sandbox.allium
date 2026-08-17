@@ -127,12 +127,40 @@ contract AuthoredExecutableBlocks {
     @invariant AuthoredCodeCannotReachVera
         -- HTML y p5.js corren sin acceso al grafo, la sesión, el almacenamiento,
         -- las credenciales ni el documento que los contiene. Sólo reciben aquello
-        -- que su propia fuente define dentro de su recinto.
+        -- que su propia fuente define dentro de su recinto, más el vocabulario
+        -- de presentación que Vera les entrega deliberadamente. Poder recibir
+        -- tema y medidas disponibles, y devolver cuánto ocupa lo dibujado, no
+        -- abre un camino para leer ni modificar el documento que los contiene.
+
+    @invariant VeraLendsItsVisualLanguage
+        -- HTML y p5.js parten de los mismos valores de fondo, texto, tipografía,
+        -- bordes y esquema de color que la Vera que los contiene. Son valores de
+        -- presentación por defecto: la fuente puede dar estilo propio a aquello
+        -- que escribió, pero lo que no especifica no aparece como un rectángulo
+        -- blanco y ajeno. Cambiar entre día y noche, o cambiar los valores de
+        -- diseño de Vera, actualiza también el recinto visible sin reescribir ni
+        -- volver a ejecutar su fuente.
+
+    @invariant TheFrameFollowsWhatTheSourceDraws
+        -- El recinto no impone un alto fijo. Parte del alto intrínseco que la
+        -- fuente haya producido y vuelve a ajustarse cuando ese contenido cambia,
+        -- también después de la primera presentación. Para HTML cuenta todo el
+        -- documento visible; para p5.js cuenta el canvas, el error o cualquier
+        -- otro contenido que el sketch produzca. El ajuste evita tanto el gran
+        -- hueco vacío como el desplazamiento interior que sólo sería consecuencia
+        -- de una medida fija, sin dejar que una medida inválida o desmesurada
+        -- vuelva inutilizable la página que contiene el bloque.
 
     @invariant P5TravelsWithVera
         -- El runtime p5.js que ejecuta un bloque `/p5js` viene incluido con Vera.
         -- Presentar o editar el sketch funciona sin red y no contacta un CDN ni
         -- convierte la lectura de una página en una petición a un tercero.
+
+    @invariant PresentationTravelsWithThePublishedPage
+        -- Al publicar, HTML y p5.js conservan el mismo lenguaje visual adaptable
+        -- y el mismo alto nacido de su contenido. Salir de la pantalla privada no
+        -- los devuelve a un fondo blanco ni a una caja de medida fija; toman los
+        -- valores de presentación de la página pública que los contiene.
 
     @invariant FailureReturnsToReadableSource
         -- Fuente inválida o una ejecución fallida se presenta como fuente legible
@@ -230,6 +258,12 @@ surface EmbeddedContent {
         -- Un HTML o p5.js ejecutable se reconoce como bloque que corre y siempre
         -- ofrece volver a su fuente. El mismo texto dentro de Markdown se ve como
         -- texto, haciendo visible la decisión que separa ambos comportamientos.
+
+    @guarantee AuthoredExecutionFitsItsSurroundings
+        -- HTML y p5.js comparten el aspecto vigente de Vera y ocupan el alto que
+        -- necesitan según lo que hayan dibujado. Un cambio de tema o de tamaño
+        -- dentro del recinto se refleja mientras se lee, sin recargar la página
+        -- ni convertir el recinto en parte privilegiada del documento exterior.
 }
 
 ------------------------------------------------------------
