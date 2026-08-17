@@ -7,7 +7,7 @@
 > **Una memoria viva para profundizar y trabajar con inteligencias artificiales
 > sin entregar el control de tu conocimiento.**
 
-![Vera muestra una página y su grafo de relaciones](docs/assets/vera-screenshot.jpg)
+![Vera muestra una página y su grafo de relaciones](docs/assets/vera-interface.png)
 
 Vera es una nueva forma de investigar, estudiar y trabajar en la era de la
 inteligencia artificial. Reúne fuentes, notas, preguntas, medios y hallazgos en
