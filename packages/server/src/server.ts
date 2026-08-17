@@ -1083,6 +1083,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         path.startsWith('/media/') ||
         canonicalPublication !== undefined ||
         path.startsWith('/build/') ||
+        path.startsWith('/assets/') ||
         /^\/(?:manifest\.webmanifest|sw\.js|favicon\.ico|apple-touch-icon\.png|icon-[^/]+|fonts\/)/.test(path);
       if (!safe) {
         send(response, 404, { error: 'not found' });

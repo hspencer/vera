@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="packages/web/public/assets/vera_vera-logo.svg" width="112" alt="Logo de Vera">
+  <img src="https://vera.mediafranca.net/assets/vera_vera-logo.svg" width="112" alt="Logo de Vera">
 </p>
 
 # Vera
@@ -7,7 +7,7 @@
 > **Una memoria viva para profundizar y trabajar con inteligencias artificiales
 > sin entregar el control de tu conocimiento.**
 
-![Vera muestra una página y su grafo de relaciones](docs/assets/vera-interface.png)
+![Vera muestra una página y su grafo de relaciones](https://vera.mediafranca.net/assets/vera-interface.png)
 
 Vera es una nueva forma de investigar, estudiar y trabajar en la era de la
 inteligencia artificial. Reúne fuentes, notas, preguntas, medios y hallazgos en

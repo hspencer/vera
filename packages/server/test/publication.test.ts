@@ -2,7 +2,7 @@
 
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request } from 'node:http';
@@ -20,6 +20,8 @@ let sequence = 0;
 
 before(() => {
   writeFileSync(join(web, 'index.html'), '<!doctype html><title>La misma Vera</title><div id="vera-root"></div>');
+  mkdirSync(join(web, 'assets'));
+  writeFileSync(join(web, 'assets', 'vera-logo.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
   running = listen({
     port: PORT,
     databasePath: ':memory:',
@@ -171,6 +173,9 @@ describe('publicación del sitio personal', () => {
     const preview = await fetch(`${previewBase}/`);
     assert.equal(preview.status, 200);
     assert.match(await preview.text(), /La misma Vera/);
+    const publicAsset = await fetch(`${previewBase}/assets/vera-logo.svg`);
+    assert.equal(publicAsset.status, 200);
+    assert.equal(publicAsset.headers.get('content-type'), 'image/svg+xml');
 
     const health = await fetch(`${previewBase}/health`).then((response) => response.json()) as {
       access: string;
