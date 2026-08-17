@@ -326,6 +326,7 @@ describe('lecturas', () => {
 
   it('entrega el grafo en la forma que consume constel', async () => {
     const a = await write({ kind: 'create_page', title: 'NodoA', visibility: 'private' });
+    await write({ kind: 'set_property', page: a, propertyKey: 'tipo', propertyValue: 'argumento' });
     await write({ kind: 'create_page', title: 'NodoB', visibility: 'private' });
     await write({
       kind: 'create_block',
@@ -336,13 +337,14 @@ describe('lecturas', () => {
     });
 
     const data = (await get(`/graph/${encodeURIComponent(a)}?depth=1`)) as {
-      nodes: { id: string; name: string; central: boolean; degree: number; blockCount: number }[];
+      nodes: { id: string; name: string; central: boolean; trail: boolean; degree: number; blockCount: number }[];
       links: { source: string; target: string }[];
     };
 
     const centre = data.nodes.find((n) => n.central);
     assert.equal(centre?.id, a);
     assert.equal(centre?.name, 'NodoA');
+    assert.equal(centre?.trail, true);
     assert.ok(data.nodes.some((n) => n.name === 'NodoB'));
     assert.equal(data.links.length, 1);
     for (const node of data.nodes) {

@@ -273,6 +273,7 @@ export function renderGraph(
     .data(data.nodes)
     .join("g")
     .attr("cursor", "pointer")
+    .classed("trail-node", (d) => d.trail === true)
     .style("transition", "opacity 0.2s");
 
   /*

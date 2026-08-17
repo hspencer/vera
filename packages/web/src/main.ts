@@ -2137,17 +2137,29 @@ async function promoteTrace(from: number | null): Promise<void> {
   );
 
   const seed = seedTrail(trace, { title });
-  const born = await api.submit(seed.page as never);
+  // Promover es una sola secuencia dependiente: la página debe existir en el
+  // corpus antes de declararla argumento, y la declaración antes de abrirla.
+  // La cola local sirve para la mano corriente; aquí permitiría que `openPage`
+  // llegara antes que el tipo y restituyera una página ordinaria o incompleta.
+  const born = await api.submitConfirmed(seed.page as never);
   if (born.status !== 'applied') {
     notice(`No se pudo crear el recorrido: ${born.status === 'rejected' ? born.reason : 'error'}.`);
     return;
   }
   const page = born.subjectId;
 
-  const write = async (change: unknown, channel: 'typed_text' | 'walked' = 'typed_text') =>
-    api.submit(change as never, channel);
+  const write = async (
+    change: unknown,
+    channel: 'typed_text' | 'walked' = 'typed_text',
+  ) => api.submitConfirmed(change as never, channel);
 
-  for (const change of seed.properties(page)) await write(change);
+  for (const change of seed.properties(page)) {
+    const written = await write(change);
+    if (written.status === 'rejected') {
+      notice(`El recorrido nació, pero no pudo declararse argumento: ${written.reason}.`);
+      return;
+    }
+  }
 
   let position = 0;
   for (const one of blocksFor(trace, titleOf)) {
@@ -2159,10 +2171,14 @@ async function promoteTrace(from: number | null): Promise<void> {
       position,
       content: one.content,
     });
-    // El testimonio entra por el canal `walked`: no lo tecleó nadie, lo transcribe
-    // Vera de lo que ocurrió. @invariant ChannelFollowsParticipantKind.
+    if (block.status === 'rejected') {
+      notice(`El recorrido quedó incompleto: ${block.reason}.`);
+      return;
+    }
+    // La promoción se confirma de punta a punta antes de abrirse. El testimonio
+    // entra por `walked`: no lo tecleó nadie, ocurrió al andar.
     if (block.status === 'applied' && one.testimony !== null) {
-      await write(
+      const testimony = await write(
         {
           kind: 'set_property',
           block: block.subjectId,
@@ -2171,6 +2187,10 @@ async function promoteTrace(from: number | null): Promise<void> {
         },
         'walked',
       );
+      if (testimony.status === 'rejected') {
+        notice(`El recorrido quedó sin uno de sus testimonios: ${testimony.reason}.`);
+        return;
+      }
     }
   }
 

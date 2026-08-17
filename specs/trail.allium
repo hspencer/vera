@@ -1109,8 +1109,22 @@ surface TrailOnTheMap {
         -- sino *entre* ellas, y un nodo con doce aristas saliendo hacia sus paradas
         -- dibuja lo contrario de lo que el recorrido dice.
         --
-        -- Cerrado, vuelve a ser una página como cualquier otra, con su nodo y sus
-        -- enlaces, y así es como se le encuentra sin saber que existía.
+        -- Cerrado, vuelve a ser una página encontrable con su nodo y sus enlaces,
+        -- pero el nodo conserva una marca propia de argumento. No se confunde con
+        -- una página ordinaria, y esa marca anticipa el hilo en que se convertirá
+        -- cuando alguien lo enfoque.
+
+    @guarantee PromotionArrivesAsAnArgumentAndNotAsAQueue
+        -- Promover un breadcrumb confirma en orden la página, `tipo=argumento`,
+        -- sus paradas y sus testimonios antes de abrirla. La vista nunca se
+        -- adelanta a esa secuencia mostrando una página nacida sin tipo o un
+        -- argumento al que todavía le faltan nodos en el registro canónico.
+
+    @guarantee RefocusingRestoresTheWholeThread
+        -- Volver a enfocar la página del argumento vuelve a derivar su ruta de
+        -- los bloques vigentes y enciende de una vez el hilo que conecta todas
+        -- sus paradas. No depende del breadcrumb local que lo originó ni de que
+        -- aquella sesión siga abierta.
 
     @guarantee TheWholeShapeAtOnce
         -- Se encienden todos los nodos a la vez, no uno a uno según se lee. La

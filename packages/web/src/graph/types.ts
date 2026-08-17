@@ -8,6 +8,8 @@ export interface GraphNode extends SimulationNodeDatum {
   id: string;
   name: string;
   central: boolean;
+  /** La página declara que el orden de sus bloques es un argumento. */
+  trail?: boolean;
   degree: number;
   properties?: Record<string, unknown>;
   blockCount?: number;

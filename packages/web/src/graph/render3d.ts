@@ -436,7 +436,7 @@ export function renderGraph3D(
     const longest = lines.reduce((most, line) => Math.max(most, line.length), 0);
 
     const group = document.createElementNS(SVG_NS, "g");
-    group.setAttribute("class", "map3d-node");
+    group.setAttribute("class", node.trail === true ? "map3d-node trail-node" : "map3d-node");
     /*
      * La página del recorrido abierto deja de dibujarse como nodo.
      *

@@ -1107,8 +1107,11 @@ export const api = {
    * tiene secuencia canónica. Así una página nunca se intenta quitar antes de
    * que el servidor haya quitado sus bloques.
    */
-  submitConfirmed(change: Change): Promise<SubmitResult> {
-    return this.send(named(change), 'typed_text', originId());
+  submitConfirmed(
+    change: Change,
+    channel: 'typed_text' | 'drawn' | 'walked' = 'typed_text',
+  ): Promise<SubmitResult> {
+    return this.send(named(change), channel, originId());
   },
 
   /**
