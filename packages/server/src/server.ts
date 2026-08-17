@@ -670,6 +670,24 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           .some((property) => property.key === SPECIAL_KIND && property.value === kind),
       );
 
+  /**
+   * Las páginas que gobiernan Vera son permanentes y deliberadas.
+   *
+   * Se acepta tanto la junta canónica `special-kind` como la declaración humana
+   * `tipo=página especial`: durante una migración una puede llegar antes que la
+   * otra, y en esa ventana conviene proteger de más, no de menos.
+   */
+  const isSpecialPage = (pageId: string): boolean => {
+    const folded = (value: string): string =>
+      value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim();
+    const names = propertyNames();
+    return graph.propertiesOf(pageId).some(
+      (property) =>
+        property.key === SPECIAL_KIND ||
+        (folded(property.key) === folded(names.kind) && folded(property.value) === 'pagina especial'),
+    );
+  };
+
   /*
    * Los bloques de una página especial que declaran algo.
    *
@@ -845,6 +863,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
    * Ver packages/core/src/trail.ts y specs/trail.allium.
    */
   const trailOf = (pageId: string): Trail | null => {
+    if (isSpecialPage(pageId)) return null;
     const names = propertyNames();
     if (!isTrail(graph.propertiesOf(pageId), names)) return null;
     const intent = graph
@@ -1206,6 +1225,34 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           }
         }
 
+        const protectedPage = pageTouchedBy(
+          input.change,
+          null,
+          (block) => graph.block(block)?.page,
+        );
+        if (protectedPage !== null && isSpecialPage(protectedPage)) {
+          if (input.change.kind === 'remove_page') {
+            send(response, 422, {
+              status: 'rejected',
+              reason: 'una página especial gobierna Vera y no se puede eliminar',
+            });
+            return;
+          }
+          if (
+            input.change.kind === 'set_property' &&
+            input.change.page === protectedPage &&
+            input.change.propertyKey.trim().toLocaleLowerCase('es') ===
+              propertyNames().kind.trim().toLocaleLowerCase('es') &&
+            input.change.propertyValue.trim().toLocaleLowerCase('es') === 'argumento'
+          ) {
+            send(response, 422, {
+              status: 'rejected',
+              reason: 'una página especial no se puede leer como recorrido',
+            });
+            return;
+          }
+        }
+
         const outcome = graph.submitOperation({
           ...input,
           participant: who.participant,
@@ -1383,6 +1430,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             .some((one) => one.key.trim().toLowerCase() === markKey.trim().toLowerCase());
           if (!marked) {
             send(response, 409, { error: `la página ${page} ya no está marcada para borrar` });
+            return;
+          }
+          if (decision === 'delete' && isSpecialPage(page)) {
+            send(response, 422, { error: `la página especial ${page} no se puede eliminar` });
             return;
           }
           plans.push({ page, decision, blocks: graph.blocksOf(page) });
@@ -2485,6 +2536,12 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       const page = graph.page(id) ?? graph.pageTitled(id);
       if (page === undefined) {
         send(response, 404, { error: 'no such page' });
+        return;
+      }
+      if (isSpecialPage(page.id)) {
+        send(response, 422, {
+          error: 'una página especial gobierna Vera y no se procesa automáticamente',
+        });
         return;
       }
 

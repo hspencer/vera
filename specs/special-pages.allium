@@ -84,6 +84,18 @@ contract SelfDescription {
         -- prose and may use `Vera — …`; punctuation therefore distinguishes
         -- system governance from writing about the system without creating a
         -- second hidden classification rule.
+
+    @invariant SpecialPagesArePermanentGovernance
+        -- A page declared as `tipo=página especial` cannot be deleted. Its
+        -- blocks remain ordinarily editable and every revision remains in the
+        -- log, but the governing page itself is a permanent address of the
+        -- instance rather than disposable corpus content.
+
+    @invariant SpecialPagesAreNeitherTrailsNorProcessingMaterial
+        -- A special page cannot be read as a trail and cannot be sent through
+        -- automatic page processing. Its order describes governance rather
+        -- than an argument, and its form and meaning are changed deliberately
+        -- by its owner rather than inferred by a model.
 }
 
 ------------------------------------------------------------
@@ -285,6 +297,11 @@ surface SpecialPageAdministration {
         -- An agent's pending proposals are seen on the page they would change,
         -- not in a queue elsewhere. A proposal nobody encounters is a proposal
         -- nobody decides, and the agent waits for ever.
+
+    @guarantee DestructiveAndInterpretiveActionsAreAbsent
+        -- The page-level actions do not offer deleting, reading as a trail or
+        -- automatic processing for a special page. The same restrictions hold
+        -- at the writing boundary, so another client cannot bypass the page.
 }
 
 ------------------------------------------------------------

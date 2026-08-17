@@ -113,6 +113,23 @@ export function nameProperties(said: Partial<typeof names>): void {
 
 const corpusNames = (): typeof names => names;
 
+/**
+ * Una página de gobierno no es material para clasificar, recorrer ni desechar.
+ *
+ * `special-kind` es la junta canónica con el programa; `tipo=página especial`
+ * es la declaración legible que Herbert usa en el corpus. Cualquiera de las dos
+ * basta para que la interfaz sea conservadora durante una migración incompleta.
+ */
+export function isSpecialPage(properties: readonly { key: string; value: string }[]): boolean {
+  const folded = (value: string): string =>
+    value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim();
+  return properties.some(
+    (property) =>
+      property.key === SPECIAL_KIND ||
+      (folded(property.key) === folded(corpusNames().kind) && folded(property.value) === 'pagina especial'),
+  );
+}
+
 /*
  * Y de qué servidores acepta este corpus una incrustación.
  *
@@ -2337,6 +2354,7 @@ export function renderOutliner(
   /** Dónde quedó dibujado cada bloque, para poder devolverle el cursor. */
   const editors = new Map<string, { node: Node; body: HTMLElement }>();
   const folded = new Set(page.folded);
+  const special = isSpecialPage(page.properties);
   // @invariant SpokenContentNamesItsRecording: un bloque hablado lo dice.
   const spoken = new Map((page.spokenOrigins ?? []).map((o) => [o.block, o.recording]));
   // Lo hablado que tiene lugar en esta página, por el bloque que se lo guarda.
@@ -3507,6 +3525,7 @@ export function renderOutliner(
          */
         label: trail === null ? 'Leer su orden como un recorrido' : 'Dejar de leerlo como recorrido',
         icon: 'steps-1',
+        ...(special ? { blocked: 'una página especial gobierna Vera y no se lee como recorrido' } : {}),
         run: () => {
           void submitQuietly(
             trail === null
@@ -3528,6 +3547,7 @@ export function renderOutliner(
         // está leyendo sobre esto.
         label: 'Procesar la página',
         icon: 'cpu',
+        ...(special ? { blocked: 'una página especial se edita deliberadamente y no se procesa' } : {}),
         run: () => void processPage(page, toast, callbacks),
       },
       {
@@ -3554,6 +3574,7 @@ export function renderOutliner(
       {
         label: 'Eliminar la página',
         icon: 'trash-2',
+        ...(special ? { blocked: 'las páginas especiales son parte permanente del gobierno de Vera' } : {}),
         run: () => void deletePage(page, callbacks),
       },
       ],

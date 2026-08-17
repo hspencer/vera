@@ -13,6 +13,7 @@ import {
   externalDestination,
   foldedState,
   invokeMenuAction,
+  isSpecialPage,
   matchingMovePages,
   nodeMarkdown,
   reloadOptionsFor,
@@ -61,6 +62,14 @@ describe('menú encadenado', () => {
       { run: () => order.push('run') },
     );
     assert.deepEqual(order, ['stop', 'run']);
+  });
+});
+
+describe('páginas especiales', () => {
+  it('reconoce tanto la declaración humana como la junta canónica', () => {
+    assert.equal(isSpecialPage([{ key: 'tipo', value: 'página especial' }]), true);
+    assert.equal(isSpecialPage([{ key: 'special-kind', value: 'ontology' }]), true);
+    assert.equal(isSpecialPage([{ key: 'tipo', value: 'argumento' }]), false);
   });
 });
 

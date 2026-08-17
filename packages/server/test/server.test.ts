@@ -93,6 +93,44 @@ describe('POST /operations', () => {
     );
   });
 
+  it('protege una página especial de borrado, recorrido y procesamiento', async () => {
+    const page = await write({
+      kind: 'create_page',
+      title: 'Vera: Configuración protegida',
+      visibility: 'private',
+    });
+    await write({
+      kind: 'set_property',
+      page,
+      propertyKey: 'tipo',
+      propertyValue: 'página especial',
+    });
+
+    const remove = await post({
+      originId: 'special:remove',
+      participant: OWNER,
+      channel: 'typed_text',
+      change: { kind: 'remove_page', page },
+    });
+    assert.equal(remove.status, 422);
+    assert.match(String(remove.json['reason']), /no se puede eliminar/);
+
+    const trail = await post({
+      originId: 'special:trail',
+      participant: OWNER,
+      channel: 'typed_text',
+      change: { kind: 'set_property', page, propertyKey: 'tipo', propertyValue: 'argumento' },
+    });
+    assert.equal(trail.status, 422);
+    assert.match(String(trail.json['reason']), /no se puede leer como recorrido/);
+
+    const processed = await fetch(`${base}/pages/${encodeURIComponent(page)}/process`, {
+      method: 'POST',
+    });
+    assert.equal(processed.status, 422);
+    assert.match(String(((await processed.json()) as { error: string }).error), /no se procesa/);
+  });
+
   it('rechaza voz autenticada sin evidencia', async () => {
     const { status } = await post({
       originId: 'op-voz',
