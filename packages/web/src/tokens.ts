@@ -137,6 +137,7 @@ const TOKENS_KEY = 'vera.tokens';
 const SCHEME_KEY = 'vera.scheme';
 const PUBLIC_SCHEME_KEY = 'vera.publicScheme';
 const PUBLIC_VIEW_KEY = 'vera.publicGraphView';
+const FRONT_MATTER_KEY = 'vera.frontMatterOpen';
 const DIVIDER_KEY = 'vera.divider';
 const LAYOUT_KEY = 'vera.layout';
 const VIEW_KEY = 'vera.graphView';
@@ -265,6 +266,12 @@ export function applyTokens(tokens: DesignToken[], scheme: ColourScheme): void {
  * por igual cuando no hay preferencia guardada; después se recuerda.
  */
 export const session = {
+  // No pertenece a una página: es cómo esta persona decidió leer todas.
+  // Ausente significa cerrado, que sigue siendo el estado inicial sobrio. Una
+  // vez tocado, nada salvo el mismo interruptor vuelve a decidir por ella.
+  frontMatterOpen: (): boolean => localStorage.getItem(FRONT_MATTER_KEY) === 'true',
+  setFrontMatterOpen: (open: boolean) => localStorage.setItem(FRONT_MATTER_KEY, String(open)),
+
   scheme: (): ColourScheme =>
     (localStorage.getItem(SCHEME_KEY) as ColourScheme | null) ??
     (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),

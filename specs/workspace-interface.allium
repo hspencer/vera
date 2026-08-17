@@ -315,6 +315,21 @@ contract PageFrontMatter {
     offer: (page: core/Page, key: String) -> PropertyControl
     answer: (page: core/Page, key: String, value: String) -> core/Page
 
+    @invariant FrontMatterDisclosureIsAReaderPreference
+        -- Abrir o cerrar la cabecera no es estado de la página. Es una
+        -- preferencia de quien lee: la respuesta vigente se aplica a cada
+        -- página que abra esa misma persona en esa interfaz.
+
+    @invariant FrontMatterDisclosureSurvivesNavigationAndReturn
+        -- La preferencia sobrevive navegar a otra página, recargar y volver en
+        -- otro momento desde el mismo navegador. Una página nueva no vuelve a
+        -- cerrar lo que el lector dejó abierto, ni abre lo que dejó cerrado.
+
+    @invariant OnlyTheReaderChangesFrontMatterDisclosure
+        -- Redibujar, editar propiedades, cambiar de página o actualizar Vera
+        -- conserva la respuesta. Sólo el gesto explícito sobre el interruptor
+        -- la cambia; no hay restablecimiento silencioso.
+
     @invariant AControlledAnswerIsChosenNotTyped
         -- A property whose domain the ontology governs is answered by choosing:
         -- a switch where the answer is yes or no, a list where it is one of a

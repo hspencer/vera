@@ -24,3 +24,19 @@ describe('vista del mapa publicado', () => {
     assert.equal(storage.getItem('vera.graphView'), null);
   });
 });
+
+describe('despliegue del front matter', () => {
+  it('nace cerrado y conserva exactamente la última elección del lector', () => {
+    const storage = new MemoryStorage();
+    globalThis.localStorage = storage as unknown as Storage;
+
+    assert.equal(session.frontMatterOpen(), false);
+    session.setFrontMatterOpen(true);
+    assert.equal(session.frontMatterOpen(), true);
+    assert.equal(storage.getItem('vera.frontMatterOpen'), 'true');
+
+    session.setFrontMatterOpen(false);
+    assert.equal(session.frontMatterOpen(), false);
+    assert.equal(storage.getItem('vera.frontMatterOpen'), 'false');
+  });
+});

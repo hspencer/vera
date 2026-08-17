@@ -83,6 +83,7 @@ import { audioUrl, voice, type Recording } from './voice.ts';
 import { type NavigationGesture } from './trace.ts';
 import { openMediaDetails } from './media-dialog.ts';
 import { holdViewport, restoreViewport } from './viewport.ts';
+import { session } from './tokens.ts';
 import {
   resolveArrow,
   resolveBackspaceAtStart,
@@ -137,9 +138,6 @@ export function isSpecialPage(properties: readonly { key: string; value: string 
  * como el texto que es. Ver specs/executable-content-sandbox.allium.
  */
 let embedHosts: readonly string[] = [];
-
-/** Preferencia local de lectura: nunca cambia ni vuelve a publicar la página. */
-let publicPropertiesVisible = false;
 
 export function allowEmbedsFrom(hosts: readonly string[]): void {
   embedHosts = [...hosts];
@@ -2798,7 +2796,12 @@ export function renderOutliner(
     propertiesToggle.title = open ? 'Ocultar propiedades' : 'Mostrar propiedades';
     propertiesToggle.classList.toggle('open', open);
   };
-  propertiesToggle.addEventListener('click', () => showProperties(metadata.hidden));
+  const chooseProperties = (open: boolean): void => {
+    session.setFrontMatterOpen(open);
+    showProperties(open);
+  };
+  showProperties(session.frontMatterOpen());
+  propertiesToggle.addEventListener('click', () => chooseProperties(metadata.hidden));
 
   /*
    * Público o privado, entre las demás propiedades y no en un botón aparte.
@@ -3461,10 +3464,9 @@ export function renderOutliner(
     if (readOnly) {
       openBlockMenu(more, [[
         {
-          label: publicPropertiesVisible ? 'ocultar propiedades' : 'mostrar propiedades',
+          label: session.frontMatterOpen() ? 'ocultar propiedades' : 'mostrar propiedades',
           run: () => {
-            publicPropertiesVisible = !publicPropertiesVisible;
-            showProperties(publicPropertiesVisible);
+            chooseProperties(!session.frontMatterOpen());
           },
         },
         {
