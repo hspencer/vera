@@ -23,6 +23,11 @@ contract BlockGlossing {
     write: (participant: core/Participant, block: core/Block, content: String) -> Gloss
     open: (participant: core/Participant, block: core/Block) -> GlossDisclosure
 
+    @invariant GlossCompositionCompletesBeforeCommands
+        -- Dead keys and input-method composition finish in the gloss editor
+        -- before Escape, save gestures or any other command may act. Accented
+        -- and composed Unicode is marginal writing, not a keyboard shortcut.
+
     @invariant AGlossBelongsToOneStableBlock
         -- A gloss is attached to the stable identity of its block, not to the
         -- block's position or current wording. Moving or editing the block does

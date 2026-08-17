@@ -50,6 +50,12 @@ contract EditablePresentation {
 contract NativeMarkdownEditing {
     edit: (page: core/Page, source: String) -> core/Page
 
+    @invariant TextCompositionCompletesBeforeCommands
+        -- A dead key or input-method composition belongs to the text being
+        -- authored. Vera waits for the composed character before interpreting
+        -- shortcuts, delimiters, completion or structural keys, so accented
+        -- letters and other composed Unicode survive exactly as entered.
+
     @invariant ExternalLinksExposeTheirDestination
         -- Following an external link first presents its destination and offers
         -- copying the URL as well as opening it. On a device with Vera's native

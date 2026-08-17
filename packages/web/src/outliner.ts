@@ -41,7 +41,7 @@ import { completeInPlace, editInPlace, placeNear, type Choice } from './fields.t
 import { governingKind, kindSays, renderGoverning } from './governing-table.ts';
 import { answerQueryBlock } from './query-block.ts';
 import { renderMermaid } from './mermaid.ts';
-import { is } from './bindings.ts';
+import { is, isTextComposing } from './bindings.ts';
 import { icon, type IconName } from './icons.ts';
 import { when } from './dates.ts';
 import { isMCPPage, renderMCP } from './mcp-page.ts';
@@ -2673,6 +2673,7 @@ export function renderOutliner(
     });
     editor.addEventListener('blur', () => void save());
     editor.addEventListener('keydown', (event) => {
+      if (isTextComposing(event)) return;
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
         event.preventDefault();
         void save();
@@ -6118,6 +6119,7 @@ function startEditing(
   };
 
   let timer: number | undefined;
+  let composing = false;
   // Abrir un selector de archivos quita el foco del textarea, pero no significa
   // que Herbert haya terminado de editar: el archivo elegido todavía tiene que
   // caer exactamente en ese bloque. Mientras el selector está abierto, ese blur
@@ -6517,12 +6519,26 @@ function startEditing(
     void attach(files);
   });
 
-  editor.addEventListener('input', () => {
+  editor.addEventListener('compositionstart', () => {
+    composing = true;
+  });
+
+  editor.addEventListener('compositionend', () => {
+    composing = false;
+    session.type(editor.value);
+    autosize();
+    keepCaretInSight(editor, editor.selectionStart);
+    scheduleSave();
+    refreshList();
+  });
+
+  editor.addEventListener('input', (event) => {
     session.type(editor.value);
     autosize();
     // El campo acaba de crecer o menguar, así que la línea en la que se escribe
     // se movió con él. @invariant WhatIsBeingWrittenStaysInSight.
     keepCaretInSight(editor, editor.selectionStart);
+    if (composing || (event instanceof InputEvent && event.isComposing)) return;
     scheduleSave();
     refreshList();
   });
@@ -6546,6 +6562,7 @@ function startEditing(
   });
 
   editor.addEventListener('keydown', (event) => {
+    if (isTextComposing(event)) return;
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
 

@@ -22,6 +22,17 @@ export interface Binding {
 const plain = (event: KeyboardEvent): boolean =>
   !event.metaKey && !event.ctrlKey && !event.altKey;
 
+/**
+ * macOS compone acentos mediante teclas muertas. Safari puede señalar ese
+ * intervalo con cualquiera de estas tres formas, incluida la heredada 229.
+ * Mientras dura, la pulsación pertenece al texto y no a los comandos de Vera.
+ */
+export function isTextComposing(
+  event: Pick<KeyboardEvent, 'isComposing' | 'key' | 'keyCode'>,
+): boolean {
+  return event.isComposing || event.key === 'Dead' || event.keyCode === 229;
+}
+
 export const BINDINGS: Binding[] = [
   {
     id: 'close',
@@ -195,6 +206,7 @@ const byId = new Map(BINDINGS.map((binding) => [binding.id, binding]));
 
 /** ¿Esta pulsación es ese atajo? El editor pregunta por id, no por tecla. */
 export function is(id: string, event: KeyboardEvent): boolean {
+  if (isTextComposing(event)) return false;
   return byId.get(id)?.match(event) ?? false;
 }
 
