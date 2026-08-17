@@ -25,3 +25,4 @@ objects/
 # Espacios de trabajo locales de asistentes. Pueden contener repositorios
 # anidados y jamás forman parte del producto.
 .claude/
+.codex/
