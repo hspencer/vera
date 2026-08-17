@@ -6980,3 +6980,48 @@ code {
   .media-detail-preview iframe { height: 46vh; }
   .media-metadata-actions { flex-wrap: wrap; }
 }
+.activity-register {
+  margin: 1.5rem 0 4rem;
+}
+
+.activity-register h2 {
+  margin: 2rem 0 .75rem;
+  font-size: 1rem;
+}
+
+.activity-deletions {
+  border-top: 1px solid var(--line, #d8d8d8);
+}
+
+.activity-deletion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .8rem 0;
+  border-bottom: 1px solid var(--line, #d8d8d8);
+}
+
+.activity-deletion div,
+.activity-list li {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+
+.activity-deletion small,
+.activity-list small,
+.activity-refusal,
+.activity-empty {
+  color: var(--muted, #6f6f6f);
+}
+
+.activity-restore {
+  white-space: nowrap;
+}
+
+.activity-list {
+  display: grid;
+  gap: .7rem;
+  padding-left: 1.25rem;
+}

@@ -10,7 +10,8 @@
 --     escala y no es de Vera
 --   - La reversión de una migración de vocabulario, que se propone y se aplica
 --     con su propia deliberación (ver controlled-ontology.allium)
---   - Restaurar una página entera borrada, que se declara aquí como pendiente
+--   - Restaurar una página entera borrada, que es un acto propio del registro de
+--     actividad y no un deshacer
 -- Dependencies: Operation, Change y Block los gobierna core.allium
 
 use "./core.allium" as core
@@ -159,10 +160,10 @@ surface Undoable {
 -- Open Questions
 ------------------------------------------------------------
 
--- Borrar una página es vaciarla bloque a bloque y después quitarla. Deshacerlo
--- entero es rehacer la página y volver a escribir dentro cada bloque; se puede,
--- porque el registro lo tiene todo, pero no es deshacer un gesto.
-open question "¿Cómo se restaura una página borrada: como un deshacer más, o como un acto propio que se pide por su nombre y enseña antes qué va a devolver?"
+-- Borrar una página es vaciarla bloque a bloque y después quitarla. Restaurarla
+-- es un acto propio que se pide por su nombre en Vera: Registro de Actividad,
+-- enseña antes qué va a devolver y escribe operaciones nuevas con la identidad
+-- de quien restaura. No borra ni reinterpreta el gesto de eliminación.
 
 -- El silencio que separa dos gestos son dos segundos y medio, elegidos contra
 -- los novecientos milisegundos que tarda la escritura en guardar sola.

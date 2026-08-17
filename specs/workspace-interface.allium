@@ -1032,6 +1032,24 @@ surface VeraWorkspace {
         -- Text and graph views share the same active page and navigation history.
         -- Changing layout does not discard the participant's place in the graph.
 
+    @guarantee ADeletedPageIsNoLongerAPlace
+        -- Once deletion is canonically confirmed, the page is absent from the
+        -- corpus, local index, retained pages, navigation trace and current URL.
+        -- The reader returns to the preceding living page; today's journal is
+        -- the fallback when no preceding page remains.
+
+    @guarantee TheCanonicalLogIsTheActivityRegister
+        -- Vera: Registro de Actividad makes every canonical creation, edition,
+        -- movement and deletion readable without copying it into a second log.
+        -- Deleted pages remain present there as tombs even though they are no
+        -- longer pages in the corpus.
+
+    @guarantee RestorationIsANewAuditedAct
+        -- Restoring a deleted page previews and recreates its stable page and
+        -- block identities, tree, content, glosses and properties. Every step is
+        -- a new canonical operation attributed to the restoring participant;
+        -- history is never erased or rewritten to pretend deletion did not occur.
+
     @guarantee ConfirmedRenameConvergesEveryNameWithoutMovingTheReader
         -- Confirming a page title with Enter makes its canonical title, visible
         -- heading, current address, page catalogue, map label and every trail name

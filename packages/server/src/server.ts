@@ -78,6 +78,7 @@ import {
   type Store,
 } from '@vera/store';
 import { HASH, mediaTypeFor, objectPath, putObject, sniffMediaType } from '@vera/store/objects';
+import { activityOf } from './activity.ts';
 import { forgetSecret, revealSecret, saveSecret, secretsOf, useSecret } from '@vera/store/secrets';
 import { clientsSeen, exposuresOf, recordExposure, whoRead } from '@vera/store/exposures';
 import { parseDocument } from '@vera/importer/document';
@@ -4582,6 +4583,20 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             blockCount: node.blockCount,
           })),
           links: hood.edges.map((edge) => ({ source: edge.source, target: edge.target })),
+        });
+        return;
+      }
+
+      if (path === '/activity') {
+        const folded = activityOf(graph);
+        const before = Number(url.searchParams.get('before') ?? Number.POSITIVE_INFINITY);
+        const limit = 200;
+        const activity = folded.activity.filter((one) => one.sequence < before).slice(0, limit);
+        const more = activity.length === limit;
+        send(response, 200, {
+          activity,
+          deletedPages: folded.deletedPages,
+          nextBefore: more ? activity[activity.length - 1]?.sequence ?? null : null,
         });
         return;
       }

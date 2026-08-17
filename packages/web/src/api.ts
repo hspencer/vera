@@ -388,6 +388,7 @@ export type Change =
     }
   | { kind: 'rename_page'; page: string; title: string }
   | { kind: 'set_page_visibility'; page: string; visibility: 'private' | 'public' }
+  | { kind: 'recover_page_origin'; page: string; originCreatedAt: number }
   // Sólo se borra una página vacía. Vaciarla es una secuencia de `remove_block`,
   // cada uno ordenado y auditable por separado, y ese es el punto: borrar una
   // página no es un acto único que se traga cuanto hubiera dentro sin dejar
@@ -427,6 +428,36 @@ export interface QueryHit {
   updated: number | null;
   /** Dónde lo dice, cuando la pregunta era por texto. */
   says: { block: string; excerpt: string } | null;
+}
+
+export interface ActivityItem {
+  sequence: number;
+  at: number;
+  by: string;
+  participant: string;
+  channel: string;
+  kind: Change['kind'];
+  subjectId: string;
+  page: { id: string; title: string } | null;
+  summary: string;
+}
+
+export interface DeletedPageActivity {
+  page: string;
+  title: string;
+  deletedAt: number;
+  sequence: number;
+  by: string;
+  blocks: number;
+  restorable: boolean;
+  refusal: string | null;
+  changes: Change[];
+}
+
+export interface ActivityView {
+  activity: ActivityItem[];
+  deletedPages: DeletedPageActivity[];
+  nextBefore: number | null;
 }
 
 /** Por qué columna se está mirando una tabla, y en qué sentido. */
@@ -1065,6 +1096,20 @@ export const api = {
    */
   ops: (since: number) =>
     json<CanonicalOp[]>(`/ops?since=${since}`, { signal: AbortSignal.timeout(8_000) }),
+
+  /** El log canónico plegado como registro humano, incluidas sus tumbas. */
+  activity: (before?: number) =>
+    json<ActivityView>(before === undefined ? '/activity' : `/activity?before=${before}`),
+
+  /**
+   * Escritura destructiva o restauradora confirmada por el corpus.
+   * No pasa por la cola local: el siguiente paso sólo empieza cuando éste ya
+   * tiene secuencia canónica. Así una página nunca se intenta quitar antes de
+   * que el servidor haya quitado sus bloques.
+   */
+  submitConfirmed(change: Change): Promise<SubmitResult> {
+    return this.send(named(change), 'typed_text', originId());
+  },
 
   /**
    * Escribe un cambio.

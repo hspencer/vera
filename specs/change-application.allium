@@ -190,6 +190,10 @@ rule ApplyRemovePage {
     @guidance
         -- A page is removable only once it is empty. Emptying it is a sequence of
         -- remove_block operations, each separately ordered and separately auditable.
+        -- A destructive surface waits for every removal to receive canonical
+        -- confirmation before sending the next one. Sending remove_page while
+        -- remove_block is still only local can leave the title alive and the
+        -- content gone, which is neither deletion nor a recoverable refusal.
 }
 
 rule ApplyCreateBlock {

@@ -45,6 +45,7 @@ import { is } from './bindings.ts';
 import { icon, type IconName } from './icons.ts';
 import { when } from './dates.ts';
 import { isMCPPage, renderMCP } from './mcp-page.ts';
+import { isActivityPage, renderActivityPage } from './activity-page.ts';
 import { isServicePage, pickBibliography, renderService } from './service-page.ts';
 import { isPublicationPage, renderPublicationPage } from './publication-page.ts';
 import {
@@ -209,6 +210,8 @@ function wireExternalLinks(container: HTMLElement): void {
 
 export interface OutlinerCallbacks {
   onNavigate(title: string): void;
+  /** La página ya no existe: el espacio de trabajo poda sus copias y decide adónde volver. */
+  onDeleted?(page: { id: string; title: string }): void | Promise<void>;
   /** Deshacer el último gesto de esta página, o rehacerlo. Lo calcula el
    *  servidor leyendo el registro hacia atrás. */
   onUndo?(direction: 'deshacer' | 'rehacer'): void | Promise<void>;
@@ -1095,13 +1098,24 @@ async function deletePage(
       : `Se va a eliminar «${page.title}»${dentro}. No se puede deshacer.`;
   if (!window.confirm(aviso)) return;
 
-  if (!(await removePageAndBlocks(page, submitQuietly))) return;
+  const confirmed = async (change: Change): Promise<boolean> => {
+    try {
+      const result = await api.submitConfirmed(change);
+      if (result.status === 'rejected') {
+        toast(`rechazado: ${result.reason}`);
+        return false;
+      }
+      return true;
+    } catch {
+      toast('sin conexión con el servidor');
+      return false;
+    }
+  };
+  if (!(await removePageAndBlocks(page, confirmed))) return;
 
   toast(`eliminada: ${page.title}`);
-  // La pagina que se estaba leyendo ya no existe, asi que hay que ir a alguna
-  // parte. El dia de hoy es el sitio al que Vera vuelve siempre que no hay un
-  // sitio mejor: existe siempre y es donde se estaba escribiendo.
-  callbacks.onNavigate(today());
+  if (callbacks.onDeleted !== undefined) await callbacks.onDeleted({ id: page.id, title: page.title });
+  else callbacks.onNavigate(today());
 }
 
 /** El Markdown de la página, pedido al servidor para que sea el mismo que git recibiría. */
@@ -3593,6 +3607,28 @@ export function renderOutliner(
   const list = document.createElement('div');
   list.className = 'blocks';
   container.append(list);
+
+  if (isActivityPage(page.properties)) {
+    list.hidden = true;
+    const restore = async (changes: readonly Change[]): Promise<boolean> => {
+      for (const change of changes) {
+        try {
+          const result = await api.submitConfirmed(change);
+          if (result.status === 'rejected') {
+            toast(`rechazado: ${result.reason}`);
+            return false;
+          }
+        } catch {
+          toast('sin conexión con el servidor');
+          return false;
+        }
+      }
+      toast('página restaurada');
+      callbacks.onChanged();
+      return true;
+    };
+    void renderActivityPage(restore, toast).then((made) => list.before(made));
+  }
 
   /*
    * Si esta página declara de qué está hecho el corpus, sus fichas se dibujan

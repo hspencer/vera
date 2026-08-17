@@ -1134,6 +1134,33 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
     // Pulsar el nombre de otra página dentro del texto que se lee.
     onNavigate: (title) => void openTitle(title, 'followed_reference'),
     onOpen: (target, gesture) => void openPage(target, null, { gesture }),
+    onDeleted: async (deleted) => {
+      const prior = [...workspace.trace]
+        .reverse()
+        .find((step) => step.page !== deleted.id && pages.some((one) => one.id === step.page));
+
+      pages = pages.filter((one) => one.id !== deleted.id);
+      workspace.trace = workspace.trace.filter((step) => step.page !== deleted.id);
+      saveTrace(workspace.trace);
+      await held.forgetPage(deleted.id);
+      await held.keepIndex(pages);
+      workspace.activePage = null;
+      workspace.focusRoot = null;
+      openView = null;
+      replica = null;
+
+      if (prior !== undefined) {
+        await openPage(prior.page, null, { gesture: 'returned', replaceRoute: true });
+        return;
+      }
+      const fallback = pages.find((one) => one.title === today())
+        ?? pages.find((one) => one.title === 'Vera: Registro de Actividad');
+      if (fallback !== undefined) {
+        await openPage(fallback.id, null, { gesture: 'opened_directly', replaceRoute: true });
+        return;
+      }
+      await openTitle(today(), 'opened_directly');
+    },
     onUndo: (direction) => undoLast(direction),
     onChanged: (before, after) => {
       if (changesGraphMeaning(before, after)) void refreshGraph();

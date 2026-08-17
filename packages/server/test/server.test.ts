@@ -130,6 +130,48 @@ describe('POST /operations', () => {
   });
 });
 
+describe('GET /activity', () => {
+  it('conserva una tumba restaurable con la identidad y el árbol borrados', async () => {
+    const page = await write({
+      kind: 'create_page', title: 'Página que vuelve', visibility: 'private', stableId: 'page:returns',
+    });
+    const root = await write({
+      kind: 'create_block', page, parent: null, position: 0, content: 'raíz', stableId: 'block:returns-root',
+    });
+    const child = await write({
+      kind: 'create_block', page, parent: root, position: 0, content: 'hijo', stableId: 'block:returns-child',
+    });
+    await write({ kind: 'set_property', page, propertyKey: 'estado', propertyValue: 'recordada' });
+    await write({ kind: 'set_block_gloss', block: child, content: 'una glosa' });
+    await write({ kind: 'remove_block', block: child });
+    await write({ kind: 'remove_block', block: root });
+    await write({ kind: 'remove_page', page });
+
+    const view = (await get('/activity')) as {
+      activity: { summary: string }[];
+      deletedPages: { page: string; restorable: boolean; changes: unknown[] }[];
+    };
+    const tomb = view.deletedPages.find((one) => one.page === page);
+    assert.ok(tomb);
+    assert.equal(tomb.restorable, true);
+    assert.equal(view.activity[0]?.summary, 'borró «Página que vuelve»');
+
+    for (const change of tomb.changes) await write(change);
+    const restored = (await get(`/pages/${encodeURIComponent(page)}`)) as {
+      title: string;
+      blocks: { stableId: string; parent: string | null; content: string }[];
+      properties: { key: string; value: string }[];
+      blockProperties: { block: string; key: string; value: string }[];
+    };
+    assert.equal(restored.title, 'Página que vuelve');
+    assert.deepEqual(
+      restored.blocks.map((one) => [one.stableId, one.parent, one.content]),
+      [[root, null, 'raíz'], [child, root, 'hijo']],
+    );
+    assert.ok(restored.properties.some((one) => one.key === 'estado' && one.value === 'recordada'));
+  });
+});
+
 describe('POST /mcp/discards', () => {
   it('aplica en una petición decisiones distintas sobre páginas marcadas', async () => {
     const gone = await write({
