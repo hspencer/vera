@@ -7,6 +7,11 @@ construido, cómo se levanta y qué se decidió y por qué.
 Si es la primera vez, el orden es: **[README](../README.md)** → **[Manual](manual.md)**
 → **[Portabilidad](portabilidad.md)**.
 
+> Revisión documental: 17 de agosto de 2026, rama `v0.6-federacion`. Los planes
+> conservan cifras de la corrida que los originó porque son registro de una
+> decisión, no tableros de estado. El estado vigente está en la hoja de ruta, la
+> arquitectura y las specs.
+
 ## Para quien usa Vera
 
 | | |
@@ -23,7 +28,7 @@ Si es la primera vez, el orden es: **[README](../README.md)** → **[Manual](man
 | **[Arquitectura](architecture.md)** | La forma técnica, con lo construido y lo propuesto marcados por separado. No convierte decisiones técnicas en garantías de producto. |
 | **[Vera en diagramas](diagramas.md)** | La misma arquitectura dibujada: clases del dominio, casos de uso por actor, esquema por regiones, los caminos de una escritura y de una lectura sin red. 36 diagramas Mermaid en una página con índice. |
 | **[Anatomía de la interfaz](interfaz.md)** | Inventario de lo que hay hoy en pantalla, levantado del código y no de la memoria. Para reestructurar sabiendo qué se mueve y qué arrastra consigo. |
-| **[Obligaciones de prueba](test-obligations.md)** | Qué cubre la suite y, sobre todo, qué **no**. Derivadas con `allium plan` desde las specs. |
+| **[Cobertura y obligaciones de prueba](test-obligations.md)** | Qué cubre la suite vigente y, sobre todo, qué **no** demuestra todavía. |
 | **[Benchmark de diseño](benchmark.md)** | Vera frente a Logseq, Obsidian, Roam y SilverBullet. Compara diseños, no productos, y lo dice. |
 
 ## Planes de trabajo
@@ -35,9 +40,9 @@ falsos.
 
 | | |
 | --- | --- |
-| **[Que la mano no espere](plan-local-first.md)** | Local-first. En curso: pasos 0 a 3 hechos, 4 y 5 pendientes. |
-| **[Del rastro al argumento](plan-recorridos.md)** | Recorridos. Cerrado — los recorridos existen. |
-| **[Nadie por omisión](plan-nadie-por-omision.md)** | Que sin credencial no se sea el dueño. Sin empezar — prerrequisito de cualquier exposición pública. |
+| **[Que la mano no espere](plan-local-first.md)** | Registro histórico del diseño local-first; pasos 0 a 3 construidos, 4 y 5 pendientes. |
+| **[Del rastro al argumento](plan-recorridos.md)** | Registro histórico de la implementación de recorridos; cerrado. |
+| **[Nadie por omisión](plan-nadie-por-omision.md)** | Plan vigente para cerrar el supuesto de identidad anónima antes de exponer la aplicación privada. |
 
 ## Gobierno del proyecto
 

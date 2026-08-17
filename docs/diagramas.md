@@ -1,8 +1,9 @@
 # Vera en diagramas
 
-> **Estado al escribirlo:** rama `v0.4-local-first`, 12 de agosto de 2026. 33
-> especificaciones Allium con 0 errores y 10 avisos; 1.082 pruebas en 224 suites,
-> todas en verde; corpus de 1.984 páginas, 48.430 bloques y 72.763 operaciones.
+> **Revisado el 17 de agosto de 2026:** rama `v0.6-federacion`. 34
+> especificaciones Allium sin errores; 1.190 pruebas en 253 suites, todas en
+> verde. Las cifras del corpus pertenecen a una instalación y no al programa,
+> por eso ya no se usan como estado del repositorio.
 >
 > **Qué cambió desde la primera versión de esta página.** Lo retenido dejó de ser
 > el plan B y pasó a dibujarse siempre; detrás va una pregunta barata al registro;

@@ -72,16 +72,16 @@ La decisión explícita del service worker de v0: **no** cachea respuestas de
 `/operations` ni lecturas del grafo. Servir grafo viejo sin poder escribir sería
 peor que declarar que no hay red.
 
-## Cliente offline — propuesta
+## Cliente offline — parte construida
 
-**SQLite WASM** en un Web Worker, persistido con **OPFS**, para la copia local
-consultable del grafo y la cola de operaciones pendientes. La interfaz aplicaría
-cambios optimistas a esa base y, al recuperar conexión, enviaría lo encolado y
-pediría los cambios posteriores a su cursor.
+El navegador sostiene una réplica del dominio en memoria, retiene en IndexedDB
+las páginas ya leídas y guarda allí las operaciones pendientes antes de darlas
+por escritas. Los cambios se aplican localmente, sobreviven al cierre y se envían
+en orden cuando vuelve la red. No hay SQLite WASM ni OPFS en el cliente.
 
-No está construido. v0 escribe contra el servidor de forma síncrona. Por eso
-`schema/schema.sql` es un solo archivo: está escrito para aplicarse igual en el
-servidor y en esa copia de trabajo del cliente cuando exista.
+La réplica no descarga el corpus completo: conserva hasta 240 páginas según su
+última lectura. Falta resolver la reconciliación de dos manos que hayan editado
+el mismo bloque y completar la lectura retenida primero ante un servidor lento.
 
 ## Servidor — construido
 
@@ -172,9 +172,8 @@ Del corpus de `mind`, 30 queries de Logseq no se pudieron portar y quedaron
 registradas en `unported_queries` con su texto original, en lugar de
 desaparecer en silencio.
 
-Falta la sintaxis de superficie y su parser: hoy las queries se construyen desde
-código, no se escriben en un bloque. **Mermaid** para diagramas declarativos
-sigue siendo propuesta.
+Las queries ya pueden escribirse en bloques mediante la sintaxis de superficie.
+Mermaid también se renderiza en la aplicación.
 
 ## Markdown e hipermedia — parte construida
 
@@ -186,26 +185,26 @@ sigue siendo propuesta.
 - La correspondencia entre `stable_id` y ruta vive en un manifiesto, fuera del
   texto. Los archivos proyectados no llevan UUID técnicos.
 
-Propuesta para las fases siguientes: **unified/remark/rehype** cuando el mismo
-pipeline deba generar la proyección Markdown y el HTML público, **DOMPurify** y
-CSP para sanitización de contenido rico, **PDF.js** para PDF, y contextos
-aislados para SVG y sketches.
+El cliente renderiza Markdown completo, Mermaid, PDF, SVG, dibujo y contenido
+ejecutable. HTML y sketches JavaScript se ejecutan en iframes aislados; su fuente
+permanece editable. La proyección pública reutiliza el contenido autorizado sin
+dar acceso al corpus privado.
 
-## Audio y transcripción — propuesta
+## Audio y transcripción — construido
 
 - **MediaRecorder** en el navegador para captura.
 - **FFmpeg** en el servidor para inspección, normalización y derivados.
 - **whisper.cpp** local como motor inicial de transcripción, detrás de un
   contrato sustituible.
-- La validación humana y el borrado posterior del audio son operaciones de Vera,
-  no efectos automáticos del transcriptor.
+- La transcripción es corregible y conserva el audio como fuente; capturar,
+  transcribir y eliminar son operaciones distintas.
 
-## Archivos y respaldo — propuesta
+## Archivos y respaldo — parte construida
 
 - Audio, imágenes, PDF y otros binarios viven fuera de SQLite en un almacén
   local direccionado por **SHA-256**.
-- SQLite conserva identidad, hash, MIME, tamaño, procedencia y relaciones. Las
-  tablas `media` existen en el esquema y están vacías.
+- SQLite conserva identidad, hash, MIME, tamaño, procedencia y relaciones. El
+  almacén de objetos se usa para audio, documentos e imágenes.
 - Backups consistentes usan la API de backup de SQLite; los binarios se respaldan
   con **restic** hacia un destino independiente de la máquina que sirve Vera.
 - Git recibe Markdown y manifiestos deterministas. El archivo SQLite activo y
@@ -248,17 +247,18 @@ vía ya no puede escribir como otro — para firmar como Cotito hace falta la
 credencial de Cotito. Sigue siendo aceptable mientras la instancia no escuche
 fuera de la máquina, y deja de serlo el día que lo haga.
 
-## Publicación — propuesta
+## Publicación — construida en su recorrido básico
 
-- Un generador estático dentro del monorepo proyecta páginas públicas a HTML.
-- **Astro** como capa de plantillas y construcción del sitio estático.
-- GitHub Actions puede desplegar la salida en **GitHub Pages**, conservando las
-  URLs históricas de `herbertspencer.net`.
+- Una operación separada autoriza o retira cada página publicada.
+- El proyector genera HTML estático, portada, URLs canónicas y metadatos desde
+  las páginas autorizadas.
 - El sitio público no accede a la base privada en tiempo de lectura.
+- Faltan búsqueda pública, RSS y completar la proyección de algunos medios.
 
 ## Pruebas y calidad — parte construida
 
-- **`node --test`** para unidades e integración: 184 tests, sin paso de build.
+- **`node --test`** para unidades e integración: 1.190 tests en 253 suites al
+  17 de agosto de 2026, sin paso de build.
 - **fast-check** para propiedades e invariantes derivadas de Allium, sobre
   secuencias de hasta 40 operaciones.
 - TypeScript estricto, verificado con `tsc --noEmit` en la raíz y en la PWA.

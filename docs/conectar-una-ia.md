@@ -4,7 +4,7 @@ Cómo enchufar cualquier servicio de inteligencia artificial —Anthropic, OpenA
 Google, Microsoft, DeepSeek, Mistral o el que aparezca el mes que viene— a esta
 memoria.
 
-> Estado al escribirlo: rama `v0.4-local-first`, etapa **M1** de la puerta MCP
+> Revisado el 17 de agosto de 2026: rama `v0.6-federacion`, etapa **M1** de la puerta MCP
 > (sólo lectura, siete herramientas). Lo que todavía no existe está marcado
 > como tal en [Lo que no hay](#lo-que-no-hay), al final.
 

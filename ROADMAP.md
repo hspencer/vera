@@ -2,16 +2,15 @@
 
 Lo que viene, en el orden en que unas cosas condicionan a otras. Lo que ya se
 construyó de esta hoja va marcado *hecho* donde corresponde; todo lo demás no
-existe. El estado general se cuenta en el [README](README.md#estado) y en las
-specs.
+existe. El estado general se cuenta en el [README](README.md#qué-existe-hoy) y en
+las specs.
 
 Este documento no promete fechas. Dice **qué falta, por qué importa, qué lo
 bloquea y qué preguntas siguen abiertas**. Una hoja de ruta con fechas y sin
 preguntas abiertas es una lista de deseos con formato de plan.
 
-Las cuatro direcciones estructurales antes resumidas en
-[README § Pasos futuros](README.md#pasos-futuros) y los tres horizontes de
-experiencia no son dos planes distintos. Todos dependen de un mismo umbral:
+Las direcciones resumidas en el README y los tres horizontes de experiencia no
+son planes distintos. Todos dependen de un mismo umbral:
 definir qué se instala, qué contiene, quién entra y qué contrato ofrece Vera a
 personas y agentes. La hoja empieza por ese fundamento y después ordena **que la
 mano no espere**, **que la espera se vea** y **la federación**.
@@ -361,7 +360,7 @@ Depende de nada. Se puede empezar.
 
 ### 3.2 Identidad entre instancias
 
-*Depende del punto 1 de [README § Pasos futuros](README.md#pasos-futuros).*
+*Depende del umbral de identidad y gobierno descrito al comienzo de esta hoja.*
 
 Una persona en su Vera es hoy `participant:herbert`, y ese nombre sólo significa
 algo dentro de esa base. Para que dos instancias se refieran a la misma persona
