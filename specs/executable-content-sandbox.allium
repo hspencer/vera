@@ -2,7 +2,7 @@
 -- executable-content-sandbox.allium
 
 -- Scope: Contenido que se presenta dentro de una página y corre —tanto lo
---   embebido desde fuera como HTML y p5.js escritos deliberadamente— y bajo qué
+--   embebido desde fuera como HTML, p5.js y SVG escritos deliberadamente— y bajo qué
 --   aislamiento se le deja correr
 -- Includes: Qué bloque cuenta como incrustación o ejecutable local, qué se le
 --   permite, qué no puede alcanzar nunca, y qué se ve de dónde viene
@@ -103,14 +103,14 @@ contract EmbeddedContentIsSandboxed {
         -- @invariant EditingRevealsTheSource hace para todo lo demás.
 }
 
--- HTML y p5.js escritos dentro de Vera no son incrustaciones remotas. Son fuente
+-- HTML, p5.js y SVG escritos dentro de Vera no son incrustaciones remotas. Son fuente
 -- del propio bloque que Vera acepta ejecutar sólo porque alguien eligió ese acto.
 contract AuthoredExecutableBlocks {
     present: (block: core/Block) -> AuthoredExecutableView
 
     @invariant ExecutionRequiresAnExplicitWholeBlock
         -- Sólo corre la fuente completa de un bloque creado expresamente mediante
-        -- `/html` o `/p5js`. Pegar HTML crudo, JavaScript o una valla parecida en
+        -- `/html`, `/p5js` o `/svg`. Pegar HTML crudo, JavaScript, SVG o una valla parecida en
         -- un bloque Markdown no lo convierte en ejecutable, y cambiar formato no
         -- puede cruzar esta frontera.
 
@@ -125,7 +125,7 @@ contract AuthoredExecutableBlocks {
         -- fuente, y copiar o exportar el bloque se la lleva completa.
 
     @invariant AuthoredCodeCannotReachVera
-        -- HTML y p5.js corren sin acceso al grafo, la sesión, el almacenamiento,
+        -- HTML, p5.js y SVG corren sin acceso al grafo, la sesión, el almacenamiento,
         -- las credenciales ni el documento que los contiene. Sólo reciben aquello
         -- que su propia fuente define dentro de su recinto, más el vocabulario
         -- de presentación que Vera les entrega deliberadamente. Poder recibir
@@ -133,7 +133,7 @@ contract AuthoredExecutableBlocks {
         -- abre un camino para leer ni modificar el documento que los contiene.
 
     @invariant VeraLendsItsVisualLanguage
-        -- HTML y p5.js parten de los mismos valores de fondo, texto, tipografía,
+        -- HTML, p5.js y SVG parten de los mismos valores de fondo, texto, tipografía,
         -- bordes y esquema de color que la Vera que los contiene. Son valores de
         -- presentación por defecto: la fuente puede dar estilo propio a aquello
         -- que escribió, pero lo que no especifica no aparece como un rectángulo
@@ -145,7 +145,8 @@ contract AuthoredExecutableBlocks {
         -- El recinto no impone un alto fijo. Parte del alto intrínseco que la
         -- fuente haya producido y vuelve a ajustarse cuando ese contenido cambia,
         -- también después de la primera presentación. Para HTML cuenta todo el
-        -- documento visible; para p5.js cuenta el canvas, el error o cualquier
+        -- documento visible; para p5.js cuenta el canvas, para SVG la ilustración,
+        -- y para todos cuenta también el error o cualquier
         -- otro contenido que el sketch produzca. El ajuste evita tanto el gran
         -- hueco vacío como el desplazamiento interior que sólo sería consecuencia
         -- de una medida fija, sin dejar que una medida inválida o desmesurada
@@ -157,7 +158,7 @@ contract AuthoredExecutableBlocks {
         -- convierte la lectura de una página en una petición a un tercero.
 
     @invariant PresentationTravelsWithThePublishedPage
-        -- Al publicar, HTML y p5.js conservan el mismo lenguaje visual adaptable
+        -- Al publicar, HTML, p5.js y SVG conservan el mismo lenguaje visual adaptable
         -- y el mismo alto nacido de su contenido. Salir de la pantalla privada no
         -- los devuelve a un fondo blanco ni a una caja de medida fija; toman los
         -- valores de presentación de la página pública que los contiene.
@@ -172,7 +173,7 @@ contract AuthoredExecutableBlocks {
 -- Enumerations
 ------------------------------------------------------------
 
-enum AuthoredExecutableKind { html | p5js }
+enum AuthoredExecutableKind { html | p5js | svg }
 
 ------------------------------------------------------------
 -- Entities
@@ -255,12 +256,12 @@ surface EmbeddedContent {
         -- otro texto. No hay un editor de incrustaciones.
 
     @guarantee AuthoredExecutionIsVisiblyDifferentFromMarkdown
-        -- Un HTML o p5.js ejecutable se reconoce como bloque que corre y siempre
+        -- Un HTML, p5.js o SVG ejecutable se reconoce como bloque que corre y siempre
         -- ofrece volver a su fuente. El mismo texto dentro de Markdown se ve como
         -- texto, haciendo visible la decisión que separa ambos comportamientos.
 
     @guarantee AuthoredExecutionFitsItsSurroundings
-        -- HTML y p5.js comparten el aspecto vigente de Vera y ocupan el alto que
+        -- HTML, p5.js y SVG comparten el aspecto vigente de Vera y ocupan el alto que
         -- necesitan según lo que hayan dibujado. Un cambio de tema o de tamaño
         -- dentro del recinto se refleja mientras se lee, sin recargar la página
         -- ni convertir el recinto en parte privilegiada del documento exterior.

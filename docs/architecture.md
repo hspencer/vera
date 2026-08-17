@@ -185,10 +185,11 @@ Mermaid también se renderiza en la aplicación.
 - La correspondencia entre `stable_id` y ruta vive en un manifiesto, fuera del
   texto. Los archivos proyectados no llevan UUID técnicos.
 
-El cliente renderiza Markdown completo, Mermaid, PDF, SVG, dibujo y contenido
-ejecutable. HTML y sketches JavaScript se ejecutan en iframes aislados; su fuente
-permanece editable. La proyección pública reutiliza el contenido autorizado sin
-dar acceso al corpus privado.
+El cliente renderiza Markdown completo, Mermaid, PDF, dibujo y contenido
+ejecutable. HTML, sketches p5.js e ilustraciones SVG explícitas se presentan en
+iframes aislados, reciben sólo los tokens visuales y devuelven únicamente la
+altura que necesitan; su fuente permanece editable. La proyección pública
+reutiliza el contenido autorizado sin dar acceso al corpus privado.
 
 ## Audio y transcripción — construido
 

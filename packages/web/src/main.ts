@@ -4,6 +4,7 @@
 // disposición no pierde el lugar en el grafo (@guarantee NavigableGraphContext).
 
 import './styles.css';
+import './executable-frames.ts';
 
 import {
   api,

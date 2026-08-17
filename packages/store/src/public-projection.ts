@@ -49,13 +49,53 @@ export const p5FrameDocument = `<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; connect-src 'none'">
-<style>html,body{margin:0;min-height:100%;overflow:auto}canvas{display:block;max-width:100%;height:auto!important}pre{white-space:pre-wrap;color:#a00;padding:1rem}</style>
+<style>:root{color-scheme:light dark;--bg:transparent;--text:currentColor;--font-body:system-ui,sans-serif}html,body{margin:0;min-height:100%;overflow:hidden;background:var(--bg);color:var(--text);font:var(--text-size,16px)/var(--line-height,1.55) var(--font-body)}canvas{display:block;max-width:100%;height:auto!important}pre{white-space:pre-wrap;color:var(--accent,#a00);padding:1rem}</style>
 <script src="/p5.min.js"></script></head><body><script>
+const veraFrame = 'vera-executable-frame';
+const report = () => parent.postMessage({ type: veraFrame, height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0) }, '*');
+addEventListener('message', event => {
+  if (event.source !== parent || event.data?.type !== veraFrame) return;
+  const appearance = event.data.appearance;
+  if (appearance === null || typeof appearance !== 'object') return;
+  for (const [name, value] of Object.entries(appearance.tokens ?? {})) {
+    if (/^--[a-z0-9-]+$/.test(name) && typeof value === 'string') document.documentElement.style.setProperty(name, value);
+  }
+  document.documentElement.dataset.scheme = appearance.scheme === 'dark' ? 'dark' : 'light';
+  document.documentElement.style.colorScheme = appearance.scheme === 'dark' ? 'dark' : 'light';
+  report();
+});
+new ResizeObserver(report).observe(document.documentElement);
 const source = decodeURIComponent(location.hash.slice(1));
 const fail = error => { document.body.innerHTML = '<pre></pre>'; document.querySelector('pre').textContent = String(error?.message ?? error) + '\\n\\n' + source; };
 addEventListener('error', event => fail(event.error ?? event.message));
 try { (0, eval)(source); } catch (error) { fail(error); }
+addEventListener('load', report);
+document.fonts?.ready.then(report);
+report();
 </script></body></html>`;
+
+const publicExecutableFrames = `<script>
+(() => {
+  const type = 'vera-executable-frame';
+  const appearance = () => {
+    const style = getComputedStyle(document.documentElement);
+    const tokens = {};
+    for (const name of ['--bg','--text','--text-dim','--rule','--accent','--text-size','--line-height','--font-body','--font-ui','--font-mono']) tokens[name] = style.getPropertyValue(name).trim();
+    return { scheme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light', tokens };
+  };
+  const frames = () => [...document.querySelectorAll('iframe[data-executable-frame]')];
+  const send = frame => frame.contentWindow?.postMessage({ type, appearance: appearance() }, '*');
+  addEventListener('message', event => {
+    if (event.data?.type !== type) return;
+    const frame = frames().find(one => one.contentWindow === event.source);
+    if (!frame) return;
+    const asked = Number.isFinite(event.data.height) ? event.data.height : 24;
+    frame.style.height = Math.min(2400, Math.max(24, Math.ceil(asked))) + 'px';
+    send(frame);
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => frames().forEach(send));
+})();
+</script>`;
 
 function sorted(blocks: Block[]): Block[] {
   return [...blocks].sort(
@@ -148,13 +188,14 @@ function document(input: {
     'li>ul{border-left:1px solid color-mix(in srgb,currentColor 20%,transparent);padding-left:1.25rem}',
     'a{color:inherit;text-decoration-thickness:.08em;text-underline-offset:.18em}',
     '.unavailable{color:color-mix(in srgb,currentColor 72%,transparent)}',
-    '.executable{margin:1.25rem 0}.executable iframe{display:block;width:100%;height:460px;border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:.3rem;background:white}.executable summary{cursor:pointer;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.85rem;margin-top:.45rem}.executable pre{overflow:auto}',
+    '.executable{margin:1.25rem 0}.executable iframe{display:block;width:100%;height:6rem;border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:.3rem;background:inherit}.executable summary{cursor:pointer;font-family:ui-sans-serif,system-ui,sans-serif;font-size:.85rem;margin-top:.45rem}.executable pre{overflow:auto}',
     'nav{border-top:1px solid color-mix(in srgb,currentColor 20%,transparent);margin-top:4rem;padding-top:2rem;font-family:ui-sans-serif,system-ui,sans-serif}',
     '@media(prefers-color-scheme:dark){:root{background:#1c1b18;color:#ece8df}}',
     '</style>',
     '</head>',
     '<body>',
     input.body,
+    publicExecutableFrames,
     '</body>',
     '</html>',
     '',

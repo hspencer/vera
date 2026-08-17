@@ -230,7 +230,7 @@ describe('matchingCommands', () => {
   it('ofrece los bloques ejecutables explícitos', () => {
     assert.deepEqual(
       matchingCommands('aislado').map((command) => command.name),
-      ['html', 'p5js'],
+      ['html', 'svg', 'p5js'],
     );
   });
 });

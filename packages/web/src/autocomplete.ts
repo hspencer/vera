@@ -237,6 +237,7 @@ export const COMMANDS: Command[] = [
   { name: 'cita', hint: 'cita', inserts: '> ', caret: 2, group: 'formato' },
   { name: 'codigo', hint: 'bloque de código', inserts: '```\n\n```', caret: 4, group: 'formato' },
   { name: 'html', hint: 'HTML ejecutable y aislado', inserts: '```html-live\n\n```', caret: 13 },
+  { name: 'svg', hint: 'SVG aislado para ilustraciones', inserts: '```svg\n<svg viewBox="0 0 800 600" role="img" aria-label="">\n\n</svg>\n```', caret: 67 },
   {
     name: 'p5js',
     hint: 'sketch p5.js local y aislado',

@@ -472,20 +472,52 @@ const FENCE = /^\s*(`{3,}|~{3,})\s*([\w+-]*)\s*$/;
 
 function executableBlock(language: string, source: string): string | null {
   const kind = language.trim().toLowerCase();
-  if (kind !== 'html-live' && kind !== 'p5js') return null;
+  if (kind !== 'html-live' && kind !== 'p5js' && kind !== 'svg') return null;
 
-  const title = kind === 'p5js' ? 'sketch p5.js' : 'HTML';
+  const title = kind === 'p5js' ? 'sketch p5.js' : kind === 'svg' ? 'ilustración SVG' : 'HTML';
+  const bridge = `<script nonce="vera-frame">\n${executableFrameBridge()}\n<\/script>`;
+  // En SVG sólo corre el puente exacto de Vera. El hash impide que un <script>
+  // o un manejador `onload` pegado dentro de la ilustración gane ejecución.
+  const scriptPolicy = kind === 'svg'
+    ? "'sha256-wgyR5BYfyYZZKEzfArrxKC8eIKqOy4/9tjvjaLir9iA='"
+    : "'unsafe-inline'";
   const frame = kind === 'p5js'
-    ? `<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" title="${title}" src="/p5-frame.html#${encodeURIComponent(source)}"></iframe>`
+    ? `<iframe data-executable-frame sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" title="${title}" src="/p5-frame.html#${encodeURIComponent(source)}"></iframe>`
     : `<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" loading="lazy" title="${title}" srcdoc="${quoteAttribute(escapeHtml([
         '<!doctype html><meta charset="utf-8">',
-        `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; connect-src 'none'">`,
+        `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${scriptPolicy}; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'">`,
+        '<style>:root{color-scheme:light dark;--bg:transparent;--text:currentColor;--rule:currentColor;--accent:currentColor;--font-body:system-ui,sans-serif;--font-ui:system-ui,sans-serif;--font-mono:ui-monospace,monospace}html,body{margin:0;background:var(--bg);color:var(--text);font:var(--text-size,16px)/var(--line-height,1.55) var(--font-body)}*{box-sizing:border-box}svg{display:block;max-width:100%;height:auto}</style>',
         source,
+        bridge,
       ].join('\n')))}"></iframe>`;
+
+  const marked = kind === 'p5js' ? frame : frame.replace('<iframe ', '<iframe data-executable-frame ');
 
   // La fuente queda siempre al alcance: es la salida segura si el recinto no
   // puede ejecutarla y el camino para inspeccionar exactamente qué se escribió.
-  return `<figure class="executable executable-${kind}">${frame}<details><summary>fuente ${title}</summary><pre><code>${escapeHtml(source)}</code></pre></details></figure>`;
+  return `<figure class="executable executable-${kind}">${marked}<details><summary>fuente ${title}</summary><pre><code>${escapeHtml(source)}</code></pre></details></figure>`;
+}
+
+/** Puente mínimo del recinto: recibe apariencia y sólo devuelve su talla. */
+function executableFrameBridge(): string {
+  return `
+const veraFrame = ${JSON.stringify('vera-executable-frame')};
+const report = () => parent.postMessage({ type: veraFrame, height: Math.max(document.documentElement.scrollHeight, document.body?.scrollHeight ?? 0) }, '*');
+addEventListener('message', event => {
+  if (event.source !== parent || event.data?.type !== veraFrame) return;
+  const appearance = event.data.appearance;
+  if (appearance === null || typeof appearance !== 'object') return;
+  for (const [name, value] of Object.entries(appearance.tokens ?? {})) {
+    if (/^--[a-z0-9-]+$/.test(name) && typeof value === 'string') document.documentElement.style.setProperty(name, value);
+  }
+  document.documentElement.dataset.scheme = appearance.scheme === 'dark' ? 'dark' : 'light';
+  document.documentElement.style.colorScheme = appearance.scheme === 'dark' ? 'dark' : 'light';
+  report();
+});
+new ResizeObserver(report).observe(document.documentElement);
+addEventListener('load', report);
+document.fonts?.ready.then(report);
+report();`;
 }
 const HEADING = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;

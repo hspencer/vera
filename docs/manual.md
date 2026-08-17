@@ -109,6 +109,20 @@ escribiste, y se corrige como cualquier otro texto.
 
 Un `height="574"` en el marcado manda; sin él, 460 píxeles.
 
+### HTML, p5.js y SVG propios
+
+Los comandos `/html`, `/p5js` y `/svg` crean bloques completos para contenido
+que escribes deliberadamente. HTML y p5.js pueden ejecutar código; SVG permite
+pegar directamente el marcado de una ilustración. El mismo código pegado como
+Markdown corriente sigue viéndose como texto y no se activa retrospectivamente.
+
+Los tres se presentan en un recinto aislado, sin acceso al grafo, la sesión ni
+el almacenamiento de Vera. Reciben sólo los tokens visuales vigentes —fondo,
+texto, bordes, acento y tipografías— y ajustan su altura al contenido, con un
+límite que impide que una medida absurda vuelva inutilizable la página. Cambiar
+de tema o editar los tokens actualiza también los bloques que están a la vista.
+La fuente queda siempre disponible bajo la ilustración o ejecución.
+
 ### Dibujar a mano
 
 `/dibujo` abre un lienzo a pantalla completa. No hay paleta, ni grosores, ni

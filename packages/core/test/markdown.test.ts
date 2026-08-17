@@ -367,7 +367,7 @@ describe('renderMarkdown', () => {
 
     it('sólo ejecuta HTML creado con la valla explícita', () => {
       const live = renderMarkdown('```html-live\n<button onclick="x()">sí</button>\n```');
-      assert.match(live, /<iframe sandbox="allow-scripts"/);
+      assert.match(live, /<iframe [^>]*sandbox="allow-scripts"/);
       assert.match(live, /srcdoc=/);
       assert.ok(!live.includes('allow-same-origin'));
       assert.match(live, /fuente HTML/);
@@ -379,9 +379,29 @@ describe('renderMarkdown', () => {
     it('ejecuta p5.js contra el runtime local dentro del sandbox', () => {
       const html = renderMarkdown('```p5js\ncreateCanvas(40, 40)\n```');
       assert.match(html, /sandbox="allow-scripts"/);
+      assert.match(html, /data-executable-frame/);
       assert.match(html, /src="\/p5-frame\.html#/);
       assert.ok(!html.includes('allow-same-origin'));
       assert.match(html, /createCanvas\(40, 40\)/);
+    });
+
+    it('presenta SVG explícito en un recinto aislado y conserva su fuente', () => {
+      const source = '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>';
+      const html = renderMarkdown(`\`\`\`svg\n${source}\n\`\`\``);
+      assert.match(html, /class="executable executable-svg"/);
+      assert.match(html, /data-executable-frame/);
+      assert.match(html, /sandbox="allow-scripts"/);
+      assert.ok(!html.includes('allow-same-origin'));
+      assert.match(html, /script-src 'sha256-/);
+      assert.ok(!html.includes("script-src 'unsafe-inline'"));
+      assert.match(html, /fuente ilustración SVG/);
+      assert.match(html, /&lt;svg viewBox=/);
+    });
+
+    it('el SVG pegado fuera de su bloque explícito permanece inerte', () => {
+      const html = renderMarkdown('<svg><script>alert(1)</script></svg>');
+      assert.ok(!html.includes('<iframe'));
+      assert.match(html, /&lt;svg&gt;/);
     });
   });
 
