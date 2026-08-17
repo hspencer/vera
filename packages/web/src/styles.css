@@ -3350,6 +3350,10 @@ code {
 .media-summary dt { color: var(--text-dim); }
 .media-summary dd { margin: 0; font-variant-numeric: tabular-nums; }
 .settings-open-files { color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 4px; padding: .4rem .7rem; cursor: pointer; }
+.memory-portability { display: flex; flex-wrap: wrap; gap: .6rem; margin: .8rem 0; }
+.settings-action { color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 4px; padding: .5rem .75rem; cursor: pointer; font: inherit; text-decoration: none; }
+.settings-action:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.settings-action:disabled { opacity: .55; cursor: wait; }
 
 .media-table-scroll { overflow-x: auto; }
 .media-table { width: 100%; border-collapse: collapse; background: var(--bg); }

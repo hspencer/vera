@@ -716,6 +716,28 @@ export interface CorpusHealth {
 export const api = {
   health: () => json<CorpusHealth>('/health'),
 
+  /** Incorpora el estado y los objetos de otro archivo portable de Vera. */
+  importVera: async (
+    file: File,
+  ): Promise<{ pages: number; assets: number; operations: number } | { error: string; detail?: string }> => {
+    try {
+      const response = await fetch('/import/vera', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/vnd.vera.graph+json',
+          'x-filename': encodeURIComponent(file.name),
+        },
+        body: await file.arrayBuffer(),
+      });
+      const body = await response.json() as { pages?: number; assets?: number; operations?: number; error?: string; detail?: string };
+      return response.ok
+        ? { pages: body.pages ?? 0, assets: body.assets ?? 0, operations: body.operations ?? 0 }
+        : { error: body.error ?? `error ${response.status}`, ...(body.detail === undefined ? {} : { detail: body.detail }) };
+    } catch {
+      return { error: 'sin conexión con el servidor' };
+    }
+  },
+
   pages: () => json<PageSummary[]>('/pages'),
 
   /*

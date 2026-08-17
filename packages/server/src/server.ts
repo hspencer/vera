@@ -77,7 +77,7 @@ import {
   workspaceOf,
   type Store,
 } from '@vera/store';
-import { HASH, mediaTypeFor, objectPath, putObject, sniffMediaType } from '@vera/store/objects';
+import { HASH, hashBytes, mediaTypeFor, objectPath, putObject, sniffMediaType } from '@vera/store/objects';
 import { activityOf } from './activity.ts';
 import { forgetSecret, revealSecret, saveSecret, secretsOf, useSecret } from '@vera/store/secrets';
 import { clientsSeen, exposuresOf, recordExposure, whoRead } from '@vera/store/exposures';
@@ -136,6 +136,7 @@ import {
   p5RuntimePath,
   projectPublicSiteAtomically,
 } from '@vera/store/public-projection';
+import { makeVeraFile, readVeraFile } from './vera-file.ts';
 
 const CHANGE_KINDS = new Set<string>(CORE_CHANGE_KINDS);
 
@@ -2123,6 +2124,178 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     // Tres cosas y nada más: grabar, transcribir —cuantas veces se quiera— y
     // borrar el audio. No hay estado que avanzar ni paso que completar; lo demás
     // es la edición ordinaria de un bloque ordinario.
+
+    /*
+     * Una copia portable del grafo entero: estado, registro y objetos.
+     *
+     * No es la proyección Markdown. Ésta conserva también la historia y los
+     * bytes, y por eso vuelve como un único archivo propio de Vera.
+     */
+    if (request.method === 'GET' && path === '/graph.vera') {
+      try {
+        const body = Buffer.from(JSON.stringify(makeVeraFile(store, graph, objectsRoot)));
+        const day = new Date().toISOString().slice(0, 10);
+        response.writeHead(200, {
+          'content-type': 'application/vnd.vera.graph+json',
+          'content-length': body.byteLength,
+          'content-disposition': `attachment; filename="vera-${day}.vera"`,
+          'cache-control': 'no-store',
+        });
+        response.end(body);
+      } catch (error) {
+        send(response, 500, {
+          error: 'no se pudo construir el archivo Vera',
+          detail: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
+
+    /*
+     * Incorporar otro archivo Vera al corpus abierto.
+     *
+     * Es aditivo. Las identidades reciben un espacio propio y los títulos que
+     * ya existen se distinguen, igual que al importar un documento. Así un
+     * archivo nunca reemplaza contenido existente por el mero hecho de abrirlo.
+     */
+    if (request.method === 'POST' && path === '/import/vera') {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let tooLarge = false;
+      request.on('data', (chunk: Buffer) => {
+        size += chunk.byteLength;
+        if (size > 1024 * 1024 * 1024) tooLarge = true;
+        else chunks.push(chunk);
+      });
+      request.on('end', () => {
+        if (tooLarge) return send(response, 413, { error: 'el archivo .vera supera 1 GB' });
+        const file = readVeraFile(Buffer.concat(chunks));
+        if ('error' in file) return send(response, 422, file);
+        if (graph.owner === null) return send(response, 409, { error: 'el corpus no tiene dueño' });
+        if (file.assets.length > 0 && objectsRoot === null) {
+          return send(response, 409, { error: 'esta instancia no tiene almacén de objetos' });
+        }
+
+        const namespace =
+          `${file.exportedAt.toString(36)}-${Date.now().toString(36)}-` +
+          Buffer.from(file.graph.id).toString('base64url').slice(0, 12);
+        const pageIds = new Map<string, string>();
+        const blockIds = new Map<string, string>();
+        const titles = new Map<string, string>();
+        for (const page of file.graph.pages) {
+          let id = `import:${namespace}:${page.id}`;
+          for (let attempt = 2; graph.page(id) !== undefined; attempt += 1) id = `import:${namespace}:${attempt}:${page.id}`;
+          pageIds.set(page.id, id);
+          let title = page.title;
+          for (let attempt = 2; graph.pageTitled(title) !== undefined || [...titles.values()].includes(title); attempt += 1) {
+            title = `${page.title} (${attempt})`;
+          }
+          titles.set(page.title, title);
+          for (const block of page.blocks) {
+            let blockId = `import:${namespace}:${block.id}`;
+            for (let attempt = 2; graph.block(blockId) !== undefined || [...blockIds.values()].includes(blockId); attempt += 1) {
+              blockId = `import:${namespace}:${attempt}:${block.id}`;
+            }
+            blockIds.set(block.id, blockId);
+          }
+        }
+
+        const assetPaths = new Map<string, string>();
+        try {
+          for (const asset of file.assets) {
+            const bytes = Buffer.from(asset.bytes, 'base64');
+            if (bytes.byteLength !== asset.byteSize || hashBytes(bytes) !== asset.hash) {
+              return send(response, 422, { error: `el asset ${asset.path} no coincide con su hash o tamaño` });
+            }
+            const stored = putObject(objectsRoot as string, bytes);
+            let wanted = asset.path;
+            const occupied = media.find((one) => one.path === wanted);
+            if (occupied !== undefined && occupied.hash !== stored.hash) {
+              const dot = wanted.lastIndexOf('.');
+              wanted = dot < 1
+                ? `${wanted}-${stored.hash.slice(0, 8)}`
+                : `${wanted.slice(0, dot)}-${stored.hash.slice(0, 8)}${wanted.slice(dot)}`;
+            }
+            assetPaths.set(asset.path, wanted);
+            recordMedia(store, {
+              path: wanted,
+              hash: stored.hash,
+              mediaType: asset.mediaType,
+              byteSize: stored.byteSize,
+              at: file.exportedAt,
+              originalName: asset.originalName ?? asset.path,
+            });
+            describeMedia(store, stored.hash, {
+              description: asset.description,
+              alternativeText: asset.alternativeText,
+            });
+            if (!media.some((one) => one.path === wanted)) {
+              media.push({ path: wanted, hash: stored.hash, mediaType: asset.mediaType, description: asset.description, alternativeText: asset.alternativeText });
+            }
+          }
+        } catch (error) {
+          return send(response, 422, { error: error instanceof Error ? error.message : String(error) });
+        }
+
+        let made = 0;
+        const write = (change: Change): string => {
+          const outcome = graph.submitOperation({
+            originId: `vera-file:${namespace}:${made}`,
+            participant: graph.owner as ParticipantId,
+            channel: 'import',
+            change,
+          });
+          if (outcome.status === 'rejected') throw new Error(outcome.reason);
+          if (outcome.status === 'applied') recordOperation(store, graph, outcome.operation);
+          made += 1;
+          return outcome.operation.subjectId;
+        };
+        const replace = (content: string): string => {
+          let rewritten = content;
+          for (const [before, after] of assetPaths) rewritten = rewritten.split(before).join(after);
+          for (const [before, after] of titles) {
+            if (before !== after) rewritten = rewritten.split(`[[${before}]]`).join(`[[${after}]]`);
+          }
+          for (const [before, after] of blockIds) rewritten = rewritten.split(`((${before}))`).join(`((${after}))`);
+          return rewritten;
+        };
+
+        try {
+          for (const page of file.graph.pages) {
+            const pageId = pageIds.get(page.id) as string;
+            write({ kind: 'create_page', title: titles.get(page.title) as string, visibility: page.visibility, stableId: pageId });
+            if (page.originCreatedAt !== null) write({ kind: 'recover_page_origin', page: pageId, originCreatedAt: page.originCreatedAt });
+            for (const property of page.properties) write({ kind: 'set_property', page: pageId, propertyKey: property.key, propertyValue: property.value });
+            const pending = [...page.blocks];
+            const created = new Set<string>();
+            while (pending.length > 0) {
+              const at = pending.findIndex((block) => block.parent === null || created.has(block.parent));
+              if (at < 0) throw new Error(`la página «${page.title}» tiene padres de bloque inexistentes o circulares`);
+              const block = pending.splice(at, 1)[0] as (typeof page.blocks)[number];
+              const blockId = blockIds.get(block.id) as string;
+              write({
+                kind: 'create_block',
+                page: pageId,
+                parent: block.parent === null ? null : (blockIds.get(block.parent) as string),
+                position: block.position,
+                content: replace(block.content),
+                stableId: blockId,
+              });
+              created.add(block.id);
+              for (const property of block.properties) write({ kind: 'set_property', block: blockId, propertyKey: property.key, propertyValue: property.value });
+              if (block.gloss !== null) write({ kind: 'set_block_gloss', block: blockId, content: replace(block.gloss) });
+            }
+          }
+        } catch (error) {
+          return send(response, 422, {
+            error: 'el archivo empezó a importarse pero contiene un cambio incompatible',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+        }
+        send(response, 201, { pages: file.graph.pages.length, assets: file.assets.length, operations: made });
+      });
+      return;
+    }
 
     if (request.method === 'POST' && path === '/media') {
       const chunks: Buffer[] = [];

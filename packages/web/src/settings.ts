@@ -352,6 +352,51 @@ function drawMemory(host: HTMLElement, handlers: SettingsHandlers): void {
 
   if (handlers.drawMemory === undefined) return;
   handlers.drawMemory(host);
+
+  heading(host, 'Portabilidad');
+  const note = document.createElement('p');
+  note.className = 'settings-note';
+  note.textContent =
+    'El archivo .vera contiene el grafo, su registro completo y todos los assets. ' +
+    'Al importar, el contenido se agrega: nunca reemplaza páginas que ya existen.';
+
+  const actions = document.createElement('div');
+  actions.className = 'memory-portability';
+  const download = document.createElement('a');
+  download.className = 'settings-action';
+  download.href = '/graph.vera';
+  download.download = '';
+  download.textContent = 'Descargar todo (.vera)';
+
+  const choose = document.createElement('button');
+  choose.type = 'button';
+  choose.className = 'settings-action';
+  choose.textContent = 'Importar archivo .vera';
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.vera,application/vnd.vera.graph+json';
+  input.hidden = true;
+  const result = document.createElement('p');
+  result.className = 'settings-note';
+  result.setAttribute('aria-live', 'polite');
+  choose.addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (file === undefined) return;
+    choose.disabled = true;
+    result.textContent = `Importando ${file.name}…`;
+    const imported = await api.importVera(file);
+    if ('error' in imported) {
+      result.textContent = `${imported.error}${imported.detail === undefined ? '' : `: ${imported.detail}`}`;
+      choose.disabled = false;
+      input.value = '';
+      return;
+    }
+    result.textContent = `${imported.pages} páginas y ${imported.assets} assets incorporados. Recargando…`;
+    window.setTimeout(() => window.location.reload(), 500);
+  });
+  actions.append(download, choose, input);
+  host.append(note, actions, result);
 }
 
 /** Un encabezado de sección, con su aclaración de cuándo vale lo que sigue. */
