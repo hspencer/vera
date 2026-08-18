@@ -982,7 +982,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         ? {
             'content-security-policy':
               "default-src 'self'; connect-src 'self'; img-src 'self' data: blob: https:; " +
-              "media-src 'self' blob:; frame-src 'self' https:; style-src 'self' 'unsafe-inline'; " +
+              "media-src 'self' blob:; frame-src 'self' data: https:; style-src 'self' 'unsafe-inline'; " +
               "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
             'x-content-type-options': 'nosniff',
           }

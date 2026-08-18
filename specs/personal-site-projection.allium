@@ -134,6 +134,11 @@ contract PersonalWebsiteProjection {
         -- published page is rendered only with public inputs and the ordinary
         -- sandbox. It cannot use its block type as a server-side path back to the
         -- private graph, filesystem, credentials or administration surfaces.
+
+    @invariant SandboxedDiagramsRemainVisible
+        -- The public origin permits the opaque data document Mermaid needs for
+        -- its sandboxed frame, while keeping that frame isolated and granting
+        -- neither data documents nor authored content a script source in Vera.
 }
 
 -- Vera owns the capability to present and verify a public origin without owning

@@ -65,7 +65,10 @@ async function write(change: unknown): Promise<{
   };
 }
 
-async function throughCanonical(path: string, method = 'GET'): Promise<{ status: number; body: string }> {
+async function throughCanonical(
+  path: string,
+  method = 'GET',
+): Promise<{ status: number; body: string; headers: Record<string, string | string[] | undefined> }> {
   return new Promise((resolve, reject) => {
     const asked = request(
       { host: '127.0.0.1', port: PORT, path, method, headers: { host: 'publica.example' } },
@@ -75,6 +78,7 @@ async function throughCanonical(path: string, method = 'GET'): Promise<{ status:
         response.on('end', () => resolve({
           status: response.statusCode ?? 0,
           body: Buffer.concat(chunks).toString('utf8'),
+          headers: response.headers,
         }));
       },
     );
@@ -234,6 +238,13 @@ describe('publicación del sitio personal', () => {
       (await throughCanonical('/operations', 'POST')).status,
       405,
     );
+
+    const publicShell = await throughCanonical('/');
+    const publicPolicy = publicShell.headers['content-security-policy'];
+    assert.equal(typeof publicPolicy, 'string');
+    assert.match(publicPolicy as string, /frame-src 'self' data: https:/);
+    assert.match(publicPolicy as string, /script-src 'self'/);
+    assert.match(publicPolicy as string, /object-src 'none'/);
 
     const publicPage = await fetch(`${previewBase}/pages/${encodeURIComponent(page)}`).then(
       (response) => response.json(),
