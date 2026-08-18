@@ -4,7 +4,7 @@
 -- Scope: What a Vera query can express and what it selects from the current graph
 -- Includes: The term vocabulary, composition and negation, evaluation scoped to one
 --   graph and one participant, the compact source a participant writes in a block,
---   whether its answer is read as a list or as a table, and the fate of the Logseq
+--   whether its answer is read as pages or matching blocks, and the fate of the Logseq
 --   queries found in the corpus
 -- Excludes:
 --   - Index structures and evaluation strategy
@@ -69,7 +69,8 @@ contract NativeGraphQuery {
 --     ~texto         el contenido lo contiene
 --     !término       no
 --     +  y   ·   *  o   ·   ( ) grupo
---     ; tabla        cómo se lee la respuesta; sin eso, una lista
+--     ; tabla        páginas en tabla; sin eso, páginas en lista
+--     ; bloques      cada bloque concreto que dice lo preguntado
 contract CompactQuerySource {
     read: (source: String) -> QueryExpression
     write: (expression: QueryExpression) -> String
@@ -215,17 +216,17 @@ variant NotTerm : QueryExpression {
     operand: QueryExpression
 }
 
--- Cómo se lee una respuesta. Dos formas y ninguna elección más.
+-- Cómo se lee una respuesta.
 --
 -- Selección y presentación son dos cosas —lo dice «Vera — Queries»— y por eso la
--- forma va detrás de un `;` y no entre las condiciones: cambiar de lista a tabla
--- no cambia qué páginas cumplen la pregunta, y tiene que verse que no la cambia.
+-- forma va detrás de un `;` y no entre las condiciones: cambiar la proyección no
+-- cambia qué cumple la pregunta, y tiene que verse que no la cambia.
 --
 -- Las columnas de la tabla no se eligen todavía: título, tipo y actualización,
 -- siempre. Elegirlas es lo que convierte una tabla en un índice de trabajo y es
 -- también lo que trae columnas vacías, anchos en el teléfono y una preferencia
 -- que hay que guardar en alguna parte. Primero que la tabla exista.
-enum QueryView { list | table }
+enum QueryView { list | table | blocks }
 
 entity QueryPresentation {
     view: QueryView
@@ -233,7 +234,9 @@ entity QueryPresentation {
     @guidance
         -- Ordenar, agrupar, limitar y elegir columnas son de esta entidad y no
         -- están en ella todavía. Cuando lleguen, llegan aquí: ninguna de esas
-        -- cuatro puede cambiar qué selecciona la expresión.
+        -- cuatro puede cambiar qué selecciona la expresión. `blocks` proyecta
+        -- sólo matching_blocks: no convierte las propiedades de una página en
+        -- bloques ni devuelve todos los bloques de una página coincidente.
 }
 
 -- Lo que sale de contestar una pregunta. No se guarda en ninguna parte: se
@@ -500,11 +503,13 @@ surface GraphQuerying {
         -- saying so, and a list claiming to be every project while missing last
         -- week's is worse than no list: it is trusted and wrong.
 
-    @guarantee TheAnswerIsAListOrATable
-        -- Una respuesta se lee como lista de títulos con su cuenta, o como tabla
-        -- de título, tipo y actualización. Cambiar entre las dos no cambia la
-        -- pregunta, y se ve que no la cambia porque la fuente sigue diciendo lo
-        -- mismo salvo detrás del `;`.
+    @guarantee PresentationDoesNotChangeSelection
+        -- Una respuesta se lee como lista de páginas, tabla de páginas o lista de
+        -- cada bloque concreto que dice lo preguntado. `; bloques` no agrupa una
+        -- sola muestra por página: conserva todas las coincidencias, identifica la
+        -- página que contiene cada una y no inventa bloques para condiciones que
+        -- sólo pertenecen a una página. Cambiar la presentación no cambia la
+        -- expresión; la fuente sólo cambia detrás del `;`.
 
     @guarantee AnEmptyAnswerExplainsItself
         -- Cero resultados enseña la pregunta que se evaluó y deja editarla. Una
@@ -546,10 +551,6 @@ open question "Can a participant save a query under a name and embed it in a pag
 
 -- `?` es un signo que alguien puede escribir sin querer preguntarle nada a Vera.
 open question "¿Un bloque que empieza por `?` y no se deja leer como consulta es un error señalado, o vuelve a ser prosa corriente hasta que se arregle?"
-
--- El núcleo selecciona páginas; la spec dice que una evaluación tiene también
--- bloques coincidentes, y ContentTerm es de bloques por naturaleza.
-open question "¿La primera versión contesta sólo con páginas, o `~texto` debe poder contestar con los pasajes concretos que lo dicen?"
 
 -- Una consulta se contesta al leer la página. Una página con seis consultas sobre
 -- un corpus de dos mil páginas las contesta las seis, cada vez que se abre.

@@ -207,6 +207,30 @@ describe('publicación del sitio personal', () => {
     assert.equal((await fetch(`${previewBase}/exposures`)).status, 404);
     assert.equal((await fetch(`${previewBase}/operations`, { method: 'POST' })).status, 405);
 
+    const publicQuery = await fetch(`${previewBase}/query`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source: '? ~Segunda ; bloques', participant: OWNER }),
+    });
+    assert.equal(publicQuery.status, 200);
+    const publicAnswer = await publicQuery.json() as {
+      view: string;
+      count: number;
+      blocks: { content: string; page: { id: string } }[];
+    };
+    assert.equal(publicAnswer.view, 'blocks');
+    assert.equal(publicAnswer.count, 1);
+    assert.equal(publicAnswer.blocks[0]?.page.id, page);
+    assert.match(publicAnswer.blocks[0]?.content ?? '', /Segunda/);
+
+    const privateQuery = await fetch(`${previewBase}/query`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source: '? ~arsenal ; bloques', participant: OWNER }),
+    }).then((response) => response.json()) as { count: number; blocks: unknown[] };
+    assert.equal(privateQuery.count, 0, 'ni declarar al dueño amplía la consulta pública');
+    assert.deepEqual(privateQuery.blocks, []);
+
     // La cookie de la antigua previsualización no puede dejar al dueño pegado
     // en sólo lectura: el ojo ahora filtra el mapa, no la identidad.
     const ownerWithOldCookie = await fetch(`${base}/health`, {

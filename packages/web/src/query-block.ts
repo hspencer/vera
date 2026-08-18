@@ -9,7 +9,7 @@
 // proyectos y se dejó el de la semana pasada es peor que ninguna lista: se le
 // cree.
 
-import { api, type QueryAnswer, type QueryHit, type QuerySort } from './api.ts';
+import { api, type QueryAnswer, type QueryBlockHit, type QueryHit, type QuerySort } from './api.ts';
 import { countInto } from './waiting.ts';
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -127,6 +127,20 @@ export function drawAnswer(
 ): HTMLElement[] {
   if ('error' in said) return [drawUnreadable(said)];
 
+  if (said.view === 'blocks') {
+    const head = document.createElement('p');
+    head.className = 'query-count';
+    head.textContent = said.count === 0 ? 'ningún bloque' : said.count === 1 ? 'un bloque' : `${said.count} bloques`;
+    if (said.more > 0) head.append(` · se ven ${said.blocks.length}, faltan ${said.more}`);
+    if (said.count === 0) {
+      const why = document.createElement('p');
+      why.className = 'query-empty';
+      why.textContent = `ningún bloque cumple «${said.asked}»`;
+      return [why];
+    }
+    return [head, drawBlocks(said.blocks, handlers)];
+  }
+
   const head = document.createElement('p');
   head.className = 'query-count';
   head.textContent =
@@ -165,6 +179,22 @@ export function drawAnswer(
   ];
 }
 
+function drawBlocks(blocks: QueryBlockHit[], handlers: QueryBlockHandlers): HTMLElement {
+  const list = document.createElement('ul');
+  list.className = 'query-list query-block-list';
+  for (const hit of blocks) {
+    const row = document.createElement('li');
+    const content = document.createElement('span');
+    content.className = 'query-block-content';
+    content.textContent = hit.content;
+    const origin = titleButton({ title: hit.page.title }, handlers);
+    origin.classList.add('query-block-origin');
+    row.append(content, origin);
+    list.append(row);
+  }
+  return list;
+}
+
 function drawUnreadable(said: { error: string; at: number; near: string }): HTMLElement {
   const problem = document.createElement('p');
   problem.className = 'query-problem';
@@ -179,7 +209,7 @@ function drawUnreadable(said: { error: string; at: number; near: string }): HTML
 }
 
 /** El título de una página, que se pulsa y lleva a ella. */
-function titleButton(hit: QueryHit, handlers: QueryBlockHandlers): HTMLButtonElement {
+function titleButton(hit: Pick<QueryHit, 'title'>, handlers: QueryBlockHandlers): HTMLButtonElement {
   const link = document.createElement('button');
   link.type = 'button';
   link.className = 'query-title';

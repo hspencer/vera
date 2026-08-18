@@ -476,6 +476,19 @@ describe('POST /query', () => {
     assert.equal(lista['count'], tabla['count']);
   });
 
+  it('puede contestar con cada bloque coincidente en vez de agrupar por página', async () => {
+    const page = await write({ kind: 'create_page', title: 'Con dos pasajes', visibility: 'private' });
+    const first = await write({ kind: 'create_block', page, parent: null, position: 0, content: 'factura uno' });
+    const second = await write({ kind: 'create_block', page, parent: null, position: 1, content: 'factura dos' });
+
+    const answer = await ask('? ~factura ; bloques');
+    const blocks = answer['blocks'] as { id: string; content: string; page: { id: string } }[];
+    assert.equal(answer['view'], 'blocks');
+    assert.equal(answer['count'], 2);
+    assert.deepEqual(blocks.map((block) => block.id), [first, second]);
+    assert.ok(blocks.every((block) => block.page.id === page));
+  });
+
   it('cada página trae su tipo y cuándo se tocó por última vez', async () => {
     const page = await write({ kind: 'create_page', title: 'Fechada', visibility: 'private' });
     // «tipo» y no «type»: la clave la nombra el corpus, y sin ontología que diga

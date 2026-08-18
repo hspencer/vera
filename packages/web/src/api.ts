@@ -430,6 +430,14 @@ export interface QueryHit {
   says: { block: string; excerpt: string } | null;
 }
 
+export interface QueryBlockHit {
+  id: string;
+  content: string;
+  parent: string | null;
+  position: number;
+  page: { id: string; title: string };
+}
+
 export interface ActivityItem {
   sequence: number;
   at: number;
@@ -477,6 +485,13 @@ export type QueryAnswer =
       count: number;
       pages: QueryHit[];
       /** Cuántas cumplen y no viajaron. Recortar en silencio sería mentir. */
+      more: number;
+    }
+  | {
+      view: 'blocks';
+      asked: string;
+      count: number;
+      blocks: QueryBlockHit[];
       more: number;
     }
   | { error: string; at: number; near: string };

@@ -12,7 +12,8 @@
 //     ~texto         el contenido lo contiene
 //     !término       no
 //     +  y   ·   *  o   ·   ( ) grupo
-//     ; tabla        cómo se lee la respuesta; sin eso, una lista
+//     ; tabla        páginas en tabla; sin eso, páginas en lista
+//     ; bloques      cada bloque concreto que dice lo preguntado
 //
 // Signos y no palabras: `y` y `o` son castellano, y la lógica de un corpus que se
 // escribe en tres idiomas no puede estar en uno. Y cuando una frase no se
@@ -24,7 +25,7 @@
 
 import type { QueryExpression } from './query.ts';
 
-export type QueryView = 'list' | 'table';
+export type QueryView = 'list' | 'table' | 'blocks';
 
 export interface QuerySource {
   expression: QueryExpression;
@@ -65,6 +66,8 @@ const VIEWS: Record<string, QueryView> = {
   list: 'list',
   tabla: 'table',
   table: 'table',
+  bloques: 'blocks',
+  blocks: 'blocks',
 };
 
 interface Cursor {
@@ -168,7 +171,7 @@ function readView(said: string, at: number): QueryView {
   const view = VIEWS[word];
   if (view === undefined) {
     throw new Unreadable(
-      `no sé leer una respuesta como «${word}»; hay lista y tabla`,
+      `no sé leer una respuesta como «${word}»; hay lista, tabla y bloques`,
       at,
       said.trim(),
     );
@@ -357,7 +360,9 @@ function readValue(cursor: Cursor): string {
  */
 export function writeQuery(expression: QueryExpression, view: QueryView = 'list'): string {
   const said = write(expression, null);
-  return view === 'table' ? `? ${said} ; tabla` : `? ${said}`;
+  if (view === 'table') return `? ${said} ; tabla`;
+  if (view === 'blocks') return `? ${said} ; bloques`;
+  return `? ${said}`;
 }
 
 function write(expression: QueryExpression, within: string | null): string {

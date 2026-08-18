@@ -1287,12 +1287,15 @@ export class VeraGraph {
   query(input: {
     expression: QueryExpression;
     participant: ParticipantId;
+    /** Universo visible para esta lectura; sin él rige el grafo entero. */
+    within?: readonly PageId[];
   }): { graph: GraphId; matchingPages: PageId[]; matchingBlocks: BlockId[] } {
     if (!this.#isActive(input.participant)) {
       throw new Error(`${input.participant} has no active membership in this graph`);
     }
-    const selected = this.#select(input.expression);
-    const pages = this.pages().filter((p) => selected.has(p.id));
+    const scope = input.within === undefined ? null : new Set(input.within);
+    const selected = this.#select(input.expression, scope);
+    const pages = this.pages().filter((p) => selected.has(p.id) && (scope === null || scope.has(p.id)));
     return {
       graph: this.id,
       matchingPages: pages.map((p) => p.id),
@@ -1352,17 +1355,19 @@ export class VeraGraph {
     return found;
   }
 
-  #select(expression: QueryExpression): Set<PageId> {
+  #select(expression: QueryExpression, scope: ReadonlySet<PageId> | null = null): Set<PageId> {
     switch (expression.kind) {
       case 'TitleTerm':
-        return this.#pagesWhere((page) => matches(page.title, expression.text));
+        return this.#pagesWhere((page) => matches(page.title, expression.text), scope);
       case 'ContentTerm':
-        return this.#pagesWhere((page) =>
-          this.blocksOf(page.id).some((b) => matches(b.content, expression.text)),
+        return this.#pagesWhere(
+          (page) => this.blocksOf(page.id).some((b) => matches(b.content, expression.text)),
+          scope,
         );
       case 'TagTerm':
-        return this.#pagesWhere((page) =>
-          this.blocksOf(page.id).some((b) => this.tagsOf(b.stableId).includes(expression.tag)),
+        return this.#pagesWhere(
+          (page) => this.blocksOf(page.id).some((b) => this.tagsOf(b.stableId).includes(expression.tag)),
+          scope,
         );
       case 'PropertyTerm': {
         /*
@@ -1381,14 +1386,15 @@ export class VeraGraph {
             return expression.value === null
               ? said !== null
               : said !== null && said.toLowerCase() === expression.value.toLowerCase();
-          });
+          }, scope);
         }
-        return this.#pagesWhere((page) =>
-          this.propertiesOf(page.id).some(
+        return this.#pagesWhere(
+          (page) => this.propertiesOf(page.id).some(
             (p) =>
               p.key === expression.key &&
               (expression.value === null || p.value === expression.value),
           ),
+          scope,
         );
       }
       /*
@@ -1405,35 +1411,35 @@ export class VeraGraph {
         const wanted = titleKey(expression.targetTitle);
         return new Set(
           this.links()
-            .filter((l) => titleKey(l.targetTitle) === wanted)
+            .filter((l) => titleKey(l.targetTitle) === wanted && (scope === null || scope.has(l.sourcePage)))
             .map((l) => l.sourcePage),
         );
       }
       case 'LinkedFromTerm': {
         const from = this.#pageTitled(expression.originTitle);
-        if (from === undefined) return new Set<PageId>();
+        if (from === undefined || (scope !== null && !scope.has(from.id))) return new Set<PageId>();
         return new Set(
           this.links()
-            .filter((l) => l.sourcePage === from.id && l.target !== null)
+            .filter((l) => l.sourcePage === from.id && l.target !== null && (scope === null || scope.has(l.target)))
             .map((l) => l.target as PageId),
         );
       }
       case 'AndTerm': {
-        const sets = expression.operands.map((o) => this.#select(o));
+        const sets = expression.operands.map((o) => this.#select(o, scope));
         const first = sets[0] ?? new Set<PageId>();
         return new Set([...first].filter((p) => sets.every((s) => s.has(p))));
       }
       case 'OrTerm': {
         const union = new Set<PageId>();
         for (const operand of expression.operands) {
-          for (const page of this.#select(operand)) union.add(page);
+          for (const page of this.#select(operand, scope)) union.add(page);
         }
         return union;
       }
       case 'NotTerm': {
         // @invariant NegationIsGraphScoped: el complemento es dentro de este grafo.
-        const excluded = this.#select(expression.operand);
-        return this.#pagesWhere((page) => !excluded.has(page.id));
+        const excluded = this.#select(expression.operand, scope);
+        return this.#pagesWhere((page) => !excluded.has(page.id), scope);
       }
     }
   }
@@ -1456,8 +1462,8 @@ export class VeraGraph {
     return null;
   }
 
-  #pagesWhere(predicate: (page: Page) => boolean): Set<PageId> {
-    return new Set(this.pages().filter(predicate).map((p) => p.id));
+  #pagesWhere(predicate: (page: Page) => boolean, scope: ReadonlySet<PageId> | null = null): Set<PageId> {
+    return new Set(this.pages().filter((page) => (scope === null || scope.has(page.id)) && predicate(page)).map((p) => p.id));
   }
 
   // -------------------------------------------------------------------------

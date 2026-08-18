@@ -1065,7 +1065,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     const publicOrigin = forcedPublic || (canonicalHost !== '' && host === canonicalHost);
     const publicAccess = publicOrigin;
 
-    if (publicAccess && request.method !== 'GET' && request.method !== 'HEAD') {
+    const publicReadThroughBody = request.method === 'POST' && path === '/query';
+    if (publicAccess && request.method !== 'GET' && request.method !== 'HEAD' && !publicReadThroughBody) {
       send(response, 405, { error: 'anybody sólo puede leer' });
       return;
     }
@@ -1077,6 +1078,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         path === '/health' ||
         path === '/pages' ||
         path === '/search' ||
+        path === '/query' ||
         path === '/p5-frame.html' ||
         path === '/p5.min.js' ||
         path.startsWith('/pages/') ||
@@ -3975,12 +3977,18 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           return;
         }
 
-        const who = typeof body.participant === 'string' && body.participant !== ''
-          ? body.participant
-          : owner.id;
         let outcome;
         try {
-          outcome = graph.query({ expression: read.expression, participant: who });
+          const requestedParticipant = typeof body.participant === 'string' && body.participant !== ''
+            ? body.participant
+            : who.participant;
+          outcome = graph.query({
+            expression: read.expression,
+            // `anybody` no es miembro del grafo privado. La autoridad técnica
+            // evalúa, pero `within` fija antes el universo público inducido.
+            participant: publicAccess ? owner.id : requestedParticipant,
+            ...(publicAccess ? { within: graph.pages().filter((page) => isPublicPage(page.id)).map((page) => page.id) } : {}),
+          });
         } catch (problem) {
           send(response, 403, { error: problem instanceof Error ? problem.message : 'refused' });
           return;
@@ -4021,6 +4029,31 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             updated: graph.updatedAt(page.id),
             says: says.get(page.id) ?? null,
           }));
+
+        const matchingBlocks = outcome.matchingBlocks.flatMap((id) => {
+          const block = graph.block(id);
+          if (block === undefined) return [];
+          const page = graph.page(block.page);
+          if (page === undefined) return [];
+          return [{
+            id: block.stableId,
+            content: block.content,
+            parent: block.parent,
+            position: block.position,
+            page: { id: page.id, title: page.title },
+          }];
+        });
+
+        if (read.view === 'blocks') {
+          send(response, 200, {
+            view: 'blocks',
+            asked: writeQuery(read.expression, read.view),
+            count: matchingBlocks.length,
+            blocks: matchingBlocks.slice(0, MOST_ANSWERS),
+            more: Math.max(0, matchingBlocks.length - MOST_ANSWERS),
+          });
+          return;
+        }
 
         /*
          * Ordenar antes de recortar, siempre.

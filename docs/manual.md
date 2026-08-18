@@ -347,6 +347,7 @@ lista guardada envejece sin decirlo. `/?` pone la marca y deja el cursor detrás
 | `*` | O. |
 | `( )` | Agrupa. |
 | `; tabla` | Al final, la lee como tabla; sin eso, como lista. |
+| `; bloques` | Devuelve cada bloque concreto que coincide, con su página de origen, sin agrupar por página. |
 
 Un valor puede llevar espacios sin comillas —`estado=en revisión`—; las comillas
 sólo hacen falta si el valor lleva alguno de los signos.
@@ -362,8 +363,13 @@ que una que no corre.
 ? concepto=AAC + tipo=nota
 ? ->[[Vera]] * <-[[Vera]]
 ? tipo=proyecto + !~borrador
+? ~factura ; bloques
 ? concepto= + !tipo=        ← las que tienen concepto y no dicen qué son
 ```
+
+`bloques` cambia la proyección, no la pregunta. Una condición de página puede
+acotar los pasajes —`? tipo=proyecto + ~factura ; bloques`—, pero no se inventa
+un bloque para una propiedad que sólo vive en el front matter.
 
 ### Cuando no entiende, lo dice
 

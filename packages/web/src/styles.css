@@ -4584,6 +4584,16 @@ code {
   flex-wrap: wrap;
 }
 
+.query-block-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.query-block-content { white-space: pre-wrap; }
+.query-block-origin { color: var(--text-dim); font-size: 0.82em; }
+
 /* Un título de la respuesta se pulsa y lleva a su página, como cualquier enlace
    del corpus. Se dibuja como texto y no como botón: una lista de cuarenta
    botones es una pared. */

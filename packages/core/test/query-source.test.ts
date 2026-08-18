@@ -120,6 +120,11 @@ describe('readQuery · la presentación', () => {
     assert.equal(read('? tipo=proyecto ; tabla').view, 'table');
   });
 
+  it('«; bloques» pide cada pasaje concreto', () => {
+    assert.equal(read('? ~factura ; bloques').view, 'blocks');
+    assert.equal(read('? ~factura ; blocks').view, 'blocks');
+  });
+
 
   it('la presentación no cambia la selección', () => {
     assert.deepEqual(read('? tipo=proyecto').expression, read('? tipo=proyecto ; tabla').expression);
@@ -134,7 +139,7 @@ describe('readQuery · la presentación', () => {
   });
 
   it('una forma que no existe se dice, no se ignora', () => {
-    assert.match(refuse('? tipo=proyecto ; mosaico').error, /lista y tabla/);
+    assert.match(refuse('? tipo=proyecto ; mosaico').error, /lista, tabla y bloques/);
   });
 });
 
@@ -200,6 +205,10 @@ describe('writeQuery', () => {
 
   it('dice la tabla cuando la respuesta es una tabla', () => {
     assert.equal(writeQuery(read('? tipo=a').expression, 'table'), '? tipo=a ; tabla');
+  });
+
+  it('dice los bloques cuando la respuesta son pasajes concretos', () => {
+    assert.equal(writeQuery(read('? ~factura').expression, 'blocks'), '? ~factura ; bloques');
   });
 
   it('pone comillas sólo cuando hacen falta', () => {

@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fc from 'fast-check';
 
-import { and, contentTerm, linksTo, not, or, propertyTerm, tagTerm, titleTerm } from '@vera/core';
+import { and, contentTerm, linkedFrom, linksTo, not, or, propertyTerm, tagTerm, titleTerm } from '@vera/core';
 import {
   AGENT,
   OUTSIDER,
@@ -443,6 +443,21 @@ describe('what a query answers besides the pages', () => {
     const result = graph.query({ expression: propertyTerm('lang', 'es'), participant: OWNER });
 
     assert.deepEqual(result.matchingBlocks, []);
+  });
+
+  it('an explicit reading scope excludes pages and link origins outside it', () => {
+    const graph = inhabitedGraph();
+    const visible = makePage(graph, 'Visible');
+    const hidden = makePage(graph, 'Oculta');
+    makeBlock(graph, visible, 'texto público');
+    makeBlock(graph, hidden, 'texto secreto y [[Visible]]');
+
+    const text = graph.query({ expression: contentTerm('secreto'), participant: OWNER, within: [visible] });
+    const link = graph.query({ expression: linkedFrom('Oculta'), participant: OWNER, within: [visible] });
+
+    assert.deepEqual(text.matchingPages, []);
+    assert.deepEqual(text.matchingBlocks, []);
+    assert.deepEqual(link.matchingPages, []);
   });
 
   it('a page remembers when it was last written to', () => {
