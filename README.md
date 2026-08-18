@@ -159,3 +159,18 @@ Vera forma parte de [MediaFranca](https://mediafranca.net/).
 [^manifiesto]: Herbert Spencer, [“Manifiesto para el Diseño de Interacción en un Tiempo que se Despliega”](https://herbertspencer.net/2025/manifiesto), 2025.
 [^intelligent-internet]: Emad Mostaque, [“Intelligent Internet Whitepaper”](https://webstatics.ii.inc/Intelligent-Internet-Whitepaper.pdf), 2025.
 [^silverbullet]: [SilverBullet](https://silverbullet.md/) es una herramienta de notas Markdown autoalojada y programable mediante *plugs*; Vera la estudia como referencia de extensibilidad, no como algo que deba reproducir.
+
+<p align="center">
+  <img src="https://vera.mediafranca.net/assets/raised-fist.svg" width="104" alt="Puño alzado">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="https://vera.mediafranca.net/assets/pwa-logo.svg" width="112" alt="Progressive Web App">
+</p>
+
+## Créditos gráficos
+
+- **Puño alzado:** Eugenio Hansen, OFS — trabajo propio, licencia
+  [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), vía
+  [Wikimedia Commons](https://commons.wikimedia.org/w/index.php?curid=65787095).
+- **Logo PWA:** Diego González-Zúñiga — dedicado al dominio público mediante
+  [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/), vía
+  [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Progressive_Web_Apps_Logo.svg).
