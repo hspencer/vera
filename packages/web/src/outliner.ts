@@ -2394,7 +2394,15 @@ export function renderOutliner(
 
       const written = page.blocks.find((held) => held.stableId === block);
       if (written !== undefined) written.content = content;
-      callbacks.onReload(null);
+      /*
+       * La transcripción no pasó por la bandeja local de operaciones: la hizo
+       * el servidor después de correr whisper. Un redibujado corriente vuelve
+       * a sacar los bloques de la réplica y pisa este contenido con la versión
+       * anterior; la grabación queda en «retranscribir», pero sus palabras
+       * desaparecen de la pantalla. Volver una vez al corpus incorpora tanto
+       * el bloque escrito como la operación que la réplica todavía no conoce.
+       */
+      callbacks.onReload(null, { fromCorpus: true });
     },
   };
   const options: RenderOptions = { embedHosts };
