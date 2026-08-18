@@ -10,6 +10,7 @@
 // cree.
 
 import { api, type QueryAnswer, type QueryBlockHit, type QueryHit, type QuerySort } from './api.ts';
+import { nextState, readTask, renderMarkdown, writeTask } from '@vera/core';
 import { countInto } from './waiting.ts';
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -44,6 +45,8 @@ export function saidDate(when: number | null, now = Date.now()): string {
 export interface QueryBlockHandlers {
   /** Ir a una página por su título, como cualquier otro enlace. */
   onNavigate(title: string): void;
+  /** Editar el bloque canónico que una proyección está mostrando. */
+  onEditBlock(block: string, content: string): Promise<boolean>;
 }
 
 /**
@@ -180,16 +183,48 @@ export function drawAnswer(
 }
 
 function drawBlocks(blocks: QueryBlockHit[], handlers: QueryBlockHandlers): HTMLElement {
-  const list = document.createElement('ul');
+  const list = document.createElement('div');
   list.className = 'query-list query-block-list';
   for (const hit of blocks) {
-    const row = document.createElement('li');
-    const content = document.createElement('span');
+    /*
+     * Esto es una aparición del bloque, no una fila que copia sus palabras.
+     * Conserva la identidad canónica en el mismo atributo que el outliner: así
+     * los controles actúan sobre `hit.id` y nunca sobre una copia derivada.
+     */
+    const row = document.createElement('div');
+    row.className = 'query-block-reference block';
+    row.dataset['id'] = hit.id;
+
+    const body = document.createElement('div');
+    body.className = 'body';
+    const task = readTask(hit.content);
+    if (task !== null) {
+      row.classList.add('task', `task-${task.state === 'por hacer' ? 'todo' : task.state === 'haciendo' ? 'doing' : 'done'}`);
+      const box = document.createElement('button');
+      box.type = 'button';
+      box.className = 'task-box';
+      box.title = `${task.state} · pulsar para pasar a ${nextState(task.state)}`;
+      box.setAttribute('aria-label', box.title);
+      box.setAttribute('role', 'checkbox');
+      box.setAttribute('aria-checked', task.state === 'hecho' ? 'true' : task.state === 'por hacer' ? 'false' : 'mixed');
+      box.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const next = nextState(task.state);
+        box.disabled = true;
+        void handlers.onEditBlock(hit.id, writeTask(next, task.said)).then((applied) => {
+          if (!applied) box.disabled = false;
+        });
+      });
+      body.append(box);
+    }
+
+    const content = document.createElement('div');
     content.className = 'query-block-content';
-    content.textContent = hit.content;
+    content.innerHTML = renderMarkdown(task === null ? hit.content : task.said);
+    body.append(content);
     const origin = titleButton({ title: hit.page.title }, handlers);
     origin.classList.add('query-block-origin');
-    row.append(content, origin);
+    row.append(body, origin);
     list.append(row);
   }
   return list;

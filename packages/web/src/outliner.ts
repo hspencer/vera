@@ -3985,7 +3985,14 @@ export function renderOutliner(
        * guardar una lista que envejece sin decirlo.
        */
       if (looksLikeQuery(node.block.content)) {
-        answerQueryBlock(body, node.block.content, { onNavigate: callbacks.onNavigate });
+        answerQueryBlock(body, node.block.content, {
+          onNavigate: callbacks.onNavigate,
+          onEditBlock: (block, content) =>
+            submitQuietly({ kind: 'edit_block', block, content }).then((applied) => {
+              if (applied) callbacks.onReload(null);
+              return applied;
+            }),
+        });
       }
     }
 
@@ -6111,7 +6118,14 @@ function startEditing(
     // dibujado inicial: la respuesta no vive en ninguna parte, así que no hay
     // nada que invalidar —sólo hay que volver a pedirla.
     if (looksLikeQuery(content)) {
-      answerQueryBlock(body, content, { onNavigate: callbacks.onNavigate });
+      answerQueryBlock(body, content, {
+        onNavigate: callbacks.onNavigate,
+        onEditBlock: (block, nextContent) =>
+          submitQuietly({ kind: 'edit_block', block, content: nextContent }).then((applied) => {
+            if (applied) callbacks.onReload(null);
+            return applied;
+          }),
+      });
     }
 
     markMissingImages(body);

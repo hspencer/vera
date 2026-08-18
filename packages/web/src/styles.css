@@ -4584,14 +4584,23 @@ code {
   flex-wrap: wrap;
 }
 
-.query-block-list li {
+.query-block-reference {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.75rem;
   align-items: baseline;
+  padding: 0.08rem 0;
 }
 
-.query-block-content { white-space: pre-wrap; }
+.query-block-reference .body {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+.query-block-content { min-width: 0; white-space: pre-wrap; }
+.query-block-content > :first-child { margin-top: 0; }
+.query-block-content > :last-child { margin-bottom: 0; }
 .query-block-origin { color: var(--text-dim); font-size: 0.82em; }
 
 /* Un título de la respuesta se pulsa y lleva a su página, como cualquier enlace
