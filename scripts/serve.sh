@@ -20,6 +20,7 @@ cd "$(dirname "$0")/.."
 PUERTO="${VERA_PORT:-4173}"
 REGISTRO='.vera-server.log'
 ENTRADA='packages/server/src/main.ts'
+UNIDAD='vera.service'
 
 if [ -t 1 ]; then
   BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[31m'; GREEN=$'\033[32m'; RESET=$'\033[0m'
@@ -32,6 +33,57 @@ alto()  { printf '%s\n' "  ${RED}✗${RESET} $1" >&2; exit 1; }
 
 vivo() { curl -fsS --max-time 2 "http://localhost:${PUERTO}/health" >/dev/null 2>&1; }
 pids() { pgrep -f "node .*${ENTRADA}" 2>/dev/null || true; }
+
+# Si esta instalación ya vive como unidad de usuario, systemd es su dueño.
+# Arrancar otro proceso con nohup desde una terminal automatizada lo deja dentro
+# del cgroup efímero de esa terminal: parece vivo durante la comprobación y
+# muere en cuanto la terminal se cierra. Fue exactamente la caída del 19-08-2026.
+gestionado_por_systemd() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  [ -n "$(systemctl --user show "$UNIDAD" -p FragmentPath --value 2>/dev/null)" ] || return 1
+  [ "$(systemctl --user show "$UNIDAD" -p WorkingDirectory --value 2>/dev/null)" = "$PWD" ]
+}
+
+esperar_vivo() {
+  for _ in $(seq 1 40); do
+    vivo && return 0
+    sleep 0.5
+  done
+  return 1
+}
+
+if gestionado_por_systemd; then
+  case "${1:-restart}" in
+    start)
+      dice 'Arrancando mediante systemd'
+      systemctl --user start "$UNIDAD"
+      esperar_vivo || alto "systemd no dejó a Vera respondiendo en el puerto ${PUERTO}"
+      bien "escuchando en http://localhost:${PUERTO}"
+      exit 0
+      ;;
+    stop)
+      dice 'Deteniendo mediante systemd'
+      systemctl --user stop "$UNIDAD"
+      bien 'detenido'
+      exit 0
+      ;;
+    restart)
+      dice 'Reiniciando mediante systemd'
+      systemctl --user restart "$UNIDAD"
+      esperar_vivo || alto "systemd no dejó a Vera respondiendo en el puerto ${PUERTO}"
+      bien "escuchando en http://localhost:${PUERTO}"
+      exit 0
+      ;;
+    status)
+      if systemctl --user is-active --quiet "$UNIDAD" && vivo; then
+        bien "en pie en el puerto ${PUERTO} (pid $(systemctl --user show "$UNIDAD" -p MainPID --value))"
+        exit 0
+      fi
+      printf '%s\n' '  apagado'
+      exit 1
+      ;;
+  esac
+fi
 
 detener() {
   local encontrados
