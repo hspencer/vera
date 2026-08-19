@@ -3052,6 +3052,19 @@ const running = document
   .querySelector<HTMLScriptElement>('script[type="module"][src^="/build/"]')
   ?.getAttribute('src');
 
+/*
+ * La hoja de estilo con hash, además del script de entrada.
+ *
+ * Antes se comparaba sólo el `.js`, y un recompilado que tocara únicamente el
+ * CSS —lo más habitual mientras se ajusta la interfaz— dejaba el mismo script:
+ * la huella no cambiaba y la ventana se quedaba con el estilo viejo sin
+ * enterarse. La hoja también lleva su hash en la ruta, así que mirarla cierra
+ * ese hueco sin depender de que el bundle haya cambiado.
+ */
+const runningCss = document
+  .querySelector<HTMLLinkElement>('link[rel="stylesheet"][href^="/build/"]')
+  ?.getAttribute('href');
+
 if (running != null) {
   let checking = false;
   let stale = false;
@@ -3065,8 +3078,15 @@ if (running != null) {
       // que la respuesta se quede en ningún caché: es una pregunta, no un dato.
       const response = await fetch('/index.html?fresh=1', { cache: 'no-store' });
       if (!response.ok) return;
-      const served = /src="(\/build\/[^"]+\.js)"/.exec(await response.text())?.[1];
-      if (served === undefined || served === running) return;
+      const html = await response.text();
+      const servedJs = /src="(\/build\/[^"]+\.js)"/.exec(html)?.[1];
+      const servedCss = /href="(\/build\/[^"]+\.css)"/.exec(html)?.[1];
+      // Basta con que cambie uno, el script o la hoja. Se compara sólo lo que el
+      // servido nombra: medir contra un `undefined` diría siempre que hay cambio
+      // y recargaría en vano ante una respuesta a medias.
+      const jsStale = servedJs !== undefined && servedJs !== running;
+      const cssStale = servedCss !== undefined && servedCss !== runningCss;
+      if (!jsStale && !cssStale) return;
       stale = true;
       window.location.reload();
     } catch {
