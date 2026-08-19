@@ -163,6 +163,12 @@ contract InvitationCapability {
         -- Before delivery, an invitation already fixes its shared space and
         -- permissions. Whoever receives it cannot enlarge either while claiming.
 
+    @invariant AcceptingAnInvitationFindsTheSpace
+        -- Successful redemption enters the participant into the invited space.
+        -- They never have to infer or discover a page address after proving the
+        -- capability, irrespective of how shared-space addresses are ultimately
+        -- represented.
+
     @invariant ACapabilityIsSingleUseAndExpiring
         -- A successful redemption consumes the invitation. An expired, revoked
         -- or already redeemed invitation creates no session, identity or grant.
@@ -979,6 +985,11 @@ surface InvitationRedemption {
     @guarantee RedemptionRevealsOnlyWhatIsNeededToConsent
         -- Before redemption, the bearer sees the space name, offered permissions
         -- and expiry, not its pages or any fact about the surrounding graph.
+
+    @guarantee RedemptionContinuesIntoTheInvitedSpace
+        -- After authentication and successful redemption, Vera opens the
+        -- invited space. If the invitation was reached while requesting one of
+        -- its pages, that page is the continuation; otherwise its space home is.
 }
 
 surface HumanSessionBoundary {
