@@ -5125,22 +5125,26 @@ code {
   width: 2.25rem;
   height: 2.25rem;
   padding: .45rem;
-  border: 1px solid color-mix(in srgb, var(--text) 28%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 40%, transparent);
   border-radius: .35rem;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  background: var(--bg-raised);
   color: var(--text);
-  box-shadow: 0 1px 6px color-mix(in srgb, black 18%, transparent);
+  box-shadow: 0 1px 8px color-mix(in srgb, black 22%, transparent);
   cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
+  /* Siempre a la vista: es la puerta a pantalla completa y no puede competir a
+     la baja con el desplegable «fuente HTML», que es lo que enseña el código.
+     Escondida al hover, se confundían y se abría el código en vez del recinto. */
+  opacity: 1;
+  pointer-events: auto;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
 .executable-html-live:hover > .executable-size-toggle,
+.executable-size-toggle:hover,
 .executable-size-toggle:focus-visible,
 .executable-maximized > .executable-size-toggle {
-  opacity: 1;
-  pointer-events: auto;
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--text));
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised));
 }
 
 .executable-size-toggle .icon { width: 100%; height: 100%; }
