@@ -5,14 +5,13 @@
 --   sovereign personal Vera graph
 -- Includes: One owner on several devices, passkeys, revocable sessions,
 --   invitation capabilities delivered by any channel, guests without Vera,
---   federated Vera identities, public and restricted shared spaces, and scoped
---   reading, contribution and direct editing
+--   federated Vera identities, property-selected public and restricted shared
+--   spaces, reading, contribution and direct editing
 -- Excludes:
 --   - Mail, messaging and QR delivery implementation
 --   - WebAuthn ceremony and cryptographic storage implementation
 --   - Replica synchronisation and continuation after withdrawal
 --     (see federated-sharing.allium)
---   - Selection criteria that change membership automatically
 -- Dependencies: Graph, Page, Participant and Membership are governed by
 --   core.allium; the single sovereign instance is governed by
 --   identity-access.allium
@@ -660,8 +659,7 @@ rule AuthorizedParticipantEditsCanonicalPage {
 
     let grant = AccessGrant{space: space, participant: participant, status: active}
 
-    requires: exists grant
-    requires: edit in grant.permissions
+    requires: participant = space.owner or (exists grant and edit in grant.permissions)
     requires: page in space.pages
     requires: subject_page(change) = page
     requires: channel != authenticated_voice or evidence != null
@@ -674,8 +672,7 @@ rule AuthorizedParticipantCreatesPageInsideSharedSpace {
 
     let grant = AccessGrant{space: space, participant: participant, status: active}
 
-    requires: exists grant
-    requires: edit in grant.permissions
+    requires: participant = space.owner or (exists grant and edit in grant.permissions)
     requires: creates_page(page_change)
     requires: assigns_selector(selector_change, created_page(page_change), space.selector)
     requires: channel != authenticated_voice or evidence != null
@@ -833,6 +830,14 @@ actor SharedSpaceOwner {
 actor AuthorizedSharedParticipant {
     within: SharedSpace
     identified_by: core/Participant where exists AccessGrant{space: within, participant: this, status: active}
+}
+
+actor SharedSpaceEditor {
+    within: SharedSpace
+    identified_by: core/Participant where
+        this = within.owner or
+        (exists AccessGrant{space: within, participant: this, status: active} and
+         edit in AccessGrant{space: within, participant: this, status: active}.permissions)
 }
 
 actor AnybodySharedSpaceReader {
@@ -1133,7 +1138,7 @@ surface SharedSpaceAdministration {
 }
 
 surface SharedSpaceParticipation {
-    facing participant: AuthorizedSharedParticipant
+    facing participant: SharedSpaceEditor
     context space: SharedSpace
 
     exposes:
@@ -1144,9 +1149,11 @@ surface SharedSpaceParticipation {
         ProposeSharedChange(participant, space, page, change)
             when contribute in AccessGrant{space: space, participant: participant, status: active}.permissions
         EditSharedPage(participant, space, page, origin_id, change, channel, evidence?)
-            when edit in AccessGrant{space: space, participant: participant, status: active}.permissions
+            when participant = space.owner or
+                 edit in AccessGrant{space: space, participant: participant, status: active}.permissions
         CreatePageInSharedSpace(participant, space, page_origin_id, page_change, selector_origin_id, selector_change, channel, evidence?)
-            when edit in AccessGrant{space: space, participant: participant, status: active}.permissions
+            when participant = space.owner or
+                 edit in AccessGrant{space: space, participant: participant, status: active}.permissions
 
     contracts:
         fulfils SharedSpaceAccess
@@ -1213,3 +1220,4 @@ open question "Does accepting a contribution apply its changes as one attributed
 open question "May one person retain several independent guest identities in the same graph before explicitly linking them?"
 open question "What event requires a fresh authenticator gesture rather than an existing session — destructive editing, publication, grant administration, or all three?"
 open question "How does a federated Vera rotate its identity key without breaking durable bindings at remote shared spaces?"
+open question "Should one page address vary its visible authority by reader, or should each shared space use a distinct URL namespace?"
