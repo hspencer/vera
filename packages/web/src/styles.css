@@ -5092,6 +5092,7 @@ code {
 .executable {
   width: min(100%, var(--content-width, 45em));
   margin: .55rem 0;
+  position: relative;
 }
 
 .executable iframe {
@@ -5112,6 +5113,61 @@ code {
 
 .executable pre {
   overflow: auto;
+}
+
+.executable-size-toggle {
+  position: absolute;
+  right: .55rem;
+  bottom: .55rem;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: .45rem;
+  border: 1px solid color-mix(in srgb, var(--text) 28%, transparent);
+  border-radius: .35rem;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  color: var(--text);
+  box-shadow: 0 1px 6px color-mix(in srgb, black 18%, transparent);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.executable-html-live:hover > .executable-size-toggle,
+.executable-size-toggle:focus-visible,
+.executable-maximized > .executable-size-toggle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.executable-size-toggle .icon { width: 100%; height: 100%; }
+
+.executable-maximized {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+}
+
+.executable-maximized iframe {
+  width: 100%;
+  height: 100% !important;
+  border: 0;
+  border-radius: 0;
+}
+
+.executable-maximized details { display: none; }
+.has-maximized-executable { overflow: hidden; }
+
+@media (hover: none) {
+  .executable-size-toggle { opacity: 1; pointer-events: auto; }
 }
 
 .youtube-transcript {

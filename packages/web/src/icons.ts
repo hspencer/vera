@@ -216,6 +216,18 @@ const SHAPES = {
   'arrow-up': '<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>',
   'arrow-down': '<line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>',
 
+  'arrows-maximize':
+    '<path d="M16 4l4 0l0 4"/><path d="M14 10l6 -6"/>' +
+    '<path d="M8 20l-4 0l0 -4"/><path d="M4 20l6 -6"/>' +
+    '<path d="M16 20l4 0l0 -4"/><path d="M14 14l6 6"/>' +
+    '<path d="M8 4l-4 0l0 4"/><path d="M4 4l6 6"/>',
+
+  'arrows-minimize':
+    '<path d="M5 9l4 0l0 -4"/><path d="M3 3l6 6"/>' +
+    '<path d="M5 15l4 0l0 4"/><path d="M3 21l6 -6"/>' +
+    '<path d="M19 9l-4 0l0 -4"/><path d="M15 9l6 -6"/>' +
+    '<path d="M19 15l-4 0l0 4"/><path d="M15 15l6 6"/>',
+
   'corner-up-left':
     '<polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>',
   'corner-up-right':

@@ -265,6 +265,12 @@ surface EmbeddedContent {
         -- necesitan según lo que hayan dibujado. Un cambio de tema o de tamaño
         -- dentro del recinto se refleja mientras se lee, sin recargar la página
         -- ni convertir el recinto en parte privilegiada del documento exterior.
+
+    @guarantee AuthoredHtmlCanFillTheViewportAndReturn
+        -- Al señalar un recinto HTML aparece en su esquina inferior derecha el
+        -- control para maximizarlo. Maximizado ocupa la ventana completa y el
+        -- mismo lugar ofrece el control para minimizarlo, siempre superpuesto al
+        -- contenido. En una superficie sin hover el control sigue alcanzable.
 }
 
 ------------------------------------------------------------
