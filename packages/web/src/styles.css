@@ -5220,6 +5220,9 @@ code {
   background: var(--bg);
   touch-action: none;
   overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .canvas-sheet {
@@ -5359,7 +5362,7 @@ code {
   align-items: center;
   justify-content: flex-end;
   /* Un solo espacio visual entre la fecha y su gesto de edición. */
-  gap: 0.15rem;
+  gap: 0.25rem;
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -5369,7 +5372,7 @@ code {
 
 /* La fecha se lee y no se pulsa: del tamaño y el color de lo que acompaña. */
 .drawn-when {
-  font-size: 0.72rem;
+  font-size: 0.82rem;
   color: var(--text-dim);
 }
 
@@ -5378,7 +5381,11 @@ code {
   background: none;
   border: none;
   margin: 0;
-  padding: 0;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0.7rem;
   flex: none;
   line-height: 0;
   color: var(--text-dim);
@@ -5388,8 +5395,8 @@ code {
 }
 
 .drawn-edit svg {
-  width: 0.72em;
-  height: 0.72em;
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
 .drawn-edit .icon-edit-filled {
@@ -5405,6 +5412,14 @@ code {
 .drawn-edit:focus-visible {
   opacity: 1;
   color: var(--accent);
+}
+
+/* Una pantalla táctil no tiene hover: allí el acceso al lienzo queda visible. */
+@media (hover: none), (pointer: coarse) {
+  .drawn-edit {
+    opacity: 1;
+    color: var(--accent);
+  }
 }
 
 /* --- La historia de un bloque ------------------------------------------- */

@@ -4006,6 +4006,28 @@ export function renderOutliner(
 
     const editGloss = renderGloss(row, body, node.block.stableId);
 
+    /** Abre un hermano vacío junto a este bloque y deja el cursor dentro. */
+    const insertSibling = (position: number): void => {
+      const near = neighbourhoods.get(node.block.stableId);
+      if (near === undefined) return;
+      void api
+        .submit({
+          kind: 'create_block',
+          page: page.id,
+          parent: near.parent,
+          position,
+          content: '',
+        })
+        .then((result) => {
+          if (result.status === 'rejected') {
+            toast(`rechazado: ${result.reason}`);
+            return;
+          }
+          callbacks.onReload({ block: result.subjectId, at: 0 });
+        })
+        .catch(() => toast('no se pudo escribir el bloque: sin conexión con el servidor'));
+    };
+
     bullet.addEventListener('click', (event) => {
       event.stopPropagation();
       /*
@@ -4061,6 +4083,22 @@ export function renderOutliner(
           },
         ],
         [
+          {
+            label: 'Insertar bloque arriba',
+            icon: 'arrow-up',
+            run: () => {
+              const near = neighbourhoods.get(node.block.stableId);
+              if (near !== undefined) insertSibling(near.index);
+            },
+          },
+          {
+            label: 'Insertar bloque abajo',
+            icon: 'arrow-down',
+            run: () => {
+              const near = neighbourhoods.get(node.block.stableId);
+              if (near !== undefined) insertSibling(near.index + 1);
+            },
+          },
           {
             label: 'Mover…',
             icon: 'corner-up-right',

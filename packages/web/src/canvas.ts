@@ -296,6 +296,10 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
     };
 
     canvas.addEventListener('pointerdown', (event) => {
+      // El apoyo pertenece por entero al lienzo. En particular, un contacto
+      // largo o impreciso de la palma no puede convertirse en selección,
+      // arrastre o menú contextual del navegador.
+      event.preventDefault();
       if (event.pointerType === 'touch') {
         pinching.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (pinching.size === 2) {

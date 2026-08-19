@@ -222,6 +222,12 @@ rule ADrawingTakesTheCursorWithoutTakingTheKeyboard {
         -- se ve del tamaño de sus trazos, así que el pequeño es el que peor lo
         -- lleva. Al margen desalinearía el dibujo del texto de sus vecinos.
 
+    @invariant TheWayBackInIsReachableByHand
+        -- La fecha y el gesto de edición forman un pie legible y el gesto tiene
+        -- un blanco que se alcanza con un dedo. En una pantalla táctil no puede
+        -- depender de acertar sobre un icono del tamaño del texto auxiliar ni
+        -- de un estado hover que esa pantalla no tiene.
+
     @invariant ADrawingSaysWhenItWasLastDrawn
         -- Al pie va también cuándo se dibujó por última vez. No es un dato nuevo
         -- que haya que guardar: redibujar es escribir el bloque, así que la
@@ -259,6 +265,11 @@ rule EnterOnADrawingOpensTheBlockBelow {
         -- Dónde cae ese bloque lo decide lo mismo que para cualquier otro —ver
         -- EnterSplitsTheBlock en block-editing.allium—: un dibujo con hijos gana
         -- un primer hijo, y uno sin hijos gana un hermano detrás.
+
+    @invariant ItsBlockMenuAlsoOpensSpaceAroundIt
+        -- El menú de la viñeta permite insertar un bloque hermano inmediatamente
+        -- encima o debajo. Es la salida táctil y visible cuando no hay teclado o
+        -- cuando el dibujo no alcanzó a tomar foco; no reemplaza Enter.
 }
 
 rule DrawingOpensAWholeScreen {
@@ -280,6 +291,12 @@ rule DrawingOpensAWholeScreen {
         -- gordo, y de que el lienzo no sea del tamaño de la pantalla sino del
         -- tamaño de lo que haga falta. Lo que la lente hace no queda escrito en
         -- ninguna parte: es cómo se está mirando, no qué se dibujó.
+
+    @invariant TheCanvasCannotBeSelected
+        -- Mientras el lienzo está abierto, ni los trazos, ni sus controles, ni
+        -- la página que queda debajo pueden convertirse en una selección del
+        -- navegador. Los contactos espurios de la palma y del lápiz se ignoran
+        -- como gestos nativos: sólo alimentan el lápiz, la goma o la lente.
 
     @invariant PencilAndEraserAreTheOnlyTools
         -- El lienzo ofrece exactamente dos modos: el lápiz deja tinta y la goma
