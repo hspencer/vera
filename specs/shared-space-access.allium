@@ -29,6 +29,15 @@ given {
 }
 
 ------------------------------------------------------------
+-- Value Types
+------------------------------------------------------------
+
+value PageSelector {
+    property_key: String
+    property_value: String
+}
+
+------------------------------------------------------------
 -- Contracts
 ------------------------------------------------------------
 
@@ -85,7 +94,7 @@ contract OwnerAdministration {
 }
 
 contract SharedSpaceAccess {
-    create_space: (owner: core/Participant, name: String, pages: List<core/Page>, audience: Audience) -> SharedSpace
+    create_space: (owner: core/Participant, name: String, selector: PageSelector, audience: Audience) -> SharedSpace
     invite: (owner: core/Participant, space: SharedSpace, permissions: Set<Permission>) -> AccessInvitation
     redeem: (invitation: AccessInvitation, person_name: String) -> AccessGrant
     grant: (owner: core/Participant, space: SharedSpace, participant: core/Participant, permissions: Set<Permission>) -> AccessGrant
@@ -96,9 +105,9 @@ contract SharedSpaceAccess {
     create_page: (author: core/Participant, space: SharedSpace, change: core/Change) -> core/Page
 
     @invariant SharingIsDelimited
-        -- A shared space names the pages it contains. Admission to it never
-        -- reveals, searches or grants authority over the rest of the personal
-        -- graph merely because the selected pages came from there.
+        -- A shared space names a property selector. Exactly the pages matching
+        -- it belong to the space. Admission never reveals, searches or grants
+        -- authority over the rest of the personal graph.
 
     @invariant TheGraphHasOneOwnerAndMayHaveManyAuthors
         -- Sharing does not make the graph collectively owned. An authorized
@@ -127,9 +136,14 @@ contract SharedSpaceAccess {
 
     @invariant PagesCreatedInsideTheSpaceJoinIt
         -- An editor who creates a page while acting inside a shared space adds
-        -- that page to the space in the same attributed act. The common work may
-        -- therefore grow through its authorized authors without asking the owner
-        -- to publish every new page by hand.
+        -- the selector property to that page in the same attributed act. The
+        -- common work may therefore grow through its authorized authors without
+        -- asking the owner to publish every new page by hand.
+
+    @invariant TheSelectorIsTheMembership
+        -- Adding the selector property incorporates a page; removing or changing
+        -- it removes the page. There is no second hand-maintained membership list
+        -- that can drift from what the corpus says about the page.
 
     @invariant ALinkDoesNotPublishItsTarget
         -- Linking to an existing page never adds that page to the space. A link
@@ -197,7 +211,6 @@ enum DeliveryChannel { email | secret_link | qr_code | split_code | owner_confir
 enum ProposalStatus { awaiting_review | accepted | rejected }
 enum BindingStatus { active | revoked }
 enum EnrollmentStatus { pending | completed | revoked | expired }
-enum SharedPageAdmission { owner_selection | created_inside_space }
 
 ------------------------------------------------------------
 -- Entities and Variants
@@ -277,27 +290,19 @@ entity SharedSpace {
     graph: core/Graph
     owner: core/Participant
     name: String
+    selector: PageSelector
     audience: Audience
     status: SpaceStatus
     created_at: Timestamp
     grants: AccessGrant with space = this
     invitations: AccessInvitation with space = this
     proposals: SharedProposal with space = this
-    page_memberships: SharedPageMembership with space = this
-    pages: page_memberships -> page
+    pages: matching_pages(graph.pages, selector)
 
     transitions status {
         active -> withdrawn
         terminal: withdrawn
     }
-}
-
-entity SharedPageMembership {
-    space: SharedSpace
-    page: core/Page
-    admission: SharedPageAdmission
-    admitted_by: core/Participant
-    admitted_at: Timestamp
 }
 
 entity AccessInvitation {
@@ -503,28 +508,19 @@ rule HumanSessionExpires {
 }
 
 rule OwnerCreatesSharedSpace {
-    when: CreateSharedSpace(owner, name, pages, audience)
+    when: CreateSharedSpace(owner, name, selector, audience)
 
     requires: instance.owner = owner
-    requires: pages.all(page => page.graph = instance.graph)
 
-    ensures:
-        let space = SharedSpace.created(
-            graph: instance.graph,
-            owner: owner,
-            name: name,
-            audience: audience,
-            status: active,
-            created_at: now
-        )
-        for page in pages:
-            SharedPageMembership.created(
-                space: space,
-                page: page,
-                admission: owner_selection,
-                admitted_by: owner,
-                admitted_at: now
-            )
+    ensures: SharedSpace.created(
+        graph: instance.graph,
+        owner: owner,
+        name: name,
+        selector: selector,
+        audience: audience,
+        status: active,
+        created_at: now
+    )
 }
 
 rule OwnerCreatesInvitationCapability {
@@ -674,28 +670,23 @@ rule AuthorizedParticipantEditsCanonicalPage {
 }
 
 rule AuthorizedParticipantCreatesPageInsideSharedSpace {
-    when: CreatePageInSharedSpace(participant, space, origin_id, change, channel, evidence?)
+    when: CreatePageInSharedSpace(participant, space, page_origin_id, page_change, selector_origin_id, selector_change, channel, evidence?)
 
     let grant = AccessGrant{space: space, participant: participant, status: active}
 
     requires: exists grant
     requires: edit in grant.permissions
-    requires: creates_page(change)
+    requires: creates_page(page_change)
+    requires: assigns_selector(selector_change, created_page(page_change), space.selector)
     requires: channel != authenticated_voice or evidence != null
 
     ensures:
-        core/ParticipantSubmits(participant, space.graph, origin_id, change, channel, evidence)
-        SharedPageMembership.created(
-            space: space,
-            page: created_page(change),
-            admission: created_inside_space,
-            admitted_by: participant,
-            admitted_at: now
-        )
+        core/ParticipantSubmits(participant, space.graph, page_origin_id, page_change, channel, evidence)
+        core/ParticipantSubmits(participant, space.graph, selector_origin_id, selector_change, channel, evidence)
 
     @guidance
-        -- Applying the page creation and admitting the resulting page to the
-        -- space is one atomic act at the authorship boundary.
+        -- The two attributed changes are committed atomically at the authorship
+        -- boundary: no observer sees the page without its selector property.
 }
 
 rule OwnerAcceptsSharedProposal {
@@ -768,17 +759,6 @@ rule FederatedParticipantAuthenticates {
 invariant EverySharedPageBelongsToItsGraph {
     for space in SharedSpaces:
         space.pages.all(page => page.graph = space.graph)
-}
-
-invariant EverySharedPageMembershipHasOneBoundary {
-    for membership in SharedPageMemberships:
-        membership.page.graph = membership.space.graph
-}
-
-invariant OnlyTheOwnerOrAnEditorAdmitsSharedPages {
-    for membership in SharedPageMemberships:
-        membership.admission = owner_selection implies
-            membership.admitted_by = membership.space.owner
 }
 
 invariant EverySharedSpaceBelongsToItsSovereignOwner {
@@ -966,14 +946,14 @@ surface SharedSpaceCreation {
     context instance: identity/VeraInstance
 
     provides:
-        CreateSharedSpace(owner, name, pages, audience)
-            when owner = instance.owner and pages.all(page => page.graph = instance.graph)
+        CreateSharedSpace(owner, name, selector, audience)
+            when owner = instance.owner
 
     contracts:
         fulfils SharedSpaceAccess
 
     @guarantee CreatingASpaceDoesNotPublishTheRest
-        -- Naming pages for one space exposes no other page of the owner's graph.
+        -- A selector for one space exposes no non-matching page of the graph.
 }
 
 surface InvitationRedemption {
@@ -1090,8 +1070,7 @@ surface OwnerSharedSpaceDirectory {
         session.pending_invitations
 
     provides:
-        CreateSharedSpace(owner, name, pages, audience)
-            when pages.all(page => page.graph = session.instance.graph)
+        CreateSharedSpace(owner, name, selector, audience)
 
     contracts:
         fulfils SharedSpaceAccess
@@ -1128,6 +1107,7 @@ surface SharedSpaceAdministration {
 
     exposes:
         space.name
+        space.selector
         space.pages
         space.audience
         space.grants
@@ -1165,7 +1145,7 @@ surface SharedSpaceParticipation {
             when contribute in AccessGrant{space: space, participant: participant, status: active}.permissions
         EditSharedPage(participant, space, page, origin_id, change, channel, evidence?)
             when edit in AccessGrant{space: space, participant: participant, status: active}.permissions
-        CreatePageInSharedSpace(participant, space, origin_id, change, channel, evidence?)
+        CreatePageInSharedSpace(participant, space, page_origin_id, page_change, selector_origin_id, selector_change, channel, evidence?)
             when edit in AccessGrant{space: space, participant: participant, status: active}.permissions
 
     contracts:
