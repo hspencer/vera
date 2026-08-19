@@ -223,8 +223,6 @@ input {
 #bar {
   --bar-control-height: 2.25rem;
   grid-area: bar;
-  /* El marco de referencia de lo que cuelga de la barra: hoy, la lista de
-     resultados, que se quiere del ancho de la barra y no del campo. */
   position: relative;
   display: flex;
   align-items: center;
@@ -320,6 +318,9 @@ input {
 #search-wrap {
   flex: 1 1 auto;
   min-width: 0;
+  /* El marco de referencia de la lista de resultados: se quiere del ancho del
+     campo y no de la barra entera, así que cuelga de aquí y no de #bar. */
+  position: relative;
 }
 
 #search {
@@ -333,11 +334,11 @@ input {
 }
 
 /*
- * La lista cae de la barra y la ocupa entera.
+ * La lista cae del campo y toma su ancho.
  *
- * De borde a borde y pegada al canto de abajo: así se lee como una continuación
- * de la barra —de donde nace— y no como una caja suelta flotando encima del
- * texto. Sin esquinas redondeadas arriba, por lo mismo: van unidas.
+ * Pegada al canto de abajo del buscador y de su mismo ancho: así se lee como una
+ * continuación del campo —de donde nace— y no como una caja que se derrama por
+ * toda la barra. Sin esquinas redondeadas arriba, por lo mismo: van unidas.
  */
 #results {
   position: absolute;
