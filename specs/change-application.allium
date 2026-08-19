@@ -14,6 +14,12 @@
 -- Dependencies: Participant, Graph, Page, Block, Change, Submission, Revision and
 --   PropertyAssignment are governed by core.allium
 
+-- DEUDA DE IMPLEMENTACIÓN — 2026-08-19
+-- El núcleo aplica hoy una operación atómica por vez. Falta admitir una tanda
+-- como un solo gesto atómico, reservar su intervalo de secuencias, resolver las
+-- identidades creadas dentro de ella y devolver sus operaciones individuales.
+-- Esta deuda no autoriza a MCP a simular atomicidad encadenando solicitudes.
+
 use "./core.allium" as core
 
 ------------------------------------------------------------
@@ -22,6 +28,7 @@ use "./core.allium" as core
 
 contract IdempotentOrderedApplication {
     admit: (origin_id: String, change: core/Change) -> Operation
+    admit_batch: (batch_origin_id: String, submissions: List<core/Submission>) -> List<Operation>
     replay: (log: ChangeLog, after: Integer) -> Set<Operation>
 
     @invariant OriginIdentityIsTheIdempotencyKey
@@ -41,6 +48,28 @@ contract IdempotentOrderedApplication {
     @invariant ApplicationIsAllOrNothing
         -- An operation either applies completely or leaves the graph untouched. A
         -- partially applied operation is never observable and never receives a sequence.
+
+    @invariant BatchApplicationIsAllOrNothing
+        -- Todas las submissions de una tanda se validan contra el mismo estado
+        -- previo. Si una falla, ninguna se acepta, ninguna muta el grafo y
+        -- ninguna consume secuencia. Si todas pasan, se aplican como una sola
+        -- transacción observable.
+
+    @invariant ABatchKeepsOneOperationPerChange
+        -- Una tanda aceptada recibe un intervalo contiguo de secuencias y crea
+        -- una Operation por Submission en el orden declarado. Replay sigue
+        -- viendo cambios ordinarios: el transporte agrupado no compacta ni
+        -- debilita la historia canónica.
+
+    @invariant BatchOriginIsTheBatchIdempotencyKey
+        -- Repetir batch_origin_id con la misma tanda devuelve el mismo intervalo
+        -- ya aplicado. Reutilizarlo con otra lista u otro orden es un conflicto,
+        -- no una petición para completar un prefijo.
+
+    @invariant InBatchReferencesResolveBeforeAdmission
+        -- Las referencias locales a páginas y bloques creados por la propia
+        -- tanda se resuelven antes de aceptar cualquier Submission. Una
+        -- referencia que no resuelve rechaza la tanda completa.
 }
 
 ------------------------------------------------------------

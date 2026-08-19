@@ -22,6 +22,14 @@
 -- Dependencies: Participant, Operation y ContributionChannel los gobierna
 --   core.allium; la credencial y su alcance, agent-participation.allium
 
+-- DEUDA DE IMPLEMENTACIÓN — 2026-08-19
+-- El comportamiento de escritura por lotes especificado aquí todavía no existe.
+-- La puerta MCP vigente admite un solo cambio por llamada; la API no admite un
+-- lote atómico, no resuelve referencias temporales entre cambios y no ofrece la
+-- precondición de revisión necesaria para editar sin pisar. La deuda termina
+-- cuando el mismo contrato esté disponible en la puerta MCP y en la única puerta
+-- canónica de escritura, sin un camino privilegiado para ningún agente.
+
 use "./core.allium" as core
 
 ------------------------------------------------------------
@@ -196,6 +204,7 @@ contract WhatWasReadIsRecorded {
 -- dos formas de romper una memoria.
 contract AWriteCanBeRepeatedWithoutRepeating {
     apply: (proposal: Proposal) -> Applied
+    apply_batch: (batch: BatchProposal) -> BatchApplied
 
     @invariant TheSameOriginIsTheSameWrite
         -- Cada cambio lleva un origen estable. Reenviarlo devuelve lo que ya
@@ -209,11 +218,39 @@ contract AWriteCanBeRepeatedWithoutRepeating {
         -- y no mezcla por su cuenta. Un agente que sobrescribe lo que no leyó no
         -- está editando: está pisando.
 
-    @invariant ABatchDoesNotPretendToBeAtomic
-        -- Si el núcleo no ofrece una operación compuesta, un lote no finge que
-        -- la hay: la respuesta dice qué se aplicó, qué no, y cómo seguir sin
-        -- duplicar. Fingir atomicidad es la forma de perder la mitad de un cambio
-        -- sin enterarse.
+    @invariant ABatchIsValidatedBeforeAnythingChanges
+        -- Vera valida autoridad, límites, precondiciones, referencias y cada
+        -- cambio del lote antes de aplicar el primero. Si uno no puede aplicarse,
+        -- ninguno recibe secuencia y el grafo queda como estaba.
+
+    @invariant ABatchIsAtomicWithoutFlatteningHistory
+        -- Aceptar un lote aplica todos sus cambios o ninguno. Cada cambio
+        -- aceptado sigue siendo una operación canónica propia, con origen,
+        -- secuencia, sujeto, autoría y canal; las secuencias del lote son
+        -- contiguas y el lote común permite reconocerlas como un solo gesto.
+
+    @invariant TemporaryReferencesLiveOnlyInsideTheirBatch
+        -- Un cambio puede nombrar con una referencia temporal una página o un
+        -- bloque creado antes dentro del mismo lote. Toda referencia se resuelve
+        -- antes de aplicar; una referencia ausente, duplicada, futura o que
+        -- escape del lote rechaza el lote completo.
+
+    @invariant TheBatchAndEveryChangeAreIdempotent
+        -- El lote tiene un origen estable y cada cambio conserva el suyo.
+        -- Reenviar el mismo lote devuelve exactamente las operaciones ya
+        -- aplicadas; no crea una segunda tanda ni aplica sólo los cambios que
+        -- parezcan faltar.
+
+    @invariant AStructuredPageIsOneBatch
+        -- Crear una página con propiedades y un árbol de bloques es una
+        -- composición de cambios canónicos enviada en una sola llamada. La
+        -- comodidad de aceptar una estructura no crea un cambio gigante ni
+        -- esconde las operaciones que forman la página.
+
+    @invariant EveryBatchIsBounded
+        -- La puerta rechaza antes de aplicar un lote que exceda el máximo de
+        -- cambios o de bytes vigente. El rechazo dice qué límite se excedió;
+        -- nunca trunca el lote ni aplica un prefijo silenciosamente.
 
     @invariant ARefusalKeepsItsReason
         -- Un rechazo del dominio llega como rechazo, con su código y su motivo
@@ -277,9 +314,16 @@ value Exposure {
 value Proposal {
     connection: Connection
     origin: String
+    change: core/Change
     -- Contra qué estado se escribe. Sin esto no hay edición segura.
     precondition: String?
     purpose: String?
+}
+
+value BatchProposal {
+    connection: Connection
+    origin: String
+    proposals: List<Proposal>
 }
 
 value Applied {
@@ -290,11 +334,25 @@ value Applied {
     channel: core/ContributionChannel
 }
 
+value BatchApplied {
+    batch: BatchProposal
+    applied: List<Applied>
+}
+
 value Session {
     connection: Connection
     -- La versión del protocolo que esta sesión habla. Es parte del contrato y de
     -- la matriz de pruebas, no un detalle de implementación.
     protocol: String
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    max_batch_changes: Integer
+    max_batch_bytes: Integer
 }
 
 ------------------------------------------------------------
@@ -332,6 +390,26 @@ rule WritingThroughMCPIsWritingLikeAnyoneElse {
         -- credencial, y no lo declara quien llama.
 }
 
+rule WritingABatchThroughMCPIsOneCanonicalGesture {
+    when: WriteBatchThroughMCP(participant, connection, batch)
+
+    let applied = AWriteCanBeRepeatedWithoutRepeating.apply_batch(batch)
+
+    requires: batch.connection = connection
+    requires: batch.proposals.count > 0
+    requires: batch.proposals.count <= max_batch_changes
+    requires: batch_size(batch) <= max_batch_bytes
+    requires: exists applied
+
+    ensures: batch_written(applied)
+
+    @guidance
+        -- La superficie puede presentar una herramienta general de lote y una
+        -- herramienta de creación de página estructurada. Ambas producen este
+        -- mismo gesto; la segunda sólo compone el lote para evitar que el modelo
+        -- haga una llamada por bloque.
+}
+
 ------------------------------------------------------------
 -- Surfaces
 ------------------------------------------------------------
@@ -353,6 +431,7 @@ surface MemoryOverMCP {
     provides:
         ReadThroughMCP(participant, connection, subject)
         WriteThroughMCP(participant, connection, proposal)
+        WriteBatchThroughMCP(participant, connection, batch)
 
     @guarantee ContextIsComposedAndNotDumped
         -- Lo que sale es el contexto mínimo pertinente, y dice qué incluyó, qué
@@ -387,6 +466,8 @@ open question "¿Cuál es la unidad de concesión: página, proyecto, espacio de
 open question "¿Cómo se representa una propuesta dentro del grafo, si una propuesta no es todavía contenido y tampoco es una operación aplicada?"
 
 open question "¿Qué precondición de revisión expone el núcleo para editar: la secuencia, una revisión propia del bloque, o el hash de lo que se leyó?"
+
+open question "¿Cuáles son los valores iniciales de max_batch_changes y max_batch_bytes, y se ajustan por concesión o son iguales para toda conexión?"
 
 open question "¿Qué lecturas se conservan con detalle, cuáles sólo como huella, y durante cuánto tiempo?"
 
