@@ -466,6 +466,8 @@ input {
  * Quedan fuera a propósito las tablas, las imágenes, los diagramas y el código.
  * Una tabla estrecha se vuelve ilegible por el otro lado. El audio sí respeta
  * esta medida con una regla propia: sus controles no ganan nada al estirarse.
+ * La medida queda centrada en el espacio del bloque; `width: 100%` hace que los
+ * párrafos compartan columna en vez de centrarse cada uno según su largo.
  *
  * El selector nombra los dos niveles porque el texto vive dentro de
  * `.body-text` y no como hijo directo de `.body`. Apuntando sólo a `.body >`
@@ -488,7 +490,9 @@ input {
  * 45em leyendo, tiene que caber en 45em escribiendo.
  */
 .editor {
+  width: 100%;
   max-width: var(--content-width, 45em);
+  margin-inline: auto;
 }
 
 .format-bar {
@@ -1500,33 +1504,21 @@ input {
     position: absolute;
     z-index: 1;
     top: var(--gloss-top, 0px);
+    /* El borde derecho de la columna centrada, más la separación hacia la
+       glosa. `right: 0` le entrega todo el resto de la fila. */
     left: calc(
-      var(--block-indent, 0px) + var(--rail) + var(--rail-gap) + 0.25rem
+      var(--block-indent, 0px) + var(--rail) + var(--rail-gap)
+      + (
+        100% - var(--block-indent, 0px) - var(--rail) - var(--rail-gap)
+        - var(--content-width, 45em)
+      ) / 2
       + var(--content-width, 45em) + 1.25rem
     );
-    width: calc(var(--content-width, 45em) * 0.6);
-    max-width: calc(100vw - var(--rail) - var(--rail-gap) - var(--content-width, 45em) - 4rem);
+    right: 0;
+    width: auto;
+    min-width: 15em;
+    max-width: none;
     margin: 0;
-  }
-
-  /*
-   * Una columna tipográfica discreta, derivada de la columna de lectura.
-   *
-   * No es 60% del viewport ni del espacio sobrante: es tres quintos del token
-   * `--content-width`, redondeados al `em` entero más cercano. `width: 100%`
-   * deja que `max-width` sea quien mande; el segundo término de `min()` conserva
-   * el tope físico de pantalla. La regla anterior queda como fallback para un
-   * motor que todavía no entienda `round()`.
-   */
-  @supports (max-width: round(nearest, calc(45em * 0.6), 1em)) {
-    #vera-root[data-layout='text_only'] .block:not(.wide-content) > .block-gloss:not(.empty),
-    #vera-root[data-layout='text_only'] .block:not(.wide-content) > .block-gloss.empty.open {
-      width: 100%;
-      max-width: min(
-        round(nearest, calc(var(--content-width, 45em) * 0.6), 1em),
-        calc(100vw - var(--rail) - var(--rail-gap) - var(--content-width, 45em) - 4rem)
-      );
-    }
   }
 
   #vera-root[data-layout='text_only'] .block:not(.wide-content) > .gloss-toggle {
