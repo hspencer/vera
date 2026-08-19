@@ -93,6 +93,7 @@ contract SharedSpaceAccess {
     read: (reader: core/Participant, space: SharedSpace, page: core/Page) -> core/Page
     contribute: (author: core/Participant, space: SharedSpace, page: core/Page, change: core/Change) -> SharedProposal
     edit: (author: core/Participant, space: SharedSpace, page: core/Page, change: core/Change) -> core/Submission
+    create_page: (author: core/Participant, space: SharedSpace, change: core/Change) -> core/Page
 
     @invariant SharingIsDelimited
         -- A shared space names the pages it contains. Admission to it never
@@ -123,6 +124,17 @@ contract SharedSpaceAccess {
     @invariant RevocationStopsTheFutureNotThePast
         -- Revoking a grant ends subsequent access and mutation. It preserves the
         -- participant, their revisions and every decision already recorded.
+
+    @invariant PagesCreatedInsideTheSpaceJoinIt
+        -- An editor who creates a page while acting inside a shared space adds
+        -- that page to the space in the same attributed act. The common work may
+        -- therefore grow through its authorized authors without asking the owner
+        -- to publish every new page by hand.
+
+    @invariant ALinkDoesNotPublishItsTarget
+        -- Linking to an existing page never adds that page to the space. A link
+        -- to something outside the boundary is visible as an unavailable target
+        -- and reveals nothing about whether that target exists in the graph.
 }
 
 contract InvitationCapability {
@@ -185,6 +197,7 @@ enum DeliveryChannel { email | secret_link | qr_code | split_code | owner_confir
 enum ProposalStatus { awaiting_review | accepted | rejected }
 enum BindingStatus { active | revoked }
 enum EnrollmentStatus { pending | completed | revoked | expired }
+enum SharedPageAdmission { owner_selection | created_inside_space }
 
 ------------------------------------------------------------
 -- Entities and Variants
@@ -264,18 +277,27 @@ entity SharedSpace {
     graph: core/Graph
     owner: core/Participant
     name: String
-    pages: List<core/Page>
     audience: Audience
     status: SpaceStatus
     created_at: Timestamp
     grants: AccessGrant with space = this
     invitations: AccessInvitation with space = this
     proposals: SharedProposal with space = this
+    page_memberships: SharedPageMembership with space = this
+    pages: page_memberships -> page
 
     transitions status {
         active -> withdrawn
         terminal: withdrawn
     }
+}
+
+entity SharedPageMembership {
+    space: SharedSpace
+    page: core/Page
+    admission: SharedPageAdmission
+    admitted_by: core/Participant
+    admitted_at: Timestamp
 }
 
 entity AccessInvitation {
@@ -486,15 +508,23 @@ rule OwnerCreatesSharedSpace {
     requires: instance.owner = owner
     requires: pages.all(page => page.graph = instance.graph)
 
-    ensures: SharedSpace.created(
-        graph: instance.graph,
-        owner: owner,
-        name: name,
-        pages: pages,
-        audience: audience,
-        status: active,
-        created_at: now
-    )
+    ensures:
+        let space = SharedSpace.created(
+            graph: instance.graph,
+            owner: owner,
+            name: name,
+            audience: audience,
+            status: active,
+            created_at: now
+        )
+        for page in pages:
+            SharedPageMembership.created(
+                space: space,
+                page: page,
+                admission: owner_selection,
+                admitted_by: owner,
+                admitted_at: now
+            )
 }
 
 rule OwnerCreatesInvitationCapability {
@@ -643,6 +673,31 @@ rule AuthorizedParticipantEditsCanonicalPage {
     ensures: core/ParticipantSubmits(participant, space.graph, origin_id, change, channel, evidence)
 }
 
+rule AuthorizedParticipantCreatesPageInsideSharedSpace {
+    when: CreatePageInSharedSpace(participant, space, origin_id, change, channel, evidence?)
+
+    let grant = AccessGrant{space: space, participant: participant, status: active}
+
+    requires: exists grant
+    requires: edit in grant.permissions
+    requires: creates_page(change)
+    requires: channel != authenticated_voice or evidence != null
+
+    ensures:
+        core/ParticipantSubmits(participant, space.graph, origin_id, change, channel, evidence)
+        SharedPageMembership.created(
+            space: space,
+            page: created_page(change),
+            admission: created_inside_space,
+            admitted_by: participant,
+            admitted_at: now
+        )
+
+    @guidance
+        -- Applying the page creation and admitting the resulting page to the
+        -- space is one atomic act at the authorship boundary.
+}
+
 rule OwnerAcceptsSharedProposal {
     when: ReviewSharedProposal(owner, proposal, accept)
 
@@ -713,6 +768,17 @@ rule FederatedParticipantAuthenticates {
 invariant EverySharedPageBelongsToItsGraph {
     for space in SharedSpaces:
         space.pages.all(page => page.graph = space.graph)
+}
+
+invariant EverySharedPageMembershipHasOneBoundary {
+    for membership in SharedPageMemberships:
+        membership.page.graph = membership.space.graph
+}
+
+invariant OnlyTheOwnerOrAnEditorAdmitsSharedPages {
+    for membership in SharedPageMemberships:
+        membership.admission = owner_selection implies
+            membership.admitted_by = membership.space.owner
 }
 
 invariant EverySharedSpaceBelongsToItsSovereignOwner {
@@ -1099,6 +1165,8 @@ surface SharedSpaceParticipation {
             when contribute in AccessGrant{space: space, participant: participant, status: active}.permissions
         EditSharedPage(participant, space, page, origin_id, change, channel, evidence?)
             when edit in AccessGrant{space: space, participant: participant, status: active}.permissions
+        CreatePageInSharedSpace(participant, space, origin_id, change, channel, evidence?)
+            when edit in AccessGrant{space: space, participant: participant, status: active}.permissions
 
     contracts:
         fulfils SharedSpaceAccess
@@ -1161,7 +1229,6 @@ surface FederatedLoginBoundary {
 -- Open Questions
 ------------------------------------------------------------
 
-open question "When a shared space contains a page, which linked or descendant pages are included automatically, if any?"
 open question "Does accepting a contribution apply its changes as one attributed batch, and what structural subsets may the owner accept?"
 open question "May one person retain several independent guest identities in the same graph before explicitly linking them?"
 open question "What event requires a fresh authenticator gesture rather than an existing session — destructive editing, publication, grant administration, or all three?"
