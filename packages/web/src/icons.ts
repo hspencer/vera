@@ -96,6 +96,9 @@ const SHAPES = {
    * página se distingan de reojo.
    */
   'edit-2': '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+  eraser:
+    '<path d="M19 19h-11l-4 -4a2 2 0 0 1 0 -3l7 -7a2 2 0 0 1 3 0l5 5a2 2 0 0 1 0 3l-6 6"/>' +
+    '<path d="M18 12.3l-6.3 -6.3"/>',
   // El lápiz macizo: una acción secundaria pequeña se reconoce por su silueta,
   // sin necesitar fondo ni el doble trazo de un icono calado.
   'edit-filled':

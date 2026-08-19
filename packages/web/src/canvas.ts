@@ -1,9 +1,9 @@
 // El lienzo: dibujar a mano sobre toda la pantalla.
 //
 // Ver specs/hand-drawing.allium. Aquí no hay paleta, ni regla de grosores, ni
-// selector de color, y no es minimalismo: es que no hay nada que elegir. La
+// selector de color. La
 // tinta es el color del texto de la página y el grosor sale de la presión, así
-// que las únicas tres cosas que pueden pasar son dibujar, deshacer y salir.
+// que sólo se elige entre dejar tinta y retirar un trazo con la goma.
 //
 // Se dibuja en un `<canvas>` y no en SVG, y la diferencia se nota con el dedo
 // apoyado: un elemento nuevo por cada punto obliga al navegador a rehacer el
@@ -22,6 +22,8 @@ import { icon } from './icons.ts';
 /** Cuánto se acerca o se aleja como mucho, con dos dedos. */
 const CLOSEST = 8;
 const FARTHEST = 0.15;
+/** La goma se siente deliberadamente más ancha que la punta, en píxeles de pantalla. */
+export const ERASER_RADIUS = 24;
 
 export interface CanvasResult {
   /** Los trazos escritos como el texto de un bloque. Vacío si no se dibujó nada. */
@@ -44,6 +46,41 @@ export function extendStroke(stroke: Stroke, point: Point, straight: boolean): v
   else stroke.splice(1, stroke.length - 1, point);
 }
 
+/** Distancia desde un punto al tramo finito entre otros dos. */
+function distanceToSegment(point: Point, from: Point, to: Point): number {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (dx === 0 && dy === 0) return Math.hypot(point.x - from.x, point.y - from.y);
+  const along = Math.max(0, Math.min(1, ((point.x - from.x) * dx + (point.y - from.y) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(point.x - (from.x + along * dx), point.y - (from.y + along * dy));
+}
+
+/**
+ * Quita los trazos que toca la goma y devuelve cuáles fueron, con su lugar.
+ *
+ * Es una goma vectorial: retira el gesto entero al tocarlo. No corta la línea en
+ * cientos de fragmentos ni convierte el dibujo en píxeles.
+ */
+export function eraseStrokesAt(
+  strokes: Stroke[],
+  point: Point,
+  radius: number,
+): Array<{ stroke: Stroke; index: number }> {
+  const removed: Array<{ stroke: Stroke; index: number }> = [];
+  for (let index = strokes.length - 1; index >= 0; index -= 1) {
+    const stroke = strokes[index]!;
+    const touched = stroke.some((sample, at) => {
+      if (Math.hypot(point.x - sample.x, point.y - sample.y) <= radius) return true;
+      const next = stroke[at + 1];
+      return next !== undefined && distanceToSegment(point, sample, next) <= radius;
+    });
+    if (!touched) continue;
+    removed.unshift({ stroke, index });
+    strokes.splice(index, 1);
+  }
+  return removed;
+}
+
 /**
  * Abre el lienzo y devuelve lo dibujado cuando se cierra.
  *
@@ -60,16 +97,27 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
     canvas.className = 'canvas-sheet';
     shell.append(canvas);
 
-    /*
-     * Un control, y sólo porque salir tiene que poder hacerse con el dedo.
-     *
-     * Deshacer no lo necesita: con teclado es el atajo de siempre y con la mano
-     * es tocar con dos dedos, que es lo que hace un iPad y lo que la gente ya
-     * sabe. Un botón para algo que ya tiene gesto es una barra de herramientas
-     * empezando.
-     */
     const controls = document.createElement('div');
     controls.className = 'canvas-controls';
+    const tools = document.createElement('div');
+    tools.className = 'canvas-tools';
+    tools.setAttribute('role', 'group');
+    tools.setAttribute('aria-label', 'herramienta de dibujo');
+    const pencil = document.createElement('button');
+    pencil.type = 'button';
+    pencil.className = 'canvas-button canvas-tool active';
+    pencil.innerHTML = icon('edit-2');
+    pencil.title = 'lápiz';
+    pencil.setAttribute('aria-label', 'dibujar con lápiz');
+    pencil.setAttribute('aria-pressed', 'true');
+    const eraser = document.createElement('button');
+    eraser.type = 'button';
+    eraser.className = 'canvas-button canvas-tool';
+    eraser.innerHTML = icon('eraser');
+    eraser.title = 'borrador';
+    eraser.setAttribute('aria-label', 'borrar trazos');
+    eraser.setAttribute('aria-pressed', 'false');
+    tools.append(pencil, eraser);
     const done = document.createElement('button');
     done.type = 'button';
     done.className = 'canvas-button done';
@@ -85,7 +133,7 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
     done.innerHTML = icon('check');
     done.title = 'listo';
     done.setAttribute('aria-label', 'listo, guardar el dibujo');
-    controls.append(done);
+    controls.append(tools, done);
     shell.append(controls);
     document.body.append(shell);
 
@@ -99,6 +147,21 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
     let scale = 1;
     let panX = 0;
     let panY = 0;
+    let tool: 'pencil' | 'eraser' = 'pencil';
+    let eraserPoint: Point | null = null;
+
+    const chooseTool = (chosen: 'pencil' | 'eraser'): void => {
+      tool = chosen;
+      pencil.classList.toggle('active', chosen === 'pencil');
+      eraser.classList.toggle('active', chosen === 'eraser');
+      pencil.setAttribute('aria-pressed', String(chosen === 'pencil'));
+      eraser.setAttribute('aria-pressed', String(chosen === 'eraser'));
+      canvas.classList.toggle('erasing', chosen === 'eraser');
+      eraserPoint = null;
+      paint();
+    };
+    pencil.addEventListener('click', () => chooseTool('pencil'));
+    eraser.addEventListener('click', () => chooseTool('eraser'));
 
     const context = canvas.getContext('2d');
     let ink = '#000';
@@ -139,6 +202,13 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
           context.lineWidth = segment.width;
           context.stroke();
         }
+      }
+      if (tool === 'eraser' && eraserPoint !== null) {
+        context.beginPath();
+        context.arc(eraserPoint.x, eraserPoint.y, ERASER_RADIUS / scale, 0, Math.PI * 2);
+        context.lineWidth = 1 / scale;
+        context.strokeStyle = ink;
+        context.stroke();
       }
       context.restore();
     };
@@ -190,7 +260,14 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
 
     // --- Dibujar ----------------------------------------------------------
 
+    type CanvasAction =
+      | { kind: 'draw'; stroke: Stroke; index: number }
+      | { kind: 'erase'; before: Stroke[]; after: Stroke[] };
+    const history: CanvasAction[] = [];
+    const future: CanvasAction[] = [];
     const drawing = new Map<number, Stroke>();
+    const erasing = new Set<number>();
+    const erased = new Map<number, Stroke[]>();
     /** Punteros cuyo trazo ya se convirtió en recta durante este apoyo. */
     const straightening = new Set<number>();
     /** Los dos dedos de un pellizco, mientras dure. */
@@ -233,8 +310,15 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
           for (const started of drawing.values()) {
             const at = strokes.indexOf(started);
             if (at !== -1) strokes.splice(at, 1);
+            const action = history.findLastIndex((one) => one.kind === 'draw' && one.stroke === started);
+            if (action !== -1) history.splice(action, 1);
           }
           drawing.clear();
+          for (const before of erased.values()) {
+            strokes.splice(0, strokes.length, ...before);
+          }
+          erased.clear();
+          erasing.clear();
           straightening.clear();
           const [a, b] = [...pinching.values()];
           if (a !== undefined && b !== undefined) {
@@ -254,11 +338,22 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
       }
       if (pinching.size > 1) return;
       canvas.setPointerCapture(event.pointerId);
+      if (tool === 'eraser') {
+        const point = sample(event);
+        eraserPoint = point;
+        future.length = 0;
+        erasing.add(event.pointerId);
+        erased.set(event.pointerId, [...strokes]);
+        eraseStrokesAt(strokes, point, ERASER_RADIUS / scale);
+        paint();
+        return;
+      }
       const stroke: Stroke = [sample(event)];
       if (event.shiftKey) straightening.add(event.pointerId);
-      undone.length = 0;
+      future.length = 0;
       drawing.set(event.pointerId, stroke);
       strokes.push(stroke);
+      history.push({ kind: 'draw', stroke, index: strokes.length - 1 });
       paint();
     });
 
@@ -285,6 +380,14 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
         panX = midX - (pinchFrom.midX - pinchFrom.panX) * factor;
         panY = midY - (pinchFrom.midY - pinchFrom.panY) * factor;
         scale = grown;
+        paint();
+        return;
+      }
+      if (tool === 'eraser') {
+        eraserPoint = sample(event);
+        if (erasing.has(event.pointerId)) {
+          eraseStrokesAt(strokes, eraserPoint, ERASER_RADIUS / scale);
+        }
         paint();
         return;
       }
@@ -340,6 +443,14 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
         extendStroke(stroke, sample(event), true);
       }
       drawing.delete(event.pointerId);
+      erasing.delete(event.pointerId);
+      const before = erased.get(event.pointerId);
+      if (before !== undefined) {
+        if (before.length !== strokes.length || before.some((one, index) => strokes[index] !== one)) {
+          history.push({ kind: 'erase', before, after: [...strokes] });
+        }
+        erased.delete(event.pointerId);
+      }
       straightening.delete(event.pointerId);
       if (stroke !== undefined && stroke.length === 0) {
         const at = strokes.indexOf(stroke);
@@ -348,7 +459,11 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
     };
     canvas.addEventListener('pointerup', liftPointer);
     canvas.addEventListener('pointercancel', liftPointer);
-    canvas.addEventListener('pointerleave', liftPointer);
+    canvas.addEventListener('pointerleave', (event) => {
+      eraserPoint = null;
+      liftPointer(event);
+      paint();
+    });
 
     // --- Deshacer y salir --------------------------------------------------
 
@@ -360,15 +475,29 @@ export function openCanvas(already: readonly Stroke[] = []): Promise<CanvasResul
      * a rehacerlo con la mano: no saldría igual. Lo deshecho espera en su pila
      * hasta que se dibuje otra cosa, que es cuando deja de tener sentido volver.
      */
-    const undone: Stroke[] = [];
     const undoStroke = (): void => {
-      const last = strokes.pop();
-      if (last !== undefined) undone.push(last);
+      let action = history.pop();
+      if (action === undefined) {
+        const stroke = strokes.pop();
+        if (stroke !== undefined) action = { kind: 'draw', stroke, index: strokes.length };
+      } else if (action.kind === 'draw') {
+        const at = strokes.indexOf(action.stroke);
+        if (at !== -1) strokes.splice(at, 1);
+      } else {
+        strokes.splice(0, strokes.length, ...action.before);
+      }
+      if (action !== undefined) future.push(action);
       paint();
     };
     const redoStroke = (): void => {
-      const back = undone.pop();
-      if (back !== undefined) strokes.push(back);
+      const action = future.pop();
+      if (action === undefined) return;
+      if (action.kind === 'draw') {
+        strokes.splice(Math.min(action.index, strokes.length), 0, action.stroke);
+      } else {
+        strokes.splice(0, strokes.length, ...action.after);
+      }
+      history.push(action);
       paint();
     };
 

@@ -5229,20 +5229,22 @@ code {
   cursor: crosshair;
 }
 
-/*
- * Los dos únicos controles.
- *
- * Abajo y a un lado, donde cae el pulgar de quien sostiene una tableta y donde
- * no estorban a la mano que dibuja. No son una barra de herramientas: son los
- * dos gestos que el lienzo admite además de dibujar, y en un teclado tienen su
- * atajo.
- */
+/* Abajo y a un lado, donde cae el pulgar sin estorbar a la mano que dibuja. */
 .canvas-controls {
   position: absolute;
   right: calc(1rem + env(safe-area-inset-right));
   bottom: calc(1rem + env(safe-area-inset-bottom));
   display: flex;
+  align-items: center;
   gap: 0.5rem;
+}
+
+.canvas-tools {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--accent);
+  border-radius: 0.3ex;
+  background: var(--bg);
 }
 
 .canvas-button {
@@ -5256,6 +5258,30 @@ code {
   cursor: pointer;
 }
 
+.canvas-tool {
+  display: grid;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0.45rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.canvas-tool + .canvas-tool {
+  border-left: 1px solid var(--accent);
+}
+
+.canvas-tool.active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.canvas-tool svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 /*
  * Con una marca dentro y no una palabra, el botón deja de ser un rótulo.
  *
@@ -5264,18 +5290,22 @@ code {
  * —los 44 puntos de siempre— en vez del ancho que midiera la palabra.
  */
 .canvas-button.done {
-  background: var(--accent);
-  color: var(--bg);
+  background: transparent;
+  color: var(--accent);
   display: grid;
   place-items: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  padding: 0;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0.18rem;
 }
 
 .canvas-button.done svg {
-  width: 1.15rem;
-  height: 1.15rem;
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.canvas-sheet.erasing {
+  cursor: none;
 }
 
 /*

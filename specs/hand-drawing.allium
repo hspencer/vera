@@ -281,16 +281,37 @@ rule DrawingOpensAWholeScreen {
         -- tamaño de lo que haga falta. Lo que la lente hace no queda escrito en
         -- ninguna parte: es cómo se está mirando, no qué se dibujó.
 
-    @invariant NothingElseIsOnTheCanvas
-        -- En el lienzo no hay paleta, ni regla de grosores, ni barra de
-        -- herramientas. No es minimalismo: es que no hay nada que elegir. Lo
-        -- único que puede pasar ahí es dibujar, deshacer y salir.
+    @invariant PencilAndEraserAreTheOnlyTools
+        -- El lienzo ofrece exactamente dos modos: el lápiz deja tinta y la goma
+        -- retira trazos. No hay paleta, selector de color ni regla de grosores:
+        -- el color sigue viniendo del texto y el grosor, de la presión.
 
     @invariant ShiftMakesOneStraightStroke
         -- Si Shift participa mientras se hace un trazo, éste conserva sólo el
         -- punto donde se apoyó y el punto donde se levantó. Mientras la mano se
         -- mueve, el segundo extremo sigue a la mano: no se acumulan muestras
         -- intermedias ni se fabrican pequeños segmentos sobre la recta.
+}
+
+rule ErasingOnTheCanvasRemovesTouchedStrokes {
+    when: EraseAt(participant, block, point)
+
+    requires: canvas_open(participant, block)
+
+    ensures: every_stroke_touched_by_the_eraser_is_removed(block, point)
+
+    @invariant TheEraserIsBroaderThanTheNib
+        -- La goma tiene un radio visible y sensiblemente mayor que el trazo más
+        -- grueso del lápiz, para que borrar con dedo o stylus no exija acertar
+        -- sobre una línea de pocos píxeles.
+
+    @invariant ErasingRemainsVectorial
+        -- Tocar un trazo retira ese gesto entero. No rasteriza el dibujo ni lo
+        -- corta en una proliferación de fragmentos difíciles de versionar.
+
+    @invariant ErasingStillWritesOnlyOnFinish
+        -- Igual que dibujar, borrar modifica sólo el lienzo mientras está
+        -- abierto; el grafo recibe una única escritura al terminar.
 }
 
 rule LeavingTheCanvasKeepsWhatWasDrawn {
@@ -375,6 +396,7 @@ surface Drawable {
         StepPastDrawing(participant, block)
         InsertAfterDrawing(participant, block)
         StartDrawing(participant, block)
+        EraseAt(participant, block, point)
         FinishDrawing(participant, block)
         UndoStroke(participant, block)
 
@@ -433,10 +455,8 @@ open question "¿Debe la historia de un bloque de dibujo guardarse entera cada v
 -- que quien la encuentre va a leer como que la tecla no llegó.
 open question "¿Debe Backspace sobre un dibujo enfocado quitarlo, y entonces qué lo distingue de perder un dibujo por pulsar una tecla sin querer?"
 
--- Hoy sólo se puede quitar el último trazo. Borrar un trazo del medio, o una
--- parte de uno, pediría señalarlo, y señalar pide una herramienta que el lienzo
--- no tiene.
-open question "¿Alcanza con deshacer el último trazo, o hace falta una goma —y entonces qué la distingue de la primera herramienta que rompe que en el lienzo no haya nada que elegir?"
+-- Answered: hay una goma vectorial de radio mayor que la punta; al tocar un
+-- trazo lo retira entero sin rasterizar el dibujo.
 
 -- El corpus podría saber qué hay dibujado. El modelo local corre en esta máquina
 -- y lee páginas; mirar un dibujo es otra clase de lectura.

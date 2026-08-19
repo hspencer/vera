@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { extendStroke } from '../src/canvas.ts';
+import { ERASER_RADIUS, eraseStrokesAt, extendStroke } from '../src/canvas.ts';
 
 const point = (x: number, y: number, pressure = 0.5) => ({ x, y, pressure });
 
@@ -24,5 +24,23 @@ describe('la recta del lienzo', () => {
     extendStroke(stroke, point(3, 2), false);
     extendStroke(stroke, point(8, 7), false);
     assert.equal(stroke.length, 3);
+  });
+});
+
+describe('la goma del lienzo', () => {
+  it('toca un segmento aunque ninguna muestra caiga dentro del radio', () => {
+    const crossed = [point(0, 0), point(100, 0)];
+    const far = [point(0, 100), point(100, 100)];
+    const strokes = [crossed, far];
+    const removed = eraseStrokesAt(strokes, point(50, ERASER_RADIUS - 1), ERASER_RADIUS);
+    assert.deepEqual(removed.map((one) => one.stroke), [crossed]);
+    assert.deepEqual(strokes, [far]);
+  });
+
+  it('no borra un trazo fuera de su radio mayor', () => {
+    const stroke = [point(0, 0), point(100, 0)];
+    const strokes = [stroke];
+    assert.deepEqual(eraseStrokesAt(strokes, point(50, ERASER_RADIUS + 1), ERASER_RADIUS), []);
+    assert.deepEqual(strokes, [stroke]);
   });
 });
