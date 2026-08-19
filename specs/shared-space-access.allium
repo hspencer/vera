@@ -93,7 +93,7 @@ contract OwnerAdministration {
 }
 
 contract SharedSpaceAccess {
-    create_space: (owner: core/Participant, name: String, selector: PageSelector, audience: Audience) -> SharedSpace
+    create_space: (owner: core/Participant, name: String, slug: String, selector: PageSelector, audience: Audience) -> SharedSpace
     invite: (owner: core/Participant, space: SharedSpace, permissions: Set<Permission>) -> AccessInvitation
     redeem: (invitation: AccessInvitation, person_name: String) -> AccessGrant
     grant: (owner: core/Participant, space: SharedSpace, participant: core/Participant, permissions: Set<Permission>) -> AccessGrant
@@ -148,6 +148,32 @@ contract SharedSpaceAccess {
         -- Linking to an existing page never adds that page to the space. A link
         -- to something outside the boundary is visible as an unavailable target
         -- and reveals nothing about whether that target exists in the graph.
+}
+
+contract ScopedPageAddressing {
+    personal_address: (page: core/Page) -> String
+    shared_address: (space: SharedSpace, page: core/Page) -> String
+    public_address: (page: core/Page) -> String
+
+    @invariant EachSurfaceHasItsOwnNamespace
+        -- The public site occupies the origin root, the owner's personal graph
+        -- occupies `/p`, and shared spaces occupy `/s/<space>`. Authority is
+        -- therefore explicit in the address instead of varying invisibly with
+        -- the reader of one URL.
+
+    @invariant OnePageIdentityMayHaveSeveralContextualAddresses
+        -- Personal, shared and public addresses may resolve to the same stable
+        -- page identity and revision history. Addressing never duplicates the
+        -- page or forks its authorship.
+
+    @invariant ASharedAddressCarriesItsBoundary
+        -- A route beneath `/s/<space>` resolves search, links, backlinks and
+        -- mutations within that named space before page content is returned.
+
+    @guidance
+        -- Public pages use `/<published-path>`, personal pages use
+        -- `/p/<page-path>`, and shared pages use
+        -- `/s/<space-slug>/<page-path>`.
 }
 
 contract InvitationCapability {
@@ -295,6 +321,7 @@ entity SharedSpace {
     graph: core/Graph
     owner: core/Participant
     name: String
+    slug: String
     selector: PageSelector
     audience: Audience
     status: SpaceStatus
@@ -513,7 +540,7 @@ rule HumanSessionExpires {
 }
 
 rule OwnerCreatesSharedSpace {
-    when: CreateSharedSpace(owner, name, selector, audience)
+    when: CreateSharedSpace(owner, name, slug, selector, audience)
 
     requires: instance.owner = owner
 
@@ -521,6 +548,7 @@ rule OwnerCreatesSharedSpace {
         graph: instance.graph,
         owner: owner,
         name: name,
+        slug: slug,
         selector: selector,
         audience: audience,
         status: active,
@@ -957,11 +985,12 @@ surface SharedSpaceCreation {
     context instance: identity/VeraInstance
 
     provides:
-        CreateSharedSpace(owner, name, selector, audience)
+        CreateSharedSpace(owner, name, slug, selector, audience)
             when owner = instance.owner
 
     contracts:
         fulfils SharedSpaceAccess
+        fulfils ScopedPageAddressing
 
     @guarantee CreatingASpaceDoesNotPublishTheRest
         -- A selector for one space exposes no non-matching page of the graph.
@@ -1086,11 +1115,12 @@ surface OwnerSharedSpaceDirectory {
         session.pending_invitations
 
     provides:
-        CreateSharedSpace(owner, name, selector, audience)
+        CreateSharedSpace(owner, name, slug, selector, audience)
 
     contracts:
         fulfils SharedSpaceAccess
         fulfils OwnerAdministration
+        fulfils ScopedPageAddressing
 
     @guarantee SpaceDirectoryIsTheSharingHome
         -- Audience, page count, participant count and pending invitation count
@@ -1141,6 +1171,7 @@ surface SharedSpaceAdministration {
 
     contracts:
         fulfils SharedSpaceAccess
+        fulfils ScopedPageAddressing
         fulfils InvitationCapability
 
     @guarantee InvitationsCannotDelegateAdministration
@@ -1182,6 +1213,9 @@ surface PublicSharedSpaceReading {
     exposes:
         space.name
         space.pages
+
+    contracts:
+        fulfils ScopedPageAddressing
 
     @guarantee PublicAccessIsReadOnly
         -- The public projection exposes no contribution, edit, invitation or
@@ -1231,4 +1265,3 @@ open question "Does accepting a contribution apply its changes as one attributed
 open question "May one person retain several independent guest identities in the same graph before explicitly linking them?"
 open question "What event requires a fresh authenticator gesture rather than an existing session — destructive editing, publication, grant administration, or all three?"
 open question "How does a federated Vera rotate its identity key without breaking durable bindings at remote shared spaces?"
-open question "Should one page address vary its visible authority by reader, or should each shared space use a distinct URL namespace?"
