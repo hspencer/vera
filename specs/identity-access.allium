@@ -11,15 +11,13 @@
 --   - Closing the current graph and opening or switching to another graph
 --   - Collective ownership; collective work is composed between sovereign
 --     personal libraries and belongs to federation specifications
---   - Authentication protocol and credential storage implementation
+--   - Authentication ceremony and session implementation
+--     (see shared-space-access.allium)
 --   - Which pages belong to a public site and how they are presented
 --     (see personal-site-projection.allium)
 -- Dependencies: Participant, Graph and Membership are governed by core.allium
 
 use "./core.allium" as core
--- The credential is one thing, not two. A person authenticates with the same
--- AccessToken an agent does, so this spec names that entity rather than growing a
--- parallel one for people.
 use "./agent-participation.allium" as agent
 
 ------------------------------------------------------------
@@ -36,13 +34,12 @@ given {
 
 -- How a person proves they are the person.
 --
--- The answer is the one already given for agents: a credential. Not because it
--- is the most comfortable, but because any other answer would give Vera two
--- notions of who is writing — one for people and one for machines — and the
--- whole point of the authorship boundary is that there is exactly one.
+-- Humans and agents may prove themselves through different authenticators. What
+-- remains singular is the Participant at Vera's authorship boundary: a passkey,
+-- a federated assertion or an agent token never becomes the author itself.
 --
 -- What a credential does not decide is the channel. That comes from what kind of
--- participant it names: agent-participation.allium already holds that an agent's
+-- participant it proves: agent-participation.allium already holds that an agent's
 -- operations carry `agent_generation` and that no human operation ever claims it.
 -- A person's credential therefore proves who, and changes nothing about how their
 -- writing is recorded.
@@ -52,7 +49,7 @@ given {
 -- memory. What answers that is the machine itself — see
 -- @invariant TheMachineIsTheLastResort.
 contract HumanAuthentication {
-    authenticate: (secret: String) -> core/Participant
+    authenticate: (proof: String) -> core/Participant
 
     @invariant NobodyIsAssumed
         -- A submission with no credential participates as nobody. Vera does not
@@ -452,11 +449,14 @@ surface OwnerPublicPreviewBoundary {
 -- Open Questions
 ------------------------------------------------------------
 
--- Answered: with a credential, the same mechanism agents use. See
--- contract HumanAuthentication. What remains open about it is below.
+-- Answered: people authenticate with passkeys or a federated Vera identity;
+-- sessions and invitations are specified in shared-space-access.allium. The
+-- machine that holds the corpus remains the owner's recovery authority.
 open question "How does Herbert authorize, identify and revoke each agent?"
-open question "Where does a person's credential live between visits — in the browser, in a password manager, in the machine's keyring — and what is the cost of each when the browser is not the owner's?"
-open question "Does a person's credential expire, given that an agent's does not, and does a memory one is locked out of monthly still feel like one's own?"
-open question "Are collaborator permissions role-based, capability-based or individually granted per operation and resource?"
+-- Answered: a human may have several passkeys, while the server keeps bounded,
+-- revocable sessions rather than an eternal bearer credential.
+-- Answered: collaborator authority is capability-based and scoped to a named
+-- shared space; read, contribute and edit are distinct permissions.
 open question "When do sessions expire, and what happens to pending agent operations after revocation?"
-open question "How does Herbert recover ownership if every authentication credential is lost?"
+-- Answered: ownership is recovered from the machine holding the corpus, through
+-- a path unavailable to the network. See TheMachineIsTheLastResort.

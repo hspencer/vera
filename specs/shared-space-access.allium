@@ -1,0 +1,921 @@
+-- allium: 3
+-- shared-space-access.allium
+
+-- Scope: Human authentication and access to named, delimited parts of one
+--   sovereign personal Vera graph
+-- Includes: One owner on several devices, passkeys, revocable sessions,
+--   invitation capabilities delivered by any channel, guests without Vera,
+--   federated Vera identities, public and restricted shared spaces, and scoped
+--   reading, contribution and direct editing
+-- Excludes:
+--   - Mail, messaging and QR delivery implementation
+--   - WebAuthn ceremony and cryptographic storage implementation
+--   - Replica synchronisation and continuation after withdrawal
+--     (see federated-sharing.allium)
+--   - Selection criteria that change membership automatically
+-- Dependencies: Graph, Page, Participant and Membership are governed by
+--   core.allium; the single sovereign instance is governed by
+--   identity-access.allium
+
+use "./core.allium" as core
+use "./identity-access.allium" as identity
+
+------------------------------------------------------------
+-- Given
+------------------------------------------------------------
+
+given {
+    instance: identity/VeraInstance
+}
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract HumanAccess {
+    register_authenticator: (participant: core/Participant, invitation: AccessInvitation?) -> HumanAuthenticator
+    authenticate: (authenticator: HumanAuthenticator) -> HumanSession
+    end_session: (session: HumanSession) -> HumanSession
+    recover_owner: (owner: core/Participant) -> AuthenticatorEnrollment
+
+    @invariant AnAuthenticatorProvesAParticipant
+        -- A passkey or a federated Vera assertion proves one stable Participant.
+        -- It is not itself that person's identity, and adding another device does
+        -- not create another person.
+
+    @invariant OneOwnerMayUseManyDevices
+        -- The sovereign owner may register several authenticators. Every one
+        -- resolves to the same owner of the same graph.
+
+    @invariant NobodyWithoutProofBecomesTheOwner
+        -- Reaching the server, possessing an origin or belonging to its private
+        -- network never authenticates a human. A missing or failed proof grants
+        -- neither a session nor the owner's authority.
+
+    @invariant TheMachineRemainsTheRootOfRecovery
+        -- Losing every authenticator cannot transfer or destroy ownership. A
+        -- recovery act performed from the machine that holds the corpus may
+        -- authorize a new owner authenticator, and that act is unavailable over
+        -- every network surface.
+
+    @invariant ASessionIsNotAnEternalCredential
+        -- Successful authentication creates a bounded, revocable session. A
+        -- durable relationship or grant may outlive it, but the proof presented
+        -- on one visit does not become an everlasting bearer token.
+}
+
+contract SharedSpaceAccess {
+    create_space: (owner: core/Participant, name: String, pages: List<core/Page>, audience: Audience) -> SharedSpace
+    invite: (owner: core/Participant, space: SharedSpace, permissions: Set<Permission>) -> AccessInvitation
+    redeem: (invitation: AccessInvitation, person_name: String) -> AccessGrant
+    grant: (owner: core/Participant, space: SharedSpace, participant: core/Participant, permissions: Set<Permission>) -> AccessGrant
+    revoke: (owner: core/Participant, grant: AccessGrant) -> AccessGrant
+    read: (reader: core/Participant, space: SharedSpace, page: core/Page) -> core/Page
+    contribute: (author: core/Participant, space: SharedSpace, page: core/Page, change: core/Change) -> SharedProposal
+    edit: (author: core/Participant, space: SharedSpace, page: core/Page, change: core/Change) -> core/Submission
+
+    @invariant SharingIsDelimited
+        -- A shared space names the pages it contains. Admission to it never
+        -- reveals, searches or grants authority over the rest of the personal
+        -- graph merely because the selected pages came from there.
+
+    @invariant TheGraphHasOneOwnerAndMayHaveManyAuthors
+        -- Sharing does not make the graph collectively owned. An authorized
+        -- participant may contribute or edit, and every resulting revision keeps
+        -- that participant's authorship instead of being attributed to the owner.
+
+    @invariant AccessAndAuthorityAreDifferent
+        -- Being able to read a space does not imply contribution or editing.
+        -- Every operation is checked against the active grant and the page on
+        -- which it acts.
+
+    @invariant PeopleWithoutVeraCanParticipateFully
+        -- A person may accept an invitation in an ordinary browser, register a
+        -- passkey and receive the same permissions as a person whose identity is
+        -- federated from another Vera. Owning a Vera graph is never a condition
+        -- of participation.
+
+    @invariant ContributionAndEditingAreDifferentPromises
+        -- `contribute` submits an attributed proposal for the owner's review.
+        -- `edit` applies an attributed change directly to the canonical page.
+        -- Neither one silently behaves as the other.
+
+    @invariant RevocationStopsTheFutureNotThePast
+        -- Revoking a grant ends subsequent access and mutation. It preserves the
+        -- participant, their revisions and every decision already recorded.
+}
+
+contract InvitationCapability {
+    deliver: (invitation: AccessInvitation, channel: DeliveryChannel) -> AccessInvitation
+    redeem: (invitation: AccessInvitation, proof: String) -> AccessInvitation
+    revoke: (owner: core/Participant, invitation: AccessInvitation) -> AccessInvitation
+
+    @invariant DeliveryDoesNotBecomeIdentity
+        -- Email, a message, a copied link and a QR code are ways to transport an
+        -- invitation. None becomes the participant's permanent identity.
+
+    @invariant TheInvitationCarriesItsBoundary
+        -- Before delivery, an invitation already fixes its shared space and
+        -- permissions. Whoever receives it cannot enlarge either while claiming.
+
+    @invariant ACapabilityIsSingleUseAndExpiring
+        -- A successful redemption consumes the invitation. An expired, revoked
+        -- or already redeemed invitation creates no session, identity or grant.
+
+    @invariant TheSecretIsNotRecoverableFromVera
+        -- Vera retains what is needed to verify an invitation secret, never the
+        -- bearer secret itself after it has been shown or delivered.
+}
+
+contract FederatedHumanIdentity {
+    bind: (participant: core/Participant, remote_identity: String, invitation: AccessInvitation) -> FederatedIdentityBinding
+    authenticate: (binding: FederatedIdentityBinding, assertion: String) -> HumanSession
+    unbind: (participant: core/Participant, binding: FederatedIdentityBinding) -> FederatedIdentityBinding
+
+    @invariant FederationIsOptional
+        -- A Vera identity improves continuity between personal graphs but never
+        -- replaces browser participation for people without Vera.
+
+    @invariant LinkingProvesBothSides
+        -- A local guest identity and a remote Vera identity are joined only
+        -- after control of both has been demonstrated. Equal names or email
+        -- addresses never merge people automatically.
+
+    @invariant PermanentMeansBoundNotLoggedInForever
+        -- The binding remains until revoked; every assertion and session remains
+        -- short-lived. Federation creates durable recognition, not an immortal
+        -- login token.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum Audience { anybody | restricted }
+enum Permission { read | contribute | edit }
+enum AuthenticatorKind { passkey }
+enum AuthenticatorStatus { active | revoked }
+enum SessionStatus { active | ended | expired }
+enum SpaceStatus { active | withdrawn }
+enum InvitationStatus { pending | redeemed | revoked | expired }
+enum GrantStatus { active | revoked }
+enum DeliveryChannel { email | secret_link | qr_code | split_code | owner_confirmation }
+enum ProposalStatus { awaiting_review | accepted | rejected }
+enum BindingStatus { active | revoked }
+enum EnrollmentStatus { pending | completed | revoked | expired }
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity HumanAuthenticator {
+    instance: identity/VeraInstance
+    participant: core/Participant
+    kind: AuthenticatorKind
+    label: String
+    status: AuthenticatorStatus
+    registered_at: Timestamp
+    revoked_at: Timestamp?
+
+    transitions status {
+        active -> revoked
+        terminal: revoked
+    }
+}
+
+entity HumanSession {
+    instance: identity/VeraInstance
+    participant: core/Participant
+    authenticator: HumanAuthenticator?
+    federated_binding: FederatedIdentityBinding?
+    status: SessionStatus
+    began_at: Timestamp
+    expires_at: Timestamp
+    ended_at: Timestamp?
+
+    transitions status {
+        active -> ended
+        active -> expired
+        terminal: ended, expired
+    }
+}
+
+-- An enrollment is authorization to add an authenticator. For the owner it can
+-- be born only from the machine; for an invited participant it is born from a
+-- redeemed invitation.
+entity AuthenticatorEnrollment {
+    instance: identity/VeraInstance
+    participant: core/Participant
+    authorized_by: core/Participant
+    status: EnrollmentStatus
+    expires_at: Timestamp
+
+    transitions status {
+        pending -> completed
+        pending -> revoked
+        pending -> expired
+        terminal: completed, revoked, expired
+    }
+}
+
+entity SharedSpace {
+    graph: core/Graph
+    owner: core/Participant
+    name: String
+    pages: List<core/Page>
+    audience: Audience
+    status: SpaceStatus
+    created_at: Timestamp
+    grants: AccessGrant with space = this
+    invitations: AccessInvitation with space = this
+    proposals: SharedProposal with space = this
+
+    transitions status {
+        active -> withdrawn
+        terminal: withdrawn
+    }
+}
+
+entity AccessInvitation {
+    space: SharedSpace
+    issued_by: core/Participant
+    permissions: Set<Permission>
+    proof_digest: String
+    intended_contact: String?
+    status: InvitationStatus
+    issued_at: Timestamp
+    expires_at: Timestamp
+    redeemed_by: core/Participant?
+    redeemed_at: Timestamp?
+
+    transitions status {
+        pending -> redeemed
+        pending -> revoked
+        pending -> expired
+        terminal: redeemed, revoked, expired
+    }
+}
+
+entity AccessGrant {
+    space: SharedSpace
+    participant: core/Participant
+    permissions: Set<Permission>
+    status: GrantStatus
+    granted_by: core/Participant
+    granted_at: Timestamp
+    revoked_at: Timestamp?
+
+    transitions status {
+        active -> revoked
+        terminal: revoked
+    }
+}
+
+entity SharedProposal {
+    space: SharedSpace
+    page: core/Page
+    author: core/Participant
+    change: core/Change
+    status: ProposalStatus
+    proposed_at: Timestamp
+    reviewed_by: core/Participant?
+    reviewed_at: Timestamp?
+
+    transitions status {
+        awaiting_review -> accepted
+        awaiting_review -> rejected
+        terminal: accepted, rejected
+    }
+}
+
+entity FederatedIdentityBinding {
+    instance: identity/VeraInstance
+    participant: core/Participant
+    remote_identity: String
+    status: BindingStatus
+    bound_at: Timestamp
+    revoked_at: Timestamp?
+
+    transitions status {
+        active -> revoked
+        terminal: revoked
+    }
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    invitation_lifetime: Duration = 15.minutes
+    session_lifetime: Duration = 30.days
+    enrollment_lifetime: Duration = 15.minutes
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule OwnerAuthorizesOwnAuthenticatorFromMachine {
+    when: AuthorizeOwnerAuthenticatorFromMachine(owner)
+
+    requires: identity/is_local_to_the_instance
+    requires: instance.owner = owner
+
+    ensures: AuthenticatorEnrollment.created(
+        instance: instance,
+        participant: owner,
+        authorized_by: owner,
+        status: pending,
+        expires_at: now + config.enrollment_lifetime
+    )
+}
+
+rule ParticipantRegistersPasskey {
+    when: RegisterPasskey(participant, enrollment, label)
+
+    requires: enrollment.instance = instance
+    requires: enrollment.participant = participant
+    requires: enrollment.status = pending
+    requires: enrollment.expires_at > now
+
+    ensures:
+        HumanAuthenticator.created(
+            instance: instance,
+            participant: participant,
+            kind: passkey,
+            label: label,
+            status: active,
+            registered_at: now,
+            revoked_at: null
+        )
+        enrollment.status = completed
+}
+
+rule HumanAuthenticatesWithPasskey {
+    when: AuthenticateWithPasskey(authenticator)
+
+    requires: authenticator.instance = instance
+    requires: authenticator.kind = passkey
+    requires: authenticator.status = active
+
+    ensures: HumanSession.created(
+        instance: instance,
+        participant: authenticator.participant,
+        authenticator: authenticator,
+        federated_binding: null,
+        status: active,
+        began_at: now,
+        expires_at: now + config.session_lifetime,
+        ended_at: null
+    )
+}
+
+rule HumanEndsSession {
+    when: EndHumanSession(participant, session)
+
+    requires: session.participant = participant
+    requires: session.status = active
+
+    ensures:
+        session.status = ended
+        session.ended_at = now
+}
+
+rule HumanSessionExpires {
+    when: session: HumanSession.expires_at <= now
+
+    requires: session.status = active
+
+    ensures:
+        session.status = expired
+        session.ended_at = now
+}
+
+rule OwnerCreatesSharedSpace {
+    when: CreateSharedSpace(owner, name, pages, audience)
+
+    requires: instance.owner = owner
+    requires: pages.all(page => page.graph = instance.graph)
+
+    ensures: SharedSpace.created(
+        graph: instance.graph,
+        owner: owner,
+        name: name,
+        pages: pages,
+        audience: audience,
+        status: active,
+        created_at: now
+    )
+}
+
+rule OwnerCreatesInvitationCapability {
+    when: InviteToSharedSpace(owner, space, permissions, proof_digest, intended_contact?)
+
+    requires: space.owner = owner
+    requires: space.status = active
+    requires: permissions.count > 0
+    requires: read in permissions
+
+    ensures: AccessInvitation.created(
+        space: space,
+        issued_by: owner,
+        permissions: permissions,
+        proof_digest: proof_digest,
+        intended_contact: intended_contact,
+        status: pending,
+        issued_at: now,
+        expires_at: now + config.invitation_lifetime,
+        redeemed_by: null,
+        redeemed_at: null
+    )
+}
+
+rule PendingInvitationExpires {
+    when: invitation: AccessInvitation.expires_at <= now
+
+    requires: invitation.status = pending
+
+    ensures: invitation.status = expired
+}
+
+rule OwnerRevokesPendingInvitation {
+    when: RevokeInvitation(owner, invitation)
+
+    requires: invitation.space.owner = owner
+    requires: invitation.status = pending
+
+    ensures: invitation.status = revoked
+}
+
+rule PersonWithoutVeraRedeemsInvitation {
+    when: RedeemInvitation(invitation, proof, person_name)
+
+    requires: invitation.status = pending
+    requires: invitation.expires_at > now
+    requires: verifies(proof, invitation.proof_digest)
+
+    ensures:
+        let participant = core/Participant.created(
+            name: person_name,
+            kind: human,
+            status: active
+        )
+        core/Membership.created(
+            graph: invitation.space.graph,
+            participant: participant,
+            status: active
+        )
+        AccessGrant.created(
+            space: invitation.space,
+            participant: participant,
+            permissions: invitation.permissions,
+            status: active,
+            granted_by: invitation.space.owner,
+            granted_at: now,
+            revoked_at: null
+        )
+        AuthenticatorEnrollment.created(
+            instance: instance,
+            participant: participant,
+            authorized_by: invitation.space.owner,
+            status: pending,
+            expires_at: now + config.enrollment_lifetime
+        )
+        invitation.status = redeemed
+        invitation.redeemed_by = participant
+        invitation.redeemed_at = now
+}
+
+rule OwnerGrantsKnownParticipantAccess {
+    when: GrantSharedSpaceAccess(owner, space, participant, permissions)
+
+    requires: space.owner = owner
+    requires: space.status = active
+    requires: permissions.count > 0
+    requires: read in permissions
+    requires: exists core/Membership{graph: space.graph, participant: participant, status: active}
+    requires: not exists AccessGrant{space: space, participant: participant, status: active}
+
+    ensures: AccessGrant.created(
+        space: space,
+        participant: participant,
+        permissions: permissions,
+        status: active,
+        granted_by: owner,
+        granted_at: now,
+        revoked_at: null
+    )
+}
+
+rule OwnerRevokesSharedSpaceAccess {
+    when: RevokeSharedSpaceAccess(owner, grant)
+
+    requires: grant.space.owner = owner
+    requires: grant.status = active
+
+    ensures:
+        grant.status = revoked
+        grant.revoked_at = now
+}
+
+rule AuthorizedParticipantContributes {
+    when: ProposeSharedChange(participant, space, page, change)
+
+    let grant = AccessGrant{space: space, participant: participant, status: active}
+
+    requires: exists grant
+    requires: contribute in grant.permissions
+    requires: page in space.pages
+    requires: subject_page(change) = page
+
+    ensures: SharedProposal.created(
+        space: space,
+        page: page,
+        author: participant,
+        change: change,
+        status: awaiting_review,
+        proposed_at: now,
+        reviewed_by: null,
+        reviewed_at: null
+    )
+}
+
+rule AuthorizedParticipantEditsCanonicalPage {
+    when: EditSharedPage(participant, space, page, origin_id, change, channel, evidence?)
+
+    let grant = AccessGrant{space: space, participant: participant, status: active}
+
+    requires: exists grant
+    requires: edit in grant.permissions
+    requires: page in space.pages
+    requires: subject_page(change) = page
+    requires: channel != authenticated_voice or evidence != null
+
+    ensures: core/ParticipantSubmits(participant, space.graph, origin_id, change, channel, evidence)
+}
+
+rule OwnerAcceptsSharedProposal {
+    when: ReviewSharedProposal(owner, proposal, accept)
+
+    requires: proposal.space.owner = owner
+    requires: proposal.status = awaiting_review
+
+    ensures:
+        proposal.status = accepted
+        proposal.reviewed_by = owner
+        proposal.reviewed_at = now
+}
+
+rule OwnerRejectsSharedProposal {
+    when: ReviewSharedProposal(owner, proposal, reject)
+
+    requires: proposal.space.owner = owner
+    requires: proposal.status = awaiting_review
+
+    ensures:
+        proposal.status = rejected
+        proposal.reviewed_by = owner
+        proposal.reviewed_at = now
+}
+
+rule InvitedParticipantBindsRemoteVeraIdentity {
+    when: BindRemoteVeraIdentity(participant, invitation, remote_identity, local_proof, remote_proof)
+
+    requires: invitation.status = redeemed
+    requires: invitation.redeemed_by = participant
+    requires: verifies_local_participant(local_proof, participant)
+    requires: verifies_remote_vera(remote_proof, remote_identity)
+    requires: not exists FederatedIdentityBinding{instance: instance, participant: participant, remote_identity: remote_identity}
+
+    ensures: FederatedIdentityBinding.created(
+        instance: instance,
+        participant: participant,
+        remote_identity: remote_identity,
+        status: active,
+        bound_at: now,
+        revoked_at: null
+    )
+}
+
+rule FederatedParticipantAuthenticates {
+    when: AuthenticateFederatedIdentity(binding, assertion)
+
+    requires: binding.instance = instance
+    requires: binding.status = active
+    requires: verifies_remote_vera(assertion, binding.remote_identity)
+
+    ensures: HumanSession.created(
+            instance: instance,
+            participant: binding.participant,
+            authenticator: null,
+            federated_binding: binding,
+            status: active,
+            began_at: now,
+            expires_at: now + config.session_lifetime,
+            ended_at: null
+    )
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant EverySharedPageBelongsToItsGraph {
+    for space in SharedSpaces:
+        space.pages.all(page => page.graph = space.graph)
+}
+
+invariant EverySharedSpaceBelongsToItsSovereignOwner {
+    for space in SharedSpaces:
+        space.graph.owner = space.owner
+}
+
+invariant EveryGrantIsDelimitedToOneSharedSpace {
+    for grant in AccessGrants:
+        grant.space.graph = instance.graph
+}
+
+invariant ASessionAuthenticatorNamesTheSamePerson {
+    for session in HumanSessions:
+        session.authenticator != null implies
+            session.authenticator.participant = session.participant
+}
+
+invariant ASessionFederatedBindingNamesTheSamePerson {
+    for session in HumanSessions:
+        session.federated_binding != null implies
+            session.federated_binding.participant = session.participant
+}
+
+invariant EverySessionHasExactlyOneProof {
+    for session in HumanSessions:
+        (session.authenticator != null or session.federated_binding != null) and
+        not (session.authenticator != null and session.federated_binding != null)
+}
+
+invariant TheOwnerNeverNeedsASharedSpaceGrant {
+    for grant in AccessGrants:
+        grant.participant != grant.space.owner
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor AuthenticatedHuman {
+    within: HumanSession
+    identified_by: core/Participant where this = within.participant and within.status = active
+}
+
+actor SharedSpaceOwner {
+    within: SharedSpace
+    identified_by: core/Participant where this = within.owner and this.kind = human
+}
+
+actor AuthorizedSharedParticipant {
+    within: SharedSpace
+    identified_by: core/Participant where exists AccessGrant{space: within, participant: this, status: active}
+}
+
+actor AnybodySharedSpaceReader {
+    within: SharedSpace
+    identified_by: identity/PublicIdentity
+        where this = anybody and within.audience = anybody and within.status = active
+}
+
+actor EnrollmentParticipant {
+    within: AuthenticatorEnrollment
+    identified_by: core/Participant where this = within.participant and within.status = pending
+}
+
+actor PasskeyHolder {
+    within: HumanAuthenticator
+    identified_by: core/Participant where this = within.participant and within.status = active
+}
+
+actor InvitationBearer {
+    identified_by: AccessInvitation where this.status = pending
+}
+
+actor FederatedParticipant {
+    within: FederatedIdentityBinding
+    identified_by: core/Participant where this = within.participant and within.status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface LocalOwnerAuthenticatorRecovery {
+    facing owner: identity/SovereignOwner
+    context instance: identity/VeraInstance
+
+    provides:
+        AuthorizeOwnerAuthenticatorFromMachine(owner) when owner = instance.owner
+
+    contracts:
+        fulfils HumanAccess
+
+    @guarantee NoNetworkEquivalentExists
+        -- This surface is available only from the machine holding the corpus.
+        -- No HTTP request, reverse proxy or private network route can invoke it.
+}
+
+surface AuthenticatorEnrollmentBoundary {
+    facing participant: EnrollmentParticipant
+    context enrollment: AuthenticatorEnrollment where participant = enrollment.participant and status = pending
+
+    exposes:
+        enrollment.expires_at
+
+    provides:
+        RegisterPasskey(participant, enrollment, label)
+
+    contracts:
+        fulfils HumanAccess
+
+    @guarantee EnrollmentCreatesNoAdditionalAuthority
+        -- Registering an authenticator proves the participant in later visits;
+        -- it does not enlarge that participant's grants or graph membership.
+}
+
+surface PasskeyLoginBoundary {
+    facing participant: PasskeyHolder
+    context authenticator: HumanAuthenticator where participant = authenticator.participant and status = active
+
+    provides:
+        AuthenticateWithPasskey(authenticator)
+
+    contracts:
+        fulfils HumanAccess
+
+    @guarantee AuthenticationDoesNotChooseAuthorization
+        -- Login proves the participant. The active grant on each shared space,
+        -- not the authenticator, decides what that participant may do there.
+}
+
+surface SharedSpaceCreation {
+    facing owner: identity/SovereignOwner
+    context instance: identity/VeraInstance
+
+    provides:
+        CreateSharedSpace(owner, name, pages, audience)
+            when owner = instance.owner and pages.all(page => page.graph = instance.graph)
+
+    contracts:
+        fulfils SharedSpaceAccess
+
+    @guarantee CreatingASpaceDoesNotPublishTheRest
+        -- Naming pages for one space exposes no other page of the owner's graph.
+}
+
+surface InvitationRedemption {
+    facing invitation: InvitationBearer
+    context space: SharedSpace where invitations.any(one => one = invitation)
+
+    exposes:
+        space.name
+        invitation.permissions
+        invitation.expires_at
+
+    provides:
+        RedeemInvitation(invitation, proof, person_name)
+
+    contracts:
+        fulfils InvitationCapability
+
+    @guarantee RedemptionRevealsOnlyWhatIsNeededToConsent
+        -- Before redemption, the bearer sees the space name, offered permissions
+        -- and expiry, not its pages or any fact about the surrounding graph.
+}
+
+surface HumanSessionBoundary {
+    facing participant: AuthenticatedHuman
+    context session: HumanSession where participant = session.participant and status = active
+
+    exposes:
+        session.participant
+        session.expires_at
+
+    provides:
+        EndHumanSession(participant, session)
+
+    contracts:
+        fulfils HumanAccess
+
+    @guarantee SessionAuthorityComesFromItsParticipant
+        -- Every request within this boundary acts as the participant named by
+        -- the verified session, never as a participant claimed by request data.
+}
+
+surface SharedSpaceAdministration {
+    facing owner: SharedSpaceOwner
+    context space: SharedSpace
+
+    exposes:
+        space.name
+        space.pages
+        space.audience
+        space.grants
+        space.invitations
+
+    provides:
+        InviteToSharedSpace(owner, space, permissions, proof_digest, intended_contact?)
+        GrantSharedSpaceAccess(owner, space, participant, permissions)
+        RevokeSharedSpaceAccess(owner, grant) when grant.space = space
+        RevokeInvitation(owner, invitation) when invitation.space = space
+        ReviewSharedProposal(owner, proposal, accept)
+            when proposal.space = space and proposal.status = awaiting_review
+        ReviewSharedProposal(owner, proposal, reject)
+            when proposal.space = space and proposal.status = awaiting_review
+
+    contracts:
+        fulfils SharedSpaceAccess
+        fulfils InvitationCapability
+
+    @guarantee InvitationsCannotDelegateAdministration
+        -- An invitation may grant reading, contribution or editing, never the
+        -- owner's authority to change the space, its audience or other grants.
+}
+
+surface SharedSpaceParticipation {
+    facing participant: AuthorizedSharedParticipant
+    context space: SharedSpace
+
+    exposes:
+        space.name
+        space.pages
+
+    provides:
+        ProposeSharedChange(participant, space, page, change)
+            when contribute in AccessGrant{space: space, participant: participant, status: active}.permissions
+        EditSharedPage(participant, space, page, origin_id, change, channel, evidence?)
+            when edit in AccessGrant{space: space, participant: participant, status: active}.permissions
+
+    contracts:
+        fulfils SharedSpaceAccess
+
+    @guarantee NothingOutsideTheSpaceIsDiscoverable
+        -- Search, links, backlinks and navigation reached through this surface
+        -- are bounded to the shared pages and reveal no title, count or absence
+        -- from the rest of the graph.
+}
+
+surface PublicSharedSpaceReading {
+    facing reader: AnybodySharedSpaceReader
+    context space: SharedSpace
+
+    exposes:
+        space.name
+        space.pages
+
+    @guarantee PublicAccessIsReadOnly
+        -- The public projection exposes no contribution, edit, invitation or
+        -- administration operation. Anybody can read only this named subgraph.
+
+    @guarantee NothingOutsideTheSpaceIsDiscoverable
+        -- Public navigation and search reveal no title, count, backlink or
+        -- absence from pages outside this shared space.
+}
+
+surface FederatedIdentityLinking {
+    facing participant: AuthorizedSharedParticipant
+    context space: SharedSpace
+
+    provides:
+        BindRemoteVeraIdentity(participant, invitation, remote_identity, local_proof, remote_proof)
+            when invitation.space = space and invitation.redeemed_by = participant
+
+    contracts:
+        fulfils FederatedHumanIdentity
+
+    @guarantee LinkingDoesNotEnlargeTheGrant
+        -- Binding a Vera identity changes how the same participant authenticates.
+        -- It neither adds permissions nor grants access to another shared space.
+}
+
+surface FederatedLoginBoundary {
+    facing participant: FederatedParticipant
+    context binding: FederatedIdentityBinding where participant = binding.participant and status = active
+
+    provides:
+        AuthenticateFederatedIdentity(binding, assertion)
+
+    contracts:
+        fulfils FederatedHumanIdentity
+
+    @guarantee ARemoteAssertionIsUsedOnce
+        -- Each remote assertion authenticates one bounded session and cannot be
+        -- replayed as a permanent bearer credential.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "When a shared space contains a page, which linked or descendant pages are included automatically, if any?"
+open question "Does accepting a contribution apply its changes as one attributed batch, and what structural subsets may the owner accept?"
+open question "May one person retain several independent guest identities in the same graph before explicitly linking them?"
+open question "What event requires a fresh authenticator gesture rather than an existing session — destructive editing, publication, grant administration, or all three?"
+open question "How does a federated Vera rotate its identity key without breaking durable bindings at remote shared spaces?"
