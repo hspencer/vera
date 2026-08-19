@@ -372,6 +372,11 @@ input {
   display: block;
   color: var(--accent);
   font-size: 0.8rem;
+  /* El título no ensancha la lista: colgada del campo, la columna es estrecha y
+     un nombre largo se recorta en vez de partirse en tres renglones. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hit-excerpt {

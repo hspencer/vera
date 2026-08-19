@@ -85,8 +85,17 @@
         -->
         <button id="search-open" aria-label="Buscar" title="Buscar en el grafo"></button>
 
+        <!--
+          El buscador y lo que encuentra, juntos.
+
+          `#results` cuelga del campo y no de la barra: se quiere del ancho del
+          buscador y no de la pantalla, así que nace dentro de `#search-wrap`
+          —que es `position: relative`— y toma su ancho. Un título largo se
+          recorta con puntos suspensivos en vez de ensanchar la lista.
+        -->
         <div id="search-wrap">
           <input id="search" type="search" placeholder="buscar en el grafo" autocomplete="off" />
+          <div id="results" hidden></div>
         </div>
 
         <div id="controls">
@@ -102,18 +111,6 @@
         </div>
 
         <output id="sync-state" aria-live="polite" aria-atomic="true" hidden></output>
-
-        <!--
-          Lo que el buscador encuentra, colgado de la barra entera.
-
-          Colgaba del campo, que mide lo que le sobre a la barra, y ahí un título
-          largo se partía en tres renglones dentro de una columna estrecha. La
-          lista es lo que se está leyendo cuando aparece: que ocupe el ancho de
-          donde nace, que es la barra. Por eso es hermana del campo y no hija
-          suya —una caja no puede desbordar a su propio contenedor y seguir
-          alineada con él—.
-        -->
-        <div id="results" hidden></div>
       </header>
 
       <!--
