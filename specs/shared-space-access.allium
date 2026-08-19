@@ -64,6 +64,26 @@ contract HumanAccess {
         -- on one visit does not become an everlasting bearer token.
 }
 
+contract OwnerAdministration {
+    inspect_current_access: (session: HumanSession) -> HumanSession
+    inspect_spaces: (owner: core/Participant) -> List<SharedSpace>
+    inspect_people: (owner: core/Participant) -> List<AccessGrant>
+
+    @invariant TheOwnerCanAlwaysSeeWhoTheyAre
+        -- Every authenticated administration view names the participant, the
+        -- method that proved them, the session expiry and the current session.
+        -- Authentication is never an invisible ambient property of the browser.
+
+    @invariant SpaceIsThePrimaryAdministrativeObject
+        -- Sharing administration begins with named spaces. People and pending
+        -- invitations are transversal views of access to those spaces, never a
+        -- flat global user-and-role system.
+
+    @invariant InvitationsAreNotPeople
+        -- A pending invitation remains a redeemable capability. It appears
+        -- separately from stable participants until somebody consumes it.
+}
+
 contract SharedSpaceAccess {
     create_space: (owner: core/Participant, name: String, pages: List<core/Page>, audience: Audience) -> SharedSpace
     invite: (owner: core/Participant, space: SharedSpace, permissions: Set<Permission>) -> AccessInvitation
@@ -156,6 +176,8 @@ enum Permission { read | contribute | edit }
 enum AuthenticatorKind { passkey }
 enum AuthenticatorStatus { active | revoked }
 enum SessionStatus { active | ended | expired }
+enum SessionAuthenticationMethod { passkey | federated_vera }
+enum BootstrapStatus { awaiting_first_passkey | ready }
 enum SpaceStatus { active | withdrawn }
 enum InvitationStatus { pending | redeemed | revoked | expired }
 enum GrantStatus { active | revoked }
@@ -188,15 +210,35 @@ entity HumanSession {
     participant: core/Participant
     authenticator: HumanAuthenticator?
     federated_binding: FederatedIdentityBinding?
+    authentication_method: SessionAuthenticationMethod
     status: SessionStatus
     began_at: Timestamp
     expires_at: Timestamp
     ended_at: Timestamp?
+    owner_authenticators: HumanAuthenticator with instance = this.instance and participant = this.participant
+    active_owner_authenticators: HumanAuthenticator with instance = this.instance and participant = this.participant and status = active
+    owner_sessions: HumanSession with instance = this.instance and participant = this.participant
+    shared_spaces: SharedSpace with graph = this.instance.graph
+    shared_access: AccessGrant with space.graph = this.instance.graph
+    pending_invitations: AccessInvitation with space.graph = this.instance.graph and status = pending
 
     transitions status {
         active -> ended
         active -> expired
         terminal: ended, expired
+    }
+}
+
+-- A fresh installation already knows which local graph it serves and who owns
+-- it, but it is not remotely usable until that owner registers the first
+-- passkey from the machine holding the corpus.
+entity HumanAccessBootstrap {
+    instance: identity/VeraInstance
+    status: BootstrapStatus
+
+    transitions status {
+        awaiting_first_passkey -> ready
+        terminal: ready
     }
 }
 
@@ -331,6 +373,23 @@ rule OwnerAuthorizesOwnAuthenticatorFromMachine {
     )
 }
 
+rule FreshInstanceBeginsOwnerAuthenticationBootstrap {
+    when: fresh_instance: identity/VeraInstance.created
+
+    ensures:
+        HumanAccessBootstrap.created(
+            instance: fresh_instance,
+            status: awaiting_first_passkey
+        )
+        AuthenticatorEnrollment.created(
+            instance: fresh_instance,
+            participant: fresh_instance.owner,
+            authorized_by: fresh_instance.owner,
+            status: pending,
+            expires_at: now + config.enrollment_lifetime
+        )
+}
+
 rule ParticipantRegistersPasskey {
     when: RegisterPasskey(participant, enrollment, label)
 
@@ -352,6 +411,18 @@ rule ParticipantRegistersPasskey {
         enrollment.status = completed
 }
 
+rule FirstOwnerPasskeyCompletesBootstrap {
+    when: authenticator: HumanAuthenticator.created
+
+    let bootstrap = HumanAccessBootstrap{instance: authenticator.instance}
+
+    requires: exists bootstrap
+    requires: bootstrap.status = awaiting_first_passkey
+    requires: authenticator.participant = authenticator.instance.owner
+
+    ensures: bootstrap.status = ready
+}
+
 rule HumanAuthenticatesWithPasskey {
     when: AuthenticateWithPasskey(authenticator)
 
@@ -364,11 +435,28 @@ rule HumanAuthenticatesWithPasskey {
         participant: authenticator.participant,
         authenticator: authenticator,
         federated_binding: null,
+        authentication_method: passkey,
         status: active,
         began_at: now,
         expires_at: now + config.session_lifetime,
         ended_at: null
     )
+}
+
+rule OwnerRevokesOwnPasskey {
+    when: RevokeHumanAuthenticator(owner, authenticator)
+
+    requires: owner = authenticator.instance.owner
+    requires: authenticator.participant = owner
+    requires: authenticator.status = active
+
+    ensures:
+        authenticator.status = revoked
+        authenticator.revoked_at = now
+        for session in HumanSessions:
+            session.authenticator = authenticator and session.status = active implies
+                session.status = ended
+                session.ended_at = now
 }
 
 rule HumanEndsSession {
@@ -610,6 +698,7 @@ rule FederatedParticipantAuthenticates {
             participant: binding.participant,
             authenticator: null,
             federated_binding: binding,
+            authentication_method: federated_vera,
             status: active,
             began_at: now,
             expires_at: now + config.session_lifetime,
@@ -654,6 +743,22 @@ invariant EverySessionHasExactlyOneProof {
         not (session.authenticator != null and session.federated_binding != null)
 }
 
+invariant EveryInstanceHasOneHumanAccessBootstrap {
+    for a in HumanAccessBootstraps:
+        for b in HumanAccessBootstraps:
+            a != b implies a.instance != b.instance
+}
+
+invariant ReadyMeansTheOwnerHasAnActivePasskey {
+    for bootstrap in HumanAccessBootstraps:
+        bootstrap.status = ready implies exists HumanAuthenticator{
+            instance: bootstrap.instance,
+            participant: bootstrap.instance.owner,
+            kind: passkey,
+            status: active
+        }
+}
+
 invariant TheOwnerNeverNeedsASharedSpaceGrant {
     for grant in AccessGrants:
         grant.participant != grant.space.owner
@@ -666,6 +771,12 @@ invariant TheOwnerNeverNeedsASharedSpaceGrant {
 actor AuthenticatedHuman {
     within: HumanSession
     identified_by: core/Participant where this = within.participant and within.status = active
+}
+
+actor AuthenticatedOwner {
+    within: HumanSession
+    identified_by: core/Participant
+        where this = within.participant and this = within.instance.owner and within.status = active
 }
 
 actor SharedSpaceOwner {
@@ -740,6 +851,35 @@ surface AuthenticatorEnrollmentBoundary {
         -- it does not enlarge that participant's grants or graph membership.
 }
 
+surface FirstRunOwnerSetup {
+    facing owner: EnrollmentParticipant
+    context enrollment: AuthenticatorEnrollment
+        where owner = enrollment.participant
+        and enrollment.participant = enrollment.instance.owner
+        and enrollment.status = pending
+        and exists HumanAccessBootstrap{instance: enrollment.instance, status: awaiting_first_passkey}
+
+    exposes:
+        enrollment.instance.graph.name
+        enrollment.instance.owner.name
+        enrollment.expires_at
+
+    provides:
+        RegisterPasskey(owner, enrollment, label)
+
+    contracts:
+        fulfils HumanAccess
+
+    @guarantee EveryInstallationEstablishesItsOwnOwner
+        -- First run names the owner and graph belonging to this local corpus.
+        -- It imports neither Herbert's identity nor any authenticator, session
+        -- or recovery secret from the installation that built Vera.
+
+    @guarantee RemoteUseBeginsOnlyAfterTheFirstPasskey
+        -- Until this local ceremony succeeds, the instance has no authenticated
+        -- owner session and cannot be administered from a network browser.
+}
+
 surface PasskeyLoginBoundary {
     facing participant: PasskeyHolder
     context authenticator: HumanAuthenticator where participant = authenticator.participant and status = active
@@ -796,6 +936,9 @@ surface HumanSessionBoundary {
 
     exposes:
         session.participant
+        session.authentication_method
+        session.authenticator
+        session.federated_binding
         session.expires_at
 
     provides:
@@ -807,6 +950,110 @@ surface HumanSessionBoundary {
     @guarantee SessionAuthorityComesFromItsParticipant
         -- Every request within this boundary acts as the participant named by
         -- the verified session, never as a participant claimed by request data.
+}
+
+surface OwnerAdministrationOverview {
+    facing owner: AuthenticatedOwner
+    context session: HumanSession where owner = session.participant and status = active
+
+    exposes:
+        session.participant
+        session.authentication_method
+        session.authenticator
+        session.federated_binding
+        session.expires_at
+        session.shared_spaces
+        session.pending_invitations
+
+    contracts:
+        fulfils OwnerAdministration
+
+    @guarantee CurrentAuthenticationIsAlwaysVisible
+        -- The administration header states who is authenticated, whether this
+        -- session came from a passkey or a federated Vera, and when it expires.
+
+    @guarantee OverviewLeadsWithSpaces
+        -- Shared spaces are the primary collection. Pending invitations are a
+        -- separate queue and never masquerade as participant accounts.
+}
+
+surface OwnerAccessAdministration {
+    facing owner: AuthenticatedOwner
+    context session: HumanSession where owner = session.participant and status = active
+
+    exposes:
+        session.participant
+        session.authentication_method
+        session.authenticator
+        session.federated_binding
+        session.expires_at
+        session.owner_authenticators
+        session.owner_sessions
+
+    provides:
+        EndHumanSession(owner, other_session)
+            when other_session in session.owner_sessions and other_session.status = active
+        RevokeHumanAuthenticator(owner, authenticator)
+            when authenticator in session.owner_authenticators
+            and authenticator.status = active
+            and session.active_owner_authenticators.count > 1
+
+    contracts:
+        fulfils HumanAccess
+        fulfils OwnerAdministration
+
+    @guarantee RecoveryIsDescribedButNotPerformedHere
+        -- This network view explains that the corpus machine is the final
+        -- recovery authority, but cannot invoke that local-only capability.
+
+    @guarantee RevocationEndsDependentSessions
+        -- Revoking a passkey closes every active session created through it;
+        -- historical authorship remains attributed to the owner.
+
+    @guarantee TheLastOwnerPasskeyIsNotRevokedRemotely
+        -- The network administration view requires another active owner
+        -- passkey. Replacing the last one belongs to local machine recovery.
+}
+
+surface OwnerSharedSpaceDirectory {
+    facing owner: AuthenticatedOwner
+    context session: HumanSession where owner = session.participant and status = active
+
+    exposes:
+        session.shared_spaces
+        session.pending_invitations
+
+    provides:
+        CreateSharedSpace(owner, name, pages, audience)
+            when pages.all(page => page.graph = session.instance.graph)
+
+    contracts:
+        fulfils SharedSpaceAccess
+        fulfils OwnerAdministration
+
+    @guarantee SpaceDirectoryIsTheSharingHome
+        -- Audience, page count, participant count and pending invitation count
+        -- are summaries of each space; selecting one opens that space's own
+        -- content, access, invitations, activity and configuration views.
+}
+
+surface OwnerPeopleDirectory {
+    facing owner: AuthenticatedOwner
+    context session: HumanSession where owner = session.participant and status = active
+
+    exposes:
+        session.shared_access
+
+    contracts:
+        fulfils OwnerAdministration
+
+    @guarantee PeopleRemainASecondaryCrossSpaceView
+        -- A stable participant is shown with their grants grouped by space and
+        -- authentication bindings. Changing one grant cannot affect another.
+
+    @guarantee PendingInvitationsAreExcluded
+        -- The people directory contains accepted identities and their access,
+        -- never unredeemed invitation secrets.
 }
 
 surface SharedSpaceAdministration {
