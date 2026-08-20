@@ -9,7 +9,7 @@
 
 ![Vera muestra una página y su grafo de relaciones](https://vera.mediafranca.net/assets/vera-interface.png)
 
-Vera es una wiki personal, local-first y mantenible por personas y agentes. El
+Vera es una wiki personal, *local-first* y mantenible por personas y agentes. El
 proyecto se documenta desde su propio corpus para no sostener versiones paralelas
 de la misma explicación.
 
