@@ -123,6 +123,9 @@ let mapPanelOpen = false;
 let tokens = loadTokens();
 let pages: PageSummary[] = [];
 
+/** La apertura vigente; una respuesta tardía de la anterior no puede tocarla. */
+let opening = 0;
+
 /**
  * Lo que la barra dice cuando no está mandando nada.
  *
@@ -699,6 +702,27 @@ function markShowing(text: HTMLElement, kept: boolean): void {
   (text.querySelector('.page-header') ?? text.firstElementChild)?.append(said);
 }
 
+/**
+ * Cuenta con palabras qué sigue haciendo Vera después de entregar la escritura.
+ * Es estado de esta lectura, no del corpus, y vive junto al título que califica.
+ */
+function markEnrichment(
+  text: HTMLElement,
+  state: 'working' | 'failed',
+  detail = '',
+): void {
+  text.querySelector('.page-enrichment')?.remove();
+  const said = document.createElement('p');
+  said.className = `page-enrichment ${state}`;
+  said.textContent = state === 'working'
+    ? 'página lista · completando relaciones, referencias y procedencia…'
+    : 'página lista · no se pudo completar la información derivada';
+  said.title = state === 'working'
+    ? 'Ya puedes leer y escribir. Vera está calculando en segundo plano lo que depende del resto del grafo: retroenlaces, relaciones, pertenencia conceptual y procedencia.'
+    : `El título, las propiedades y los bloques siguen disponibles.${detail === '' ? '' : ` ${detail}`}`;
+  (text.querySelector('.page-header') ?? text.firstElementChild)?.append(said);
+}
+
 async function openPage(
   id: string,
   focus: { block: string; at: number | null } | null = null,
@@ -712,6 +736,7 @@ async function openPage(
     replaceRoute?: boolean;
   } = {},
 ): Promise<void> {
+  const thisOpening = ++opening;
   $('#vera-root').classList.remove('special-surface');
   let page: PageView | undefined;
   /*
@@ -760,6 +785,7 @@ async function openPage(
       }, PATIENCE);
   /** Si esta página salió de lo retenido y no del corpus. */
   let fromKept = false;
+  let needsEnrichment = false;
 
   /*
    * Lo que este aparato ya tenía, antes de preguntar nada.
@@ -800,9 +826,11 @@ async function openPage(
 
   try {
     if (page === undefined) {
-      page = await api.page(id);
+      page = await api.readablePage(id);
+      needsEnrichment = true;
       // Leerla es lo que hace que se retenga. rule RetainDeliveredPage.
-      if (!isAnybody()) void held.keepPage(page);
+      // La copia durable se escribe al llegar la vista completa: una copia
+      // parcial no debe hacerse pasar mañana por la página recordada.
     }
   } catch (error) {
     /*
@@ -949,6 +977,51 @@ async function openPage(
   }
   showingKept = fromKept;
   markShowing(text, fromKept);
+  if (needsEnrichment) {
+    markEnrichment(text, 'working');
+    void api.page(page.id).then((complete) => {
+      if (opening !== thisOpening || workspace.activePage !== complete.id || openView === null) return;
+
+      // La escritura puede haber cambiado localmente mientras el servidor
+      // calculaba. Se incorporan sólo las lecturas derivadas; título, bloques,
+      // propiedades y pliegues siguen gobernados por la réplica que ya se usa.
+      openView.domains = complete.domains;
+      openView.concept = complete.concept ?? null;
+      openView.assets = complete.assets;
+      openView.blockRefs = complete.blockRefs;
+      openView.pendingLinks = complete.pendingLinks ?? [];
+      openView.spokenOrigins = complete.spokenOrigins;
+      openView.recordings = complete.recordings ?? [];
+      openView.authorship = complete.authorship;
+      openView.glosses = complete.glosses ?? {};
+      openView.backlinks = complete.backlinks;
+      openView.references = complete.references;
+      openView.crossingsOut = complete.crossingsOut;
+      openView.crossingsIn = complete.crossingsIn;
+      openView.trail = complete.trail ?? null;
+      openView.publication = complete.publication ?? null;
+      openView.lastEditedAt = complete.lastEditedAt;
+      if (!isAnybody()) void held.keepPage(openView);
+
+      const finish = (): void => {
+        if (opening !== thisOpening || workspace.activePage !== complete.id || openView === null) return;
+        const active = document.activeElement;
+        const writing = active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement ||
+          (active instanceof HTMLElement && active.isContentEditable);
+        if (writing) {
+          window.setTimeout(finish, 500);
+          return;
+        }
+        const viewport = holdTextViewport(text);
+        renderOutliner(text, openView, callbacksFor(openView), null, workspace.focusRoot, isAnybody());
+        restoreTextViewport(text, viewport);
+      };
+      finish();
+    }).catch((error) => {
+      if (opening !== thisOpening || workspace.activePage !== page.id) return;
+      markEnrichment(text, 'failed', error instanceof Error ? error.message : 'Error desconocido.');
+    });
+  }
 
   // Un día no se lee solo: se sigue leyendo hacia atrás. Ver `continueBackwards`.
   //

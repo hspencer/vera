@@ -6803,6 +6803,22 @@ code {
   border-left: 2px solid var(--text-dim);
 }
 
+/* La escritura ya está: esto califica solamente lo que Vera sigue derivando. */
+.page-enrichment {
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-dim);
+  margin-top: 0.35rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--text-dim);
+}
+
+.page-enrichment.failed {
+  color: var(--voice);
+  border-left-color: var(--voice);
+}
+
 
 /* ---------------------------------------------------------------------------
  * Las cosas por hacer

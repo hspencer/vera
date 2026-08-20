@@ -294,6 +294,37 @@ describe('lecturas', () => {
     assert.equal(detail.backlinks[0]?.page, origin);
   });
 
+  it('entrega la escritura antes que las lecturas derivadas del resto del grafo', async () => {
+    const page = await write({ kind: 'create_page', title: 'Legible primero', visibility: 'private' });
+    const block = await write({
+      kind: 'create_block', page, parent: null, position: 0, content: 'texto que ya se puede editar',
+    });
+    await write({ kind: 'set_property', page, propertyKey: 'lang', propertyValue: 'es' });
+    const origin = await write({ kind: 'create_page', title: 'La nombra', visibility: 'private' });
+    await write({
+      kind: 'create_block', page: origin, parent: null, position: 0, content: 'ver [[Legible primero]]',
+    });
+
+    const readable = (await get(`/pages/${encodeURIComponent(page)}?stage=readable`)) as {
+      blocks: { stableId: string; parent: string | null; position: number; content: string }[];
+      properties: { key: string; value: string }[];
+      authorship: Record<string, unknown>;
+      backlinks: unknown[];
+      crossingsOut: unknown[];
+    };
+
+    assert.deepEqual(readable.blocks, [{
+      stableId: block, parent: null, position: 0, content: 'texto que ya se puede editar',
+    }]);
+    assert.deepEqual(readable.properties, [{ key: 'lang', value: 'es' }]);
+    assert.ok(readable.authorship[block], 'la procedencia necesaria para leer viaja en la primera fase');
+    assert.deepEqual(readable.backlinks, []);
+    assert.deepEqual(readable.crossingsOut, []);
+
+    const complete = (await get(`/pages/${encodeURIComponent(page)}`)) as { backlinks: { page: string }[] };
+    assert.ok(complete.backlinks.some((one) => one.page === origin));
+  });
+
   it('responde 404 para una página que no existe', async () => {
     const response = await fetch(`${base}/pages/no-existe`);
     assert.equal(response.status, 404);

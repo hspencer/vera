@@ -4380,6 +4380,94 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           send(response, 404, { error: 'no such page' });
           return;
         }
+        const pageBlocks = graph.blocksOf(page.id);
+
+        /*
+         * La escritura antes que las lecturas que exigen recorrer el grafo.
+         *
+         * Esta vista no es un esqueleto: lleva cuanto hace falta para leer,
+         * editar y distinguir la procedencia de cada bloque. Lo que deja vacío
+         * es lo derivado de otras páginas —retroenlaces, cruces, pertenencia a un
+         * concepto y dominios observados—, que el cliente pide después por la
+         * ruta completa. @invariant AUsablePageArrivesBeforeItsEnrichment.
+         */
+        if (url.searchParams.get('stage') === 'readable') {
+          deliver({
+            id: page.id,
+            title: page.title,
+            trail: null,
+            visibility: page.visibility,
+            publication: publicationView(page.id),
+            createdAt: page.createdAt,
+            originCreatedAt: page.originCreatedAt,
+            lastEditedAt: graph.lastEditedAt(page.id),
+            properties: graph.propertiesOf(page.id).map((p) => ({ key: p.key, value: p.value })),
+            domains: {},
+            blocks: pageBlocks.map((block) => ({
+              stableId: block.stableId,
+              parent: block.parent,
+              position: block.position,
+              content: block.content,
+            })).sort((a, b) => a.position - b.position),
+            concept: null,
+            blockProperties: Object.fromEntries(
+              pageBlocks
+                .map((block) => [block.stableId, graph.propertiesOf(block.stableId)] as const)
+                .filter(([, said]) => said.length > 0)
+                .map(([id, said]) => [id, said.map((one) => ({ key: one.key, value: one.value }))]),
+            ),
+            assets: assetsOf(page.id),
+            blockRefs: (() => {
+              const seen = new Set<string>();
+              const found: { id: string; page: string; excerpt: string }[] = [];
+              for (const block of pageBlocks) {
+                for (const match of block.content.matchAll(/\(\(([^()\s]+)\)\)/g)) {
+                  const id = match[1] ?? '';
+                  if (id === '' || seen.has(id)) continue;
+                  seen.add(id);
+                  const target = graph.block(id);
+                  if (target === undefined || (publicAccess && !isPublicPage(target.page))) continue;
+                  found.push({ id, page: target.page, excerpt: excerpt(target.content) });
+                }
+              }
+              return found;
+            })(),
+            folded: publicAccess ? [] : foldedOnPage(store, participant, page.id),
+            pendingLinks: [],
+            spokenOrigins: spokenOriginsOnPage(store, page.id),
+            recordings: recordingsInPage(store, page.id),
+            authorship: Object.fromEntries(
+              pageBlocks
+                .map((block) => [block.stableId, graph.authorship(block.stableId)] as const)
+                .filter(([, hand]) => hand !== undefined)
+                .map(([id, hand]) => [id, {
+                  participant: hand?.participant,
+                  kind: graph.participant(hand?.participant ?? '')?.kind ?? null,
+                  channel: hand?.channel,
+                  writtenAt: hand?.writtenAt,
+                }]),
+            ),
+            glosses: Object.fromEntries(
+              pageBlocks
+                .map((block) => graph.gloss(block.stableId))
+                .filter((gloss) => gloss !== undefined)
+                .map((gloss) => [gloss.block, {
+                  content: gloss.content,
+                  createdAt: gloss.createdAt,
+                  updatedAt: gloss.updatedAt,
+                }]),
+            ),
+            backlinks: [],
+            references: [],
+            crossingsOut: [],
+            crossingsIn: [],
+          }, {
+            surface: 'GET /pages/:id?stage=readable',
+            subject: page.id,
+            delivered: [page.id],
+          });
+          return;
+        }
         const glossCrossings = graph.glosses().flatMap((gloss) => {
           const block = graph.block(gloss.block);
           if (block === undefined) return [];

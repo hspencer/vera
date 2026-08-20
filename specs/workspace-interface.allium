@@ -428,6 +428,31 @@ contract ResponsiveWorkspace {
         -- node's page and changes the workspace to the text view.
 }
 
+-- Abrir una página no hace esperar su lectura a todo lo que el grafo puede
+-- decir sobre ella. Lo escrito llega primero; las lecturas derivadas se suman
+-- después y Vera dice qué está haciendo mientras tanto.
+contract ProgressivePageReading {
+    open: (page: core/Page) -> core/Page
+
+    @invariant AUsablePageArrivesBeforeItsEnrichment
+        -- As soon as the page title, properties and blocks are available, Vera
+        -- presents them for reading and editing. Backlinks, crossings, concept
+        -- membership and other graph-wide derivations never hold that usable
+        -- page behind their computation.
+
+    @invariant EnrichmentDoesNotInterruptTheReader
+        -- Completing derived information preserves the page identity, written
+        -- content, editing state and reading position already on screen. The
+        -- page does not disappear, return to its beginning or pretend to have
+        -- been opened a second time.
+
+    @invariant BackgroundWorkExplainsItself
+        -- While derived information is still being prepared, a discreet status
+        -- names what Vera is doing and makes clear that the page itself is ready.
+        -- Completion removes the status; failure says which enrichment remains
+        -- unavailable without presenting the readable page as failed.
+}
+
 contract InstallableWebApplication {
     install: () -> Workspace
     synchronise: (workspace: Workspace) -> Workspace
@@ -1047,6 +1072,7 @@ surface VeraWorkspace {
         fulfils BlockManipulation
         fulfils PageFrontMatter
         fulfils ResponsiveWorkspace
+        fulfils ProgressivePageReading
         fulfils InstallableWebApplication
 
     @guarantee NavigableGraphContext

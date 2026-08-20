@@ -968,6 +968,14 @@ export const api = {
       within === undefined ? undefined : { signal: AbortSignal.timeout(within) },
     ),
 
+  /**
+   * La parte que hace que una página ya sea una página: título, propiedades
+   * y escritura. Las lecturas que exigen mirar el resto del grafo llegan por
+   * `page` después, sin mantener este primer bloque detrás de ellas.
+   */
+  readablePage: (id: string) =>
+    json<PageView>(`/pages/${encodeURIComponent(id)}?stage=readable`),
+
   publish: (page: string, path: string, entryPoint = false) =>
     json<PublicationView>(`/publications/${encodeURIComponent(page)}`, {
       method: 'POST',
