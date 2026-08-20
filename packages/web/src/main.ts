@@ -75,6 +75,7 @@ import {
   provisionalTitle,
   seedTrail,
 } from './promote.ts';
+import { renderMarkdown } from '@vera/core';
 
 const PHONE = 640;
 
@@ -2252,10 +2253,11 @@ function wireSearch(): void {
     items[next]?.scrollIntoView({ block: 'nearest' });
   };
 
-  const row = (className: string): HTMLButtonElement => {
-    const item = document.createElement('button');
-    item.type = 'button';
+  const row = (className: string): HTMLDivElement => {
+    const item = document.createElement('div');
     item.className = className;
+    item.tabIndex = 0;
+    item.setAttribute('role', 'button');
     return item;
   };
 
@@ -2279,14 +2281,23 @@ function wireSearch(): void {
       const what = document.createElement('span');
       what.className = 'hit-excerpt';
       const count = suggestion.matches === 1 ? '1 coincidencia' : `${suggestion.matches} coincidencias`;
-      what.textContent =
+      const excerpt =
         suggestion.excerpt === null
           ? isDay(page.title)
             ? 'un día de la bitácora'
             : 'página'
           : `${suggestion.excerpt} · ${count}`;
+      what.innerHTML = renderMarkdown(excerpt);
+      what.addEventListener('click', (event) => {
+        const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a.wiki[data-page]');
+        if (link === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+        void openPage(link.dataset['page'] ?? '', null, { gesture: 'searched' });
+      });
       item.append(where, what);
-      item.addEventListener('click', () => {
+      const open = (): void => {
         close();
         /*
          * El acuse: lo elegido se queda escrito hasta que la página llega.
@@ -2300,6 +2311,17 @@ function wireSearch(): void {
         void openPage(page.id, null, { gesture: 'searched', title: page.title }).then(() => {
           if (input.value === page.title) input.value = '';
         });
+      };
+      item.addEventListener('click', (event) => {
+        // Un enlace Markdown dentro del extracto conserva su propio destino.
+        // El resto del renglón abre la página que produjo el resultado.
+        if ((event.target as HTMLElement).closest('a') !== null) return;
+        open();
+      });
+      item.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        open();
       });
       results.append(item);
     }

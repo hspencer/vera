@@ -29,25 +29,46 @@ function send(frame: HTMLIFrameElement): void {
   frame.contentWindow?.postMessage({ type: MESSAGE, appearance: appearance() }, '*');
 }
 
-function setMaximized(figure: HTMLElement, button: HTMLButtonElement, maximized: boolean): void {
-  figure.classList.toggle('executable-maximized', maximized);
-  document.documentElement.classList.toggle('has-maximized-executable', maximized);
-  button.innerHTML = icon(maximized ? 'arrows-minimize' : 'arrows-maximize');
-  button.title = maximized ? 'minimizar HTML' : 'maximizar HTML';
+let maximized: { figure: HTMLElement; frame: HTMLIFrameElement; button: HTMLButtonElement; overlay: HTMLElement } | null = null;
+
+function setMaximized(figure: HTMLElement, button: HTMLButtonElement, maximize: boolean): void {
+  if (maximize) {
+    if (maximized !== null) setMaximized(maximized.figure, maximized.button, false);
+    const frame = figure.querySelector<HTMLIFrameElement>('iframe[data-executable-frame]');
+    if (frame === null) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'executable-maximized';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-label', 'HTML maximizado');
+    figure.classList.add('has-maximized-frame');
+    overlay.append(frame, button);
+    document.body.append(overlay);
+    maximized = { figure, frame, button, overlay };
+  } else if (maximized?.figure === figure) {
+    const details = figure.querySelector('details');
+    figure.insertBefore(maximized.frame, details);
+    figure.append(maximized.button);
+    maximized.overlay.remove();
+    figure.classList.remove('has-maximized-frame');
+    maximized = null;
+  }
+  document.documentElement.classList.toggle('has-maximized-executable', maximized !== null);
+  button.innerHTML = icon(maximize ? 'arrows-minimize' : 'arrows-maximize');
+  button.title = maximize ? 'minimizar HTML' : 'maximizar HTML';
   button.setAttribute('aria-label', button.title);
-  button.setAttribute('aria-pressed', String(maximized));
-  if (maximized) button.focus({ preventScroll: true });
+  button.setAttribute('aria-pressed', String(maximize));
+  if (maximize) button.focus({ preventScroll: true });
 }
 
 function wireHtmlControls(root: ParentNode = document): void {
   for (const figure of root.querySelectorAll<HTMLElement>('.executable-html-live')) {
-    if (figure.querySelector('.executable-size-toggle') !== null) continue;
+    if (figure.querySelector('.executable-size-toggle') !== null || figure.classList.contains('has-maximized-frame')) continue;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'executable-size-toggle';
     setMaximized(figure, button, false);
     button.addEventListener('click', () => {
-      setMaximized(figure, button, !figure.classList.contains('executable-maximized'));
+      setMaximized(figure, button, maximized?.figure !== figure);
     });
     figure.append(button);
   }
@@ -87,9 +108,8 @@ new MutationObserver((records) => {
 
 addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
-  const figure = document.querySelector<HTMLElement>('.executable-html-live.executable-maximized');
-  const button = figure?.querySelector<HTMLButtonElement>('.executable-size-toggle');
-  if (figure !== null && figure !== undefined && button !== null && button !== undefined) {
+  if (maximized !== null) {
+    const { figure, button } = maximized;
     setMaximized(figure, button, false);
     button.focus();
   }

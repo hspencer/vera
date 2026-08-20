@@ -266,9 +266,9 @@ function drawList(pages: QueryHit[], handlers: QueryBlockHandlers): HTMLElement 
     // El pasaje donde lo dice, cuando la pregunta era por texto. Es lo que
     // distingue el acierto bueno del que sólo comparte una palabra.
     if (hit.says !== null) {
-      const says = document.createElement('span');
+      const says = document.createElement('div');
       says.className = 'query-says';
-      says.textContent = hit.says.excerpt;
+      says.innerHTML = renderMarkdown(hit.says.excerpt);
       row.append(says);
     }
     list.append(row);

@@ -282,7 +282,40 @@ h1.paper-title {
   break-inside: avoid;
 }
 
-.b img { max-width: 100%; height: auto; }
+/* Imagen y HTML usan toda la caja imprimible, sin el marco de la interfaz.
+   object-fit: contain conserva la proporción aunque la hoja y la imagen tengan
+   formas distintas. La caja coincide con PAGE_FIT: carta menos los márgenes y
+   la holgura del paginador. */
+.b img {
+  display: block;
+  width: 100%;
+  height: 820px;
+  margin: 0 auto;
+  border: 0;
+  border-radius: 0;
+  object-fit: contain;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.b .executable {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  border: 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.b .executable iframe {
+  display: block;
+  width: 100%;
+  height: 820px;
+  border: 0;
+  border-radius: 0;
+}
+
+.b .executable :is(summary, .executable-size-toggle) { display: none; }
 
 .b table {
   width: 100%;

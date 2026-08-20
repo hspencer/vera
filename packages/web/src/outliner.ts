@@ -2414,6 +2414,40 @@ export function renderOutliner(
   if (pending.size > 0) options.pageExists = (title) => !pending.has(title);
 
   /**
+   * Los extractos siguen siendo palabras del corpus, no texto de interfaz.
+   *
+   * Se renderizan con la misma gramática segura que un bloque y sus enlaces
+   * internos conservan el viaje. Antes estas vistas usaban `textContent`: una
+   * referencia como `[[Vera]]` aparecía con corchetes precisamente en el lugar
+   * destinado a anticipar cómo se leería la página.
+   */
+  const renderPreview = (
+    host: HTMLElement,
+    source: string,
+    gesture: 'followed_reference' | 'followed_backlink' = 'followed_reference',
+  ): void => {
+    host.innerHTML = renderMarkdown(source, options);
+    host.addEventListener('click', (event) => {
+      const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a');
+      if (link === null) return;
+      if (link.classList.contains('wiki')) {
+        event.preventDefault();
+        event.stopPropagation();
+        callbacks.onOpen(link.dataset['page'] ?? '', gesture);
+        return;
+      }
+      if (!link.classList.contains('block-ref')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const id = link.dataset['block'] ?? '';
+      const ref = page.blockRefs.find((candidate) => candidate.id === id);
+      if (ref === undefined) toast('esa referencia no nombra ningún bloque de este grafo');
+      else if (callbacks.onOpenBlock === undefined) callbacks.onOpen(ref.page, gesture);
+      else callbacks.onOpenBlock(ref.page, ref.id);
+    });
+  };
+
+  /**
    * Cierra el viaje de cada nota al pie sobre la página ya compuesta.
    *
    * El renderizador de un fragmento no sabe si otro bloque citó la misma nota.
@@ -4895,8 +4929,9 @@ export function renderOutliner(
         ].filter(Boolean).join(' · ');
         row.append(link, modes);
         if (member.excerpt !== '') {
-          const said = document.createElement('p');
-          said.textContent = member.excerpt;
+          const said = document.createElement('div');
+          said.className = 'markdown-preview';
+          renderPreview(said, member.excerpt);
           row.append(said);
         }
         results.append(row);
@@ -4955,14 +4990,14 @@ export function renderOutliner(
 
       // Lo dicho, que es la relación misma, y debajo la frase desde la que se
       // afirma: una relación sin su frase es una flecha sin sujeto.
-      const said = document.createElement('p');
-      said.className = 'relation-said';
-      said.textContent = row.said;
+      const said = document.createElement('div');
+      said.className = 'relation-said markdown-preview';
+      renderPreview(said, row.said, outgoing ? 'followed_reference' : 'followed_backlink');
       item.append(said);
 
-      const from = document.createElement('p');
-      from.className = 'relation-from';
-      from.textContent = row.says;
+      const from = document.createElement('div');
+      from.className = 'relation-from markdown-preview';
+      renderPreview(from, row.says, outgoing ? 'followed_reference' : 'followed_backlink');
       item.append(from);
 
       list.append(item);
@@ -5077,9 +5112,10 @@ export function renderOutliner(
             explainTowards(item, row.title, row.from, held, page, toast, callbacks);
           });
 
-          const link = document.createElement('button');
-          link.type = 'button';
+          const link = document.createElement('div');
           link.className = 'backlink';
+          link.tabIndex = 0;
+          link.setAttribute('role', 'button');
 
           const where = document.createElement('span');
           where.className = 'backlink-page';
@@ -5088,33 +5124,44 @@ export function renderOutliner(
           // no un enlace roto: se dibuja como lo que es.
           if (row.page === null) where.classList.add('unwritten');
 
-          const said = document.createElement('span');
-          said.className = 'backlink-excerpt';
-          said.textContent = row.excerpt;
+          const said = document.createElement('div');
+          said.className = 'backlink-excerpt markdown-preview';
+          renderPreview(said, row.excerpt, gesture);
 
           link.append(where, said);
           if (row.says !== undefined) {
-            const answers = document.createElement('span');
-            answers.className = 'backlink-excerpt reciprocal';
-            answers.textContent = row.says;
+            const answers = document.createElement('div');
+            answers.className = 'backlink-excerpt reciprocal markdown-preview';
+            renderPreview(answers, row.says, gesture);
             link.append(answers);
           }
-          link.addEventListener('click', () => callbacks.onOpen(row.page ?? row.title, gesture));
+          const open = (): void => callbacks.onOpen(row.page ?? row.title, gesture);
+          link.addEventListener('click', (event) => {
+            if ((event.target as HTMLElement).closest('a') !== null) return;
+            open();
+          });
+          link.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            open();
+          });
 
           item.append(quill, link);
 
           // Y debajo, lo que se dijo de ella. Es la prueba de que lo escrito se
           // escribió: sin enseñarlo, guardar y no guardar se ven igual.
           if (held !== undefined) {
-            const said = document.createElement('p');
-            said.className = 'relation-said';
+            const said = document.createElement('div');
+            said.className = 'relation-said markdown-preview';
             if (held.term !== null) {
               const term = document.createElement('span');
               term.className = 'relation-term';
               term.textContent = held.term;
               said.append(term);
             }
-            said.append(document.createTextNode(held.said));
+            const explanation = document.createElement('div');
+            renderPreview(explanation, held.said, gesture);
+            said.append(explanation);
             item.append(said);
           }
 

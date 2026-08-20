@@ -102,6 +102,18 @@ describe('paperHtml', () => {
       assets: [{ path: '../assets/foto.png', url: '/media/abc123', mediaType: 'image/png' }],
     });
     assert.match(html, /src="\/media\/abc123"/);
+    assert.match(html, /\.b img \{[\s\S]*?height: 820px;[\s\S]*?border: 0;[\s\S]*?object-fit: contain;/);
+  });
+
+  it('imprime HTML ejecutable sin marco y usando la caja completa de la hoja', () => {
+    const html = paperHtml({
+      title: 'HTML',
+      blocks: [bloque('block:html', null, 0, '```html-live\n<h1>Una lámina</h1>\n```')],
+    });
+    assert.match(html, /class="executable executable-html-live"/);
+    assert.match(html, /data-executable-frame/);
+    assert.match(html, /\.b \.executable iframe \{[\s\S]*?width: 100%;[\s\S]*?height: 820px;[\s\S]*?border: 0;/);
+    assert.match(html, /\.b \.executable :is\(summary, \.executable-size-toggle\) \{ display: none; \}/);
   });
 
   it('el título se escapa: una página puede llamarse como quiera', () => {

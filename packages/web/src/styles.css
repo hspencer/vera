@@ -385,6 +385,19 @@ input {
   font-size: 0.8rem;
 }
 
+/* Los extractos son Markdown del corpus. Sus párrafos no deben traer el margen
+   de un cuerpo largo a una lista compacta; el marcado en línea, los enlaces y
+   el énfasis sí se conservan. */
+.markdown-preview > :first-child,
+.hit-excerpt > :first-child,
+.query-says > :first-child { margin-top: 0; }
+.markdown-preview > :last-child,
+.hit-excerpt > :last-child,
+.query-says > :last-child { margin-bottom: 0; }
+.markdown-preview p,
+.hit-excerpt p,
+.query-says p { margin-block: 0; }
+
 #controls {
   display: flex;
   gap: 0.2rem;
@@ -5137,18 +5150,17 @@ code {
   color: var(--text);
   box-shadow: 0 1px 8px color-mix(in srgb, black 22%, transparent);
   cursor: pointer;
-  /* Siempre a la vista: es la puerta a pantalla completa y no puede competir a
-     la baja con el desplegable «fuente HTML», que es lo que enseña el código.
-     Escondida al hover, se confundían y se abría el código en vez del recinto. */
-  opacity: 1;
-  pointer-events: auto;
-  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
 .executable-html-live:hover > .executable-size-toggle,
 .executable-size-toggle:hover,
 .executable-size-toggle:focus-visible,
 .executable-maximized > .executable-size-toggle {
+  opacity: 1;
+  pointer-events: auto;
   border-color: color-mix(in srgb, var(--accent) 70%, var(--text));
   background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised));
 }
@@ -5159,10 +5171,7 @@ code {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
+  display: block;
   background: var(--bg);
 }
 
@@ -5173,7 +5182,6 @@ code {
   border-radius: 0;
 }
 
-.executable-maximized details { display: none; }
 .has-maximized-executable { overflow: hidden; }
 
 @media (hover: none) {
@@ -5885,6 +5893,47 @@ code {
 
   .embed figcaption {
     display: none;
+  }
+
+  /* Una imagen o un HTML impreso no conserva el marco del taller. La caja usa
+     todo el alto y ancho disponibles de la hoja; `contain` maximiza la imagen
+     sin recortarla ni deformarla. El iframe recibe ese mismo viewport para que
+     el documento que corre dentro componga contra el papel y no contra las seis
+     líneas de alto de su vista ordinaria. */
+  .body img {
+    display: block;
+    width: 100%;
+    height: 100vh;
+    max-width: 100%;
+    max-height: 100vh;
+    margin: 0 auto;
+    border: 0;
+    border-radius: 0;
+    object-fit: contain;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .executable {
+    width: 100%;
+    max-width: none;
+    height: 100vh;
+    margin: 0;
+    border: 0;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .executable iframe {
+    display: block;
+    width: 100%;
+    height: 100vh !important;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .executable :is(summary, .executable-size-toggle) {
+    display: none !important;
   }
 }
 
