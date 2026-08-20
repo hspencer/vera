@@ -1,9 +1,12 @@
 # Vera en diagramas
 
-> **Revisado el 17 de agosto de 2026:** rama `v0.6-federacion`. 34
-> especificaciones Allium sin errores; 1.190 pruebas en 253 suites, todas en
-> verde. Las cifras del corpus pertenecen a una instalación y no al programa,
-> por eso ya no se usan como estado del repositorio.
+La [arquitectura pública](https://vera.mediafranca.net/vera-arquitectura/)
+ofrece la entrada conceptual. Estos diagramas documentan la implementación y
+las propuestas técnicas con mayor detalle.
+
+> Los diagramas describen estructura y recorridos, no el resultado de una
+> corrida. `npm run spec`, `npm run typecheck` y `npm test` son la autoridad para
+> el estado actual.
 >
 > **Qué cambió desde la primera versión de esta página.** Lo retenido dejó de ser
 > el plan B y pasó a dibujarse siempre; detrás va una pregunta barata al registro;
@@ -260,7 +263,7 @@ flowchart LR
 flowchart LR
     a(["AgentParticipant<br/>una IA conectada"])
 
-    subgraph lectura["Por MCP — sólo lectura"]
+    subgraph mcp["Por MCP — lectura y escritura cercada"]
         m1("vera_quien_soy")
         m2("vera_buscar")
         m3("vera_leer_pagina")
@@ -268,6 +271,8 @@ flowchart LR
         m5("vera_vecindario")
         m6("vera_indice")
         m7("vera_ontologia")
+        m8("vera_preparar_escritura")
+        m9("vera_escribir")
     end
 
     subgraph escritura["Por la API — con credencial"]
@@ -276,16 +281,16 @@ flowchart LR
         w3("Comprobar quién es y con qué alcances")
     end
 
-    a --> lectura
+    a --> mcp
     a --> escritura
 
     nota["Todo lo leído queda anotado<br/>en el registro de exposición"]
-    lectura -.-> nota
+    mcp -.-> nota
 ```
 
-Las siete herramientas MCP son las que hay hoy, y son todas de lectura. Escribir
-por MCP no existe: la puerta es de una dirección hasta que exista el camino de
-propuestas.
+MCP ofrece siete herramientas de lectura y dos para preparar y aplicar escritura
+no destructiva. Cada cambio usa la misma puerta canónica de operaciones y queda
+atribuido a la credencial del agente.
 
 ### Casos de uso y qué spec los gobierna
 
@@ -1388,7 +1393,7 @@ sequenceDiagram
     cli->>proc: initialize
     proc-->>cli: instrucciones — qué es esto y qué NO se puede
     cli->>proc: tools/list
-    proc-->>cli: siete herramientas, todas de lectura
+    proc-->>cli: nueve herramientas, incluida escritura cercada
     cli->>proc: vera_buscar("accesibilidad")
     proc->>api: GET /search?q=...
     api->>api: ¿quién llega? credencial o dueño

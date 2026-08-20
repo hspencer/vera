@@ -1,5 +1,9 @@
 # Exponer Vera
 
+La explicación canónica de la proyección pública vive en
+[Vera — Publicación](https://vera.mediafranca.net/vera-publicacion/). Este
+documento conserva la configuración de red y despliegue del repositorio.
+
 Tres modos de estar alcanzable, qué exige cada uno, y por qué el que casi todo el
 mundo quiere no necesita autenticar a nadie.
 

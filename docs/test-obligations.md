@@ -1,8 +1,8 @@
 # Cobertura y obligaciones de prueba
 
-> Revisado el 17 de agosto de 2026 sobre `b87e76e`: **1.190 pruebas en 253
-> suites**, todas en verde. Este recuento describe una corrida, no una promesa;
-> `npm test` es la autoridad para el estado actual.
+> Este documento describe obligaciones, no una fotografía de una corrida.
+> `npm test`, `npm run typecheck` y `npm run spec` son la autoridad para el
+> estado actual.
 
 Las especificaciones Allium dicen qué comportamiento debe sostener Vera. La
 suite comprueba una parte de esas obligaciones y también los bordes que Allium

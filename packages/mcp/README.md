@@ -1,12 +1,13 @@
 # vera-mcp
 
 La puerta MCP de Vera. Un proceso por cliente, lanzado por el cliente, hablando
-por entrada y salida estándar. Sin puerto, sin red y sin nada escuchando.
+por entrada y salida estándar. Sin puerto propio ni nada escuchando. La
+[explicación pública](https://vera.mediafranca.net/vera-puerta-mcp/) vive en
+Vera; aquí queda el contrato operativo del paquete.
 
-De momento es de sólo lectura: siete herramientas y ninguna escribe. Es la
-etapa M1 de las seis que fija la página «Vera — como memoria portable para
-inteligencias»; escribir entra por una propuesta que queda escrita, y eso es M3
-y M4.
+La puerta ofrece lectura y escritura no destructiva. Cada lectura queda en el
+registro de exposición y cada escritura pasa por `POST /operations`, con la
+identidad y los alcances de la credencial.
 
 ## Qué ofrece
 
@@ -18,6 +19,8 @@ y M4.
 | `vera_historia_bloque` | Todo lo que un bloque dijo alguna vez, incluido lo borrado. |
 | `vera_vecindario` | El mapa alrededor de una página. |
 | `vera_indice` | Los títulos del corpus. |
+| `vera_preparar_escritura` | Lee juntas las reglas vivas para agentes y la ontología antes de escribir. |
+| `vera_escribir` | Crea páginas o bloques y gestiona propiedades mediante una operación atribuida e idempotente. |
 | `vera_ontologia` | Cómo está clasificada esta memoria. |
 
 ## Cómo se conecta cada cliente

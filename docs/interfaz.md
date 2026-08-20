@@ -1,5 +1,9 @@
 # Anatomía de la interfaz
 
+El [Manual de Vera](https://vera.mediafranca.net/vera-manual/) explica la
+interfaz para quien la usa. Este inventario se mantiene cerca del código para
+orientar cambios de implementación.
+
 Inventario de lo que hay hoy en pantalla, para poder reestructurarlo sabiendo qué
 se mueve y qué arrastra consigo. Levantado del código, no de la memoria:
 `packages/web/index.html`, `main.ts`, `outliner.ts`, `settings.ts`, `styles.css`.

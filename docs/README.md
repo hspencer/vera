@@ -1,71 +1,52 @@
 # Documentación de Vera
 
-Las **especificaciones** están en [`specs/`](../specs/) y son la fuente de verdad
-sobre el comportamiento. Lo que hay aquí es todo lo demás: cómo se usa, cómo está
-construido, cómo se levanta y qué se decidió y por qué.
+La documentación conceptual y de uso se escribe en Vera y se publica desde el
+mismo corpus. Este repositorio conserva lo necesario para construir, verificar,
+desplegar y contribuir al programa.
 
-Si es la primera vez, el orden es: **[README](../README.md)** → **[Manual](manual.md)**
-→ **[Portabilidad](portabilidad.md)**.
+## Documentación canónica publicada
 
-> Revisión documental: 17 de agosto de 2026, rama `v0.6-federacion`. Los planes
-> conservan cifras de la corrida que los originó porque son registro de una
-> decisión, no tableros de estado. El estado vigente está en la hoja de ruta, la
-> arquitectura y las specs.
+- [Presentación de Vera](https://vera.mediafranca.net/vera/)
+- [Manual](https://vera.mediafranca.net/vera-manual/)
+- [Principios](https://vera.mediafranca.net/vera-principios/)
+- [Postura ética](https://vera.mediafranca.net/vera-postura-etica/)
+- [Hoja de ruta](https://vera.mediafranca.net/vera-roadmap-de-producto-y-desarrollo/)
+- [Arquitectura](https://vera.mediafranca.net/vera-arquitectura/)
+- [Seguridad](https://vera.mediafranca.net/vera-seguridad/)
+- [Puerta MCP](https://vera.mediafranca.net/vera-puerta-mcp/)
+- [Publicación](https://vera.mediafranca.net/vera-publicacion/)
+- [Probar e instalar](https://vera.mediafranca.net/vera-probar-e-instalar/)
 
-## Para quien usa Vera
+## Documentación del repositorio
 
-| | |
-| --- | --- |
-| **[Manual](manual.md)** | Cómo se escribe, se enlaza, se pregunta y se navega. Cada tecla, cada comando, cada gesto — y qué hace exactamente cada uno. Importado del corpus, donde se sigue editando. |
-| **[Conectar una IA](conectar-una-ia.md)** | Enchufar cualquier servicio —Anthropic, OpenAI, Google, Microsoft, DeepSeek, Mistral— a la puerta MCP. Cinco valores, los mismos para todos, y qué se puede y qué no. |
-| **[Portabilidad](portabilidad.md)** | Levantar una instancia propia: qué instalar, qué reemplazar, cómo exponerla con Tailscale, cómo llevarse el corpus. |
-| **[Exponer Vera](exponer-vera.md)** | Los tres modos de estar alcanzable —privado, público de lectura, público de acceso—, qué exige cada uno y por qué el que casi todo el mundo quiere no necesita autenticar a nadie. |
+### Construir y operar
 
-## Para quien la construye
+- [Arquitectura de implementación](architecture.md)
+- [Vera en diagramas](diagramas.md)
+- [Anatomía de la interfaz](interfaz.md)
+- [Conectar una IA](conectar-una-ia.md)
+- [Portabilidad](portabilidad.md)
+- [Exponer Vera](exponer-vera.md)
+- [Cobertura y obligaciones de prueba](test-obligations.md)
+- [Benchmark de diseño](benchmark.md)
 
-| | |
-| --- | --- |
-| **[Arquitectura](architecture.md)** | La forma técnica, con lo construido y lo propuesto marcados por separado. No convierte decisiones técnicas en garantías de producto. |
-| **[Vera en diagramas](diagramas.md)** | La misma arquitectura dibujada: clases del dominio, casos de uso por actor, esquema por regiones, los caminos de una escritura y de una lectura sin red. 36 diagramas Mermaid en una página con índice. |
-| **[Anatomía de la interfaz](interfaz.md)** | Inventario de lo que hay hoy en pantalla, levantado del código y no de la memoria. Para reestructurar sabiendo qué se mueve y qué arrastra consigo. |
-| **[Cobertura y obligaciones de prueba](test-obligations.md)** | Qué cubre la suite vigente y, sobre todo, qué **no** demuestra todavía. |
-| **[Benchmark de diseño](benchmark.md)** | Vera frente a Logseq, Obsidian, Roam y SilverBullet. Compara diseños, no productos, y lo dice. |
+### Planes y registro de decisiones
 
-## Planes de trabajo
+- [Que la mano no espere](plan-local-first.md)
+- [Del rastro al argumento](plan-recorridos.md)
+- [Nadie por omisión](plan-nadie-por-omision.md)
 
-Un plan mide el hueco entre una spec y el código antes de entrar a cerrarlo. Se
-escriben cuando el hueco es lo bastante grande como para que convenga saber por
-dónde se entra, y se dejan escritos después, incluidos los pasos que resultaron
-falsos.
+### Gobierno
 
-| | |
-| --- | --- |
-| **[Que la mano no espere](plan-local-first.md)** | Registro histórico del diseño local-first; pasos 0 a 3 construidos, 4 y 5 pendientes. |
-| **[Del rastro al argumento](plan-recorridos.md)** | Registro histórico de la implementación de recorridos; cerrado. |
-| **[Nadie por omisión](plan-nadie-por-omision.md)** | Plan vigente para cerrar el supuesto de identidad anónima antes de exponer la aplicación privada. |
+- [Contribuir](../CONTRIBUTING.md)
+- [Seguridad operativa](../SECURITY.md)
+- [Licencia](../LICENCIA.md)
+- [Autoría](../AUTHORS.md)
+- [Especificaciones Allium](../specs/)
 
-## Gobierno del proyecto
+## Criterio editorial
 
-Fuera de `docs/`, en la raíz:
-
-| | |
-| --- | --- |
-| **[CONTRIBUTING.md](../CONTRIBUTING.md)** | Cómo se trabaja: el método spec-first, las ramas, los commits, la revisión, la etiqueta y cómo se reporta un fallo de seguridad. |
-| **[ROADMAP.md](../ROADMAP.md)** | Los tres horizontes: que la mano no espere, que la espera se vea, y la federación. |
-| **[LICENCIA.md](../LICENCIA.md)** | Qué se puede y qué no, y por qué esta licencia y no otra. |
-| **[AUTHORS.md](../AUTHORS.md)** | El registro de autoría, cómo se entra, y por qué no existe un cálculo estándar por commits. |
-| **[LICENSE](../LICENSE)** · **[NOTICE](../NOTICE)** | La licencia del programa y los avisos de terceros. |
-
----
-
-## Cómo se escribe aquí
-
-- **Un documento dice su estado al escribirlo** —qué rama, cuántas pruebas, qué
-  estaba sin confirmar— para que quien lo lea después sepa contra qué se escribió.
-- **Lo construido y lo propuesto se marcan por separado.** Un documento que los
-  mezcla convierte una intención en un compromiso sin que nadie lo decida.
-- **Lo que resultó falso se deja escrito**, tachado o corregido en su sitio, con
-  lo que se descubrió. En `plan-local-first.md` hay un bloqueador que no existía;
-  está ahí y dice por qué se creyó que existía.
-- **Nada de aquí sustituye a una spec.** Si un documento y una spec se
-  contradicen, manda la spec y el documento está desactualizado.
+La explicación del producto se corrige en Vera y se publica una sola vez. Los
+detalles que permiten ejecutar o auditar el código permanecen aquí. Las specs
+mandan sobre el comportamiento; los planes conservan el contexto de las
+decisiones y no funcionan como tableros de estado.

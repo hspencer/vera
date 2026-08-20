@@ -1,5 +1,9 @@
 # Arquitectura tecnológica
 
+La [arquitectura pública](https://vera.mediafranca.net/vera-arquitectura/)
+explica el modelo general. Este documento describe su implementación en el
+repositorio y distingue lo construido de lo propuesto.
+
 > **Estado:** mixto, y conviene leerlo así. Las secciones marcadas **construido**
 > registran lo que v0 efectivamente usa. Las marcadas **propuesta** siguen siendo
 > revisables y no comprometen a nada. Las especificaciones Allium definen el
@@ -258,8 +262,8 @@ fuera de la máquina, y deja de serlo el día que lo haga.
 
 ## Pruebas y calidad — parte construida
 
-- **`node --test`** para unidades e integración: 1.190 tests en 253 suites al
-  17 de agosto de 2026, sin paso de build.
+- **`node --test`** para unidades e integración; el resultado de `npm test` es
+  la autoridad, no un recuento copiado en este documento.
 - **fast-check** para propiedades e invariantes derivadas de Allium, sobre
   secuencias de hasta 40 operaciones.
 - TypeScript estricto, verificado con `tsc --noEmit` en la raíz y en la PWA.

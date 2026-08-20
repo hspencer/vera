@@ -1,12 +1,16 @@
 # Conectar una IA a Vera
 
+La [Puerta MCP](https://vera.mediafranca.net/vera-puerta-mcp/) presenta esta
+capacidad desde Vera. Aquí permanecen los pasos operativos, credenciales y
+límites necesarios para conectar clientes concretos.
+
 Cómo enchufar cualquier servicio de inteligencia artificial —Anthropic, OpenAI,
 Google, Microsoft, DeepSeek, Mistral o el que aparezca el mes que viene— a esta
 memoria.
 
-> Revisado el 17 de agosto de 2026: rama `v0.6-federacion`, etapa **M1** de la puerta MCP
-> (sólo lectura, siete herramientas). Lo que todavía no existe está marcado
-> como tal en [Lo que no hay](#lo-que-no-hay), al final.
+> La puerta local ofrece lectura y escritura no destructiva bajo credencial. Lo
+> que todavía no existe está marcado como tal en [Lo que no hay](#lo-que-no-hay),
+> al final.
 
 ---
 
@@ -316,9 +320,9 @@ obedecerla. Ver [`confined-writing.allium`](../specs/confined-writing.allium).
 
 Dicho aparte para no confundir lo construido con lo previsto.
 
-- **Escribir desde la IA.** La escritura cercada existe y se comprueba en la API,
-  pero las herramientas MCP todavía no la ofrecen: las siete son de lectura y lo
-  declaran así en su catálogo. Es M3 y M4.
+- **Edición y descarte completos desde la IA.** MCP permite crear páginas y
+  bloques y gestionar propiedades mediante operaciones atribuidas e idempotentes.
+  Todavía no edita, mueve ni descarta páginas o bloques.
 - **Un servidor MCP remoto.** No existe. `/mcp` es el JSON de la página de la
   puerta, no un endpoint del protocolo, y `packages/mcp` sólo habla stdio. Por
   eso ningún cliente web se conecta. Es **M5**, y la pieza está a mano —el SDK
@@ -341,8 +345,8 @@ Dicho aparte para no confundir lo construido con lo previsto.
 - [`specs/mcp-server.allium`](../specs/mcp-server.allium) — la spec que gobierna
   la puerta. Manda ella si algo de aquí la contradice.
 - [`specs/confined-writing.allium`](../specs/confined-writing.allium) — el cerco.
-- [`packages/mcp/README.md`](../packages/mcp/README.md) — las siete herramientas,
-  una por una.
+- [`packages/mcp/README.md`](../packages/mcp/README.md) — las herramientas, una
+  por una.
 - [`docs/exponer-vera.md`](exponer-vera.md) — la misma pregunta para Vera entera:
   privado, público de lectura, público de acceso, y qué exige cada uno.
 - [`docs/portabilidad.md`](portabilidad.md) — levantar una instancia propia y
