@@ -159,9 +159,10 @@ export function externalDestination(raw: string, here = window.location.href): s
 /**
  * Pregunta antes de abandonar Vera y conserva visible la dirección completa.
  *
- * En macOS el puente `vera-open` es quien puede cruzar la frontera que una PWA
- * no puede: delega la URL a Launch Services, que conoce el navegador
- * predeterminado. En los demás sistemas se conserva la apertura web corriente.
+ * La salida es un enlace real con `target=_blank`, no una navegación simulada
+ * por JavaScript ni un protocolo particular de una plataforma. Conserva la
+ * activación del usuario, pero no promete escoger navegador: una PWA sigue
+ * perteneciendo al navegador que la instaló y la Web no puede saltárselo.
  */
 function openExternalLink(url: string): void {
   const dialog = document.createElement('dialog');
@@ -181,10 +182,12 @@ function openExternalLink(url: string): void {
   const copy = document.createElement('button');
   copy.type = 'button';
   copy.textContent = 'Copiar URL';
-  const open = document.createElement('button');
-  open.type = 'button';
-  const mac = /Macintosh|Mac OS X/.test(navigator.userAgent);
-  open.textContent = mac ? 'Abrir en navegador predeterminado' : 'Abrir enlace';
+  const open = document.createElement('a');
+  open.className = 'dialog-primary-action';
+  open.href = url;
+  open.target = '_blank';
+  open.rel = 'noopener noreferrer external';
+  open.textContent = 'Abrir enlace';
 
   cancel.addEventListener('click', () => dialog.close());
   copy.addEventListener('click', () => {
@@ -193,14 +196,7 @@ function openExternalLink(url: string): void {
       window.setTimeout(() => { copy.textContent = 'Copiar URL'; }, 1200);
     }).catch(() => toast('no se pudo copiar la URL'));
   });
-  open.addEventListener('click', () => {
-    dialog.close();
-    if (mac) {
-      window.location.href = `vera-open://open?url=${encodeURIComponent(url)}`;
-    } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    }
-  });
+  open.addEventListener('click', () => dialog.close());
   dialog.addEventListener('close', () => dialog.remove());
 
   actions.append(cancel, copy, open);
@@ -881,6 +877,27 @@ export function foldedState(current: string[], block: string, folded: boolean): 
   if (folded) next.add(block);
   else next.delete(block);
   return [...next];
+}
+
+/**
+ * Abre sólo el camino necesario para que un bloque referido pueda dibujarse.
+ *
+ * El plegado es una preferencia de lectura, pero no puede volver inexistente el
+ * destino de una referencia. No se abre todo el árbol: únicamente sus ancestros.
+ */
+export function foldsWhileRevealing(
+  blocks: BlockView[],
+  folded: string[],
+  target: string,
+): string[] {
+  const parentOf = new Map(blocks.map((block) => [block.stableId, block.parent]));
+  const ancestors = new Set<string>();
+  let parent = parentOf.get(target) ?? null;
+  while (parent !== null && !ancestors.has(parent)) {
+    ancestors.add(parent);
+    parent = parentOf.get(parent) ?? null;
+  }
+  return folded.filter((block) => !ancestors.has(block));
 }
 
 /**
@@ -2774,6 +2791,7 @@ export function renderOutliner(
   header.className = 'page-header';
 
   const day = isDay(page.title);
+  const concept = page.concept !== undefined && page.concept !== null;
 
   /*
    * El título es contenido y se edita como contenido — salvo el de un día.
@@ -2786,9 +2804,11 @@ export function renderOutliner(
    * mintiendo sobre cuándo pasaron las cosas.
    */
   const title = document.createElement('h1');
-  title.className = day ? 'page-title day' : 'page-title';
+  title.className = `page-title${day ? ' day' : ''}${concept ? ' concept' : ''}`;
   title.textContent = page.title;
-  if (!day && !readOnly) {
+  if (concept) {
+    title.title = 'concepto del corpus';
+  } else if (!day && !readOnly) {
     title.tabIndex = 0;
     title.title = 'renombrar la página';
     title.addEventListener('click', () => {

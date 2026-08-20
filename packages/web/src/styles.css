@@ -1738,6 +1738,17 @@ input {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
+/* El nombre de un concepto es vocabulario de navegación, no un título libre.
+   Se distingue con la misma tinta de los enlaces y no promete edición. */
+.page-title.concept,
+.page-title.concept:hover {
+  color: var(--accent);
+  font-weight: 300;
+  font-style: italic;
+  cursor: default;
+  background: transparent;
+}
+
 /*
  * La fila que dice qué gobierna una página: se ve y no se toca.
  *
@@ -2272,11 +2283,13 @@ input {
 
 .external-link-dialog {
   width: min(32rem, calc(100vw - 2rem));
-  border: 1px solid var(--rule);
+  border: 1px solid color-mix(in srgb, var(--text-dim) 55%, transparent);
   border-radius: 0.5rem;
   padding: 1rem;
   background: var(--bg);
   color: var(--text);
+  box-shadow: 0 1rem 3rem color-mix(in srgb, var(--text) 22%, transparent);
+  font-family: var(--font-ui);
 }
 .external-link-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
 .external-link-dialog h2 { margin: 0 0 0.65rem; font-size: 1.05rem; }
@@ -2295,6 +2308,35 @@ input {
   flex-wrap: wrap;
   gap: 0.55rem;
   margin-top: 0.9rem;
+}
+.external-link-dialog .dialog-actions :is(button, a) {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.35rem;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+}
+.external-link-dialog .dialog-actions :is(button, a):is(:hover, :focus-visible) {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+.external-link-dialog .dialog-actions .dialog-primary-action {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+}
+.external-link-dialog .dialog-actions .dialog-primary-action:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--accent) 84%, var(--bg));
+  color: var(--bg);
 }
 
 /* Referencia a otro bloque. Se lee como el texto al que apunta, no como su
@@ -4806,7 +4848,27 @@ code {
 }
 
 .concept-members h2 { margin: 0 0 0.8rem; }
-.concept-members input { width: min(100%, 30rem); }
+.concept-members input {
+  appearance: none;
+  width: min(100%, 30rem);
+  min-height: 2.35rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--text-dim) 55%, transparent);
+  border-radius: 0.35rem;
+  background: var(--bg-raised);
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+.concept-members input::placeholder {
+  color: var(--text-dim);
+  font-style: italic;
+  opacity: 1;
+}
+.concept-members input:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  outline-offset: 1px;
+}
 .concept-members ul { list-style: none; padding: 0; }
 .concept-members li { margin: 0.9rem 0; }
 .concept-members button {

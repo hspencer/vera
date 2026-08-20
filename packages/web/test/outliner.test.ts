@@ -11,6 +11,7 @@ import {
   buildTree,
   blockRemovalOrder,
   externalDestination,
+  foldsWhileRevealing,
   foldedState,
   invokeMenuAction,
   isSpecialPage,
@@ -146,6 +147,25 @@ describe('foldedState', () => {
 
   it('no duplica un bloque ya plegado', () => {
     assert.deepEqual(foldedState(['padre'], 'padre', true), ['padre']);
+  });
+});
+
+describe('llegar a un bloque referido', () => {
+  it('abre sólo sus ancestros plegados y conserva los demás pliegues', () => {
+    const blocks = [
+      block('raíz', null, 0),
+      block('padre', 'raíz', 0),
+      block('destino', 'padre', 0),
+      block('otra-raíz', null, 1),
+    ];
+    assert.deepEqual(
+      foldsWhileRevealing(blocks, ['raíz', 'padre', 'otra-raíz'], 'destino'),
+      ['otra-raíz'],
+    );
+  });
+
+  it('tolera una identidad ausente sin alterar el plegado', () => {
+    assert.deepEqual(foldsWhileRevealing([block('a', null, 0)], ['a'], 'ausente'), ['a']);
   });
 });
 

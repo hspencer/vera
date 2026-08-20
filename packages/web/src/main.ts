@@ -27,6 +27,7 @@ import {
 import { createOutbox, durableOrNot, inOrder, type Outbox } from './outbox.ts';
 import {
   allowEmbedsFrom,
+  foldsWhileRevealing,
   nameProperties,
   renderOutliner,
   speakInto,
@@ -932,10 +933,20 @@ async function openPage(
   page.properties = pagePropertiesOf(replica);
   page.visibility = replica.graph.page(replica.page)?.visibility ?? page.visibility;
 
+  // Una referencia nombra un bloque aunque alguno de sus ancestros estuviera
+  // plegado. Se abre sólo ese camino en esta composición; de otro modo el
+  // destino jamás entraría al DOM y ningún desplazamiento podría encontrarlo.
+  if (options.reveal !== undefined && options.reveal !== null) {
+    page.folded = foldsWhileRevealing(page.blocks, page.folded, options.reveal);
+  }
+
   derivedStale = false;
   window.clearTimeout(catchUpTimer);
 
   renderOutliner(text, page, callbacksFor(page), focus, workspace.focusRoot, isAnybody());
+  if (options.reveal !== undefined && options.reveal !== null) {
+    revealBlock(options.reveal, page.id);
+  }
   showingKept = fromKept;
   markShowing(text, fromKept);
 
@@ -1171,9 +1182,7 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
     // participante en el bloque que nombra, no sólo en su página. Llegar a una
     // página de cien bloques y tener que buscarlo no es haberla seguido.
     onOpenBlock: (target, block) => {
-      void openPage(target, null, { reveal: block, gesture: 'followed_reference' }).then(() =>
-        revealBlock(block),
-      );
+      void openPage(target, null, { reveal: block, gesture: 'followed_reference' });
     },
     /*
      * Un cambio estructural rehace la página desde el modelo y devuelve el cursor
@@ -1313,8 +1322,11 @@ async function applyRoute(): Promise<void> {
   workspace.focusRoot = route.focus;
   // Una dirección pegada, un enlace de fuera o el botón de atrás. Vera no puede
   // distinguirlos y no los distingue: los tres son llegar sin venir de dentro.
-  await openPage(route.page, null, { fromUrl: true, gesture: 'opened_directly' });
-  if (route.block !== null) revealBlock(route.block);
+  await openPage(route.page, null, {
+    fromUrl: true,
+    reveal: route.block,
+    gesture: 'opened_directly',
+  });
 }
 
 async function openFilesAdministration(push = false): Promise<void> {
@@ -1333,9 +1345,20 @@ async function openFilesAdministration(push = false): Promise<void> {
  * El destello es lo que convierte «esta es la página» en «este es el bloque».
  * Se retira solo, porque un resalte permanente se confundiría con estado.
  */
-function revealBlock(stableId: string): void {
-  const row = document.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(stableId)}"]`);
-  if (row === null) return;
+function revealBlock(stableId: string, page: string): void {
+  const text = $('#text');
+  const selector = `.block[data-id="${CSS.escape(stableId)}"]`;
+  let observer: MutationObserver | null = null;
+  let expiry = 0;
+  const land = (): boolean => {
+    // Una composición anterior no puede aterrizar sobre una página posterior.
+    if (workspace.activePage !== page) {
+      observer?.disconnect();
+      window.clearTimeout(expiry);
+      return true;
+    }
+    const row = text.querySelector<HTMLElement>(selector);
+    if (row === null) return false;
   /*
    * Deslizándose sólo si hay poco que recorrer.
    *
@@ -1347,10 +1370,22 @@ function revealBlock(stableId: string): void {
    * Y por debajo de una pantalla de distancia el deslizamiento sigue diciendo
    * algo que un salto no dice: hacia dónde se fue.
    */
-  const cerca = Math.abs(row.getBoundingClientRect().top) < window.innerHeight * 2;
-  row.scrollIntoView({ block: 'center', ...(cerca ? { behavior: 'smooth' as const } : {}) });
-  row.classList.add('landed');
-  window.setTimeout(() => row.classList.remove('landed'), 2000);
+    const cerca = Math.abs(row.getBoundingClientRect().top) < window.innerHeight * 2;
+    row.scrollIntoView({ block: 'center', ...(cerca ? { behavior: 'smooth' as const } : {}) });
+    row.classList.add('landed');
+    window.setTimeout(() => row.classList.remove('landed'), 2000);
+    observer?.disconnect();
+    window.clearTimeout(expiry);
+    return true;
+  };
+
+  // Las páginas pequeñas ya están completas. Las grandes se componen por lotes
+  // en cuadros sucesivos: se espera la aparición efectiva del bloque en vez de
+  // confundir «terminó la petición» con «terminó de existir en pantalla».
+  if (land()) return;
+  observer = new MutationObserver(() => land());
+  observer.observe(text, { childList: true, subtree: true });
+  expiry = window.setTimeout(() => observer?.disconnect(), 10_000);
 }
 
 /** Un aviso a la vez, en texto plano: el corpus no dicta marcado. */
