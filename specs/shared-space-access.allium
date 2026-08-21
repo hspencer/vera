@@ -1139,6 +1139,12 @@ surface OwnerSharedSpaceDirectory {
         -- Settings → Sharing and `Vera:Publicación`; neither entry maintains a
         -- reduced or independent administration.
 
+    @guarantee SharedSpaceCreationUsesTheDirectoryPattern
+        -- A button named "Agregar espacio compartido" opens an inline creation
+        -- area with the same name, address and membership-criterion structure
+        -- used inside existing authenticated spaces. Closing it does not create
+        -- or alter a space.
+
     @guarantee PublicationRemainsExplicitInsideUnifiedSharing
         -- Presenting the public site beside authenticated spaces does not turn
         -- its publications into selector membership. Its explicit publication

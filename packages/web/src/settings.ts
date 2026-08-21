@@ -180,11 +180,18 @@ export async function drawSharing(host: HTMLElement): Promise<void> {
   catch (error) { status.textContent = error instanceof Error ? error.message : 'No se pudo leer la configuración.'; return; }
   status.textContent = `${spaces.length + 1} ${spaces.length === 0 ? 'forma' : 'formas'} de compartir: una pública y ${spaces.length} con acceso autenticado.`;
   host.append(publicSiteAdministration(host, publicSite, pages));
-  if (spaces.length === 0) host.append(newSpaceForm(host));
   for (const space of spaces) host.append(spaceAdministration(host, space));
-  const add = document.createElement('details'); add.className = 'sharing-add';
-  const summary = document.createElement('summary'); summary.textContent = 'Agregar una forma de compartir';
-  add.append(summary, newSpaceForm(host, false)); host.append(add);
+  const add = document.createElement('button'); add.type = 'button'; add.className = 'sharing-add';
+  add.textContent = 'Agregar espacio compartido'; add.setAttribute('aria-expanded', 'false');
+  const creation = document.createElement('section'); creation.className = 'sharing-new-space'; creation.hidden = true;
+  const heading = document.createElement('h3'); heading.textContent = 'Nuevo espacio compartido';
+  creation.append(heading, newSpaceForm(host, spaces.length === 0));
+  add.onclick = () => {
+    creation.hidden = !creation.hidden; add.setAttribute('aria-expanded', String(!creation.hidden));
+    add.textContent = creation.hidden ? 'Agregar espacio compartido' : 'Cerrar nuevo espacio';
+    if (!creation.hidden) creation.querySelector<HTMLInputElement>('input')?.focus();
+  };
+  host.append(add, creation);
 }
 
 function newSpaceForm(host: HTMLElement, veraDefaults = true): HTMLElement {

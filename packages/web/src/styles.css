@@ -7340,7 +7340,10 @@ code {
 .sharing-list li { display: flex; align-items: center; justify-content: space-between; gap: .65rem; padding: .55rem 0; border-bottom: 1px solid var(--rule); }
 .sharing-list li span { min-width: 0; overflow-wrap: anywhere; }
 .sharing-list li button { flex: 0 0 auto; }
-.sharing-add { margin-top: 1.5rem; }
+.sharing-add { display: inline-flex; align-items: center; justify-content: center; margin-top: 1.25rem; padding: .65rem .85rem; color: var(--text); background: var(--bg-raised); border: 1px solid var(--rule); border-radius: .45rem; font: inherit; font-weight: 600; cursor: pointer; }
+.sharing-add:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised)); }
+.sharing-new-space { margin-top: .75rem; padding: .25rem 1rem 1rem; border: 1px solid var(--rule); border-radius: .65rem; background: var(--bg-raised); }
+.sharing-new-space h3 { margin: 1rem 0 .25rem; font-size: 1rem; }
 .sharing-publish { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8rem, .7fr) auto; gap: .5rem; margin-top: .8rem; }
 @media (max-width: 640px) {
   .sharing-form { grid-template-columns: 1fr; }
