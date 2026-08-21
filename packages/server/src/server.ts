@@ -137,6 +137,14 @@ import {
   projectPublicSiteAtomically,
 } from '@vera/store/public-projection';
 import { makeVeraFile, readVeraFile } from './vera-file.ts';
+import {
+  createSharedSpace,
+  inspectInvitation,
+  inviteToSpace,
+  redeemInvitation,
+  sharedSpaceBySlug,
+  type SharedPermission,
+} from './shared-spaces.ts';
 
 const CHANGE_KINDS = new Set<string>(CORE_CHANGE_KINDS);
 
@@ -1706,6 +1714,95 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           projectionError: error instanceof Error ? error.message : String(error),
         });
       }
+      return;
+    }
+
+    /** Crear el primer límite compartido, gobernado por una propiedad de página. */
+    if (request.method === 'POST' && path === '/shared-spaces') {
+      const blocked = ownerOnly();
+      if (blocked !== null) { send(response, 403, blocked); return; }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: Record<string, unknown>;
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>; }
+        catch { send(response, 400, { error: 'the body must be JSON' }); return; }
+        const name = typeof body['name'] === 'string' ? body['name'].trim() : '';
+        const slug = typeof body['slug'] === 'string' ? body['slug'].trim() : '';
+        const key = typeof body['selectorKey'] === 'string' ? body['selectorKey'].trim() : '';
+        const value = typeof body['selectorValue'] === 'string' ? body['selectorValue'].trim() : '';
+        if (name === '' || key === '' || value === '' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+          send(response, 400, { error: 'el espacio necesita name, slug canónico, selectorKey y selectorValue' }); return;
+        }
+        try { send(response, 201, createSharedSpace(store, graph.owner!, { name, slug, selectorKey: key, selectorValue: value })); }
+        catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
+      });
+      return;
+    }
+
+    if (request.method === 'GET' && /^\/shared-spaces\/[^/]+\/pages$/.test(path)) {
+      const blocked = ownerOnly();
+      if (blocked !== null) { send(response, 403, blocked); return; }
+      const slug = decodeURIComponent(path.split('/')[2] ?? '');
+      const space = sharedSpaceBySlug(store, slug);
+      if (space === null) { send(response, 404, { error: 'el espacio no existe' }); return; }
+      const pages = graph.pages().filter((page) => graph.propertiesOf(page.id).some((property) =>
+        property.key === space.selectorKey && property.value === space.selectorValue));
+      send(response, 200, { space, pages: pages.map((page) => ({ id: page.id, title: page.title })) });
+      return;
+    }
+
+    if (request.method === 'POST' && /^\/shared-spaces\/[^/]+\/invitations$/.test(path)) {
+      const blocked = ownerOnly();
+      if (blocked !== null) { send(response, 403, blocked); return; }
+      const slug = decodeURIComponent(path.split('/')[2] ?? '');
+      const space = sharedSpaceBySlug(store, slug);
+      if (space === null) { send(response, 404, { error: 'el espacio no existe' }); return; }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: Record<string, unknown>;
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>; }
+        catch { send(response, 400, { error: 'the body must be JSON' }); return; }
+        const permissions = Array.isArray(body['permissions'])
+          ? body['permissions'].filter((one): one is SharedPermission => ['read', 'contribute', 'edit'].includes(String(one))) : [];
+        try {
+          const invitation = inviteToSpace(store, graph.owner!, space, permissions,
+            typeof body['intendedContact'] === 'string' ? body['intendedContact'] : undefined);
+          send(response, 201, { ...invitation, space: space.name,
+            url: `/invitations/${encodeURIComponent(invitation.id)}?secret=${encodeURIComponent(invitation.secret)}` });
+        } catch (error) { send(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
+      });
+      return;
+    }
+
+    if (request.method === 'GET' && /^\/invitations\/[^/]+$/.test(path)) {
+      const invitation = decodeURIComponent(path.split('/')[2] ?? '');
+      const proof = url.searchParams.get('secret') ?? '';
+      const view = inspectInvitation(store, invitation, proof);
+      if (view === null) { send(response, 404, { error: 'la invitación no existe o el secreto no coincide' }); return; }
+      send(response, 200, view);
+      return;
+    }
+
+    if (request.method === 'POST' && /^\/invitations\/[^/]+\/redeem$/.test(path)) {
+      const invitation = decodeURIComponent(path.split('/')[2] ?? '');
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        let body: Record<string, unknown>;
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>; }
+        catch { send(response, 400, { error: 'the body must be JSON' }); return; }
+        const proof = typeof body['secret'] === 'string' ? body['secret'] : '';
+        const name = typeof body['name'] === 'string' ? body['name'].trim() : '';
+        if (proof === '' || name === '') { send(response, 400, { error: 'el canje necesita secret y name' }); return; }
+        try {
+          const redeemed = redeemInvitation(store, invitation, proof, name);
+          graph.addParticipant({ id: redeemed.participant, name, kind: 'human' });
+          graph.admit(redeemed.participant);
+          send(response, 201, redeemed);
+        } catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
+      });
       return;
     }
 

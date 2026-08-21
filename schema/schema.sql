@@ -73,6 +73,57 @@ CREATE TABLE IF NOT EXISTS memberships (
     PRIMARY KEY (graph_id, participant_id)
 ) STRICT;
 
+-- Espacios compartidos: subconjuntos del grafo delimitados por una propiedad.
+CREATE TABLE IF NOT EXISTS shared_spaces (
+    id              TEXT PRIMARY KEY,
+    graph_id        TEXT NOT NULL REFERENCES graphs (id),
+    owner_id        TEXT NOT NULL REFERENCES participants (id),
+    name            TEXT NOT NULL,
+    slug            TEXT NOT NULL,
+    selector_key    TEXT NOT NULL,
+    selector_value  TEXT NOT NULL,
+    audience        TEXT NOT NULL CHECK (audience IN ('anybody', 'restricted')),
+    status          TEXT NOT NULL CHECK (status IN ('active', 'withdrawn')),
+    created_at      INTEGER NOT NULL,
+    UNIQUE (graph_id, slug)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS access_invitations (
+    id                TEXT PRIMARY KEY,
+    space_id          TEXT NOT NULL REFERENCES shared_spaces (id) ON DELETE CASCADE,
+    issued_by         TEXT NOT NULL REFERENCES participants (id),
+    permissions       TEXT NOT NULL,
+    proof_digest      TEXT NOT NULL UNIQUE,
+    intended_contact  TEXT,
+    status            TEXT NOT NULL CHECK (status IN ('pending', 'redeemed', 'revoked', 'expired')),
+    issued_at         INTEGER NOT NULL,
+    expires_at        INTEGER NOT NULL,
+    redeemed_by       TEXT REFERENCES participants (id),
+    redeemed_at       INTEGER
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS access_grants (
+    id              TEXT PRIMARY KEY,
+    space_id        TEXT NOT NULL REFERENCES shared_spaces (id) ON DELETE CASCADE,
+    participant_id  TEXT NOT NULL REFERENCES participants (id),
+    permissions     TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+    granted_by      TEXT NOT NULL REFERENCES participants (id),
+    granted_at      INTEGER NOT NULL,
+    revoked_at      INTEGER,
+    UNIQUE (space_id, participant_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS authenticator_enrollments (
+    id              TEXT PRIMARY KEY,
+    graph_id        TEXT NOT NULL REFERENCES graphs (id),
+    participant_id  TEXT NOT NULL REFERENCES participants (id),
+    authorized_by   TEXT NOT NULL REFERENCES participants (id),
+    proof_digest    TEXT NOT NULL UNIQUE,
+    status          TEXT NOT NULL CHECK (status IN ('pending', 'completed', 'revoked', 'expired')),
+    expires_at      INTEGER NOT NULL
+) STRICT;
+
 ------------------------------------------------------------
 -- Contenido
 ------------------------------------------------------------
