@@ -1130,7 +1130,9 @@ surface OwnerSharedSpaceDirectory {
         -- one directory. The public site is the root, freely readable sharing
         -- space; authenticated spaces follow it. Audience, page count,
         -- participant count and pending invitation count are summaries under
-        -- each collapsible space name.
+        -- each collapsible space name. The same directory is reached from
+        -- Settings → Sharing and `Vera:Publicación`; neither entry maintains a
+        -- reduced or independent administration.
 
     @guarantee PublicationRemainsExplicitInsideUnifiedSharing
         -- Presenting the public site beside authenticated spaces does not turn

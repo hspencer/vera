@@ -154,7 +154,14 @@ const field = (label: string, value: string, placeholder = ''): { label: HTMLLab
   held.append(name, input); return { label: held, input };
 };
 
-async function drawSharing(host: HTMLElement): Promise<void> {
+/**
+ * Dibuja la administración canónica de todas las formas de compartir.
+ *
+ * La exportamos porque `Vera:Publicación` y Configuración → Compartir son dos
+ * puertas hacia la misma decisión. Mantener dos paneles fue precisamente lo
+ * que permitió que la página especial siguiera enseñando sólo el sitio público.
+ */
+export async function drawSharing(host: HTMLElement): Promise<void> {
   host.innerHTML = '';
   const intro = document.createElement('p'); intro.className = 'settings-note';
   intro.textContent = 'Cada espacio comparte exactamente las páginas que cumplen un criterio de propiedad. Las invitaciones vencen en quince minutos y cada participante entra con su propia passkey.';

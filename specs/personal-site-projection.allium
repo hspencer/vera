@@ -954,6 +954,12 @@ surface VeraPublicationPage {
         -- `Vera:Publicación`, declared with special kind `publication`. The kind,
         -- not a private title check, is what gives the page authority.
 
+    @guarantee PublicationPageIsAlsoTheSharingDirectory
+        -- `Vera:Publicación` presents this public site inside the same canonical
+        -- sharing directory as authenticated shared spaces. From this page the
+        -- owner can add another form of sharing; it is not a public-site-only
+        -- administration that can drift from Settings → Sharing.
+
     @guarantee ExistingDomainIsTheOnlyConfigurationState
         -- The page edits the existing PersonalSite and Publication entities. It
         -- does not maintain a second settings record, publication list or copied

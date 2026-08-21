@@ -3731,11 +3731,8 @@ export function renderOutliner(
   }
 
   if (!readOnly && isPublicationPage(page.properties)) {
-    void renderPublicationPage(
-      toast,
-      (target) => callbacks.onOpen(target, 'followed_reference'),
-    ).then((panel) => {
-      if (panel !== null) header.after(panel);
+    void renderPublicationPage().then((panel) => {
+      header.after(panel);
     });
   }
 
