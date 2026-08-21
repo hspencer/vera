@@ -1133,7 +1133,9 @@ surface OwnerSharedSpaceDirectory {
         -- one directory. The public site is the root, freely readable sharing
         -- space; authenticated spaces follow it. Audience, page count,
         -- participant count and pending invitation count are summaries under
-        -- each collapsible space name. The same directory is reached from
+        -- each whole-card disclosure control, whose icon, status and metrics
+        -- make its interactive boundary apparent before opening it. Editing
+        -- remains local to the opened space. The same directory is reached from
         -- Settings → Sharing and `Vera:Publicación`; neither entry maintains a
         -- reduced or independent administration.
 
@@ -1198,6 +1200,12 @@ surface SharedSpaceAdministration {
         -- may revoke it immediately from this administration until redemption
         -- or expiry. Seven days is offered by default; no invitation exceeds
         -- thirty days.
+
+    @guarantee InvitationsAreIssuedPerPerson
+        -- Each invitation is a one-use capability intended for one person. The
+        -- administration says so before issuance and lets the owner issue any
+        -- number of separate links without leaving the space or losing the
+        -- still-visible secrets just created.
 }
 
 surface SharedSpaceParticipation {

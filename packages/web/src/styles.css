@@ -7310,10 +7310,21 @@ code {
 .shared-pages button { width: 100%; text-align: left; }
 .shared-notice[data-bad='true'] { color: #a12424; }
 
-.sharing-space { border-top: 1px solid var(--rule); margin-top: 1.5rem; padding-top: 1rem; }
-.sharing-space > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; cursor: pointer; }
-.sharing-space > summary span { color: var(--text-dim); font-size: .8rem; text-align: right; }
-.sharing-space-body { padding-top: .85rem; }
+.sharing-space { margin-top: .85rem; border: 1px solid var(--rule); border-radius: .65rem; background: var(--bg-raised); overflow: clip; }
+.sharing-space > summary { display: grid; grid-template-columns: minmax(10rem, 1fr) auto 1.25rem; align-items: center; gap: 1rem; min-height: 4.4rem; padding: .9rem 1rem; color: var(--text); cursor: pointer; list-style: none; transition: border-color .15s ease, background .15s ease; }
+.sharing-space > summary::-webkit-details-marker { display: none; }
+.sharing-space > summary:hover { background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised)); }
+.sharing-space[open] > summary { border-bottom: 1px solid var(--rule); }
+.sharing-space-identity { display: flex; align-items: center; gap: .7rem; min-width: 0; }
+.sharing-space-identity strong { overflow-wrap: anywhere; }
+.sharing-space-icon { display: grid; place-items: center; width: 2rem; height: 2rem; flex: 0 0 auto; border-radius: 50%; color: var(--text); background: color-mix(in srgb, var(--accent) 14%, var(--bg)); font-size: 1rem; }
+.sharing-space-icon svg { width: 1.15rem; height: 1.15rem; }
+.sharing-space-facts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; }
+.sharing-space-facts > span { padding: .25rem .5rem; border: 1px solid var(--rule); border-radius: 999px; color: var(--text-dim); background: var(--bg); font-size: .76rem; white-space: nowrap; }
+.sharing-space-affordance { color: var(--text-dim); font-size: 1.5rem; line-height: 1; transform: rotate(90deg); transition: transform .15s ease; }
+.sharing-space[open] > summary .sharing-space-affordance { transform: rotate(-90deg); }
+.sharing-space-body { padding: .25rem 1rem 1rem; }
+.sharing-space-body > a { color: var(--accent); }
 .sharing-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: 1rem 0; }
 .sharing-field { display: grid; gap: .3rem; color: var(--text-dim); font-size: .85rem; }
 .sharing-field input, .sharing-invitation-result input { min-width: 0; padding: .55rem; color: var(--text); background: var(--bg); border: 1px solid var(--rule); border-radius: .25rem; font: inherit; }
@@ -7322,8 +7333,9 @@ code {
 .sharing-group { margin: 1.35rem 0; }
 .sharing-group h4 { margin-bottom: .6rem; }
 .sharing-permissions { display: flex; flex-wrap: wrap; gap: 1rem; margin: .75rem 0; }
-.sharing-invitation-result { display: grid; grid-template-columns: 1fr auto; gap: .5rem; margin-top: .75rem; }
-.sharing-invitation-result .settings-note { grid-column: 1 / -1; }
+.sharing-invitation-result { display: grid; gap: .65rem; margin-top: .75rem; }
+.sharing-issued-invitation { display: grid; grid-template-columns: 1fr auto; gap: .5rem; padding: .75rem; border: 1px solid var(--rule); border-radius: .45rem; background: var(--bg); }
+.sharing-issued-invitation .settings-note { grid-column: 1 / -1; margin: 0; }
 .sharing-list { list-style: none; padding: 0; }
 .sharing-list li { display: flex; align-items: center; justify-content: space-between; gap: .65rem; padding: .55rem 0; border-bottom: 1px solid var(--rule); }
 .sharing-list li span { min-width: 0; overflow-wrap: anywhere; }
@@ -7332,10 +7344,11 @@ code {
 .sharing-publish { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8rem, .7fr) auto; gap: .5rem; margin-top: .8rem; }
 @media (max-width: 640px) {
   .sharing-form { grid-template-columns: 1fr; }
-  .sharing-invitation-result { grid-template-columns: 1fr; }
-  .sharing-invitation-result .settings-note { grid-column: auto; }
+  .sharing-issued-invitation { grid-template-columns: 1fr; }
+  .sharing-issued-invitation .settings-note { grid-column: auto; }
   .sharing-list li { align-items: flex-start; flex-wrap: wrap; }
-  .sharing-space > summary { align-items: flex-start; flex-direction: column; gap: .25rem; }
-  .sharing-space > summary span { text-align: left; }
+  .sharing-space > summary { grid-template-columns: 1fr 1.25rem; gap: .65rem; }
+  .sharing-space-facts { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; }
+  .sharing-space-affordance { grid-column: 2; grid-row: 1; }
   .sharing-publish { grid-template-columns: 1fr; }
 }

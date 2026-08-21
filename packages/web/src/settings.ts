@@ -209,10 +209,8 @@ function newSpaceForm(host: HTMLElement, veraDefaults = true): HTMLElement {
 
 function publicSiteAdministration(host: HTMLElement, site: PublicationSiteView, pages: PageSummary[]): HTMLElement {
   const details = document.createElement('details'); details.className = 'sharing-space sharing-public';
-  const summary = document.createElement('summary');
-  const name = document.createElement('strong'); name.textContent = site.title || 'Sitio público';
-  const facts = document.createElement('span'); facts.textContent = `público · acceso libre · ${site.publications.length} páginas`;
-  summary.append(name, facts); details.append(summary);
+  details.append(sharingSummary('public', site.title || 'Sitio público', 'Público', '✓ Acceso libre',
+    `${site.publications.length} ${site.publications.length === 1 ? 'página' : 'páginas'}`));
   const body = document.createElement('div'); body.className = 'sharing-space-body';
   const intro = document.createElement('p'); intro.className = 'settings-note';
   intro.textContent = 'Es el espacio raíz: no usa passkeys ni invitaciones. Su pertenencia es la lista explícita de publicaciones y cada página conserva su ruta pública.';
@@ -280,10 +278,10 @@ function publicSiteAdministration(host: HTMLElement, site: PublicationSiteView, 
 
 function spaceAdministration(host: HTMLElement, space: SharedAdministration): HTMLElement {
   const card = document.createElement('details'); card.className = 'sharing-space';
-  const title = document.createElement('summary');
-  const named = document.createElement('strong'); named.textContent = space.name;
-  const facts = document.createElement('span'); facts.textContent = `autenticado · ${space.pageCount} páginas · ${space.participants.filter((one) => one.status === 'active').length} participantes`;
-  title.append(named, facts);
+  const activeParticipants = space.participants.filter((one) => one.status === 'active').length;
+  const title = sharingSummary('authenticated', space.name, 'Autenticado',
+    `${space.pageCount} ${space.pageCount === 1 ? 'página' : 'páginas'}`,
+    `${activeParticipants} ${activeParticipants === 1 ? 'participante' : 'participantes'}`);
   const body = document.createElement('div'); body.className = 'sharing-space-body';
   const count = document.createElement('p'); count.className = 'settings-note';
   count.textContent = `${space.pageCount} ${space.pageCount === 1 ? 'página coincide' : 'páginas coinciden'} con ${space.selectorKey}:: ${space.selectorValue}.`;
@@ -308,9 +306,36 @@ function spaceAdministration(host: HTMLElement, space: SharedAdministration): HT
   return card;
 }
 
+function sharingSummary(icon: 'public' | 'authenticated', name: string, ...facts: string[]): HTMLElement {
+  const summary = document.createElement('summary');
+  const identity = document.createElement('span'); identity.className = 'sharing-space-identity';
+  const mark = document.createElement('span'); mark.className = 'sharing-space-icon'; mark.setAttribute('aria-hidden', 'true');
+  mark.append(sharingIcon(icon));
+  const named = document.createElement('strong'); named.textContent = name;
+  identity.append(mark, named);
+  const metadata = document.createElement('span'); metadata.className = 'sharing-space-facts';
+  for (const fact of facts) { const badge = document.createElement('span'); badge.textContent = fact; metadata.append(badge); }
+  const affordance = document.createElement('span'); affordance.className = 'sharing-space-affordance'; affordance.setAttribute('aria-hidden', 'true'); affordance.textContent = '›';
+  summary.append(identity, metadata, affordance); return summary;
+}
+
+function sharingIcon(kind: 'public' | 'authenticated'): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.7');
+  svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+  const paths = kind === 'public'
+    ? ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z', 'M3 12h18', 'M12 3c2.2 2.5 3.3 5.5 3.3 9S14.2 18.5 12 21', 'M12 3C9.8 5.5 8.7 8.5 8.7 12S9.8 18.5 12 21']
+    : ['M6.5 10V7.5a5.5 5.5 0 0 1 11 0V10', 'M5 10h14v11H5z', 'M12 14v3'];
+  for (const data of paths) { const path = document.createElementNS(ns, 'path'); path.setAttribute('d', data); svg.append(path); }
+  return svg;
+}
+
 function invitationForm(host: HTMLElement, space: SharedAdministration): HTMLElement {
   const box = document.createElement('div'); box.className = 'sharing-group';
   const heading = document.createElement('h4'); heading.textContent = 'Nueva invitación';
+  const explanation = document.createElement('p'); explanation.className = 'settings-note';
+  explanation.textContent = 'Cada enlace es de un solo uso y corresponde a una persona. Puedes crear tantos enlaces como participantes quieras invitar.';
   const contact = field('Para (opcional)', '', 'nombre o contacto');
   const permissions = document.createElement('div'); permissions.className = 'sharing-permissions';
   const controls: { permission: SharedPermission; input: HTMLInputElement }[] = [];
@@ -331,7 +356,7 @@ function invitationForm(host: HTMLElement, space: SharedAdministration): HTMLEle
   const create = document.createElement('button'); create.type = 'button'; create.textContent = 'Crear enlace de invitación';
   const result = document.createElement('div'); result.className = 'sharing-invitation-result';
   create.onclick = () => void (async () => {
-    create.disabled = true; result.textContent = 'Creando…';
+    create.disabled = true; create.textContent = 'Creando…';
     try {
       const made = await sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/invitations`, 'POST', {
         intendedContact: contact.input.value,
@@ -339,16 +364,21 @@ function invitationForm(host: HTMLElement, space: SharedAdministration): HTMLEle
         lifetimeMs: Number(duration.value),
       });
       const url = new URL(made.url, location.origin).href;
-      result.innerHTML = '';
+      const issued = document.createElement('div'); issued.className = 'sharing-issued-invitation';
       const output = document.createElement('input'); output.readOnly = true; output.value = url;
       const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copiar enlace';
       copy.onclick = () => void navigator.clipboard.writeText(url).then(() => { copy.textContent = 'Copiado'; });
       const warning = document.createElement('p'); warning.className = 'settings-note';
       warning.textContent = `Este secreto sólo se muestra ahora. Vence ${new Date(made.expiresAt).toLocaleString()} y puede revocarse antes desde esta administración.`;
-      result.append(output, copy, warning); create.disabled = false;
-    } catch (error) { result.textContent = error instanceof Error ? error.message : 'No se pudo crear.'; create.disabled = false; }
+      issued.append(output, copy, warning); result.prepend(issued);
+      contact.input.value = ''; create.textContent = 'Crear otro enlace'; create.disabled = false;
+    } catch (error) {
+      const failure = document.createElement('p'); failure.className = 'settings-note';
+      failure.textContent = error instanceof Error ? error.message : 'No se pudo crear.'; result.prepend(failure);
+      create.textContent = 'Crear enlace de invitación'; create.disabled = false;
+    }
   })();
-  box.append(heading, contact.label, durationLabel, permissions, create, result); return box;
+  box.append(heading, explanation, contact.label, durationLabel, permissions, create, result); return box;
 }
 
 function invitations(host: HTMLElement, space: SharedAdministration): HTMLElement {
