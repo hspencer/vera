@@ -16,7 +16,17 @@ export default defineConfig({
    * Separarlos convierte la pregunta en el prefijo de la ruta, que no se
    * equivoca. El servidor y el service worker leen los dos la misma regla.
    */
-  build: { outDir: 'dist', assetsDir: 'build', emptyOutDir: true, target: 'es2023' },
+  /*
+   * Una PWA ya abierta puede conservar por unos segundos el `index.html`
+   * anterior mientras el service worker toma el nuevo. Ese documento pide sus
+   * assets por huella, y son válidos para siempre; borrarlos en cada build
+   * convierte una actualización normal en «Vera no pudo arrancar».
+   *
+   * Conservamos las generaciones anteriores. Una futura recolección puede
+   * retirar sólo huellas que ya no estén referidas por ningún shell retenido;
+   * Vite no dispone de ese conocimiento al compilar.
+   */
+  build: { outDir: 'dist', assetsDir: 'build', emptyOutDir: false, target: 'es2023' },
   publicDir: 'public',
   server: {
     // En desarrollo el cliente habla con el servidor local de Vera.
