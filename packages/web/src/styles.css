@@ -7298,3 +7298,14 @@ code {
   gap: .7rem;
   padding-left: 1.25rem;
 }
+/* La superficie invitada no hereda el puesto de mando del dueño. */
+#vera-root[data-layout='shared'] { display: block; min-height: 100dvh; }
+.shared-access { max-width: 48rem; margin: 0 auto; padding: max(2rem, env(safe-area-inset-top)) 1.25rem 4rem; }
+.shared-mark { color: var(--muted, #666); font-size: .85rem; letter-spacing: .04em; }
+.shared-access h1 { margin: .35rem 0 1.5rem; }
+.shared-access input { display: block; width: min(100%, 24rem); margin: 1rem 0; padding: .7rem; font: inherit; }
+.shared-access button { padding: .65rem .9rem; font: inherit; cursor: pointer; }
+.shared-pages { list-style: none; padding: 0; }
+.shared-pages li { margin: .5rem 0; }
+.shared-pages button { width: 100%; text-align: left; }
+.shared-notice[data-bad='true'] { color: #a12424; }

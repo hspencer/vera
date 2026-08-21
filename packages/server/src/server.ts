@@ -145,6 +145,15 @@ import {
   sharedSpaceBySlug,
   type SharedPermission,
 } from './shared-spaces.ts';
+import {
+  authenticationOptions,
+  ceremonyFor,
+  finishAuthentication,
+  finishRegistration,
+  participantForSession,
+  registrationOptions,
+  revokeSession,
+} from './human-auth.ts';
 
 const CHANGE_KINDS = new Set<string>(CORE_CHANGE_KINDS);
 
@@ -1770,7 +1779,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           const invitation = inviteToSpace(store, graph.owner!, space, permissions,
             typeof body['intendedContact'] === 'string' ? body['intendedContact'] : undefined);
           send(response, 201, { ...invitation, space: space.name,
-            url: `/invitations/${encodeURIComponent(invitation.id)}?secret=${encodeURIComponent(invitation.secret)}` });
+            url: `/invite/${encodeURIComponent(invitation.id)}?secret=${encodeURIComponent(invitation.secret)}` });
         } catch (error) { send(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
       });
       return;
@@ -1803,6 +1812,115 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           send(response, 201, redeemed);
         } catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
       });
+      return;
+    }
+
+    const cookie = (name: string): string => {
+      for (const part of (request.headers.cookie ?? '').split(';')) {
+        const [key, ...value] = part.trim().split('=');
+        if (key === name) return decodeURIComponent(value.join('='));
+      }
+      return '';
+    };
+    const ceremony = () => ceremonyFor(request.headers.host ?? 'localhost',
+      typeof request.headers['x-forwarded-proto'] === 'string' ? request.headers['x-forwarded-proto'] : undefined);
+    const setHumanSession = (secret: string, expiresAt: number): void => {
+      const secure = ceremony().origin.startsWith('https:') ? '; Secure' : '';
+      response.setHeader('set-cookie', `vera_session=${encodeURIComponent(secret)}; Path=/; HttpOnly; SameSite=Strict${secure}; Expires=${new Date(expiresAt).toUTCString()}`);
+    };
+
+    if (request.method === 'POST' && path === '/human-auth/registration/options') {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => void (async () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+          send(response, 200, await registrationOptions(store, String(body['enrollment'] ?? ''),
+            String(body['secret'] ?? ''), ceremony()));
+        } catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
+      })());
+      return;
+    }
+
+    if (request.method === 'POST' && path === '/human-auth/registration/verify') {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => void (async () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, any>;
+          const made = await finishRegistration(store, String(body['enrollment'] ?? ''),
+            String(body['secret'] ?? ''), body['response']);
+          setHumanSession(made.secret, made.expiresAt);
+          send(response, 201, { participant: made.participant, expiresAt: made.expiresAt });
+        } catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
+      })());
+      return;
+    }
+
+    if (request.method === 'POST' && path === '/human-auth/authentication/options') {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => void (async () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+          send(response, 200, await authenticationOptions(store, String(body['participant'] ?? ''), ceremony()));
+        } catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
+      })());
+      return;
+    }
+
+    if (request.method === 'POST' && path === '/human-auth/authentication/verify') {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => void (async () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, any>;
+          const made = await finishAuthentication(store, String(body['participant'] ?? ''), body['response']);
+          setHumanSession(made.secret, made.expiresAt);
+          send(response, 201, { expiresAt: made.expiresAt });
+        } catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
+      })());
+      return;
+    }
+
+    if (request.method === 'POST' && path === '/human-auth/logout') {
+      const gone = revokeSession(store, cookie('vera_session'));
+      response.setHeader('set-cookie', 'vera_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');
+      send(response, gone ? 200 : 401, gone ? { status: 'revoked' } : { error: 'no había una sesión activa' });
+      return;
+    }
+
+    if (request.method === 'GET' && /^\/s\/[^/]+\/api\/pages(?:\/[^/]+)?$/.test(path)) {
+      const segments = path.split('/');
+      const slug = decodeURIComponent(segments[2] ?? '');
+      const space = sharedSpaceBySlug(store, slug);
+      if (space === null || space.status !== 'active') { send(response, 404, { error: 'el espacio no existe' }); return; }
+      const participant = participantForSession(store, cookie('vera_session'));
+      if (participant === null) { send(response, 401, { error: 'hace falta una sesión humana activa' }); return; }
+      const grant = store.db.prepare(`SELECT permissions FROM access_grants
+        WHERE space_id=? AND participant_id=? AND status='active'`).get(space.id, participant) as any;
+      if (grant === undefined || !String(grant.permissions).split(',').includes('read')) {
+        send(response, 403, { error: 'esta identidad no puede leer este espacio' }); return;
+      }
+      const inside = (page: { id: string }): boolean => graph.propertiesOf(page.id).some((property) =>
+        property.key === space.selectorKey && property.value === space.selectorValue);
+      if (segments.length === 6) {
+        const named = decodeURIComponent(segments[5] ?? '');
+        const page = graph.page(named) ?? graph.pageTitled(named);
+        if (page === undefined || !inside(page)) { send(response, 404, { error: 'la página no existe en este espacio' }); return; }
+        const blocks = graph.blocksOf(page.id);
+        send(response, 200, { space: { name: space.name, slug: space.slug }, page: {
+          id: page.id, title: page.title,
+          properties: graph.propertiesOf(page.id).map(({ key, value }) => ({ key, value })),
+          blocks: blocks.map(({ stableId, parent, position, content }) => ({ stableId, parent, position, content }))
+            .sort((a, b) => a.position - b.position),
+          blockProperties: Object.fromEntries(blocks.map((block) => [block.stableId,
+            graph.propertiesOf(block.stableId).map(({ key, value }) => ({ key, value }))])),
+        }});
+        return;
+      }
+      send(response, 200, { space: { name: space.name, slug: space.slug },
+        pages: graph.pages().filter(inside).map(({ id, title }) => ({ id, title })) });
       return;
     }
 

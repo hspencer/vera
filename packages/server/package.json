@@ -9,8 +9,9 @@
     ".": "./src/server.ts"
   },
   "dependencies": {
+    "@simplewebauthn/server": "^13.3.2",
     "@vera/core": "*",
-    "@vera/store": "*",
-    "@vera/importer": "*"
+    "@vera/importer": "*",
+    "@vera/store": "*"
   }
 }

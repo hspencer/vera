@@ -77,6 +77,7 @@ import {
   seedTrail,
 } from './promote.ts';
 import { renderMarkdown } from '@vera/core';
+import { handlesSharedAccess } from './shared-access.ts';
 
 const PHONE = 640;
 
@@ -3110,7 +3111,7 @@ async function boot(attempt = 1): Promise<void> {
   }
 }
 
-void boot();
+if (!handlesSharedAccess()) void boot();
 
 /*
  * Registrar el service worker, y además ocuparse de que se renueve.

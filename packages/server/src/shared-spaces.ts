@@ -63,7 +63,7 @@ export function inspectInvitation(store: Store, invitation: string, proof: strin
 
 export function redeemInvitation(store: Store, invitation: string, proof: string, name: string): any {
   const now = Date.now();
-  const row = store.db.prepare(`SELECT i.*, s.graph_id, s.owner_id, s.name AS space_name
+  const row = store.db.prepare(`SELECT i.*, s.graph_id, s.owner_id, s.name AS space_name, s.slug AS space_slug
     FROM access_invitations i JOIN shared_spaces s ON s.id=i.space_id
     WHERE i.id=? AND i.proof_digest=?`).get(invitation, digestOf(proof)) as any;
   if (row === undefined) throw new Error('la invitación no existe o el secreto no coincide');
@@ -87,5 +87,6 @@ export function redeemInvitation(store: Store, invitation: string, proof: string
       .run(participant, now, invitation);
     store.db.exec('COMMIT');
   } catch (error) { store.db.exec('ROLLBACK'); throw error; }
-  return { participant, grant, enrollment, enrollmentSecret, space: row.space_name };
+  return { participant, grant, enrollment, enrollmentSecret,
+    space: row.space_name, spaceSlug: row.space_slug };
 }

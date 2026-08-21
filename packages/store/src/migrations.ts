@@ -458,6 +458,35 @@ const addSharedSpaces: Migration = {
   },
 };
 
+/** 12 — passkeys WebAuthn, desafíos efímeros y sesiones humanas revocables. */
+const addHumanAuthentication: Migration = {
+  version: 12,
+  name: 'passkeys y sesiones humanas',
+  apply(db) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS human_authenticators (
+        credential_id TEXT PRIMARY KEY, participant_id TEXT NOT NULL REFERENCES participants (id),
+        public_key BLOB NOT NULL, counter INTEGER NOT NULL, transports TEXT NOT NULL,
+        device_type TEXT NOT NULL, backed_up INTEGER NOT NULL CHECK (backed_up IN (0,1)),
+        label TEXT, registered_at INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('active','revoked'))
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS webauthn_challenges (
+        id TEXT PRIMARY KEY, participant_id TEXT NOT NULL REFERENCES participants (id),
+        purpose TEXT NOT NULL CHECK (purpose IN ('registration','authentication')),
+        challenge TEXT NOT NULL, rp_id TEXT NOT NULL, origin TEXT NOT NULL, expires_at INTEGER NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS human_sessions (
+        id TEXT PRIMARY KEY, participant_id TEXT NOT NULL REFERENCES participants (id),
+        proof_digest TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL CHECK (status IN ('active','revoked','expired')),
+        began_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      ) STRICT;
+    `);
+  },
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   addWalkedChannel,
   addPageOriginCreatedAt,
@@ -470,6 +499,7 @@ export const MIGRATIONS: readonly Migration[] = [
   addPublicationProvenance,
   addSiteEntryPoint,
   addSharedSpaces,
+  addHumanAuthentication,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */
