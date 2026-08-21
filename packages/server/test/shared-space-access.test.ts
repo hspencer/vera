@@ -99,4 +99,27 @@ describe('primer corte vertical de espacios compartidos', () => {
     assert.deepEqual((pages.json['pages'] as any[]).map((page) => page.title), ['Dentro']);
     assert.equal((await call(`/s/doctorado/api/pages/${encodeURIComponent(outside)}`, 'GET', undefined, headers)).status, 404);
   });
+
+  it('administra criterio, invitaciones, participantes y revocaciones', async () => {
+    const pending = await call('/shared-spaces/doctorado/invitations', 'POST', { permissions: ['read'], intendedContact: 'Ada' });
+    let admin = await call('/shared-spaces');
+    assert.equal(admin.status, 200);
+    const space = (admin.json['spaces'] as any[]).find((one) => one.slug === 'doctorado');
+    assert.equal(space.pageCount, 1);
+    assert.ok(space.invitations.some((one: any) => one.intendedContact === 'Ada' && one.status === 'pending'));
+    assert.ok(space.participants.some((one: any) => one.name === 'Lectora' && one.status === 'active'));
+
+    assert.equal((await call(`/shared-spaces/doctorado/invitations/${encodeURIComponent(pending.json['id'])}`, 'DELETE')).status, 200);
+    const reader = space.participants.find((one: any) => one.name === 'Lectora');
+    assert.equal((await call(`/shared-spaces/doctorado/participants/${encodeURIComponent(reader.participant)}/sessions`, 'DELETE')).status, 200);
+    assert.equal((await call(`/shared-spaces/doctorado/grants/${encodeURIComponent(reader.grant)}`, 'DELETE')).status, 200);
+
+    const changed = await call('/shared-spaces/doctorado', 'PATCH', {
+      name: 'Vera', slug: 'vera', selectorKey: 'concepto', selectorValue: 'Vera',
+    });
+    assert.equal(changed.status, 200, JSON.stringify(changed.json));
+    admin = await call('/shared-spaces');
+    assert.equal((admin.json['spaces'] as any[])[0].slug, 'vera');
+    assert.equal((admin.json['spaces'] as any[])[0].pageCount, 0);
+  });
 });

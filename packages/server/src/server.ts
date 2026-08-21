@@ -138,11 +138,17 @@ import {
 } from '@vera/store/public-projection';
 import { makeVeraFile, readVeraFile } from './vera-file.ts';
 import {
+  administrationOf,
   createSharedSpace,
   inspectInvitation,
   inviteToSpace,
   redeemInvitation,
+  revokeGrant,
+  revokeInvitation,
+  revokeParticipantSessions,
   sharedSpaceBySlug,
+  sharedSpaces,
+  updateSharedSpace,
   type SharedPermission,
 } from './shared-spaces.ts';
 import {
@@ -1727,6 +1733,17 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     }
 
     /** Crear el primer límite compartido, gobernado por una propiedad de página. */
+    if (request.method === 'GET' && path === '/shared-spaces') {
+      const blocked = ownerOnly();
+      if (blocked !== null) { send(response, 403, blocked); return; }
+      const countPages = (space: ReturnType<typeof sharedSpaceBySlug> & object): number => graph.pages()
+        .filter((page) => graph.propertiesOf(page.id).some((property) =>
+          property.key === space.selectorKey && property.value === space.selectorValue)).length;
+      send(response, 200, { spaces: sharedSpaces(store).map((space) =>
+        administrationOf(store, space, countPages(space))) });
+      return;
+    }
+
     if (request.method === 'POST' && path === '/shared-spaces') {
       const blocked = ownerOnly();
       if (blocked !== null) { send(response, 403, blocked); return; }
@@ -1746,6 +1763,63 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         try { send(response, 201, createSharedSpace(store, graph.owner!, { name, slug, selectorKey: key, selectorValue: value })); }
         catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
       });
+      return;
+    }
+
+    if (request.method === 'PATCH' && /^\/shared-spaces\/[^/]+$/.test(path)) {
+      const blocked = ownerOnly();
+      if (blocked !== null) { send(response, 403, blocked); return; }
+      const slugNow = decodeURIComponent(path.split('/')[2] ?? '');
+      const space = sharedSpaceBySlug(store, slugNow);
+      if (space === null) { send(response, 404, { error: 'el espacio no existe' }); return; }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+          const name = String(body['name'] ?? '').trim();
+          const slug = String(body['slug'] ?? '').trim();
+          const selectorKey = String(body['selectorKey'] ?? '').trim();
+          const selectorValue = String(body['selectorValue'] ?? '').trim();
+          if (name === '' || selectorKey === '' || selectorValue === '' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+            send(response, 400, { error: 'nombre, slug canónico y criterio son obligatorios' }); return;
+          }
+          send(response, 200, updateSharedSpace(store, space, { name, slug, selectorKey, selectorValue }));
+        } catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
+      });
+      return;
+    }
+
+    if (request.method === 'DELETE' && /^\/shared-spaces\/[^/]+\/invitations\/[^/]+$/.test(path)) {
+      const blocked = ownerOnly();
+      if (blocked !== null) { send(response, 403, blocked); return; }
+      const parts = path.split('/');
+      const space = sharedSpaceBySlug(store, decodeURIComponent(parts[2] ?? ''));
+      if (space === null) { send(response, 404, { error: 'el espacio no existe' }); return; }
+      const changed = revokeInvitation(store, space, decodeURIComponent(parts[4] ?? ''));
+      send(response, changed ? 200 : 409, changed ? { status: 'revoked' } : { error: 'la invitación ya no estaba pendiente' });
+      return;
+    }
+
+    if (request.method === 'DELETE' && /^\/shared-spaces\/[^/]+\/grants\/[^/]+$/.test(path)) {
+      const blocked = ownerOnly();
+      if (blocked !== null) { send(response, 403, blocked); return; }
+      const parts = path.split('/');
+      const space = sharedSpaceBySlug(store, decodeURIComponent(parts[2] ?? ''));
+      if (space === null) { send(response, 404, { error: 'el espacio no existe' }); return; }
+      const changed = revokeGrant(store, space, decodeURIComponent(parts[4] ?? ''));
+      send(response, changed ? 200 : 409, changed ? { status: 'revoked' } : { error: 'el acceso ya no estaba activo' });
+      return;
+    }
+
+    if (request.method === 'DELETE' && /^\/shared-spaces\/[^/]+\/participants\/[^/]+\/sessions$/.test(path)) {
+      const blocked = ownerOnly();
+      if (blocked !== null) { send(response, 403, blocked); return; }
+      const parts = path.split('/');
+      const space = sharedSpaceBySlug(store, decodeURIComponent(parts[2] ?? ''));
+      if (space === null) { send(response, 404, { error: 'el espacio no existe' }); return; }
+      const count = revokeParticipantSessions(store, space, decodeURIComponent(parts[4] ?? ''));
+      send(response, 200, { status: 'revoked', sessions: count });
       return;
     }
 

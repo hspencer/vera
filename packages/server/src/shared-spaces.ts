@@ -8,6 +8,14 @@ export interface SharedSpace {
   audience: 'anybody' | 'restricted'; status: 'active' | 'withdrawn'; createdAt: number;
 }
 
+export interface SharedSpaceAdministration extends SharedSpace {
+  pageCount: number;
+  invitations: { id: string; permissions: SharedPermission[]; intendedContact: string | null;
+    status: 'pending' | 'redeemed' | 'revoked' | 'expired'; issuedAt: number; expiresAt: number }[];
+  participants: { grant: string; participant: string; name: string; permissions: SharedPermission[];
+    status: 'active' | 'revoked'; grantedAt: number; authenticators: number; activeSessions: number }[];
+}
+
 const secret = (prefix: string): string => `${prefix}${randomBytes(32).toString('base64url')}`;
 const id = (prefix: string): string => `${prefix}:${randomBytes(8).toString('hex')}`;
 
@@ -33,6 +41,63 @@ export function sharedSpaceBySlug(store: Store, slug: string): SharedSpace | nul
   return row === undefined ? null : { id: row.id, name: row.name, slug: row.slug,
     selectorKey: row.selector_key, selectorValue: row.selector_value,
     audience: row.audience, status: row.status, createdAt: row.created_at };
+}
+
+export function sharedSpaces(store: Store): SharedSpace[] {
+  return (store.db.prepare(`SELECT id,name,slug,selector_key,selector_value,audience,status,created_at
+    FROM shared_spaces WHERE graph_id=? ORDER BY created_at,id`).all(store.graphId) as any[]).map((row) => ({
+      id: row.id, name: row.name, slug: row.slug, selectorKey: row.selector_key,
+      selectorValue: row.selector_value, audience: row.audience, status: row.status, createdAt: row.created_at,
+    }));
+}
+
+export function updateSharedSpace(store: Store, held: SharedSpace, input: {
+  name: string; slug: string; selectorKey: string; selectorValue: string;
+}): SharedSpace {
+  store.db.prepare(`UPDATE shared_spaces SET name=?,slug=?,selector_key=?,selector_value=? WHERE id=?`)
+    .run(input.name, input.slug, input.selectorKey, input.selectorValue, held.id);
+  return { ...held, ...input };
+}
+
+export function administrationOf(store: Store, space: SharedSpace, pageCount: number): SharedSpaceAdministration {
+  const now = Date.now();
+  store.db.prepare(`UPDATE access_invitations SET status='expired'
+    WHERE space_id=? AND status='pending' AND expires_at<=?`).run(space.id, now);
+  store.db.prepare(`UPDATE human_sessions SET status='expired'
+    WHERE status='active' AND expires_at<=?`).run(now);
+  const invitations = (store.db.prepare(`SELECT id,permissions,intended_contact,status,issued_at,expires_at
+    FROM access_invitations WHERE space_id=? ORDER BY issued_at DESC`).all(space.id) as any[]).map((row) => ({
+      id: row.id, permissions: String(row.permissions).split(',') as SharedPermission[],
+      intendedContact: row.intended_contact, status: row.status, issuedAt: row.issued_at, expiresAt: row.expires_at,
+    }));
+  const participants = (store.db.prepare(`SELECT g.id AS grant,g.participant_id,p.name,g.permissions,g.status,g.granted_at,
+      (SELECT count(*) FROM human_authenticators a WHERE a.participant_id=g.participant_id AND a.status='active') AS authenticators,
+      (SELECT count(*) FROM human_sessions s WHERE s.participant_id=g.participant_id AND s.status='active' AND s.expires_at>?) AS active_sessions
+    FROM access_grants g JOIN participants p ON p.id=g.participant_id
+    WHERE g.space_id=? ORDER BY g.granted_at DESC`).all(now, space.id) as any[]).map((row) => ({
+      grant: row.grant, participant: row.participant_id, name: row.name,
+      permissions: String(row.permissions).split(',') as SharedPermission[], status: row.status,
+      grantedAt: row.granted_at, authenticators: Number(row.authenticators), activeSessions: Number(row.active_sessions),
+    }));
+  return { ...space, pageCount, invitations, participants };
+}
+
+export function revokeInvitation(store: Store, space: SharedSpace, invitation: string): boolean {
+  return Number(store.db.prepare(`UPDATE access_invitations SET status='revoked'
+    WHERE id=? AND space_id=? AND status='pending'`).run(invitation, space.id).changes) > 0;
+}
+
+export function revokeGrant(store: Store, space: SharedSpace, grant: string): boolean {
+  return Number(store.db.prepare(`UPDATE access_grants SET status='revoked',revoked_at=?
+    WHERE id=? AND space_id=? AND status='active'`).run(Date.now(), grant, space.id).changes) > 0;
+}
+
+export function revokeParticipantSessions(store: Store, space: SharedSpace, participant: string): number {
+  const permitted = store.db.prepare(`SELECT 1 FROM access_grants WHERE space_id=? AND participant_id=?`)
+    .get(space.id, participant);
+  if (permitted === undefined) return 0;
+  return Number(store.db.prepare(`UPDATE human_sessions SET status='revoked',revoked_at=?
+    WHERE participant_id=? AND status='active'`).run(Date.now(), participant).changes);
 }
 
 export function inviteToSpace(store: Store, owner: string, space: SharedSpace,

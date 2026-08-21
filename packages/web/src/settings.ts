@@ -22,7 +22,7 @@ import {
   type DesignToken,
 } from './tokens.ts';
 
-export type Section = 'memoria' | 'archivos' | 'teclado' | 'apariencia';
+export type Section = 'memoria' | 'archivos' | 'compartir' | 'teclado' | 'apariencia';
 
 export interface SettingsHandlers {
   scheme(): ColourScheme;
@@ -45,6 +45,7 @@ export interface SettingsHandlers {
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'memoria', label: 'Memoria' },
   { id: 'archivos', label: 'Archivos' },
+  { id: 'compartir', label: 'Compartir' },
   { id: 'teclado', label: 'Teclado' },
   { id: 'apariencia', label: 'Apariencia' },
 ];
@@ -123,8 +124,171 @@ export function renderSettings(
 
   if (active === 'memoria') drawMemory(body, handlers);
   else if (active === 'archivos') void drawFilesSummary(body, handlers);
+  else if (active === 'compartir') void drawSharing(body);
   else if (active === 'teclado') drawKeyboard(body);
   else drawAppearance(body, tokens, handlers);
+}
+
+type SharedPermission = 'read' | 'contribute' | 'edit';
+interface SharedAdministration {
+  id: string; name: string; slug: string; selectorKey: string; selectorValue: string;
+  status: 'active' | 'withdrawn'; pageCount: number;
+  invitations: { id: string; permissions: SharedPermission[]; intendedContact: string | null;
+    status: 'pending' | 'redeemed' | 'revoked' | 'expired'; issuedAt: number; expiresAt: number }[];
+  participants: { grant: string; participant: string; name: string; permissions: SharedPermission[];
+    status: 'active' | 'revoked'; grantedAt: number; authenticators: number; activeSessions: number }[];
+}
+
+async function sharingRequest(path: string, method = 'GET', body?: unknown): Promise<any> {
+  const response = await fetch(path, { method, headers: { 'content-type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const value = await response.json();
+  if (!response.ok) throw new Error(value.error ?? `HTTP ${response.status}`);
+  return value;
+}
+
+const field = (label: string, value: string, placeholder = ''): { label: HTMLLabelElement; input: HTMLInputElement } => {
+  const held = document.createElement('label'); held.className = 'sharing-field';
+  const name = document.createElement('span'); name.textContent = label;
+  const input = document.createElement('input'); input.value = value; input.placeholder = placeholder;
+  held.append(name, input); return { label: held, input };
+};
+
+async function drawSharing(host: HTMLElement): Promise<void> {
+  host.innerHTML = '';
+  const intro = document.createElement('p'); intro.className = 'settings-note';
+  intro.textContent = 'Cada espacio comparte exactamente las páginas que cumplen un criterio de propiedad. Las invitaciones vencen en quince minutos y cada participante entra con su propia passkey.';
+  const status = document.createElement('p'); status.className = 'settings-note'; status.textContent = 'Leyendo espacios compartidos…';
+  host.append(intro, status);
+  let spaces: SharedAdministration[];
+  try { spaces = (await sharingRequest('/shared-spaces')).spaces; }
+  catch (error) { status.textContent = error instanceof Error ? error.message : 'No se pudo leer la configuración.'; return; }
+  status.textContent = spaces.length === 0 ? 'Todavía no hay espacios compartidos.' : `${spaces.length} ${spaces.length === 1 ? 'espacio' : 'espacios'} compartidos.`;
+  if (spaces.length === 0) host.append(newSpaceForm(host));
+  for (const space of spaces) host.append(spaceAdministration(host, space));
+  if (spaces.length > 0) {
+    const add = document.createElement('details'); add.className = 'sharing-add';
+    const summary = document.createElement('summary'); summary.textContent = 'Crear otro espacio'; add.append(summary, newSpaceForm(host)); host.append(add);
+  }
+}
+
+function newSpaceForm(host: HTMLElement): HTMLElement {
+  const form = document.createElement('form'); form.className = 'sharing-form';
+  const name = field('Nombre', 'Vera'); const slug = field('Slug', 'vera');
+  const key = field('Propiedad', 'concepto'); const value = field('Valor exacto', 'Vera');
+  const create = document.createElement('button'); create.type = 'submit'; create.textContent = 'Crear espacio';
+  const result = document.createElement('p'); result.className = 'settings-note';
+  form.append(name.label, slug.label, key.label, value.label, create, result);
+  form.addEventListener('submit', (event) => void (async () => {
+    event.preventDefault(); create.disabled = true;
+    try {
+      await sharingRequest('/shared-spaces', 'POST', { name: name.input.value, slug: slug.input.value,
+        selectorKey: key.input.value, selectorValue: value.input.value });
+      await drawSharing(host);
+    } catch (error) { result.textContent = error instanceof Error ? error.message : 'No se pudo crear.'; create.disabled = false; }
+  })());
+  return form;
+}
+
+function spaceAdministration(host: HTMLElement, space: SharedAdministration): HTMLElement {
+  const card = document.createElement('section'); card.className = 'sharing-space';
+  const title = document.createElement('h3'); title.textContent = space.name;
+  const count = document.createElement('p'); count.className = 'settings-note';
+  count.textContent = `${space.pageCount} ${space.pageCount === 1 ? 'página coincide' : 'páginas coinciden'} con ${space.selectorKey}:: ${space.selectorValue}.`;
+  const visit = document.createElement('a'); visit.href = `/s/${encodeURIComponent(space.slug)}`; visit.target = '_blank'; visit.textContent = 'Abrir superficie compartida';
+  const form = document.createElement('form'); form.className = 'sharing-form';
+  const name = field('Nombre', space.name); const slug = field('Slug', space.slug);
+  const key = field('Propiedad', space.selectorKey); const value = field('Valor exacto', space.selectorValue);
+  const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'Guardar criterio';
+  const saved = document.createElement('span'); saved.className = 'settings-note';
+  form.append(name.label, slug.label, key.label, value.label, save, saved);
+  form.addEventListener('submit', (event) => void (async () => {
+    event.preventDefault(); save.disabled = true;
+    try {
+      await sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}`, 'PATCH', {
+        name: name.input.value, slug: slug.input.value, selectorKey: key.input.value, selectorValue: value.input.value,
+      });
+      await drawSharing(host);
+    } catch (error) { saved.textContent = error instanceof Error ? error.message : 'No se pudo guardar.'; save.disabled = false; }
+  })());
+  card.append(title, count, visit, form);
+  card.append(invitationForm(host, space), invitations(host, space), participants(host, space));
+  return card;
+}
+
+function invitationForm(host: HTMLElement, space: SharedAdministration): HTMLElement {
+  const box = document.createElement('div'); box.className = 'sharing-group';
+  const heading = document.createElement('h4'); heading.textContent = 'Nueva invitación';
+  const contact = field('Para (opcional)', '', 'nombre o contacto');
+  const permissions = document.createElement('div'); permissions.className = 'sharing-permissions';
+  const controls: { permission: SharedPermission; input: HTMLInputElement }[] = [];
+  for (const permission of ['read', 'contribute', 'edit'] as SharedPermission[]) {
+    const label = document.createElement('label'); const input = document.createElement('input'); input.type = 'checkbox';
+    input.checked = permission === 'read'; input.disabled = permission === 'read'; label.append(input, ` ${permission}`);
+    controls.push({ permission, input }); permissions.append(label);
+  }
+  const create = document.createElement('button'); create.type = 'button'; create.textContent = 'Crear enlace de invitación';
+  const result = document.createElement('div'); result.className = 'sharing-invitation-result';
+  create.onclick = () => void (async () => {
+    create.disabled = true; result.textContent = 'Creando…';
+    try {
+      const made = await sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/invitations`, 'POST', {
+        intendedContact: contact.input.value, permissions: controls.filter((one) => one.input.checked).map((one) => one.permission),
+      });
+      const url = new URL(made.url, location.origin).href;
+      result.innerHTML = '';
+      const output = document.createElement('input'); output.readOnly = true; output.value = url;
+      const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copiar enlace';
+      copy.onclick = () => void navigator.clipboard.writeText(url).then(() => { copy.textContent = 'Copiado'; });
+      const warning = document.createElement('p'); warning.className = 'settings-note'; warning.textContent = 'Este secreto sólo se muestra ahora y vence en quince minutos.';
+      result.append(output, copy, warning); create.disabled = false;
+    } catch (error) { result.textContent = error instanceof Error ? error.message : 'No se pudo crear.'; create.disabled = false; }
+  })();
+  box.append(heading, contact.label, permissions, create, result); return box;
+}
+
+function invitations(host: HTMLElement, space: SharedAdministration): HTMLElement {
+  const box = document.createElement('div'); box.className = 'sharing-group';
+  const heading = document.createElement('h4'); heading.textContent = 'Invitaciones'; box.append(heading);
+  if (space.invitations.length === 0) { const empty = document.createElement('p'); empty.className = 'settings-note'; empty.textContent = 'Ninguna todavía.'; box.append(empty); return box; }
+  const list = document.createElement('ul'); list.className = 'sharing-list';
+  for (const invitation of space.invitations) {
+    const row = document.createElement('li');
+    const text = document.createElement('span'); text.textContent = `${invitation.intendedContact ?? 'Sin destinatario'} · ${invitation.permissions.join(', ')} · ${invitation.status}`;
+    row.append(text);
+    if (invitation.status === 'pending') {
+      const revoke = document.createElement('button'); revoke.textContent = 'Revocar';
+      revoke.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/invitations/${encodeURIComponent(invitation.id)}`, 'DELETE')
+        .then(() => drawSharing(host)); row.append(revoke);
+    }
+    list.append(row);
+  }
+  box.append(list); return box;
+}
+
+function participants(host: HTMLElement, space: SharedAdministration): HTMLElement {
+  const box = document.createElement('div'); box.className = 'sharing-group';
+  const heading = document.createElement('h4'); heading.textContent = 'Participantes autenticados'; box.append(heading);
+  if (space.participants.length === 0) { const empty = document.createElement('p'); empty.className = 'settings-note'; empty.textContent = 'Nadie ha canjeado una invitación.'; box.append(empty); return box; }
+  const list = document.createElement('ul'); list.className = 'sharing-list';
+  for (const person of space.participants) {
+    const row = document.createElement('li');
+    const text = document.createElement('span');
+    text.textContent = `${person.name} · ${person.permissions.join(', ')} · ${person.authenticators} passkey · ${person.activeSessions} sesiones · ${person.status}`;
+    row.append(text);
+    if (person.activeSessions > 0) {
+      const sessions = document.createElement('button'); sessions.textContent = 'Cerrar sesiones';
+      sessions.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/participants/${encodeURIComponent(person.participant)}/sessions`, 'DELETE')
+        .then(() => drawSharing(host)); row.append(sessions);
+    }
+    if (person.status === 'active') {
+      const revoke = document.createElement('button'); revoke.textContent = 'Revocar acceso';
+      revoke.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/grants/${encodeURIComponent(person.grant)}`, 'DELETE')
+        .then(() => drawSharing(host)); row.append(revoke);
+    }
+    list.append(row);
+  }
+  box.append(list); return box;
 }
 
 const readableSize = (bytes: number): string =>

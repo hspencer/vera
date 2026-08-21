@@ -7309,3 +7309,26 @@ code {
 .shared-pages li { margin: .5rem 0; }
 .shared-pages button { width: 100%; text-align: left; }
 .shared-notice[data-bad='true'] { color: #a12424; }
+
+.sharing-space { border-top: 1px solid var(--rule); margin-top: 1.5rem; padding-top: 1rem; }
+.sharing-space > h3 { margin-bottom: .25rem; }
+.sharing-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: 1rem 0; }
+.sharing-field { display: grid; gap: .3rem; color: var(--text-dim); font-size: .85rem; }
+.sharing-field input, .sharing-invitation-result input { min-width: 0; padding: .55rem; color: var(--text); background: var(--bg); border: 1px solid var(--rule); border-radius: .25rem; font: inherit; }
+.sharing-form button, .sharing-form .settings-note { align-self: end; }
+.sharing-group { margin: 1.35rem 0; }
+.sharing-group h4 { margin-bottom: .6rem; }
+.sharing-permissions { display: flex; flex-wrap: wrap; gap: 1rem; margin: .75rem 0; }
+.sharing-invitation-result { display: grid; grid-template-columns: 1fr auto; gap: .5rem; margin-top: .75rem; }
+.sharing-invitation-result .settings-note { grid-column: 1 / -1; }
+.sharing-list { list-style: none; padding: 0; }
+.sharing-list li { display: flex; align-items: center; justify-content: space-between; gap: .65rem; padding: .55rem 0; border-bottom: 1px solid var(--rule); }
+.sharing-list li span { min-width: 0; overflow-wrap: anywhere; }
+.sharing-list li button { flex: 0 0 auto; }
+.sharing-add { margin-top: 1.5rem; }
+@media (max-width: 640px) {
+  .sharing-form { grid-template-columns: 1fr; }
+  .sharing-invitation-result { grid-template-columns: 1fr; }
+  .sharing-invitation-result .settings-note { grid-column: auto; }
+  .sharing-list li { align-items: flex-start; flex-wrap: wrap; }
+}

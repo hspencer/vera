@@ -2695,7 +2695,7 @@ function wireTheme(): void {
         (tab as HTMLElement).hidden = true;
       }
       tab.addEventListener('click', () => {
-        section = (['memoria', 'archivos', 'teclado', 'apariencia'] as Section[])[at] ?? 'memoria';
+        section = (['memoria', 'archivos', 'compartir', 'teclado', 'apariencia'] as Section[])[at] ?? 'memoria';
       });
     });
   };
