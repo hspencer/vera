@@ -2289,6 +2289,68 @@ export function buildTree(blocks: BlockView[]): Node[] {
   return roots;
 }
 
+export const PRESENTATION_KEY = 'presentación';
+export const OUTGOING_REFERENCES_PRESENTATION = 'referencias salientes';
+
+/**
+ * El cuerpo legible de una página, sin los aparatos que ella misma manda al pie.
+ *
+ * Una raíz marcada como `presentación:: referencias salientes` y todo lo que
+ * cuelga de ella siguen en la página: conservan identidad, autoría, historia y
+ * enlaces. Sólo cambian de sitio al leer. Si se enfoca uno de esos bloques se
+ * devuelve el cuerpo entero, porque enfocar es pedir explícitamente verlo y
+ * editarlo en su lugar canónico.
+ */
+export function bodyBlocks(page: Pick<PageView, 'blocks' | 'blockProperties'>, focusRoot: string | null): BlockView[] {
+  if (focusRoot !== null) return page.blocks;
+  const projectedRoots = new Set(
+    page.blocks
+      .filter((block) =>
+        (page.blockProperties?.[block.stableId] ?? []).some(
+          (property) =>
+            property.key.trim().toLocaleLowerCase() === PRESENTATION_KEY &&
+            property.value.trim().toLocaleLowerCase() === OUTGOING_REFERENCES_PRESENTATION,
+        ),
+      )
+      .map((block) => block.stableId),
+  );
+  if (projectedRoots.size === 0) return page.blocks;
+
+  const hidden = new Set(projectedRoots);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const block of page.blocks) {
+      if (block.parent !== null && hidden.has(block.parent) && !hidden.has(block.stableId)) {
+        hidden.add(block.stableId);
+        changed = true;
+      }
+    }
+  }
+  return page.blocks.filter((block) => !hidden.has(block.stableId));
+}
+
+/** El texto íntegro de una conectiva proyectada; los demás enlaces conservan su extracto. */
+export function projectedReferenceText(
+  page: Pick<PageView, 'blocks' | 'blockProperties'>,
+  block: string,
+  excerpt: string,
+): string {
+  const held = page.blocks.find((candidate) => candidate.stableId === block);
+  if (held === undefined) return excerpt;
+  let at = held.parent;
+  while (at !== null) {
+    const properties = page.blockProperties?.[at] ?? [];
+    if (properties.some(
+      (property) =>
+        property.key.trim().toLocaleLowerCase() === PRESENTATION_KEY &&
+        property.value.trim().toLocaleLowerCase() === OUTGOING_REFERENCES_PRESENTATION,
+    )) return held.content;
+    at = page.blocks.find((candidate) => candidate.stableId === at)?.parent ?? null;
+  }
+  return excerpt;
+}
+
 /**
  * Traduce las rutas del corpus a los objetos que Vera guarda.
  *
@@ -4454,7 +4516,7 @@ export function renderOutliner(
    * demás se calcula sobre el árbol. Ninguna tecla necesita saber que hay un
    * foco: fuera de él, simplemente, no hay bloques.
    */
-  const whole = buildTree(page.blocks);
+  const whole = buildTree(bodyBlocks(page, focusRoot));
   const rooted = focusRoot === null ? null : findNode(whole, focusRoot);
   const tree = rooted === null ? whole : rooted.children;
   const neighbourhoods = buildNeighbourhoods(tree);
@@ -5067,7 +5129,7 @@ export function renderOutliner(
       both.push({
         title: one.title,
         page: one.page,
-        excerpt: one.excerpt,
+        excerpt: projectedReferenceText(page, one.block, one.excerpt),
         from: one.block,
         says: other.excerpt,
       });
@@ -5075,7 +5137,12 @@ export function renderOutliner(
     const mutual = new Set(both.map((one) => one.title.toLowerCase()));
     const names: Row[] = [...out.values()]
       .filter((one) => !mutual.has(one.title.toLowerCase()))
-      .map((one) => ({ title: one.title, page: one.page, excerpt: one.excerpt, from: one.block }));
+      .map((one) => ({
+        title: one.title,
+        page: one.page,
+        excerpt: projectedReferenceText(page, one.block, one.excerpt),
+        from: one.block,
+      }));
     const named: Row[] = [...back.values()]
       .filter((one) => !mutual.has(one.title.toLowerCase()))
       .map((one) => ({ title: one.title, page: one.page, excerpt: one.excerpt, from: null }));

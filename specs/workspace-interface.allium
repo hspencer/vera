@@ -451,6 +451,14 @@ contract ProgressivePageReading {
         -- names what Vera is doing and makes clear that the page itself is ready.
         -- Completion removes the status; failure says which enrichment remains
         -- unavailable without presenting the readable page as failed.
+
+    @invariant CanonicalLinkApparatusHasOneReadingPlace
+        -- A block subtree explicitly presented as outgoing references remains
+        -- canonical page content and continues to derive its links, history and
+        -- provenance. Vera omits that subtree from the ordinary body and reads
+        -- each connective in full in the outgoing-reference area, so the same
+        -- apparatus is not presented twice. Explicitly focusing it reveals its
+        -- canonical blocks for inspection and editing.
 }
 
 contract InstallableWebApplication {

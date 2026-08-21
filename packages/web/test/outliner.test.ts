@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {
   buildNeighbourhoods,
   buildTree,
+  bodyBlocks,
   blockRemovalOrder,
   externalDestination,
   foldsWhileRevealing,
@@ -17,6 +18,7 @@ import {
   isSpecialPage,
   matchingMovePages,
   nodeMarkdown,
+  projectedReferenceText,
   reloadOptionsFor,
 } from '../src/outliner.ts';
 import type { BlockView } from '../src/api.ts';
@@ -103,6 +105,32 @@ describe('buildTree', () => {
     const count = (nodes: ReturnType<typeof buildTree>): number =>
       nodes.reduce((n, node) => n + 1 + count(node.children), 0);
     assert.equal(count(buildTree(blocks)), blocks.length);
+  });
+});
+
+describe('aparatos de enlaces proyectados fuera del cuerpo', () => {
+  const blocks = [
+    block('cara', null, 0, 'La cara'),
+    block('aparato', null, 1, 'Conectivas de salida'),
+    block('poema', 'aparato', 0, 'Poema entero → [[Otra]]'),
+  ];
+  const page = {
+    blocks,
+    blockProperties: {
+      aparato: [{ key: 'presentación', value: 'referencias salientes' }],
+    },
+  };
+
+  it('deja el cuerpo principal sin el aparato ni sus descendientes', () => {
+    assert.deepEqual(bodyBlocks(page, null).map((one) => one.stableId), ['cara']);
+  });
+
+  it('lo conserva al enfocarlo para que siga siendo editable y auditable', () => {
+    assert.deepEqual(bodyBlocks(page, 'aparato'), blocks);
+  });
+
+  it('presenta el texto canónico completo en la referencia saliente', () => {
+    assert.equal(projectedReferenceText(page, 'poema', 'Poema entero…'), 'Poema entero → [[Otra]]');
   });
 });
 
