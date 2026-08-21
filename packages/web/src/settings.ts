@@ -11,7 +11,7 @@
 
 import { BINDINGS, GESTURES, TRIGGERS } from './bindings.ts';
 import { COMMANDS } from './autocomplete.ts';
-import { api, type CatalogAsset } from './api.ts';
+import { api, type CatalogAsset, type PageSummary, type PublicationSiteView } from './api.ts';
 import { icon } from './icons.ts';
 import { openMediaDetails } from './media-dialog.ts';
 import {
@@ -161,21 +161,31 @@ async function drawSharing(host: HTMLElement): Promise<void> {
   const status = document.createElement('p'); status.className = 'settings-note'; status.textContent = 'Leyendo espacios compartidos…';
   host.append(intro, status);
   let spaces: SharedAdministration[];
-  try { spaces = (await sharingRequest('/shared-spaces')).spaces; }
+  let publicSite: PublicationSiteView;
+  let pages: PageSummary[];
+  try {
+    [spaces, publicSite, pages] = await Promise.all([
+      sharingRequest('/shared-spaces').then((value) => value.spaces as SharedAdministration[]),
+      api.publicationSite(),
+      api.pages(),
+    ]);
+  }
   catch (error) { status.textContent = error instanceof Error ? error.message : 'No se pudo leer la configuración.'; return; }
-  status.textContent = spaces.length === 0 ? 'Todavía no hay espacios compartidos.' : `${spaces.length} ${spaces.length === 1 ? 'espacio' : 'espacios'} compartidos.`;
+  status.textContent = `${spaces.length + 1} ${spaces.length === 0 ? 'forma' : 'formas'} de compartir: una pública y ${spaces.length} con acceso autenticado.`;
+  host.append(publicSiteAdministration(host, publicSite, pages));
   if (spaces.length === 0) host.append(newSpaceForm(host));
   for (const space of spaces) host.append(spaceAdministration(host, space));
-  if (spaces.length > 0) {
-    const add = document.createElement('details'); add.className = 'sharing-add';
-    const summary = document.createElement('summary'); summary.textContent = 'Crear otro espacio'; add.append(summary, newSpaceForm(host)); host.append(add);
-  }
+  const add = document.createElement('details'); add.className = 'sharing-add';
+  const summary = document.createElement('summary'); summary.textContent = 'Agregar una forma de compartir';
+  add.append(summary, newSpaceForm(host, false)); host.append(add);
 }
 
-function newSpaceForm(host: HTMLElement): HTMLElement {
+function newSpaceForm(host: HTMLElement, veraDefaults = true): HTMLElement {
   const form = document.createElement('form'); form.className = 'sharing-form';
-  const name = field('Nombre', 'Vera'); const slug = field('Slug', 'vera');
-  const key = field('Propiedad', 'concepto'); const value = field('Valor exacto', 'Vera');
+  const name = field('Nombre', veraDefaults ? 'Vera' : '', 'nombre del espacio');
+  const slug = field('Slug', veraDefaults ? 'vera' : '', 'ruta-corta');
+  const key = field('Propiedad', veraDefaults ? 'concepto' : '', 'espacio');
+  const value = field('Valor exacto', veraDefaults ? 'Vera' : '', 'doctorado');
   const create = document.createElement('button'); create.type = 'submit'; create.textContent = 'Crear espacio';
   const result = document.createElement('p'); result.className = 'settings-note';
   form.append(name.label, slug.label, key.label, value.label, create, result);
@@ -190,9 +200,84 @@ function newSpaceForm(host: HTMLElement): HTMLElement {
   return form;
 }
 
+function publicSiteAdministration(host: HTMLElement, site: PublicationSiteView, pages: PageSummary[]): HTMLElement {
+  const details = document.createElement('details'); details.className = 'sharing-space sharing-public';
+  const summary = document.createElement('summary');
+  const name = document.createElement('strong'); name.textContent = site.title || 'Sitio público';
+  const facts = document.createElement('span'); facts.textContent = `público · acceso libre · ${site.publications.length} páginas`;
+  summary.append(name, facts); details.append(summary);
+  const body = document.createElement('div'); body.className = 'sharing-space-body';
+  const intro = document.createElement('p'); intro.className = 'settings-note';
+  intro.textContent = 'Es el espacio raíz: no usa passkeys ni invitaciones. Su pertenencia es la lista explícita de publicaciones y cada página conserva su ruta pública.';
+  const form = document.createElement('form'); form.className = 'sharing-form';
+  const title = field('Nombre', site.title); const domain = field('Origen público', site.canonicalDomain, 'https://ejemplo.net');
+  const entryLabel = document.createElement('label'); entryLabel.className = 'sharing-field';
+  const entryName = document.createElement('span'); entryName.textContent = 'Portada';
+  const entry = document.createElement('select');
+  for (const publication of site.publications) {
+    const option = document.createElement('option'); option.value = publication.page; option.textContent = publication.title;
+    option.selected = publication.page === site.entryPoint; entry.append(option);
+  }
+  entryLabel.append(entryName, entry);
+  const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'Guardar sitio público';
+  const saved = document.createElement('span'); saved.className = 'settings-note';
+  form.append(title.label, domain.label, entryLabel, save, saved);
+  form.addEventListener('submit', (event) => void (async () => {
+    event.preventDefault(); save.disabled = true;
+    const result = await api.configurePublicationSite({ title: title.input.value,
+      canonicalDomain: domain.input.value, entryPoint: entry.value || null });
+    if ('error' in result) { saved.textContent = String(result.error); save.disabled = false; return; }
+    await drawSharing(host);
+  })());
+
+  const open = document.createElement('a'); open.href = site.canonicalDomain || '/'; open.target = '_blank';
+  open.rel = 'noreferrer'; open.textContent = 'Abrir sitio público';
+  const published = document.createElement('div'); published.className = 'sharing-group';
+  const publishedHeading = document.createElement('h4'); publishedHeading.textContent = 'Páginas publicadas'; published.append(publishedHeading);
+  const list = document.createElement('ul'); list.className = 'sharing-list';
+  for (const publication of site.publications) {
+    const row = document.createElement('li');
+    const link = document.createElement('a'); link.href = publication.url; link.target = '_blank'; link.rel = 'noreferrer';
+    link.textContent = `${publication.title} · /${publication.path}${publication.entryPoint ? ' · portada' : ''}`;
+    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Retirar';
+    remove.disabled = publication.entryPoint;
+    remove.title = publication.entryPoint ? 'Elige otra portada antes de retirar ésta' : 'Retirar del sitio público';
+    remove.onclick = () => void api.unpublish(publication.page).then(() => drawSharing(host));
+    row.append(link, remove); list.append(row);
+  }
+  published.append(list);
+
+  const unpublished = pages.filter((page) => page.visibility === 'public' &&
+    !site.publications.some((publication) => publication.page === page.id));
+  const add = document.createElement('form'); add.className = 'sharing-publish';
+  const page = document.createElement('select');
+  const first = document.createElement('option'); first.value = ''; first.textContent = 'Elegir página pública…'; page.append(first);
+  for (const candidate of unpublished) { const option = document.createElement('option'); option.value = candidate.id; option.textContent = candidate.title; page.append(option); }
+  const path = document.createElement('input'); path.placeholder = 'ruta-pública';
+  page.addEventListener('change', () => {
+    const title = unpublished.find((one) => one.id === page.value)?.title ?? '';
+    path.value = title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  });
+  const publish = document.createElement('button'); publish.type = 'submit'; publish.textContent = 'Publicar página';
+  const result = document.createElement('span'); result.className = 'settings-note';
+  add.append(page, path, publish, result);
+  add.addEventListener('submit', (event) => void (async () => {
+    event.preventDefault(); if (page.value === '' || path.value.trim() === '') return;
+    publish.disabled = true; const made = await api.publish(page.value, path.value.trim());
+    if ('error' in made) { result.textContent = String(made.error); publish.disabled = false; return; }
+    await drawSharing(host);
+  })());
+  body.append(intro, open, form, published, add); details.append(body); return details;
+}
+
 function spaceAdministration(host: HTMLElement, space: SharedAdministration): HTMLElement {
-  const card = document.createElement('section'); card.className = 'sharing-space';
-  const title = document.createElement('h3'); title.textContent = space.name;
+  const card = document.createElement('details'); card.className = 'sharing-space';
+  const title = document.createElement('summary');
+  const named = document.createElement('strong'); named.textContent = space.name;
+  const facts = document.createElement('span'); facts.textContent = `autenticado · ${space.pageCount} páginas · ${space.participants.filter((one) => one.status === 'active').length} participantes`;
+  title.append(named, facts);
+  const body = document.createElement('div'); body.className = 'sharing-space-body';
   const count = document.createElement('p'); count.className = 'settings-note';
   count.textContent = `${space.pageCount} ${space.pageCount === 1 ? 'página coincide' : 'páginas coinciden'} con ${space.selectorKey}:: ${space.selectorValue}.`;
   const visit = document.createElement('a'); visit.href = `/s/${encodeURIComponent(space.slug)}`; visit.target = '_blank'; visit.textContent = 'Abrir superficie compartida';
@@ -211,8 +296,8 @@ function spaceAdministration(host: HTMLElement, space: SharedAdministration): HT
       await drawSharing(host);
     } catch (error) { saved.textContent = error instanceof Error ? error.message : 'No se pudo guardar.'; save.disabled = false; }
   })());
-  card.append(title, count, visit, form);
-  card.append(invitationForm(host, space), invitations(host, space), participants(host, space));
+  body.append(count, visit, form, invitationForm(host, space), invitations(host, space), participants(host, space));
+  card.append(title, body);
   return card;
 }
 

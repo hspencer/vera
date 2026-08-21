@@ -275,6 +275,7 @@ entity HumanSession {
     owner_authenticators: HumanAuthenticator with instance = this.instance and participant = this.participant
     active_owner_authenticators: HumanAuthenticator with instance = this.instance and participant = this.participant and status = active
     owner_sessions: HumanSession with instance = this.instance and participant = this.participant
+    public_sites: core/PersonalSite with graph = this.instance.graph and owner = this.participant
     shared_spaces: SharedSpace with graph = this.instance.graph
     shared_access: AccessGrant with space.graph = this.instance.graph
     pending_invitations: AccessInvitation with space.graph = this.instance.graph and status = pending
@@ -1053,6 +1054,7 @@ surface OwnerAdministrationOverview {
         session.authenticator
         session.federated_binding
         session.expires_at
+        session.public_sites
         session.shared_spaces
         session.pending_invitations
 
@@ -1111,6 +1113,7 @@ surface OwnerSharedSpaceDirectory {
     context session: HumanSession where owner = session.participant and status = active
 
     exposes:
+        session.public_sites
         session.shared_spaces
         session.pending_invitations
 
@@ -1123,9 +1126,16 @@ surface OwnerSharedSpaceDirectory {
         fulfils ScopedPageAddressing
 
     @guarantee SpaceDirectoryIsTheSharingHome
-        -- Audience, page count, participant count and pending invitation count
-        -- are summaries of each space; selecting one opens that space's own
-        -- content, access, invitations, activity and configuration views.
+        -- Every way this graph leaves the owner's private workspace appears in
+        -- one directory. The public site is the root, freely readable sharing
+        -- space; authenticated spaces follow it. Audience, page count,
+        -- participant count and pending invitation count are summaries under
+        -- each collapsible space name.
+
+    @guarantee PublicationRemainsExplicitInsideUnifiedSharing
+        -- Presenting the public site beside authenticated spaces does not turn
+        -- its publications into selector membership. Its explicit publication
+        -- rows, paths, canonical origin and entry point remain the authority.
 }
 
 surface OwnerPeopleDirectory {
