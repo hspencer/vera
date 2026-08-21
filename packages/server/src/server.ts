@@ -142,6 +142,7 @@ import {
   createSharedSpace,
   inspectInvitation,
   inviteToSpace,
+  DEFAULT_INVITATION_LIFETIME,
   redeemInvitation,
   revokeGrant,
   revokeInvitation,
@@ -1851,7 +1852,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           ? body['permissions'].filter((one): one is SharedPermission => ['read', 'contribute', 'edit'].includes(String(one))) : [];
         try {
           const invitation = inviteToSpace(store, graph.owner!, space, permissions,
-            typeof body['intendedContact'] === 'string' ? body['intendedContact'] : undefined);
+            typeof body['intendedContact'] === 'string' ? body['intendedContact'] : undefined,
+            typeof body['lifetimeMs'] === 'number' ? body['lifetimeMs'] : DEFAULT_INVITATION_LIFETIME);
           send(response, 201, { ...invitation, space: space.name,
             url: `/invite/${encodeURIComponent(invitation.id)}?secret=${encodeURIComponent(invitation.secret)}` });
         } catch (error) { send(response, 400, { error: error instanceof Error ? error.message : String(error) }); }

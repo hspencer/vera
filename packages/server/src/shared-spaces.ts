@@ -19,6 +19,14 @@ export interface SharedSpaceAdministration extends SharedSpace {
 const secret = (prefix: string): string => `${prefix}${randomBytes(32).toString('base64url')}`;
 const id = (prefix: string): string => `${prefix}:${randomBytes(8).toString('hex')}`;
 
+export const INVITATION_LIFETIMES = [
+  60 * 60 * 1000,
+  24 * 60 * 60 * 1000,
+  7 * 24 * 60 * 60 * 1000,
+  30 * 24 * 60 * 60 * 1000,
+] as const;
+export const DEFAULT_INVITATION_LIFETIME = INVITATION_LIFETIMES[2];
+
 export function createSharedSpace(store: Store, owner: string, input: {
   name: string; slug: string; selectorKey: string; selectorValue: string;
   audience?: 'anybody' | 'restricted';
@@ -101,13 +109,17 @@ export function revokeParticipantSessions(store: Store, space: SharedSpace, part
 }
 
 export function inviteToSpace(store: Store, owner: string, space: SharedSpace,
-  permissions: SharedPermission[], intendedContact?: string): { id: string; secret: string; expiresAt: number } {
+  permissions: SharedPermission[], intendedContact?: string,
+  lifetimeMs = DEFAULT_INVITATION_LIFETIME): { id: string; secret: string; expiresAt: number } {
   const unique = [...new Set(permissions)];
   if (unique.length === 0 || !unique.includes('read')) throw new Error('la invitación debe incluir read');
+  if (!(INVITATION_LIFETIMES as readonly number[]).includes(lifetimeMs)) {
+    throw new Error('la duración de la invitación no está permitida');
+  }
   const proof = secret('vera_inv_');
   const invitation = id('invitation');
   const now = Date.now();
-  const expiresAt = now + 15 * 60 * 1000;
+  const expiresAt = now + lifetimeMs;
   store.db.prepare(`INSERT INTO access_invitations
     (id, space_id, issued_by, permissions, proof_digest, intended_contact, status, issued_at, expires_at)
     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`)

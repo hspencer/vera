@@ -76,6 +76,23 @@ describe('primer corte vertical de espacios compartidos', () => {
     assert.equal((await call(`/invitations/${encodeURIComponent(invitation)}?secret=falso`)).status, 404);
   });
 
+  it('permite elegir la vigencia y usa siete días por omisión', async () => {
+    const before = Date.now();
+    const standard = await call('/shared-spaces/doctorado/invitations', 'POST', { permissions: ['read'] });
+    assert.ok(standard.json['expiresAt'] >= before + 7 * 24 * 60 * 60 * 1000);
+
+    const short = await call('/shared-spaces/doctorado/invitations', 'POST', {
+      permissions: ['read'], lifetimeMs: 60 * 60 * 1000,
+    });
+    assert.ok(short.json['expiresAt'] >= before + 60 * 60 * 1000);
+    assert.ok(short.json['expiresAt'] < before + 2 * 60 * 60 * 1000);
+
+    const arbitrary = await call('/shared-spaces/doctorado/invitations', 'POST', {
+      permissions: ['read'], lifetimeMs: 365 * 24 * 60 * 60 * 1000,
+    });
+    assert.equal(arbitrary.status, 400);
+  });
+
   it('no entrega el subgrafo restringido sin una sesión humana', async () => {
     assert.equal((await call('/s/doctorado/api/pages')).status, 401);
     assert.equal((await call('/s/doctorado/api/pages/no-existe')).status, 401);

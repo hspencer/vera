@@ -164,7 +164,7 @@ const field = (label: string, value: string, placeholder = ''): { label: HTMLLab
 export async function drawSharing(host: HTMLElement): Promise<void> {
   host.innerHTML = '';
   const intro = document.createElement('p'); intro.className = 'settings-note';
-  intro.textContent = 'Cada espacio comparte exactamente las páginas que cumplen un criterio de propiedad. Las invitaciones vencen en quince minutos y cada participante entra con su propia passkey.';
+  intro.textContent = 'Cada espacio comparte exactamente las páginas que cumplen un criterio de propiedad. Las invitaciones son de un solo uso, tienen duración elegible y pueden revocarse mientras estén pendientes.';
   const status = document.createElement('p'); status.className = 'settings-note'; status.textContent = 'Leyendo espacios compartidos…';
   host.append(intro, status);
   let spaces: SharedAdministration[];
@@ -319,24 +319,36 @@ function invitationForm(host: HTMLElement, space: SharedAdministration): HTMLEle
     input.checked = permission === 'read'; input.disabled = permission === 'read'; label.append(input, ` ${permission}`);
     controls.push({ permission, input }); permissions.append(label);
   }
+  const durationLabel = document.createElement('label'); durationLabel.className = 'sharing-field';
+  const durationName = document.createElement('span'); durationName.textContent = 'Vigencia';
+  const duration = document.createElement('select');
+  for (const [milliseconds, label] of [[3_600_000, 'Una hora'], [86_400_000, 'Un día'],
+    [604_800_000, 'Siete días'], [2_592_000_000, 'Treinta días']] as const) {
+    const option = document.createElement('option'); option.value = String(milliseconds); option.textContent = label;
+    option.selected = milliseconds === 604_800_000; duration.append(option);
+  }
+  durationLabel.append(durationName, duration);
   const create = document.createElement('button'); create.type = 'button'; create.textContent = 'Crear enlace de invitación';
   const result = document.createElement('div'); result.className = 'sharing-invitation-result';
   create.onclick = () => void (async () => {
     create.disabled = true; result.textContent = 'Creando…';
     try {
       const made = await sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/invitations`, 'POST', {
-        intendedContact: contact.input.value, permissions: controls.filter((one) => one.input.checked).map((one) => one.permission),
+        intendedContact: contact.input.value,
+        permissions: controls.filter((one) => one.input.checked).map((one) => one.permission),
+        lifetimeMs: Number(duration.value),
       });
       const url = new URL(made.url, location.origin).href;
       result.innerHTML = '';
       const output = document.createElement('input'); output.readOnly = true; output.value = url;
       const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copiar enlace';
       copy.onclick = () => void navigator.clipboard.writeText(url).then(() => { copy.textContent = 'Copiado'; });
-      const warning = document.createElement('p'); warning.className = 'settings-note'; warning.textContent = 'Este secreto sólo se muestra ahora y vence en quince minutos.';
+      const warning = document.createElement('p'); warning.className = 'settings-note';
+      warning.textContent = `Este secreto sólo se muestra ahora. Vence ${new Date(made.expiresAt).toLocaleString()} y puede revocarse antes desde esta administración.`;
       result.append(output, copy, warning); create.disabled = false;
     } catch (error) { result.textContent = error instanceof Error ? error.message : 'No se pudo crear.'; create.disabled = false; }
   })();
-  box.append(heading, contact.label, permissions, create, result); return box;
+  box.append(heading, contact.label, durationLabel, permissions, create, result); return box;
 }
 
 function invitations(host: HTMLElement, space: SharedAdministration): HTMLElement {
@@ -346,7 +358,8 @@ function invitations(host: HTMLElement, space: SharedAdministration): HTMLElemen
   const list = document.createElement('ul'); list.className = 'sharing-list';
   for (const invitation of space.invitations) {
     const row = document.createElement('li');
-    const text = document.createElement('span'); text.textContent = `${invitation.intendedContact ?? 'Sin destinatario'} · ${invitation.permissions.join(', ')} · ${invitation.status}`;
+    const expiry = invitation.status === 'pending' ? ` · vence ${new Date(invitation.expiresAt).toLocaleString()}` : '';
+    const text = document.createElement('span'); text.textContent = `${invitation.intendedContact ?? 'Sin destinatario'} · ${invitation.permissions.join(', ')} · ${invitation.status}${expiry}`;
     row.append(text);
     if (invitation.status === 'pending') {
       const revoke = document.createElement('button'); revoke.textContent = 'Revocar';

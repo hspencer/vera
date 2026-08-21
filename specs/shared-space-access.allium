@@ -94,7 +94,7 @@ contract OwnerAdministration {
 
 contract SharedSpaceAccess {
     create_space: (owner: core/Participant, name: String, slug: String, selector: PageSelector, audience: Audience) -> SharedSpace
-    invite: (owner: core/Participant, space: SharedSpace, permissions: Set<Permission>) -> AccessInvitation
+    invite: (owner: core/Participant, space: SharedSpace, permissions: Set<Permission>, lifetime: Duration) -> AccessInvitation
     redeem: (invitation: AccessInvitation, person_name: String) -> AccessGrant
     grant: (owner: core/Participant, space: SharedSpace, participant: core/Participant, permissions: Set<Permission>) -> AccessGrant
     revoke: (owner: core/Participant, grant: AccessGrant) -> AccessGrant
@@ -409,7 +409,8 @@ entity FederatedIdentityBinding {
 ------------------------------------------------------------
 
 config {
-    invitation_lifetime: Duration = 15.minutes
+    default_invitation_lifetime: Duration = 7.days
+    maximum_invitation_lifetime: Duration = 30.days
     session_lifetime: Duration = 30.days
     enrollment_lifetime: Duration = 15.minutes
 }
@@ -558,12 +559,14 @@ rule OwnerCreatesSharedSpace {
 }
 
 rule OwnerCreatesInvitationCapability {
-    when: InviteToSharedSpace(owner, space, permissions, proof_digest, intended_contact?)
+    when: InviteToSharedSpace(owner, space, permissions, lifetime, proof_digest, intended_contact?)
 
     requires: space.owner = owner
     requires: space.status = active
     requires: permissions.count > 0
     requires: read in permissions
+    requires: lifetime > 0.seconds
+    requires: lifetime <= config.maximum_invitation_lifetime
 
     ensures: AccessInvitation.created(
         space: space,
@@ -573,7 +576,7 @@ rule OwnerCreatesInvitationCapability {
         intended_contact: intended_contact,
         status: pending,
         issued_at: now,
-        expires_at: now + config.invitation_lifetime,
+        expires_at: now + lifetime,
         redeemed_by: null,
         redeemed_at: null
     )
@@ -1172,7 +1175,7 @@ surface SharedSpaceAdministration {
         space.invitations
 
     provides:
-        InviteToSharedSpace(owner, space, permissions, proof_digest, intended_contact?)
+        InviteToSharedSpace(owner, space, permissions, lifetime, proof_digest, intended_contact?)
         GrantSharedSpaceAccess(owner, space, participant, permissions)
         RevokeSharedSpaceAccess(owner, grant) when grant.space = space
         RevokeInvitation(owner, invitation) when invitation.space = space
@@ -1189,6 +1192,12 @@ surface SharedSpaceAdministration {
     @guarantee InvitationsCannotDelegateAdministration
         -- An invitation may grant reading, contribution or editing, never the
         -- owner's authority to change the space, its audience or other grants.
+
+    @guarantee PendingInvitationsRemainRevocable
+        -- The owner chooses a bounded lifetime when issuing the invitation and
+        -- may revoke it immediately from this administration until redemption
+        -- or expiry. Seven days is offered by default; no invitation exceeds
+        -- thirty days.
 }
 
 surface SharedSpaceParticipation {
