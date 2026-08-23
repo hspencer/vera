@@ -6,12 +6,15 @@ import { digestOf } from '../src/credentials.ts';
 const PORT = 4288;
 const OWNER = 'participant:herbert';
 let base: string;
+let publicBase: string;
 let running: ReturnType<typeof listen>;
 let sequence = 0;
 
 before(() => {
-  running = listen({ port: PORT, databasePath: ':memory:', owner: { id: OWNER, name: 'Herbert' } });
+  running = listen({ port: PORT, publicPreviewPort: PORT + 1,
+    databasePath: ':memory:', owner: { id: OWNER, name: 'Herbert' } });
   base = `http://localhost:${PORT}`;
+  publicBase = `http://localhost:${PORT + 1}`;
 });
 after(async () => running.close());
 
@@ -96,6 +99,80 @@ describe('primer corte vertical de espacios compartidos', () => {
   it('no entrega el subgrafo restringido sin una sesión humana', async () => {
     assert.equal((await call('/s/doctorado/api/pages')).status, 401);
     assert.equal((await call('/s/doctorado/api/pages/no-existe')).status, 401);
+  });
+
+  it('permite cambiar la audiencia de un espacio existente y volver a restringirla', async () => {
+    const open = await call('/shared-spaces/doctorado', 'PATCH', {
+      name: 'Doctorado', slug: 'doctorado', selectorKey: 'espacio', selectorValue: 'doctorado',
+      audience: 'anybody',
+    });
+    assert.equal(open.status, 200);
+    assert.equal(open.json['audience'], 'anybody');
+    const closed = await call('/shared-spaces/doctorado', 'PATCH', {
+      name: 'Doctorado', slug: 'doctorado', selectorKey: 'espacio', selectorValue: 'doctorado',
+      audience: 'restricted',
+    });
+    assert.equal(closed.status, 200);
+    assert.equal(closed.json['audience'], 'restricted');
+  });
+
+  it('entrega anónimamente sólo las páginas del selector cuando la audiencia es pública', async () => {
+    const poem = await write({ kind: 'create_page', title: 'Poema', visibility: 'private' });
+    await write({ kind: 'set_property', page: poem, propertyKey: 'concepto', propertyValue: 'Axis Mundae' });
+    const near = await write({ kind: 'create_page', title: 'Documento cercano', visibility: 'private' });
+    await write({ kind: 'set_property', page: near, propertyKey: 'concepto', propertyValue: 'Axis Mundi' });
+    const made = await call('/shared-spaces', 'POST', {
+      name: 'Axis Mundae', slug: 'axis-mundae', selectorKey: 'concepto',
+      selectorValue: 'Axis Mundae', audience: 'anybody',
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.json));
+    assert.equal(made.json['audience'], 'anybody');
+    const pages = await call('/s/axis-mundae/api/pages');
+    assert.equal(pages.status, 200);
+    assert.deepEqual((pages.json['pages'] as any[]).map((page) => page.title), ['Poema']);
+    assert.equal((await call(`/s/axis-mundae/api/pages/${encodeURIComponent(near)}`)).status, 404);
+    const publicPages = await fetch(`${publicBase}/s/axis-mundae/api/pages`);
+    assert.equal(publicPages.status, 200);
+    assert.equal(((await publicPages.json() as any).pages as any[]).length, 1);
+    assert.equal((await fetch(`${publicBase}/s/doctorado/api/pages`)).status, 404);
+  });
+
+  it('el ámbito de un espacio no contamina las demás URL del dominio público', async () => {
+    const fromSpace = await fetch(`${publicBase}/pages`, {
+      headers: { referer: `${publicBase}/s/axis-mundae/p/Poema` },
+    });
+    assert.equal(fromSpace.status, 200);
+    assert.deepEqual((await fromSpace.json() as any[]).map((page) => page.title), ['Poema']);
+
+    const outsideSpace = await fetch(`${publicBase}/pages`, {
+      // Simula un navegador que todavía conserva la cookie emitida por una
+      // versión anterior. Sin una ruta/referente de espacio debe ser ignorada.
+      headers: { cookie: 'vera_public_space=axis-mundae' },
+    });
+    assert.equal(outsideSpace.status, 200);
+    assert.deepEqual(await outsideSpace.json(), []);
+
+    const shell = await fetch(`${publicBase}/s/axis-mundae/`);
+    assert.match(shell.headers.get('set-cookie') ?? '', /vera_public_space=;.*Max-Age=0/);
+  });
+
+  it('el mapa público muestra el espacio completo y conserva sus componentes aisladas', async () => {
+    const second = await write({ kind: 'create_page', title: 'Segundo poema', visibility: 'private' });
+    await write({ kind: 'set_property', page: second, propertyKey: 'concepto', propertyValue: 'Axis Mundae' });
+    const cover = await write({ kind: 'create_page', title: 'Portada aislada', visibility: 'private' });
+    await write({ kind: 'set_property', page: cover, propertyKey: 'concepto', propertyValue: 'Axis Mundae' });
+    const first = running.vera.graph.pageTitled('Poema')!;
+    await write({ kind: 'create_block', page: first.id, parent: null, position: 0, content: '[[Segundo poema]]' });
+
+    const response = await fetch(`${publicBase}/graph/${encodeURIComponent(cover)}?depth=0`, {
+      headers: { referer: `${publicBase}/s/axis-mundae/p/Portada%20aislada` },
+    });
+    assert.equal(response.status, 200);
+    const graph = await response.json() as any;
+    assert.deepEqual(new Set(graph.nodes.map((node: any) => node.name)),
+      new Set(['Poema', 'Segundo poema', 'Portada aislada']));
+    assert.deepEqual(graph.links.map((link: any) => [link.source, link.target].sort()),
+      [[first.id, second].sort()]);
   });
 
   it('con sesión entrega lo interior y trata lo exterior como inexistente', async () => {

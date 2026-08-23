@@ -123,6 +123,24 @@ describe('persistencia', () => {
     store.close();
   });
 
+  it('materializa, revisa y reproduce una conectiva sin convertirla en bloque', () => {
+    const { store, write } = freshStore();
+    const from = write({ kind: 'create_page', title: 'Uno', visibility: 'private' });
+    const to = write({ kind: 'create_page', title: 'Dos', visibility: 'private' });
+    const crossing = write({ kind: 'create_crossing', fromPage: from, toPage: to, content: 'salta' });
+    write({ kind: 'edit_crossing', crossing, content: 'salta y se transforma' });
+
+    assert.equal(count(store, 'crossings'), 1);
+    assert.equal(count(store, 'blocks'), 0);
+    assert.equal((store.db.prepare('SELECT count(*) n FROM revisions WHERE crossing_id=?')
+      .get(crossing) as { n: number }).n, 2);
+    const loaded = loadGraph(store);
+    assert.equal(loaded.crossing(crossing)?.said, 'salta y se transforma');
+    assert.equal(loaded.crossing(crossing)?.fromPage, from);
+    assert.equal(loaded.crossing(crossing)?.toPage, to);
+    store.close();
+  });
+
   it('reproduce el grafo desde el log y no desde las tablas de estado', () => {
     const { store, graph, write } = freshStore();
     const page = write({ kind: 'create_page', title: 'Amereida', visibility: 'private' });

@@ -108,6 +108,23 @@ describe('lo que nace', () => {
     assert.equal(blocks[3]?.testimony, 'se llegó buscando');
   });
 
+  it('una conectiva recorrida entra como cita versionada, no como inferencia', () => {
+    const walked = [
+      step('page:1', null, 'opened_directly'),
+      {
+        ...step('page:2', 'page:1', 'followed_reference'),
+        crossing: { id: 'crossing:12', revision: 'operation:7', content: 'La luz aprende a contar.' },
+      },
+    ];
+    const blocks = blocksFor(walked, titleOf);
+    assert.equal(blocks[1]?.content, 'La luz aprende a contar.');
+    assert.deepEqual(blocks[1]?.crossing, {
+      id: 'crossing:12',
+      revision: 'operation:7',
+      content: 'La luz aprende a contar.',
+    });
+  });
+
   it('las paradas no llevan testimonio: el testimonio es del tramo', () => {
     for (const one of blocksFor(trace, titleOf).filter((x) => x.content !== '')) {
       assert.equal(one.testimony, null);

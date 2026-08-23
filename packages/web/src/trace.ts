@@ -38,6 +38,12 @@ export interface TraceStep {
   readonly page: string;
   readonly from: string | null;
   readonly gesture: NavigationGesture;
+  /** La conectiva realmente pulsada para llegar, no una inferencia posterior. */
+  readonly crossing?: {
+    readonly id: string;
+    readonly revision: string;
+    readonly content: string;
+  } | null;
   readonly at: number;
 }
 
@@ -78,6 +84,12 @@ export function loadTrace(): TraceStep[] {
         (candidate.from === null || typeof candidate.from === 'string') &&
         typeof candidate.gesture === 'string' &&
         GESTURES.has(candidate.gesture as NavigationGesture) &&
+        (candidate.crossing === undefined || candidate.crossing === null || (
+          typeof candidate.crossing === 'object' &&
+          typeof candidate.crossing.id === 'string' &&
+          typeof candidate.crossing.revision === 'string' &&
+          typeof candidate.crossing.content === 'string'
+        )) &&
         typeof candidate.at === 'number' &&
         Number.isFinite(candidate.at)
       );

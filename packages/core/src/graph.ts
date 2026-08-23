@@ -30,6 +30,7 @@ import type {
   BlockId,
   Change,
   ContributionChannel,
+  CrossingId,
   GraphId,
   GraphNeighbourhood,
   NeighbourhoodEdge,
@@ -103,6 +104,7 @@ export class VeraGraph {
   #updatedAt = new Map<PageId, number>();
   #blocks = new Map<BlockId, Block>();
   #glosses = new Map<BlockId, Gloss>();
+  #crossings = new Map<CrossingId, Crossing>();
   #tags = new Map<BlockId, string[]>();
 
   // Índices. Sin ellos cada bloque nuevo recorre todos los enlaces existentes,
@@ -237,6 +239,14 @@ export class VeraGraph {
     return [...this.#glosses.values()];
   }
 
+  crossing(id: CrossingId): Crossing | undefined {
+    return this.#crossings.get(id);
+  }
+
+  declaredCrossings(): Crossing[] {
+    return [...this.#crossings.values()];
+  }
+
   blocksOf(page: PageId): Block[] {
     return this.#idsToBlocks(this.#blocksByPage.get(page));
   }
@@ -329,8 +339,10 @@ export class VeraGraph {
    * tilde, y con ella una grabación que quizá costó decir.
    */
   crossings(): Crossing[] {
-    const found: Crossing[] = [];
-    const seen = new Set<string>();
+    const found: Crossing[] = [...this.#crossings.values()];
+    const seen = new Set(
+      found.map((crossing) => `${crossing.fromPage}→${crossing.toPage ?? titleKey(crossing.targetTitle)}`),
+    );
 
     for (const [subject, properties] of this.#propertiesBySubject) {
       const block = this.#blocks.get(subject);
@@ -359,11 +371,12 @@ export class VeraGraph {
       // otra no se cuenta dos veces; lo que haya que añadir se añade a la
       // conectiva, que es un bloque y crece.
       const from = block.parent ?? block.stableId;
-      const key = `${from}→${titleKey(title)}`;
+      const key = `${block.page}→${to?.id ?? titleKey(title)}`;
       if (seen.has(key)) continue;
       seen.add(key);
 
       found.push({
+        stableId: block.stableId,
         connective: block.stableId,
         said: block.content,
         fromBlock: from,
@@ -372,6 +385,8 @@ export class VeraGraph {
         toPage: to?.id ?? null,
         sense: senseIn(sense),
         term: term === null || term.trim() === '' ? null : term.trim(),
+        createdAt: block.createdAt,
+        updatedAt: this.#updatedAt.get(block.page) ?? block.createdAt,
       });
     }
 
@@ -380,19 +395,12 @@ export class VeraGraph {
 
   /** Lo que esta página afirma sobre otras. */
   crossingsOut(page: PageId): Crossing[] {
-    // Una relación mutua se lee en las dos columnas de las dos páginas: no es
-    // una clase aparte de relación, es una que vale en los dos sentidos.
-    return this.crossings().filter(
-      (crossing) => crossing.fromPage === page || (crossing.sense === 'mutual' && crossing.toPage === page),
-    );
+    return this.crossings().filter((crossing) => crossing.fromPage === page);
   }
 
   /** Lo que otras páginas afirman sobre ésta. */
   crossingsIn(page: PageId): Crossing[] {
-    return this.crossings().filter(
-      (crossing) =>
-        crossing.toPage === page || (crossing.sense === 'mutual' && crossing.fromPage === page),
-    );
+    return this.crossings().filter((crossing) => crossing.toPage === page);
   }
 
   /** Enlaces que nacen de un bloque, sin recorrer todos los del grafo. */
@@ -570,9 +578,13 @@ export class VeraGraph {
 
     let page: PageId | null = null;
     let block: BlockId | null = null;
+    let crossing: CrossingId | null = null;
     if (isBlockChange) {
       block = subjectId;
       page = this.#blocks.get(subjectId)?.page ?? null;
+    } else if (change.kind === 'create_crossing' || change.kind === 'edit_crossing') {
+      crossing = subjectId;
+      page = this.#crossings.get(subjectId)?.fromPage ?? null;
     } else if (change.kind === 'set_property' || change.kind === 'remove_property') {
       page = change.page ?? null;
       block = change.block ?? null;
@@ -585,6 +597,7 @@ export class VeraGraph {
       operation,
       page,
       block,
+      crossing,
       authoredBy: submission.submittedBy,
       channel: submission.channel,
       evidence: submission.evidence,
@@ -647,6 +660,10 @@ export class VeraGraph {
         if (this.blocksOf(change.page).length > 0) {
           return 'a page is removable only once it is empty';
         }
+        if ([...this.#crossings.values()].some((one) =>
+          one.fromPage === change.page || one.toPage === change.page)) {
+          return 'a page with declared crossings is not removable';
+        }
         return null;
       }
       case 'create_block': {
@@ -689,6 +706,24 @@ export class VeraGraph {
         if (!this.#blocks.has(change.block)) return 'no such block';
         if (change.content === this.#glosses.get(change.block)?.content) return 'the gloss is unchanged';
         return null;
+      case 'create_crossing': {
+        if (!this.#pages.has(change.fromPage) || !this.#pages.has(change.toPage)) return 'no such crossing endpoint';
+        if (change.fromPage === change.toPage) return 'a page cannot relate to itself';
+        if (change.content.trim() === '') return 'a crossing needs content';
+        if (change.stableId !== undefined && this.#crossings.has(change.stableId)) {
+          return `a crossing already holds the stable id ${change.stableId}`;
+        }
+        if ([...this.#crossings.values()].some((one) =>
+          one.fromPage === change.fromPage && one.toPage === change.toPage)) {
+          return 'there is already a crossing for this ordered pair';
+        }
+        return null;
+      }
+      case 'edit_crossing': {
+        if (!this.#crossings.has(change.crossing)) return 'no such crossing';
+        if (change.content.trim() === '') return 'a crossing needs content';
+        return null;
+      }
       case 'set_property': {
         const refusal = this.#validateSubject(change.page, change.block);
         if (refusal !== null) return refusal;
@@ -788,13 +823,17 @@ export class VeraGraph {
     const beforehand =
       'block' in change && typeof change.block === 'string'
         ? (this.#blocks.get(change.block)?.page ?? null)
-        : null;
+        : 'crossing' in change && typeof change.crossing === 'string'
+          ? (this.#crossings.get(change.crossing)?.fromPage ?? null)
+          : null;
     const subjectId = this.#applyChange(change, recordedSubject, at);
 
     const touched =
       ('page' in change && typeof change.page === 'string' ? change.page : null) ??
       beforehand ??
-      (this.#pages.has(subjectId) ? subjectId : (this.#blocks.get(subjectId)?.page ?? null));
+      (this.#pages.has(subjectId)
+        ? subjectId
+        : (this.#blocks.get(subjectId)?.page ?? this.#crossings.get(subjectId)?.fromPage ?? null));
     if (touched !== null && this.#pages.has(touched)) {
       this.#updatedAt.set(touched, Math.max(at, this.#updatedAt.get(touched) ?? 0));
     }
@@ -961,6 +1000,33 @@ export class VeraGraph {
         // densas, y un hueco haría que el siguiente índice pedido cayera mal.
         if (page !== undefined) this.#renumber(page, parent);
         return change.block;
+      }
+      case 'create_crossing': {
+        const id = recordedSubject ?? change.stableId ?? this.#nextId('crossing');
+        const to = this.#pages.get(change.toPage)!;
+        this.#crossings.set(id, {
+          stableId: id,
+          connective: id,
+          said: change.content,
+          fromBlock: null,
+          fromPage: change.fromPage,
+          targetTitle: to.title,
+          toPage: change.toPage,
+          sense: 'directed',
+          term: change.term?.trim() || null,
+          createdAt: at,
+          updatedAt: at,
+        });
+        return id;
+      }
+      case 'edit_crossing': {
+        const crossing = this.#crossings.get(change.crossing);
+        if (crossing !== undefined) {
+          crossing.said = change.content;
+          crossing.term = change.term?.trim() || null;
+          crossing.updatedAt = at;
+        }
+        return change.crossing;
       }
       case 'set_block_gloss': {
         const held = this.#glosses.get(change.block);

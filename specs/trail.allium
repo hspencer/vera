@@ -1297,71 +1297,27 @@ surface TrailReading {
 
 -- De qué modo vale una relación, leída desde donde se escribió.
 --
--- `directed` es el caso corriente: alguien dice que de A se sigue B, y decirlo al
--- revés sería otra afirmación. `mutual` es cuando lo dicho no tiene sentido —«se
--- oponen en su idea de X» vale igual desde los dos lados— y entonces se lee en
--- las dos columnas de las dos páginas, sin recíproco que escribir.
-enum CrossingSense { directed | mutual }
+-- Una conectiva siempre tiene dirección. La vuelta, si existe, es la conectiva
+-- del par inverso y no otra lectura implícita de la misma entidad.
+enum CrossingSense { directed }
 
--- Una relación que alguien explicó: de un bloque a una página, con lo que dijo.
---
--- Sale de un bloque y no de una página, y ahí está la decisión. Una página no
--- afirma nada: lo afirma una frase concreta dentro de ella, y es esa frase la que
--- el lector de la otra página necesita ver para saber de qué le están hablando.
--- El extracto que aparece en la columna no es un adorno: es el sujeto de la
--- afirmación.
---
--- Llega a una página y no a un bloque, y eso es una carencia y no una decisión.
--- Vera sabe citar un bloque —`((ref))`— pero no deriva esas citas como aristas,
--- así que hoy no hay a qué agarrarse del otro lado. Queda como pregunta abierta.
---
--- No cuelga del enlace derivado, y ésa es la diferencia que la hace utilizable.
--- @invariant nav/EdgesAreDerivedFromContent manda que ningún enlace sobreviva a
--- la frase que lo produjo: los enlaces de un bloque se destruyen y se recalculan
--- enteros cada vez que se toca su texto. Una explicación colgada de ahí moriría
--- al corregir una tilde, y con ella una grabación que quizá costó decir. La clave
--- es el bloque y la página, que no se recalculan, así que la explicación
--- sobrevive a cualquier reescritura de la frase que la ocasionó.
---
--- Y por eso mismo no necesita que haya mención. El bloque es el ancla; que además
--- exista una frase nombrando a la página destino es otra cosa, que la cara
--- derivada contesta y esta entidad no pregunta. Explicar por qué dos páginas se
--- tocan es un acto de escritura por derecho propio, y a campo través es
--- exactamente donde más falta hace: nadie las había unido todavía.
--- Cómo se escribe, decidido el 7 de agosto de 2026: un bloque que cuelga de
--- aquel desde el que se afirma, con sus propiedades.
---
---     - PICTOS toma la rejilla de Guemil y la lleva a generación.
---       - profundiza lo que Guemil dejó planteado: su rejilla se vuelve generativa.
---         explica:: [[Guemil]]
---         término:: profundiza
---
--- Colgando y no al lado, porque la jerarquía ya dice de qué frase cuelga la
--- explicación y no hay que guardarlo aparte. Y en propiedades y no en prosa,
--- porque las propiedades no se recalculan al editar el texto: la explicación
--- sobrevive a corregir una tilde en la frase que la ocasionó, que es exactamente
--- lo que no ocurriría si colgara del enlace derivado.
---
--- De ahí que esta entidad no se guarde en ninguna parte: se ve mirando los
--- bloques que llevan `explica::`. No hay tabla, no hay operación de crear ni de
--- borrar, y no hay forma de que una relación quede huérfana de la frase que la
--- dice — se escribe el bloque y hay relación; se borra el bloque y no la hay.
+-- Una relación explicada es contenido de la arista, no de las páginas que une.
+-- Por eso tiene identidad, texto e historia propios y puede participar en una
+-- lectura sin contaminar el poema de ninguno de sus extremos.
 entity Crossing {
     graph: core/Graph
+    stable_id: String
 
-    -- Desde dónde se afirma. El bloque conserva su autor y su procedencia, así que
-    -- una relación explicada hereda de quién es sin tener que declararlo aparte.
-    from_block: core/Block
+    -- La conectiva une páginas, no bloques dentro de ellas. Su contenido no
+    -- pertenece al poema de ninguno de sus extremos.
+    from_page: core/Page
 
     -- Hacia dónde. La página, no un bloque suyo — ver arriba.
     to_page: core/Page
 
-    -- Lo que se dijo. Es un bloque y no un texto, y de ahí sale gratis todo lo que
-    -- hace falta: se edita como se edita cualquier bloque, se puede grabar con la
-    -- voz porque voice-capture ya sabe pegar audio a un bloque, y conserva de qué
-    -- mano salió — que en un corpus donde también escribe un agente no es un
-    -- detalle. Es la conectiva de siempre, fuera de un recorrido.
-    connective: core/Block
+    -- Texto vigente de la relación. Su stable_id y sus revisiones hacen de ella
+    -- una pieza navegable y citable, no una descripción efímera derivada del enlace.
+    content: String
 
     sense: CrossingSense
 
@@ -1375,9 +1331,19 @@ entity Crossing {
     -- decidir en qué cajón va una relación antes de poder decir por qué existe.
     term: RelationTerm?
 
-    is_mutual: sense = mutual
     -- La cara derivada, calculada al mirar y nunca guardada. Ver crossing_kind.
     kind: CrossingKind
+    revisions: CrossingRevision with crossing = this
+}
+
+-- La historia propia de la conectiva permite corregirla, ampliarla y mejorarla
+-- sin reescribir las páginas que une ni los argumentos que citaron una versión.
+entity CrossingRevision {
+    crossing: Crossing
+    content: String
+    authored_by: core/Participant
+    channel: core/ContributionChannel
+    recorded_at: Timestamp
 }
 
 -- Un término del vocabulario de relaciones, con su recíproco.
@@ -1389,9 +1355,8 @@ entity Crossing {
 --
 -- Cada término nombra su inverso porque un término de relación no se lee igual en
 -- los dos extremos. «Contradice» dicho desde A se lee «es contradicha por» desde
--- B, y sin el par la columna de entrantes mentiría sobre quién afirma qué. Los
--- términos simétricos —«se oponen», «dialogan»— son su propio inverso, y eso es
--- lo que los hace aptos para un cruce `mutual`.
+-- B. Eso no crea una conectiva de vuelta: sólo permite leer correctamente la
+-- conectiva entrante. Si B responde a A, esa respuesta es otra entidad dirigida.
 --
 -- Vive en la página de ontología y no aquí. @invariant DefaultsLiveInTheCode: lo
 -- que Vera trae es un mínimo, y lo que rige es lo que esa página diga.
@@ -1403,34 +1368,38 @@ value RelationTerm {
 
 -- Explicar una relación es escribir, y se registra como escritura.
 rule ExplainingARelation {
-    when: ExplainRelation(participant, graph, from_block, to_page, sense, term?)
+    when: ExplainRelation(participant, graph, from_page, to_page, content, term?, channel)
 
     let membership = core/Membership{graph: graph, participant: participant}
 
     requires: exists membership
     requires: membership.status = active
-    requires: from_block.graph = graph
+    requires: from_page.graph = graph
     requires: to_page.graph = graph
-    -- Una página no se explica respecto de sí misma: no diría nada.
-    requires: from_block.page != to_page
+    requires: from_page != to_page
+    requires: content != ""
+    requires: not exists Crossing{graph: graph, from_page: from_page, to_page: to_page}
 
     ensures:
-        let connective = core/Block.created(page: from_block.page, author: participant)
-        Crossing.created(
+        let crossing = Crossing.created(
             graph: graph,
-            from_block: from_block,
+            from_page: from_page,
             to_page: to_page,
-            connective: connective,
-            sense: sense,
+            content: content,
+            sense: directed,
             term: term
         )
+        CrossingRevision.created(
+            crossing: crossing,
+            content: content,
+            authored_by: participant,
+            channel: channel,
+            recorded_at: now
+        )
 
-    @invariant ExplainingIsThreeOrdinaryWrites
-        -- Crear el bloque, decir a dónde apunta y, si se quiso, con qué término.
-        -- Tres operaciones de las que ya había y ninguna propia: no hay
-        -- `explain_relation` en el dominio, y por tanto no hay ningún camino por
-        -- el que una relación entre en el corpus sin pasar por donde pasa todo lo
-        -- demás, con su autoría, su canal y su revisión.
+    @invariant ExplainingCreatesTheFirstRevision
+        -- Crear la conectiva deja desde el primer texto la misma procedencia e
+        -- historia que conservarán sus mejoras posteriores.
 
     @invariant TheProseIsRequiredAndTheTermIsNot
         -- Se puede explicar sin clasificar. Un término que el vocabulario no
@@ -1438,32 +1407,42 @@ rule ExplainingARelation {
         -- porque inventarlo pondría en boca de una página una afirmación que
         -- nadie escribió.
 
-    @guidance
-        -- La conectiva nace en la página del bloque de origen y no en un sitio
-        -- propio. Es texto de esa página como cualquier otro: se busca con ella,
-        -- se proyecta con ella, y desaparece si ella desaparece. Un corpus donde
-        -- las explicaciones vivieran aparte tendría una segunda memoria al lado de
-        -- la primera, que es justamente lo que ATrailIsAPageOfItsGraph evita para
-        -- los recorridos.
 }
 
--- Un bloque dice una sola cosa sobre una página. Explicar dos veces la misma
--- relación desde la misma frase daría dos afirmaciones sin forma de saber cuál
--- rige; si hay más que decir, se dice en la conectiva, que es un bloque y crece.
-invariant OneCrossingPerBlockAndTarget {
+rule RevisingARelation {
+    when: ReviseRelation(participant, crossing, content, channel)
+
+    let membership = core/Membership{graph: crossing.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: content != ""
+
+    ensures:
+        crossing.content = content
+        CrossingRevision.created(
+            crossing: crossing,
+            content: content,
+            authored_by: participant,
+            channel: channel,
+            recorded_at: now
+        )
+
+    @invariant RevisionChangesTheRelationNotItsIdentity
+        -- Editar, ampliar o mejorar conserva el stable_id y los dos extremos.
+}
+
+-- Como máximo hay una conectiva por par ordenado. La ida y la vuelta son las dos
+-- relaciones posibles entre un par de páginas, cada una con su propio texto.
+invariant OneCrossingPerOrderedPair {
     for a in Crossings:
         for b in Crossings:
-            a != b implies (a.from_block != b.from_block or a.to_page != b.to_page)
+            a != b implies (a.from_page != b.from_page or a.to_page != b.to_page)
 }
 
-invariant AMutualCrossingNeedsASymmetricTerm {
-    for crossing in Crossings where crossing.is_mutual and crossing.term != null:
-        crossing.term.is_symmetric
-}
-
-invariant TheExplainedFaceIsWrittenAndTheDerivedFaceIsNot {
+invariant CrossingEndpointsBelongToItsGraph {
     for crossing in Crossings:
-        crossing.connective.page = crossing.from_block.page
+        crossing.from_page.graph = crossing.graph and crossing.to_page.graph = crossing.graph
 }
 
 -- Las dos columnas al pie de una página.
@@ -1474,16 +1453,10 @@ invariant TheExplainedFaceIsWrittenAndTheDerivedFaceIsNot {
 -- lo que uno sostiene de lo que sostienen sobre uno, que en un corpus con
 -- procedencia es la distinción entera.
 --
--- Cada fila lleva el título de la otra página y el extracto del bloque desde el
--- que se afirma. El extracto es lo que hace legible un entrante: sin él, la
--- columna diría que alguien habló de esto sin decir en qué términos, y habría que
--- ir a la otra página para averiguarlo — que es exactamente lo que un backlink
--- sin extracto obliga a hacer hoy.
---
--- Una relación mutua se lee en las dos columnas de las dos páginas. No hay
--- tercera columna: lo mutuo no es una clase aparte de relación sino una que vale
--- en los dos sentidos, y darle su propio sitio la separaría de las que dice lo
--- mismo con dirección.
+-- Cada fila lleva el título de la otra página y el texto vigente de la conectiva.
+-- La misma entidad se presenta como saliente en su origen y entrante en su
+-- destino. Si existe una vuelta, aparece por separado porque tiene identidad,
+-- texto e historia propios.
 surface PageRelations {
     facing reader: core/Participant
     context page: core/Page
@@ -1493,7 +1466,8 @@ surface PageRelations {
         page.crossings_in
 
     provides:
-        ExplainRelation(reader, page.graph, from_block, to_page, sense, term?)
+        ExplainRelation(reader, page.graph, from_page, to_page, content, term?, channel)
+        ReviseRelation(reader, crossing, content, channel)
 
     @guarantee EachRelationSaysWhereItIsAffirmedFrom
         -- Toda fila, entrante o saliente, enseña el bloque desde el que se afirma.
@@ -1517,6 +1491,17 @@ surface PageRelations {
         -- Se explica desde aquí, sobre la relación que se está leyendo, sin ir a
         -- ningún otro sitio. El momento en que alguien sabe por qué dos páginas se
         -- tocan es el momento en que las está mirando juntas.
+
+    @guarantee TraversalNamesTheCrossingAndItsRevision
+        -- Pulsar el destino desde una conectiva registra `página → conectiva →
+        -- página`. El rastro y el argumento citan su identidad y la revisión que
+        -- se leyó; nunca la reconstruyen después mirando sólo los extremos.
+
+    @guarantee PromotingACitedTraversalKeepsTheConnective
+        -- Si un paso del rastro lleva conectiva y revisión, promoverlo a
+        -- argumento escribe su texto entre las dos paradas y conserva ambas
+        -- identidades como cita. Una llegada por mapa, búsqueda o backlink no
+        -- recibe una conectiva inventada aunque exista una entre los extremos.
 }
 
 ------------------------------------------------------------

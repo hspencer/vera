@@ -23,6 +23,7 @@ contract SovereignSharing {
     contribute: (distribution: Distribution, author: core/Participant, edits: List<SharedEdit>) -> Contribution
     review: (selection: ReviewSelection, owner: core/Participant, decision: ReviewDecision) -> ReviewOutcome
     withdraw: (distribution: Distribution) -> Withdrawal
+    acknowledge_withdrawal: (withdrawal: Withdrawal, recipient: String, disposition: WithdrawalDisposition) -> WithdrawalAcknowledgement
     continue_after_withdrawal: (distribution: Distribution, custody: SharingDestination) -> ContinuationFork
 
     @invariant SharingIsDelimited
@@ -49,10 +50,11 @@ contract SovereignSharing {
 
     @invariant AReceivedCopyEntersAnotherSovereignty
         -- A person, shared graph or site that synchronises content receives a
-        -- replica it can retain independently. While sharing remains active,
-        -- replicas point to the same logical page identity rather than becoming
-        -- unrelated documents. The source cannot silently erase a retained
-        -- replica or truthfully promise that withdrawal will recover it.
+        -- replica under its custody. While sharing remains active, replicas point
+        -- to the same logical page identity rather than becoming unrelated
+        -- documents. After withdrawal, continued custody requires an explicit
+        -- fork or another declared basis; an automatic cache is not by itself an
+        -- independent work that may be retained indefinitely.
 
     @invariant AuthorisedEditorsDoNotWaitToWork
         -- A participant to whom the selection was shared with write authority
@@ -87,8 +89,9 @@ contract SovereignSharing {
 
     @invariant UnsharingEndsTheRelationship
         -- The owner can stop future synchronisation and editing authority by
-        -- withdrawing the distribution. This ends the relationship; it does not
-        -- erase replicas or observations recipients already retained.
+        -- withdrawing the distribution. This ends the relationship and asks
+        -- every known recipient to stop serving and indexing its replica. It
+        -- cannot erase observations or copies outside Vera's control.
 
     @invariant WithdrawalDoesNotEndOtherPeoplesWork
         -- A recipient may continue retained work after withdrawal as an editable
@@ -128,10 +131,31 @@ contract SovereignSharing {
         -- contribution's origin does not regain control merely by withdrawing.
 
     @invariant WithdrawalStopsTheFutureNotThePast
-        -- Withdrawing stops future discovery and synchronisation from the
-        -- source and may propagate a request for recipients to remove retained
-        -- copies. It does not report those copies erased without acknowledgement
-        -- from every recipient that held one.
+        -- Withdrawing stops future discovery and synchronisation from the source
+        -- and propagates a retraction to every known recipient. A recipient
+        -- controlled by the federation stops serving and indexing its cached
+        -- replica immediately, then either purges it or declares the independent
+        -- basis on which it retains a continuation. Vera does not report a copy
+        -- erased without that recipient's acknowledgement.
+
+    @invariant WithdrawalAndPersonalDataErasureAreDifferentActs
+        -- An author may withdraw a distribution while keeping the source page in
+        -- their sovereign corpus. A personal-data erasure request concerns the
+        -- continued treatment of identified personal data and may require their
+        -- deletion or anonymisation in the source as well as recipient replicas.
+        -- Neither act silently implies the other.
+
+    @invariant VoluntaryPublicationIsNotPerpetualConsent
+        -- Sharing data deliberately makes its prior distribution legitimate; it
+        -- does not grant recipients an irrevocable right to keep processing it.
+        -- A recipient that retains or republishes after retraction acts under its
+        -- own declared responsibility rather than the withdrawn permission.
+
+    @invariant FederationCachesHonourRetraction
+        -- Storage maintained only to deliver or synchronise an active
+        -- distribution is a cache, not a continuation fork. Retraction removes
+        -- that content from reading, search and discovery immediately and the
+        -- recipient purges it according to the federation's bounded policy.
 
     @invariant IrreversibilityIsKnownBeforeSharing
         -- Before the first distribution, Vera tells the sovereign participant
@@ -148,6 +172,7 @@ enum DistributionStatus { offered | synchronised | withdrawn }
 enum ContributionStatus { local | awaiting_review | partially_reviewed | accepted | rejected }
 enum ReviewDecision { accept | reject }
 enum ReviewBoundary { whole_contribution | dependent_group | whole_block }
+enum WithdrawalDisposition { purged | continued_independently | unable_to_confirm }
 
 ------------------------------------------------------------
 -- Entities and Values
@@ -181,7 +206,15 @@ entity Distribution {
 entity Withdrawal {
     distribution: Distribution
     requested_at: Timestamp
-    acknowledged_by: List<String>
+    acknowledgements: WithdrawalAcknowledgement with withdrawal = this
+}
+
+entity WithdrawalAcknowledgement {
+    withdrawal: Withdrawal
+    recipient: String
+    disposition: WithdrawalDisposition
+    independent_basis: String?
+    acknowledged_at: Timestamp
 }
 
 entity SharedEdit {
@@ -235,6 +268,18 @@ invariant AWithdrawalNamesAWithdrawnDistribution {
         withdrawal.distribution.status = withdrawn
 }
 
+invariant IndependentRetentionDeclaresItsBasis {
+    for acknowledgement in WithdrawalAcknowledgements:
+        acknowledgement.disposition = continued_independently
+            implies acknowledgement.independent_basis != null
+}
+
+invariant PurgingDoesNotClaimIndependentCustody {
+    for acknowledgement in WithdrawalAcknowledgements:
+        acknowledgement.disposition = purged
+            implies acknowledgement.independent_basis = null
+}
+
 invariant ASharedEditBelongsToTheSharedSelection {
     for edit in SharedEdits:
         edit.page in edit.distribution.selection.pages
@@ -275,7 +320,12 @@ invariant EverySharedSpaceHasAFallbackOwner {
 -- the whole contribution, dependency-closed groups or whole blocks, never
 -- arbitrary lines or dependency-breaking operations.
 open question "When a shared selection criterion gains or loses a page, does synchronisation follow the criterion automatically or require a new sharing decision?"
-open question "What acknowledgement proves that a recipient honoured a withdrawal request, and how long is that evidence retained?"
+-- Answered in part: every known recipient returns a disposition saying that it
+-- purged the cache, continued independently under a declared basis, or could not
+-- confirm the result. Vera never infers erasure from silence.
+open question "How long is withdrawal acknowledgement evidence retained, and what identifying detail may it contain without recreating the personal data that was purged?"
+open question "What bounded purge period applies to an acknowledged federated cache after it has stopped serving and indexing withdrawn content?"
+open question "Which authority decides whether a recipient's declared independent basis permits retention after a personal-data erasure request?"
 open question "Can a public destination synchronise canonical page identity, or does it receive only a publication projection?"
 -- Answered: recipients may continue as an editable fork with new identity and
 -- canonical custody, permanently derived from the immutable historical origin.

@@ -48,6 +48,8 @@ export interface TrailBlock {
   content: string;
   /** El testimonio de cómo se anduvo hasta aquí, si vino de un rastro. */
   testimony?: string | null;
+  citedCrossing?: string | null;
+  citedRevision?: string | null;
 }
 
 /** Una parada: un sitio del corpus citado desde el texto del recorrido. */
@@ -69,6 +71,8 @@ export interface TrailCrossing {
   connective: string;
   /** Cómo se anduvo, cuando se anduvo. */
   testimony: string | null;
+  /** La conectiva declarada efectivamente recorrida y la revisión leída. */
+  citation: { crossing: string; revision: string } | null;
   kind: CrossingKind;
   /** ¿Hay algo dicho sobre este cruce, sea del guía o del caminante? */
   spokenFor: boolean;
@@ -285,6 +289,9 @@ export function readTrail(said: TrailReading): Trail {
       [...gap.blocks, to.block]
         .map((block) => testimonies.get(block) ?? null)
         .find((one) => one !== null && one !== '') ?? null;
+    const cited = [...gap.blocks, to.block]
+      .map((id) => said.blocks.find((block) => block.stableId === id))
+      .find((block) => block?.citedCrossing != null && block.citedRevision != null);
     const kind: CrossingKind =
       from.page !== null && to.page !== null && said.linked(from.page, to.page)
         ? 'by_path'
@@ -294,6 +301,9 @@ export function readTrail(said: TrailReading): Trail {
       to,
       connective,
       testimony,
+      citation: cited?.citedCrossing != null && cited.citedRevision != null
+        ? { crossing: cited.citedCrossing, revision: cited.citedRevision }
+        : null,
       kind,
       spokenFor: connective !== '' || testimony !== null,
       blocks: [...new Set(gap.blocks)].filter((one) => one !== from.block && one !== to.block),

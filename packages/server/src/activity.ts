@@ -79,6 +79,8 @@ const summaryOf = (change: Change, title: string | null): string => {
     case 'move_block': return `movió un bloque en ${page}`;
     case 'remove_block': return `borró un bloque de ${page}`;
     case 'set_block_gloss': return `cambió la glosa de un bloque en ${page}`;
+    case 'create_crossing': return `creó una conectiva desde ${page}`;
+    case 'edit_crossing': return `editó una conectiva desde ${page}`;
     case 'set_property': return `cambió la propiedad «${change.propertyKey}» de ${page}`;
     case 'remove_property': return `quitó la propiedad «${change.propertyKey}» de ${page}`;
   }

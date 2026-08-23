@@ -132,6 +132,7 @@ export function renderSettings(
 type SharedPermission = 'read' | 'contribute' | 'edit';
 interface SharedAdministration {
   id: string; name: string; slug: string; selectorKey: string; selectorValue: string;
+  audience: 'restricted' | 'anybody';
   status: 'active' | 'withdrawn'; pageCount: number;
   invitations: { id: string; permissions: SharedPermission[]; intendedContact: string | null;
     status: 'pending' | 'redeemed' | 'revoked' | 'expired'; issuedAt: number; expiresAt: number }[];
@@ -200,14 +201,18 @@ function newSpaceForm(host: HTMLElement, veraDefaults = true): HTMLElement {
   const slug = field('Slug', veraDefaults ? 'vera' : '', 'ruta-corta');
   const key = field('Propiedad', veraDefaults ? 'concepto' : '', 'espacio');
   const value = field('Valor exacto', veraDefaults ? 'Vera' : '', 'doctorado');
+  const publicAccess = document.createElement('label'); publicAccess.className = 'sharing-public-choice';
+  const publicInput = document.createElement('input'); publicInput.type = 'checkbox';
+  publicAccess.append(publicInput, document.createTextNode(' Acceso público, sin invitación'));
   const create = document.createElement('button'); create.type = 'submit'; create.textContent = 'Crear espacio';
   const result = document.createElement('p'); result.className = 'settings-note';
-  form.append(name.label, slug.label, key.label, value.label, create, result);
+  form.append(name.label, slug.label, key.label, value.label, publicAccess, create, result);
   form.addEventListener('submit', (event) => void (async () => {
     event.preventDefault(); create.disabled = true;
     try {
       await sharingRequest('/shared-spaces', 'POST', { name: name.input.value, slug: slug.input.value,
-        selectorKey: key.input.value, selectorValue: value.input.value });
+        selectorKey: key.input.value, selectorValue: value.input.value,
+        audience: publicInput.checked ? 'anybody' : 'restricted' });
       await drawSharing(host);
     } catch (error) { result.textContent = error instanceof Error ? error.message : 'No se pudo crear.'; create.disabled = false; }
   })());
@@ -250,6 +255,7 @@ function publicSiteAdministration(host: HTMLElement, site: PublicationSiteView, 
   for (const publication of site.publications) {
     const row = document.createElement('li');
     const link = document.createElement('a'); link.href = publication.url; link.target = '_blank'; link.rel = 'noreferrer';
+    link.className = 'sharing-publication-link';
     link.textContent = `${publication.title} · /${publication.path}${publication.entryPoint ? ' · portada' : ''}`;
     const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Retirar';
     remove.disabled = publication.entryPoint;
@@ -286,7 +292,9 @@ function publicSiteAdministration(host: HTMLElement, site: PublicationSiteView, 
 function spaceAdministration(host: HTMLElement, space: SharedAdministration): HTMLElement {
   const card = document.createElement('details'); card.className = 'sharing-space';
   const activeParticipants = space.participants.filter((one) => one.status === 'active').length;
-  const title = sharingSummary('authenticated', space.name, 'Autenticado',
+  const isPublic = space.audience === 'anybody';
+  const title = sharingSummary(isPublic ? 'public' : 'authenticated', space.name,
+    isPublic ? 'Público' : 'Autenticado',
     `${space.pageCount} ${space.pageCount === 1 ? 'página' : 'páginas'}`,
     `${activeParticipants} ${activeParticipants === 1 ? 'participante' : 'participantes'}`);
   const body = document.createElement('div'); body.className = 'sharing-space-body';
@@ -296,19 +304,24 @@ function spaceAdministration(host: HTMLElement, space: SharedAdministration): HT
   const form = document.createElement('form'); form.className = 'sharing-form';
   const name = field('Nombre', space.name); const slug = field('Slug', space.slug);
   const key = field('Propiedad', space.selectorKey); const value = field('Valor exacto', space.selectorValue);
+  const publicAccess = document.createElement('label'); publicAccess.className = 'sharing-public-choice';
+  const publicInput = document.createElement('input'); publicInput.type = 'checkbox'; publicInput.checked = isPublic;
+  publicAccess.append(publicInput, document.createTextNode(' Acceso público, sin invitación'));
   const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'Guardar criterio';
   const saved = document.createElement('span'); saved.className = 'settings-note';
-  form.append(name.label, slug.label, key.label, value.label, save, saved);
+  form.append(name.label, slug.label, key.label, value.label, publicAccess, save, saved);
   form.addEventListener('submit', (event) => void (async () => {
     event.preventDefault(); save.disabled = true;
     try {
       await sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}`, 'PATCH', {
         name: name.input.value, slug: slug.input.value, selectorKey: key.input.value, selectorValue: value.input.value,
+        audience: publicInput.checked ? 'anybody' : 'restricted',
       });
       await drawSharing(host);
     } catch (error) { saved.textContent = error instanceof Error ? error.message : 'No se pudo guardar.'; save.disabled = false; }
   })());
-  body.append(count, visit, form, invitationForm(host, space), invitations(host, space), participants(host, space));
+  body.append(count, visit, form);
+  if (!isPublic) body.append(invitationForm(host, space), invitations(host, space), participants(host, space));
   card.append(title, body);
   return card;
 }

@@ -233,7 +233,11 @@ export interface OutlinerCallbacks {
    * backlink o un resultado de búsqueda— y no quien navega, que ya no puede
    * saberlo. @invariant TheGestureIsObservedAndNeverInferred.
    */
-  onOpen(page: string, gesture: NavigationGesture): void;
+  onOpen(
+    page: string,
+    gesture: NavigationGesture,
+    crossing?: { id: string; revision: string; content: string } | null,
+  ): void;
   /** El contenido anterior y el nuevo permiten invalidar sólo las proyecciones
    *  cuyo significado cambió. Sin argumentos, el cambio se considera
    *  estructural y por tanto relevante para el mapa. */
@@ -4808,15 +4812,20 @@ export function renderOutliner(
     list.append(progress);
 
     let at = 0;
+    let first = true;
     const batch = (): void => {
       // Si se navegó mientras esta página se componía, su lista ya no está en
       // el documento. No se sigue trabajando ni se mezcla la página anterior
       // con la nueva.
       if (!list.isConnected) return;
-      // Ocho bloques bastan para que el primer texto aparezca enseguida y
-      // mantienen cortos los turnos aun cuando uno contenga una tabla grande.
-      const until = Math.min(at + 8, entries.length);
-      while (at < until) {
+      // El primer cuadro entrega ocho bloques. Los siguientes usan un pequeño
+      // presupuesto temporal: una página de prosa sencilla no necesita ciento
+      // cuarenta cuadros para componerse, pero una tabla costosa tampoco puede
+      // secuestrar el hilo indefinidamente.
+      const began = performance.now();
+      const cap = Math.min(at + (first ? 8 : 64), entries.length);
+      const minimum = Math.min(at + 8, entries.length);
+      while (at < cap && (at < minimum || performance.now() - began < 8)) {
         const entry = entries[at];
         if (entry !== undefined) {
           drawBlock(entry.node, entry.depth, entry.ordinal, false);
@@ -4826,6 +4835,7 @@ export function renderOutliner(
         }
         at += 1;
       }
+      first = false;
       progress.textContent = `Componiendo la página… ${at} de ${entries.length} bloques`;
       if (at < entries.length) {
         window.requestAnimationFrame(batch);
@@ -5062,9 +5072,11 @@ export function renderOutliner(
       // Un destino que nadie ha escrito se ve como lo que es: la relación está
       // en pie y la página todavía no.
       if (outgoing && row.toPage === null) other.classList.add('unresolved');
-      other.addEventListener('click', () =>
-        callbacks.onOpen(outgoing ? (row.toPage ?? row.targetTitle) : row.fromPage, 'followed_reference'),
-      );
+      other.addEventListener('click', () => callbacks.onOpen(
+        outgoing ? (row.toPage ?? row.targetTitle) : row.fromPage,
+        outgoing ? 'followed_reference' : 'followed_backlink',
+        row.revision === null ? null : { id: row.stableId, revision: row.revision, content: row.said },
+      ));
       item.append(other);
 
       // Lo dicho, que es la relación misma, y debajo la frase desde la que se
@@ -5193,7 +5205,7 @@ export function renderOutliner(
           }
           quill.addEventListener('click', (event) => {
             event.stopPropagation();
-            explainTowards(item, row.title, row.from, held, page, toast, callbacks);
+            explainTowards(item, row.title, row.page, held, page, toast, callbacks);
           });
 
           const link = document.createElement('div');
@@ -5219,7 +5231,13 @@ export function renderOutliner(
             renderPreview(answers, row.says, gesture);
             link.append(answers);
           }
-          const open = (): void => callbacks.onOpen(row.page ?? row.title, gesture);
+          const open = (): void => callbacks.onOpen(
+            row.page ?? row.title,
+            gesture,
+            held?.revision == null
+              ? null
+              : { id: held.stableId, revision: held.revision, content: held.said },
+          );
           link.addEventListener('click', (event) => {
             if ((event.target as HTMLElement).closest('a') !== null) return;
             open();
@@ -5345,7 +5363,7 @@ function foldingSection(name: string, label: string, level: 2 | 3): {
 async function explainTowards(
   host: HTMLElement,
   title: string,
-  from: string | null,
+  target: string | null,
   held: CrossingRow | undefined,
   page: PageView,
   notify: (message: string) => void,
@@ -5405,9 +5423,9 @@ async function explainTowards(
     // el bloque.
     if (clean === '') {
       if (held !== undefined) {
-        const gone = await api.submit({ kind: 'remove_block', block: held.connective });
-        if (gone.status === 'rejected') notify(`no se pudo retirar: ${gone.reason}`);
-        else callbacks.onReload(null);
+        notify(held.fromBlock === null
+          ? 'vaciar no retira una conectiva: todavía falta el gesto explícito de retiro'
+          : 'vaciar retiraría el bloque antiguo; no se hizo ningún cambio');
       }
       asking.remove();
       return;
@@ -5423,6 +5441,20 @@ async function explainTowards(
      * seguía ahí, invisible, porque sólo se enseñaba la primera.
      */
     if (held !== undefined) {
+      if (held.fromBlock === null) {
+        const written = await api.submit({
+          kind: 'edit_crossing',
+          crossing: held.stableId,
+          content: split.prose,
+          term: split.term ?? undefined,
+        });
+        if (written.status === 'rejected') notify(`no se pudo guardar: ${written.reason}`);
+        else {
+          notify(`cambiada la conectiva con ${title}`);
+          callbacks.onReload(null);
+        }
+        return;
+      }
       const written = await api.submit({
         kind: 'edit_block',
         block: held.connective,
@@ -5462,40 +5494,24 @@ async function explainTowards(
      * que se está escribiendo es texto nuevo de esta página, y va al final como
      * cualquier cosa que se escribe.
      */
-    const roots = page.blocks.filter((block) => block.parent === null).length;
-    const born = await api.submit(
-      from === null
-        ? { kind: 'create_block', page: page.id, parent: null, position: roots, content: split.prose }
-        : { kind: 'create_block', page: page.id, parent: from, position: 0, content: split.prose },
-    );
+    if (target === null) {
+      notify(`primero tiene que existir la página ${title}`);
+      asking.remove();
+      return;
+    }
+    const born = await api.submit({
+      kind: 'create_crossing',
+      fromPage: page.id,
+      toPage: target,
+      content: split.prose,
+      term: split.term ?? undefined,
+    });
     if (born.status === 'rejected') {
       notify(`no se pudo explicar: ${born.reason}`);
       asking.remove();
       return;
     }
-
-    const puesta = await api.submit({
-      kind: 'set_property',
-      block: born.subjectId,
-      propertyKey: names.explains,
-      propertyValue: `[[${title}]]`,
-    });
-    if (puesta.status === 'rejected') {
-      notify(`no se pudo explicar: ${puesta.reason}`);
-      asking.remove();
-      return;
-    }
-
-    if (split.term !== null) {
-      await api.submit({
-        kind: 'set_property',
-        block: born.subjectId,
-        propertyKey: names.term,
-        propertyValue: split.term,
-      });
-    }
-
-    notify(`explicada la relación con ${title}`);
+    notify(`explicada la conectiva con ${title}`);
     callbacks.onReload(null);
   };
 

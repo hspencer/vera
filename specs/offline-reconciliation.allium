@@ -654,6 +654,16 @@ surface LocalFirstWorkspace {
         -- design that had to refetch pages to know whether anything changed would have
         -- to choose between being current and being usable.
 
+    @guarantee AUsablePageArrivesBeforeItsDerivations
+        -- On a first read, the title, properties, writing and the provenance needed
+        -- to distinguish that writing are presented before any information that
+        -- requires traversing the rest of the graph. Relations, references and
+        -- conceptual projections arrive afterwards without retransmitting or
+        -- recomposing the writing already shown.
+        --
+        -- Superseded deliveries are abandoned when attention moves to another page:
+        -- work for the previous page must not compete with the page now being read.
+
     @guarantee ADisagreementIsResolvedOneBlockAtATime
         -- Where two hands wrote the same block, the participant is shown both versions
         -- with the differing lines marked, and chooses one — or writes a third.

@@ -42,6 +42,16 @@ describe('rastro durable y componible', () => {
     assert.deepEqual(loadTrace(), steps);
   });
 
+  it('conserva la identidad y revisión de la conectiva realmente pulsada', () => {
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: memoryStorage() });
+    const cited: TraceStep[] = [steps[0]!, {
+      ...steps[1]!,
+      crossing: { id: 'crossing:ab', revision: 'operation:9', content: 'entre ambas' },
+    }];
+    saveTrace(cited);
+    assert.deepEqual(loadTrace(), cited);
+  });
+
   it('al volver a abrir migra duplicados conservando sólo la llegada más reciente', () => {
     const storage = memoryStorage();
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });

@@ -487,6 +487,36 @@ const addHumanAuthentication: Migration = {
   },
 };
 
+/** 13 — conectivas con identidad e historia propias. */
+const addCrossings: Migration = {
+  version: 13,
+  name: 'conectivas persistentes',
+  apply(db) {
+    db.exec(`CREATE TABLE IF NOT EXISTS crossings (
+      id TEXT PRIMARY KEY,
+      graph_id TEXT NOT NULL REFERENCES graphs (id),
+      from_page TEXT NOT NULL REFERENCES pages (id),
+      to_page TEXT NOT NULL REFERENCES pages (id),
+      content TEXT NOT NULL,
+      term TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      CHECK (from_page <> to_page),
+      UNIQUE (graph_id, from_page, to_page)
+    ) STRICT`);
+    db.exec('CREATE INDEX IF NOT EXISTS crossings_by_destination ON crossings (graph_id, to_page)');
+    const revisions = db.prepare(
+      "SELECT count(*) AS n FROM sqlite_schema WHERE type='table' AND name='revisions'",
+    ).get() as { n: number } | undefined;
+    if ((revisions?.n ?? 0) > 0) {
+      const columns = db.prepare(`PRAGMA table_info(revisions)`).all() as { name: string }[];
+      if (!columns.some((one) => one.name === 'crossing_id')) {
+        db.exec('ALTER TABLE revisions ADD COLUMN crossing_id TEXT');
+      }
+    }
+  },
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   addWalkedChannel,
   addPageOriginCreatedAt,
@@ -500,6 +530,7 @@ export const MIGRATIONS: readonly Migration[] = [
   addSiteEntryPoint,
   addSharedSpaces,
   addHumanAuthentication,
+  addCrossings,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

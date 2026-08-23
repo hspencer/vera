@@ -323,6 +323,11 @@ describe('lecturas', () => {
 
     const complete = (await get(`/pages/${encodeURIComponent(page)}`)) as { backlinks: { page: string }[] };
     assert.ok(complete.backlinks.some((one) => one.page === origin));
+
+    const enrichment = (await get(`/pages/${encodeURIComponent(page)}?stage=enrichment`)) as Record<string, unknown>;
+    assert.ok((enrichment['backlinks'] as { page: string }[]).some((one) => one.page === origin));
+    assert.equal('blocks' in enrichment, false, 'el enriquecimiento no retransmite la escritura');
+    assert.equal('authorship' in enrichment, false, 'la procedencia legible tampoco viaja dos veces');
   });
 
   it('responde 404 para una página que no existe', async () => {

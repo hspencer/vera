@@ -7,6 +7,7 @@ export type GraphId = string;
 export type PageId = string;
 export type BlockId = string;
 export type GlossId = string;
+export type CrossingId = string;
 export type OperationId = string;
 export type PersonalSiteId = string;
 export type PublicationId = string;
@@ -63,6 +64,8 @@ export const CHANGE_KINDS = [
   'move_block',
   'remove_block',
   'set_block_gloss',
+  'create_crossing',
+  'edit_crossing',
   'set_property',
   'remove_property',
 ] as const;
@@ -124,6 +127,20 @@ export type Change =
     }
   | { readonly kind: 'remove_block'; readonly block: BlockId }
   | { readonly kind: 'set_block_gloss'; readonly block: BlockId; readonly content: string }
+  | {
+      readonly kind: 'create_crossing';
+      readonly fromPage: PageId;
+      readonly toPage: PageId;
+      readonly content: string;
+      readonly term?: string | null | undefined;
+      readonly stableId?: CrossingId | undefined;
+    }
+  | {
+      readonly kind: 'edit_crossing';
+      readonly crossing: CrossingId;
+      readonly content: string;
+      readonly term?: string | null | undefined;
+    }
   | {
       readonly kind: 'set_property';
       readonly page?: PageId | undefined;
@@ -204,6 +221,7 @@ export interface Revision {
   readonly operation: OperationId;
   readonly page: PageId | null;
   readonly block: BlockId | null;
+  readonly crossing: CrossingId | null;
   readonly authoredBy: ParticipantId;
   readonly channel: ContributionChannel;
   readonly evidence?: OriginEvidence | undefined;

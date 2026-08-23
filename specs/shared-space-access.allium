@@ -5,8 +5,9 @@
 --   sovereign personal Vera graph
 -- Includes: One owner on several devices, passkeys, revocable sessions,
 --   invitation capabilities delivered by any channel, guests without Vera,
---   federated Vera identities, property-selected public and restricted shared
---   spaces, reading, contribution and direct editing
+--   federated Vera identities, public and restricted shared spaces assembled
+--   from several criteria and explicit pages, reading, contribution and direct
+--   editing
 -- Excludes:
 --   - Mail, messaging and QR delivery implementation
 --   - WebAuthn ceremony and cryptographic storage implementation
@@ -93,10 +94,17 @@ contract OwnerAdministration {
 }
 
 contract SharedSpaceAccess {
-    create_space: (owner: core/Participant, name: String, slug: String, selector: PageSelector, audience: Audience) -> SharedSpace
+    create_space: (owner: core/Participant, name: String, slug: String, criterion_combination: CriterionCombination, audience: Audience) -> SharedSpace
+    change_audience: (owner: core/Participant, space: SharedSpace, audience: Audience) -> SharedSpace
+    change_criterion_combination: (owner: core/Participant, space: SharedSpace, criterion_combination: CriterionCombination) -> SharedSpace
+    add_criterion: (owner: core/Participant, space: SharedSpace, selector: PageSelector) -> SharedSpaceCriterion
+    remove_criterion: (owner: core/Participant, criterion: SharedSpaceCriterion) -> SharedSpaceCriterion
+    include_page: (owner: core/Participant, space: SharedSpace, page: core/Page) -> ManualPageInclusion
+    remove_included_page: (owner: core/Participant, inclusion: ManualPageInclusion) -> ManualPageInclusion
     invite: (owner: core/Participant, space: SharedSpace, permissions: Set<Permission>, lifetime: Duration) -> AccessInvitation
     redeem: (invitation: AccessInvitation, person_name: String) -> AccessGrant
     grant: (owner: core/Participant, space: SharedSpace, participant: core/Participant, permissions: Set<Permission>) -> AccessGrant
+    change_permissions: (owner: core/Participant, grant: AccessGrant, permissions: Set<Permission>) -> AccessGrant
     revoke: (owner: core/Participant, grant: AccessGrant) -> AccessGrant
     read: (reader: core/Participant, space: SharedSpace, page: core/Page) -> core/Page
     contribute: (author: core/Participant, space: SharedSpace, page: core/Page, change: core/Change) -> SharedProposal
@@ -104,9 +112,10 @@ contract SharedSpaceAccess {
     create_page: (author: core/Participant, space: SharedSpace, change: core/Change) -> core/Page
 
     @invariant SharingIsDelimited
-        -- A shared space names a property selector. Exactly the pages matching
-        -- it belong to the space. Admission never reveals, searches or grants
-        -- authority over the rest of the personal graph.
+        -- A shared space names zero or more criteria and zero or more explicit
+        -- pages. Its effective membership is computed only from those declared
+        -- sources. Admission never reveals, searches or grants authority over
+        -- the rest of the personal graph.
 
     @invariant TheGraphHasOneOwnerAndMayHaveManyAuthors
         -- Sharing does not make the graph collectively owned. An authorized
@@ -133,16 +142,20 @@ contract SharedSpaceAccess {
         -- Revoking a grant ends subsequent access and mutation. It preserves the
         -- participant, their revisions and every decision already recorded.
 
-    @invariant PagesCreatedInsideTheSpaceJoinIt
-        -- An editor who creates a page while acting inside a shared space adds
-        -- the selector property to that page in the same attributed act. The
-        -- common work may therefore grow through its authorized authors without
-        -- asking the owner to publish every new page by hand.
+    @invariant MembershipAndAccessAreIndependent
+        -- Criteria and explicit inclusions decide which pages are in the space.
+        -- Audience and grants decide who may read or act there. Changing either
+        -- dimension never silently changes the other.
 
-    @invariant TheSelectorIsTheMembership
-        -- Adding the selector property incorporates a page; removing or changing
-        -- it removes the page. There is no second hand-maintained membership list
-        -- that can drift from what the corpus says about the page.
+    @invariant OnePageMayBelongToSeveralSpaces
+        -- A page has one canonical identity and revision history even when it is
+        -- selected or explicitly included by several spaces. Membership creates
+        -- contextual addresses, never duplicate pages.
+
+    @invariant MembershipHasVisibleProvenance
+        -- For every effective page the owner can tell whether it is present by
+        -- one or more criteria, by explicit inclusion, or by both. A dynamic
+        -- criterion match is never rewritten as hidden front matter.
 
     @invariant ALinkDoesNotPublishItsTarget
         -- Linking to an existing page never adds that page to the space. A link
@@ -230,6 +243,9 @@ contract FederatedHumanIdentity {
 
 enum Audience { anybody | restricted }
 enum Permission { read | contribute | edit }
+enum CriterionCombination { match_any | match_all }
+enum CriterionStatus { active | removed }
+enum InclusionStatus { active | removed }
 enum AuthenticatorKind { passkey }
 enum AuthenticatorStatus { active | revoked }
 enum SessionStatus { active | ended | expired }
@@ -323,18 +339,48 @@ entity SharedSpace {
     owner: core/Participant
     name: String
     slug: String
-    selector: PageSelector
+    criterion_combination: CriterionCombination
     audience: Audience
     status: SpaceStatus
     created_at: Timestamp
     grants: AccessGrant with space = this
     invitations: AccessInvitation with space = this
     proposals: SharedProposal with space = this
-    pages: matching_pages(graph.pages, selector)
+    criteria: SharedSpaceCriterion with space = this and status = active
+    manual_inclusions: ManualPageInclusion with space = this and status = active
+    pages: effective_shared_pages(graph.pages, criteria, criterion_combination, manual_inclusions)
 
     transitions status {
         active -> withdrawn
         terminal: withdrawn
+    }
+}
+
+entity SharedSpaceCriterion {
+    space: SharedSpace
+    selector: PageSelector
+    status: CriterionStatus
+    added_by: core/Participant
+    added_at: Timestamp
+    removed_at: Timestamp?
+
+    transitions status {
+        active -> removed
+        terminal: removed
+    }
+}
+
+entity ManualPageInclusion {
+    space: SharedSpace
+    page: core/Page
+    status: InclusionStatus
+    added_by: core/Participant
+    added_at: Timestamp
+    removed_at: Timestamp?
+
+    transitions status {
+        active -> removed
+        terminal: removed
     }
 }
 
@@ -542,7 +588,7 @@ rule HumanSessionExpires {
 }
 
 rule OwnerCreatesSharedSpace {
-    when: CreateSharedSpace(owner, name, slug, selector, audience)
+    when: CreateSharedSpace(owner, name, slug, criterion_combination, audience)
 
     requires: instance.owner = owner
 
@@ -551,11 +597,86 @@ rule OwnerCreatesSharedSpace {
         owner: owner,
         name: name,
         slug: slug,
-        selector: selector,
+        criterion_combination: criterion_combination,
         audience: audience,
         status: active,
         created_at: now
     )
+}
+
+rule OwnerChangesSharedSpaceAudience {
+    when: ChangeSharedSpaceAudience(owner, space, audience)
+
+    requires: space.owner = owner
+    requires: space.status = active
+
+    ensures: space.audience = audience
+}
+
+rule OwnerChangesCriterionCombination {
+    when: ChangeCriterionCombination(owner, space, criterion_combination)
+
+    requires: space.owner = owner
+    requires: space.status = active
+
+    ensures: space.criterion_combination = criterion_combination
+}
+
+rule OwnerAddsSharedSpaceCriterion {
+    when: AddSharedSpaceCriterion(owner, space, selector)
+
+    requires: space.owner = owner
+    requires: space.status = active
+    requires: not exists SharedSpaceCriterion{space: space, selector: selector, status: active}
+
+    ensures: SharedSpaceCriterion.created(
+        space: space,
+        selector: selector,
+        status: active,
+        added_by: owner,
+        added_at: now,
+        removed_at: null
+    )
+}
+
+rule OwnerRemovesSharedSpaceCriterion {
+    when: RemoveSharedSpaceCriterion(owner, criterion)
+
+    requires: criterion.space.owner = owner
+    requires: criterion.status = active
+
+    ensures:
+        criterion.status = removed
+        criterion.removed_at = now
+}
+
+rule OwnerExplicitlyIncludesPage {
+    when: IncludePageInSharedSpace(owner, space, page)
+
+    requires: space.owner = owner
+    requires: space.status = active
+    requires: page.graph = space.graph
+    requires: not exists ManualPageInclusion{space: space, page: page, status: active}
+
+    ensures: ManualPageInclusion.created(
+        space: space,
+        page: page,
+        status: active,
+        added_by: owner,
+        added_at: now,
+        removed_at: null
+    )
+}
+
+rule OwnerRemovesExplicitPageInclusion {
+    when: RemovePageFromSharedSpace(owner, inclusion)
+
+    requires: inclusion.space.owner = owner
+    requires: inclusion.status = active
+
+    ensures:
+        inclusion.status = removed
+        inclusion.removed_at = now
 }
 
 rule OwnerCreatesInvitationCapability {
@@ -670,6 +791,17 @@ rule OwnerRevokesSharedSpaceAccess {
         grant.revoked_at = now
 }
 
+rule OwnerChangesSharedSpacePermissions {
+    when: ChangeSharedSpacePermissions(owner, grant, permissions)
+
+    requires: grant.space.owner = owner
+    requires: grant.status = active
+    requires: permissions.count > 0
+    requires: read in permissions
+
+    ensures: grant.permissions = permissions
+}
+
 rule AuthorizedParticipantContributes {
     when: ProposeSharedChange(participant, space, page, change)
 
@@ -706,22 +838,20 @@ rule AuthorizedParticipantEditsCanonicalPage {
 }
 
 rule AuthorizedParticipantCreatesPageInsideSharedSpace {
-    when: CreatePageInSharedSpace(participant, space, page_origin_id, page_change, selector_origin_id, selector_change, channel, evidence?)
+    when: CreatePageInSharedSpace(participant, space, page_origin_id, page_change, channel, evidence?)
 
     let grant = AccessGrant{space: space, participant: participant, status: active}
 
     requires: participant = space.owner or (exists grant and edit in grant.permissions)
     requires: creates_page(page_change)
-    requires: assigns_selector(selector_change, created_page(page_change), space.selector)
     requires: channel != authenticated_voice or evidence != null
 
-    ensures:
-        core/ParticipantSubmits(participant, space.graph, page_origin_id, page_change, channel, evidence)
-        core/ParticipantSubmits(participant, space.graph, selector_origin_id, selector_change, channel, evidence)
+    ensures: core/ParticipantSubmits(participant, space.graph, page_origin_id, page_change, channel, evidence)
 
     @guidance
-        -- The two attributed changes are committed atomically at the authorship
-        -- boundary: no observer sees the page without its selector property.
+        -- Creating a canonical page does not silently publish it. The owner may
+        -- include it explicitly, or it may enter later by satisfying the space's
+        -- declared criteria.
 }
 
 rule OwnerAcceptsSharedProposal {
@@ -794,6 +924,25 @@ rule FederatedParticipantAuthenticates {
 invariant EverySharedPageBelongsToItsGraph {
     for space in SharedSpaces:
         space.pages.all(page => page.graph = space.graph)
+}
+
+invariant EveryExplicitlyIncludedPageBelongsToTheSpaceGraph {
+    for inclusion in ManualPageInclusions:
+        inclusion.page.graph = inclusion.space.graph
+}
+
+invariant AnActiveCriterionAppearsOnlyOncePerSpace {
+    for a in SharedSpaceCriteria:
+        for b in SharedSpaceCriteria:
+            a != b and a.space = b.space and a.status = active and b.status = active implies
+                a.selector != b.selector
+}
+
+invariant AnActiveManualInclusionAppearsOnlyOncePerSpace {
+    for a in ManualPageInclusions:
+        for b in ManualPageInclusions:
+            a != b and a.space = b.space and a.status = active and b.status = active implies
+                a.page != b.page
 }
 
 invariant EverySharedSpaceBelongsToItsSovereignOwner {
@@ -989,7 +1138,7 @@ surface SharedSpaceCreation {
     context instance: identity/VeraInstance
 
     provides:
-        CreateSharedSpace(owner, name, slug, selector, audience)
+        CreateSharedSpace(owner, name, slug, criterion_combination, audience)
             when owner = instance.owner
 
     contracts:
@@ -1121,7 +1270,7 @@ surface OwnerSharedSpaceDirectory {
         session.pending_invitations
 
     provides:
-        CreateSharedSpace(owner, name, slug, selector, audience)
+        CreateSharedSpace(owner, name, slug, criterion_combination, audience)
 
     contracts:
         fulfils SharedSpaceAccess
@@ -1141,9 +1290,9 @@ surface OwnerSharedSpaceDirectory {
 
     @guarantee SharedSpaceCreationUsesTheDirectoryPattern
         -- A button named "Agregar espacio compartido" opens an inline creation
-        -- area with the same name, address and membership-criterion structure
-        -- used inside existing authenticated spaces. Closing it does not create
-        -- or alter a space.
+        -- area with the same name, address, criterion-combination and audience
+        -- structure used inside existing spaces. A space may begin empty;
+        -- closing the area does not create or alter one.
 
     @guarantee PublicationRemainsExplicitInsideUnifiedSharing
         -- Presenting the public site beside authenticated spaces does not turn
@@ -1176,15 +1325,24 @@ surface SharedSpaceAdministration {
 
     exposes:
         space.name
-        space.selector
+        space.criterion_combination
+        space.criteria
+        space.manual_inclusions
         space.pages
         space.audience
         space.grants
         space.invitations
 
     provides:
+        ChangeSharedSpaceAudience(owner, space, audience)
+        ChangeCriterionCombination(owner, space, criterion_combination)
+        AddSharedSpaceCriterion(owner, space, selector)
+        RemoveSharedSpaceCriterion(owner, criterion) when criterion.space = space
+        IncludePageInSharedSpace(owner, space, page) when page.graph = space.graph
+        RemovePageFromSharedSpace(owner, inclusion) when inclusion.space = space
         InviteToSharedSpace(owner, space, permissions, lifetime, proof_digest, intended_contact?)
         GrantSharedSpaceAccess(owner, space, participant, permissions)
+        ChangeSharedSpacePermissions(owner, grant, permissions) when grant.space = space
         RevokeSharedSpaceAccess(owner, grant) when grant.space = space
         RevokeInvitation(owner, invitation) when invitation.space = space
         ReviewSharedProposal(owner, proposal, accept)
@@ -1200,6 +1358,19 @@ surface SharedSpaceAdministration {
     @guarantee InvitationsCannotDelegateAdministration
         -- An invitation may grant reading, contribution or editing, never the
         -- owner's authority to change the space, its audience or other grants.
+
+    @guarantee AccessIsThePrimaryConfiguration
+        -- The opened space leads with audience and authenticated participants.
+        -- Each active participant shows their current permissions beside actions
+        -- to change those permissions or remove their access. Pending invitations
+        -- remain a separate, revocable list rather than appearing as users.
+
+    @guarantee MembershipIsInspectableAndEditable
+        -- The same view also shows every active criterion, how criteria combine,
+        -- every explicitly included page and the effective page set. Each page
+        -- states the criterion or manual inclusion that admits it, so the owner
+        -- can predict the effect of changing membership without confusing that
+        -- operation with access control.
 
     @guarantee PendingInvitationsRemainRevocable
         -- The owner chooses a bounded lifetime when issuing the invitation and
@@ -1228,7 +1399,7 @@ surface SharedSpaceParticipation {
         EditSharedPage(participant, space, page, origin_id, change, channel, evidence?)
             when participant = space.owner or
                  edit in AccessGrant{space: space, participant: participant, status: active}.permissions
-        CreatePageInSharedSpace(participant, space, page_origin_id, page_change, selector_origin_id, selector_change, channel, evidence?)
+        CreatePageInSharedSpace(participant, space, page_origin_id, page_change, channel, evidence?)
             when participant = space.owner or
                  edit in AccessGrant{space: space, participant: participant, status: active}.permissions
 
@@ -1239,6 +1410,37 @@ surface SharedSpaceParticipation {
         -- Search, links, backlinks and navigation reached through this surface
         -- are bounded to the shared pages and reveal no title, count or absence
         -- from the rest of the graph.
+}
+
+surface PageSharedSpaceConfiguration {
+    facing owner: AuthenticatedOwner
+    context page: core/Page where page.graph = owner.within.instance.graph
+
+    exposes:
+        page
+        containing_spaces(page)
+        membership_provenance(page)
+
+    provides:
+        IncludePageInSharedSpace(owner, space, page)
+            when space.owner = owner and space.graph = page.graph
+        RemovePageFromSharedSpace(owner, inclusion)
+            when inclusion.page = page and inclusion.space.owner = owner
+
+    contracts:
+        fulfils SharedSpaceAccess
+
+    @guarantee OnePageMayBePublishedInSeveralSpaces
+        -- Page configuration presents a multi-valued "Espacios compartidos"
+        -- control. It lists every effective space and distinguishes criterion
+        -- membership from explicit inclusion. Adding or removing one explicit
+        -- membership leaves every other space unchanged.
+
+    @guarantee FrontMatterDoesNotDuplicateDerivedMembership
+        -- The front-matter surface may display space membership, but criterion
+        -- matches remain derived from canonical page properties. Only explicit
+        -- inclusions are edited as space relationships; Vera never writes a
+        -- second hidden membership property that can drift from the criteria.
 }
 
 surface PublicSharedSpaceReading {
@@ -1300,3 +1502,5 @@ open question "Does accepting a contribution apply its changes as one attributed
 open question "May one person retain several independent guest identities in the same graph before explicitly linking them?"
 open question "What event requires a fresh authenticator gesture rather than an existing session — destructive editing, publication, grant administration, or all three?"
 open question "How does a federated Vera rotate its identity key without breaking durable bindings at remote shared spaces?"
+open question "When several criteria exist, is match_any / match_all sufficient, or must owners compose nested boolean groups?"
+open question "If a page matches an active criterion, should an explicit exclusion be able to keep it out of that one space without changing the page property?"

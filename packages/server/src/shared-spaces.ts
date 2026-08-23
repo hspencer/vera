@@ -61,9 +61,10 @@ export function sharedSpaces(store: Store): SharedSpace[] {
 
 export function updateSharedSpace(store: Store, held: SharedSpace, input: {
   name: string; slug: string; selectorKey: string; selectorValue: string;
+  audience: 'restricted' | 'anybody';
 }): SharedSpace {
-  store.db.prepare(`UPDATE shared_spaces SET name=?,slug=?,selector_key=?,selector_value=? WHERE id=?`)
-    .run(input.name, input.slug, input.selectorKey, input.selectorValue, held.id);
+  store.db.prepare(`UPDATE shared_spaces SET name=?,slug=?,selector_key=?,selector_value=?,audience=? WHERE id=?`)
+    .run(input.name, input.slug, input.selectorKey, input.selectorValue, input.audience, held.id);
   return { ...held, ...input };
 }
 

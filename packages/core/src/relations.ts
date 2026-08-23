@@ -35,9 +35,10 @@
  */
 
 import type { PropertyNames } from './property-names.ts';
+import type { CrossingId } from './types.ts';
 
 /** Cómo vale una relación leída desde donde se escribió. */
-export type CrossingSense = 'directed' | 'mutual';
+export type CrossingSense = 'directed';
 
 /**
  * Un término del vocabulario de relaciones, con su recíproco.
@@ -98,23 +99,27 @@ export function inverseOf(
  * relación: se escribe el bloque, y se borra el bloque.
  */
 export interface Crossing {
-  /** La conectiva: el bloque que lleva lo dicho y las propiedades. */
-  connective: string;
+  /** Identidad estable de la conectiva. */
+  stableId: CrossingId;
+  /** Alias transitorio para consumidores anteriores. */
+  connective: CrossingId;
   /** Lo que se dijo. */
   said: string;
-  /** El bloque desde el que se afirma. El padre de la conectiva, si lo tiene. */
-  fromBlock: string;
+  /** Bloque antiguo del que se migró, si todavía no es entidad nativa. */
+  fromBlock: string | null;
   /** Y la página donde vive, que es la que afirma. */
   fromPage: string;
   /** El título al que apunta, tal como se escribió. */
   targetTitle: string;
-  /** La página que ese título nombra, nula mientras nadie la haya escrito. */
+  /** La página del destino; nula sólo para una descripción antigua aún no migrada. */
   toPage: string | null;
   sense: CrossingSense;
   /** El término, cuando quien explica quiso decirlo. La prosa es obligatoria y
    *  el término no: nadie debería tener que decidir en qué cajón va una relación
    *  antes de poder decir por qué existe. */
   term: string | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** Qué papel cumple una clave, si cumple alguno de los tres. */
@@ -136,6 +141,5 @@ export function titleIn(value: string): string {
 }
 
 export function senseIn(value: string | null): CrossingSense {
-  if (value === null) return 'directed';
-  return /^(mutua|mutuo|mutual|ambas|both)$/i.test(value.trim()) ? 'mutual' : 'directed';
+  return 'directed';
 }

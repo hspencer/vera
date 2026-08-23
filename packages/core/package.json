@@ -1,7 +1,7 @@
 {
   "name": "@vera/core",
   "license": "AGPL-3.0-only",
-  "version": "0.6.0-alpha.1",
+  "version": "0.6.1",
   "private": true,
   "type": "module",
   "description": "Dominio de Vera: tipos, reglas e invariantes derivados de specs/*.allium",

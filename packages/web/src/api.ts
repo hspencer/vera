@@ -184,6 +184,19 @@ export interface PageView {
   crossingsIn: CrossingRow[];
 }
 
+export type PageEnrichment = Pick<
+  PageView,
+  | 'id'
+  | 'domains'
+  | 'concept'
+  | 'pendingLinks'
+  | 'backlinks'
+  | 'references'
+  | 'crossingsOut'
+  | 'crossingsIn'
+  | 'trail'
+>;
+
 /**
  * Una relación explicada, lista para leerse en su columna.
  *
@@ -192,19 +205,22 @@ export interface PageView {
  * contradice a B; lo que B tiene que leer es que es contradicha por A.
  */
 export interface CrossingRow {
-  /** El bloque que lleva lo dicho, y que es lo que se edita para cambiarla. */
+  /** Identidad estable de la conectiva. */
+  stableId: string;
+  /** Operación de la revisión cuyo texto se está mostrando. */
+  revision: string | null;
   connective: string;
   /** Lo dicho. */
   said: string;
   /** El bloque desde el que se afirma. */
-  fromBlock: string;
+  fromBlock: string | null;
   fromPage: string;
   /** La página del otro extremo, nula mientras nadie la haya escrito. */
   toPage: string | null;
   targetTitle: string;
   /** Cómo se llama la otra página desde aquí. */
   title: string;
-  sense: 'directed' | 'mutual';
+  sense: 'directed';
   term: string | null;
   reads: string | null;
   /** El extracto del bloque desde el que se afirma: el sujeto de la afirmación. */
@@ -409,6 +425,15 @@ export type Change =
   | { kind: 'move_block'; block: string; page: string; parent: string | null; position: number }
   | { kind: 'remove_block'; block: string }
   | { kind: 'set_block_gloss'; block: string; content: string }
+  | {
+      kind: 'create_crossing';
+      fromPage: string;
+      toPage: string;
+      content: string;
+      term?: string | undefined;
+      stableId?: string | undefined;
+    }
+  | { kind: 'edit_crossing'; crossing: string; content: string; term?: string | undefined }
   // El front matter de una página son propiedades, y se editan como todo lo
   // demás: enviando una operación.
   | { kind: 'set_property'; page?: string; block?: string; propertyKey: string; propertyValue: string }
@@ -973,8 +998,18 @@ export const api = {
    * y escritura. Las lecturas que exigen mirar el resto del grafo llegan por
    * `page` después, sin mantener este primer bloque detrás de ellas.
    */
-  readablePage: (id: string) =>
-    json<PageView>(`/pages/${encodeURIComponent(id)}?stage=readable`),
+  readablePage: (id: string, signal?: AbortSignal) =>
+    json<PageView>(
+      `/pages/${encodeURIComponent(id)}?stage=readable`,
+      signal === undefined ? undefined : { signal },
+    ),
+
+  /** Sólo lo derivado del resto del grafo; nunca retransmite la escritura. */
+  pageEnrichment: (id: string, signal?: AbortSignal) =>
+    json<PageEnrichment>(
+      `/pages/${encodeURIComponent(id)}?stage=enrichment`,
+      signal === undefined ? undefined : { signal },
+    ),
 
   publish: (page: string, path: string, entryPoint = false) =>
     json<PublicationView>(`/publications/${encodeURIComponent(page)}`, {
@@ -1126,9 +1161,10 @@ export const api = {
       body: JSON.stringify({ block, folded }),
     }),
 
-  graph: (centre: string, depth: number, published = false) =>
+  graph: (centre: string, depth: number, published = false, signal?: AbortSignal) =>
     json<GraphData>(
       `/graph/${encodeURIComponent(centre)}?depth=${depth}${published ? '&published=1' : ''}`,
+      signal === undefined ? undefined : { signal },
     ),
 
   /**

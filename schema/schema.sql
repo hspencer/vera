@@ -197,6 +197,23 @@ CREATE TABLE IF NOT EXISTS block_glosses (
     updated_at  INTEGER NOT NULL
 ) STRICT;
 
+-- Una conectiva es contenido de la arista, no un bloque de ninguna de sus
+-- páginas. La pareja ordenada es única; la vuelta ocupa otra fila.
+CREATE TABLE IF NOT EXISTS crossings (
+    id          TEXT PRIMARY KEY,
+    graph_id    TEXT NOT NULL REFERENCES graphs (id),
+    from_page   TEXT NOT NULL REFERENCES pages (id),
+    to_page     TEXT NOT NULL REFERENCES pages (id),
+    content     TEXT NOT NULL,
+    term        TEXT,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    CHECK (from_page <> to_page),
+    UNIQUE (graph_id, from_page, to_page)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS crossings_by_destination ON crossings (graph_id, to_page);
+
 -- invariant PropertyTargetsOneSubject y PropertyKeyIsUniquePerSubject
 CREATE TABLE IF NOT EXISTS property_assignments (
     id        TEXT PRIMARY KEY,
@@ -255,6 +272,7 @@ CREATE TABLE IF NOT EXISTS revisions (
     graph_id        TEXT NOT NULL REFERENCES graphs (id),
     page_id         TEXT,
     block_id        TEXT,
+    crossing_id     TEXT,
     authored_by     TEXT NOT NULL REFERENCES participants (id),
     channel         TEXT NOT NULL,
     recorded_at     INTEGER NOT NULL

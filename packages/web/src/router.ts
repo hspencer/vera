@@ -22,12 +22,18 @@ export interface Route {
   focus: string | null;
   /** Bloque al que saltar dentro de la página. */
   block: string | null;
+  /** Texto de una página de resultados; nulo en una ruta de página. */
+  search: string | null;
 }
 
-export const EMPTY: Route = { page: null, focus: null, block: null };
+export const EMPTY: Route = { page: null, focus: null, block: null, search: null };
 
 export function parseRoute(url: URL): Route {
-  const match = /^\/p\/(.+)$/.exec(url.pathname);
+  if (/^(?:\/s\/[^/]+)?\/search\/?$/.test(url.pathname)) {
+    const asked = url.searchParams.get('q')?.trim() ?? '';
+    return { page: null, focus: null, block: null, search: asked === '' ? null : asked };
+  }
+  const match = /^(?:\/s\/[^/]+)?\/p\/(.+)$/.exec(url.pathname);
   if (match === null) return EMPTY;
 
   let page: string;
@@ -43,7 +49,14 @@ export function parseRoute(url: URL): Route {
     page: page === '' ? null : page,
     focus: url.searchParams.get('focus'),
     block: fragment === '' ? null : decodeURIComponent(fragment),
+    search: null,
   };
+}
+
+/** Dirección estable de una búsqueda, conservando el cerco público si existe. */
+export function searchRoute(text: string, pathname = window.location.pathname): string {
+  const space = /^(\/s\/[^/]+)(?:\/.*)?$/.exec(pathname)?.[1] ?? '';
+  return `${space}/search?q=${encodeURIComponent(text.trim())}`;
 }
 
 /**
@@ -81,5 +94,5 @@ export function routeTo(
 
 /** ¿Dos direcciones nombran lo mismo? Evita apilar la misma entrada dos veces. */
 export function sameRoute(a: Route, b: Route): boolean {
-  return a.page === b.page && a.focus === b.focus && a.block === b.block;
+  return a.page === b.page && a.focus === b.focus && a.block === b.block && a.search === b.search;
 }

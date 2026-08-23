@@ -59,13 +59,13 @@ enum ParticipantStatus { active | suspended }
 -- distingue lo que salió de una persona. Ver hand-drawing.allium.
 enum ContributionChannel { typed_text | authenticated_voice | agent_generation | import | walked | drawn }
 enum Visibility { private | public }
--- The change vocabulary of the first usable Vera. Links between pages are not a
--- change kind: they are derived from block content and therefore a consequence of
--- edit_block, never an operation a participant submits on its own.
+-- Los enlaces Markdown siguen derivados del contenido. Las conectivas, en
+-- cambio, son escritura de la arista y por eso tienen cambios propios.
 enum ChangeKind {
     create_page | rename_page | set_page_visibility | recover_page_origin | remove_page |
     create_block | edit_block | move_block | remove_block |
     set_block_gloss |
+    create_crossing | edit_crossing |
     set_property | remove_property
 }
 enum SubmissionStatus { submitted | accepted | rejected }
@@ -177,6 +177,12 @@ entity Change {
     kind: ChangeKind
     page: Page?
     block: Block?
+    -- Identidad y extremos de una conectiva persistente. Se expresan aquí como
+    -- identificadores porque la entidad semántica vive en trail.allium.
+    crossing_id: String?
+    from_page: Page?
+    to_page: Page?
+    term: String?
     content: String?
     parent: Block?
     position: Integer?
@@ -210,6 +216,7 @@ entity Revision {
     graph: Graph
     page: Page?
     block: Block?
+    crossing_id: String?
     change: Change
     authored_by: Participant
     channel: ContributionChannel

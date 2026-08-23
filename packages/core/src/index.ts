@@ -155,6 +155,7 @@ export type {
   Change,
   ChangeKind,
   ContributionChannel,
+  CrossingId,
   GraphId,
   GraphNeighbourhood,
   InvariantViolation,

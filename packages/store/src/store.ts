@@ -173,14 +173,15 @@ export function recordOperation(store: Store, graph: VeraGraph, operation: Opera
     const revision = graph.revisions()[graph.operations().findIndex((one) => one.id === operation.id)];
     if (revision !== undefined) {
       db.prepare(
-        `INSERT INTO revisions (id, operation_id, graph_id, page_id, block_id, authored_by, channel, recorded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO revisions (id, operation_id, graph_id, page_id, block_id, crossing_id, authored_by, channel, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         `rev:${operation.sequence}`,
         operation.id,
         store.graphId,
         revision.page,
         revision.block,
+        revision.crossing,
         revision.authoredBy,
         revision.channel,
         revision.recordedAt,
@@ -218,8 +219,8 @@ export function recordAllOperations(store: Store, graph: VeraGraph): void {
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const insertRevision = db.prepare(
-      `INSERT INTO revisions (id, operation_id, graph_id, page_id, block_id, authored_by, channel, recorded_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO revisions (id, operation_id, graph_id, page_id, block_id, crossing_id, authored_by, channel, recorded_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const revisions = graph.revisions();
@@ -250,6 +251,7 @@ export function recordAllOperations(store: Store, graph: VeraGraph): void {
           store.graphId,
           revision.page,
           revision.block,
+          revision.crossing,
           revision.authoredBy,
           revision.channel,
           revision.recordedAt,
@@ -274,6 +276,7 @@ export function recordAllOperations(store: Store, graph: VeraGraph): void {
 export function materialiseAll(store: Store, graph: VeraGraph): void {
   const { db } = store;
   for (const table of [
+    'crossings',
     'unported_queries',
     'block_tags',
     'page_links',
@@ -299,6 +302,14 @@ export function materialiseAll(store: Store, graph: VeraGraph): void {
       page.createdAt,
       page.originCreatedAt,
     );
+  }
+
+  const insertCrossing = db.prepare(`INSERT INTO crossings
+    (id,graph_id,from_page,to_page,content,term,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?)`);
+  for (const crossing of graph.declaredCrossings()) {
+    insertCrossing.run(crossing.stableId, store.graphId, crossing.fromPage, crossing.toPage,
+      crossing.said, crossing.term, crossing.createdAt, crossing.updatedAt);
   }
 
   const insertBlock = db.prepare(
@@ -556,6 +567,20 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
 
       db.prepare('DELETE FROM blocks WHERE id = ?').run(subjectId);
       if (home !== undefined) writeSiblingOrder(store, graph, home.page, home.parent);
+      return;
+    }
+
+    case 'create_crossing':
+    case 'edit_crossing': {
+      const crossing = graph.crossing(subjectId);
+      if (crossing === undefined) return;
+      db.prepare(`INSERT INTO crossings
+        (id,graph_id,from_page,to_page,content,term,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?)
+        ON CONFLICT (id) DO UPDATE SET content=excluded.content,term=excluded.term,
+          updated_at=excluded.updated_at`)
+        .run(crossing.stableId, store.graphId, crossing.fromPage, crossing.toPage,
+          crossing.said, crossing.term, crossing.createdAt, crossing.updatedAt);
       return;
     }
 

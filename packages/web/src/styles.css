@@ -353,6 +353,69 @@ input {
   z-index: 20;
 }
 
+.search-page-header {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.search-page-header h1 {
+  margin: 0;
+}
+
+.search-page-form {
+  display: flex;
+  gap: 0.5rem;
+  max-width: 48rem;
+}
+
+.search-page-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: inherit;
+}
+
+.search-page-status {
+  color: var(--muted);
+}
+
+.search-page-results {
+  max-width: 60rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.search-page-results li {
+  border-bottom: 1px solid var(--rule);
+}
+
+.search-page-result {
+  display: grid;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.85rem 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.search-page-result:hover strong,
+.search-page-result:focus-visible strong {
+  color: var(--accent);
+}
+
+.search-page-excerpt {
+  color: var(--muted);
+}
+
 .hit {
   display: block;
   width: 100%;
@@ -7298,16 +7361,13 @@ code {
   gap: .7rem;
   padding-left: 1.25rem;
 }
-/* La superficie invitada no hereda el puesto de mando del dueño. */
-#vera-root[data-layout='shared'] { display: block; min-height: 100dvh; }
-.shared-access { max-width: 48rem; margin: 0 auto; padding: max(2rem, env(safe-area-inset-top)) 1.25rem 4rem; }
-.shared-mark { color: var(--muted, #666); font-size: .85rem; letter-spacing: .04em; }
-.shared-access h1 { margin: .35rem 0 1.5rem; }
-.shared-access input { display: block; width: min(100%, 24rem); margin: 1rem 0; padding: .7rem; font: inherit; }
-.shared-access button { padding: .65rem .9rem; font: inherit; cursor: pointer; }
-.shared-pages { list-style: none; padding: 0; }
-.shared-pages li { margin: .5rem 0; }
-.shared-pages button { width: 100%; text-align: left; }
+/* La aceptación de una invitación antecede a la aplicación y usa una superficie mínima. */
+#vera-root[data-layout='invitation'] { display: block; min-height: 100dvh; }
+.invitation-access { max-width: 48rem; margin: 0 auto; padding: max(2rem, env(safe-area-inset-top)) 1.25rem 4rem; }
+.invitation-mark { color: var(--muted, #666); font-size: .85rem; letter-spacing: .04em; }
+.invitation-access h1 { margin: .35rem 0 1.5rem; }
+.invitation-access input { display: block; width: min(100%, 24rem); margin: 1rem 0; padding: .7rem; font: inherit; }
+.invitation-access button { padding: .65rem .9rem; font: inherit; cursor: pointer; }
 .shared-notice[data-bad='true'] { color: #a12424; }
 
 .sharing-space { margin-top: .85rem; border: 1px solid var(--rule); border-radius: .65rem; background: var(--bg-raised); overflow: clip; }
@@ -7340,6 +7400,8 @@ code {
 .sharing-list li { display: flex; align-items: center; justify-content: space-between; gap: .65rem; padding: .55rem 0; border-bottom: 1px solid var(--rule); }
 .sharing-list li span { min-width: 0; overflow-wrap: anywhere; }
 .sharing-list li button { flex: 0 0 auto; }
+.sharing-publication-link { min-width: 0; color: var(--text); overflow-wrap: anywhere; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: .16em; }
+.sharing-publication-link:hover, .sharing-publication-link:focus-visible { color: var(--accent); }
 .sharing-add { display: inline-flex; align-items: center; justify-content: center; margin-top: 1.25rem; padding: .65rem .85rem; color: var(--text); background: var(--bg-raised); border: 1px solid var(--rule); border-radius: .45rem; font: inherit; font-weight: 600; cursor: pointer; }
 .sharing-add:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised)); }
 .sharing-new-space { margin-top: .75rem; padding: .25rem 1rem 1rem; border: 1px solid var(--rule); border-radius: .65rem; background: var(--bg-raised); }

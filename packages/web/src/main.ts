@@ -38,7 +38,7 @@ import { onRecording } from './audio-block.ts';
 import { isDay, today } from './autocomplete.ts';
 import { GOVERNING_KINDS } from './governing-table.ts';
 import { renderFilesAdministration, renderSettings, type Section } from './settings.ts';
-import { parseRoute, routeTo } from './router.ts';
+import { parseRoute, routeTo, searchRoute } from './router.ts';
 import { voice } from './voice.ts';
 import { brandMark, icon, type IconName } from './icons.ts';
 import { is } from './bindings.ts';
@@ -126,6 +126,8 @@ let pages: PageSummary[] = [];
 
 /** La apertura vigente; una respuesta tardía de la anterior no puede tocarla. */
 let opening = 0;
+/** La entrega que sigue siendo útil; navegar abandona de inmediato la anterior. */
+let pageDelivery: AbortController | null = null;
 
 /**
  * Lo que la barra dice cuando no está mandando nada.
@@ -735,9 +737,13 @@ async function openPage(
     title?: string;
     /** Un renombrado corrige la dirección actual; no es una navegación nueva. */
     replaceRoute?: boolean;
+    crossing?: { id: string; revision: string; content: string } | null;
   } = {},
 ): Promise<void> {
   const thisOpening = ++opening;
+  pageDelivery?.abort();
+  const delivery = new AbortController();
+  pageDelivery = delivery;
   $('#vera-root').classList.remove('special-surface');
   let page: PageView | undefined;
   /*
@@ -827,13 +833,14 @@ async function openPage(
 
   try {
     if (page === undefined) {
-      page = await api.readablePage(id);
+      page = await api.readablePage(id, delivery.signal);
       needsEnrichment = true;
       // Leerla es lo que hace que se retenga. rule RetainDeliveredPage.
       // La copia durable se escribe al llegar la vista completa: una copia
       // parcial no debe hacerse pasar mañana por la página recordada.
     }
   } catch (error) {
+    if (delivery.signal.aborted) return;
     /*
      * Sin servidor, lo que este aparato guardó de esta página.
      *
@@ -915,7 +922,13 @@ async function openPage(
     const url = routeTo(page, {
       focus: workspace.focusRoot,
       block: options.reveal ?? null,
-      publicPath: isAnybody() ? (page.publication?.path ?? null) : null,
+      // En un espacio público la ruta pertenece al espacio, no a la publicación
+      // canónica de la raíz. El índice ya trae el camino cercado
+      // `s/<slug>/p/<título>`; usar `page.publication.path` aquí sacaba la barra
+      // de direcciones del subgrafo aunque la API siguiera negando lo exterior.
+      publicPath: isAnybody()
+        ? (pages.find((one) => one.id === page.id)?.publicationPath ?? null)
+        : null,
     });
     if (window.location.pathname + window.location.search + window.location.hash !== url) {
       if (options.replaceRoute === true) window.history.replaceState({}, '', url);
@@ -930,6 +943,7 @@ async function openPage(
       page: id,
       from,
       gesture: options.gesture,
+      crossing: options.crossing ?? null,
       at: Date.now(),
     });
     saveTrace(workspace.trace);
@@ -980,7 +994,7 @@ async function openPage(
   markShowing(text, fromKept);
   if (needsEnrichment) {
     markEnrichment(text, 'working');
-    void api.page(page.id).then((complete) => {
+    void api.pageEnrichment(page.id, delivery.signal).then((complete) => {
       if (opening !== thisOpening || workspace.activePage !== complete.id || openView === null) return;
 
       // La escritura puede haber cambiado localmente mientras el servidor
@@ -988,20 +1002,12 @@ async function openPage(
       // propiedades y pliegues siguen gobernados por la réplica que ya se usa.
       openView.domains = complete.domains;
       openView.concept = complete.concept ?? null;
-      openView.assets = complete.assets;
-      openView.blockRefs = complete.blockRefs;
       openView.pendingLinks = complete.pendingLinks ?? [];
-      openView.spokenOrigins = complete.spokenOrigins;
-      openView.recordings = complete.recordings ?? [];
-      openView.authorship = complete.authorship;
-      openView.glosses = complete.glosses ?? {};
       openView.backlinks = complete.backlinks;
       openView.references = complete.references;
       openView.crossingsOut = complete.crossingsOut;
       openView.crossingsIn = complete.crossingsIn;
       openView.trail = complete.trail ?? null;
-      openView.publication = complete.publication ?? null;
-      openView.lastEditedAt = complete.lastEditedAt;
       if (!isAnybody()) void held.keepPage(openView);
 
       const finish = (): void => {
@@ -1220,7 +1226,11 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
   return {
     // Pulsar el nombre de otra página dentro del texto que se lee.
     onNavigate: (title) => void openTitle(title, 'followed_reference'),
-    onOpen: (target, gesture) => void openPage(target, null, { gesture }),
+    onOpen: (target, gesture, crossing) => void openPage(
+      target,
+      null,
+      crossing === undefined ? { gesture } : { gesture, crossing },
+    ),
     onDeleted: async (deleted) => {
       const prior = [...workspace.trace]
         .reverse()
@@ -1362,6 +1372,10 @@ async function applyRoute(): Promise<void> {
   }
   const here = new URL(window.location.href);
   let route = parseRoute(here);
+  if (route.search !== null) {
+    await openSearchResults(route.search, false);
+    return;
+  }
   if (route.page === null && isAnybody() && here.pathname !== '/') {
     let asked = '';
     try {
@@ -1375,6 +1389,7 @@ async function applyRoute(): Promise<void> {
         page: publication.id,
         focus: here.searchParams.get('focus'),
         block: here.hash === '' ? null : decodeURIComponent(here.hash.slice(1)),
+        search: null,
       };
     }
   }
@@ -1960,11 +1975,15 @@ async function applyResolutions(
 }
 
 let graphTurn = 0;
+let graphDelivery: AbortController | null = null;
 
 async function drawGraph(): Promise<void> {
   if (workspace.activePage === null) return;
   const container = $('#graph');
   const turn = ++graphTurn;
+  graphDelivery?.abort();
+  const delivery = new AbortController();
+  graphDelivery = delivery;
   if (
     workspace.mapScope === 'published' &&
     openView?.publication?.publishedAt == null
@@ -1979,8 +1998,10 @@ async function drawGraph(): Promise<void> {
       workspace.activePage,
       workspace.depth,
       workspace.mapScope === 'published',
+      delivery.signal,
     );
   } catch {
+    if (delivery.signal.aborted) return;
     /*
      * El mapa es lo único que no se puede leer sin corpus, y hay que decirlo.
      *
@@ -2302,6 +2323,21 @@ async function promoteTrace(from: number | null): Promise<void> {
         notice(`El recorrido quedó sin uno de sus testimonios: ${testimony.reason}.`);
         return;
       }
+      if (one.crossing != null) {
+        for (const [propertyKey, propertyValue] of [
+          ['conectiva', one.crossing.id],
+          ['revisión de conectiva', one.crossing.revision],
+        ] as const) {
+          const cited = await write(
+            { kind: 'set_property', block: block.subjectId, propertyKey, propertyValue },
+            'walked',
+          );
+          if (cited.status === 'rejected') {
+            notice(`El recorrido quedó sin citar una conectiva: ${cited.reason}.`);
+            return;
+          }
+        }
+      }
     }
   }
 
@@ -2321,6 +2357,108 @@ async function refreshGraph(): Promise<void> {
 let searchTimer: number | undefined;
 /** Cada búsqueda lleva turno: una respuesta lenta no pisa a una más reciente. */
 let searchTurn = 0;
+
+/**
+ * La búsqueda comprometida: una superficie y una dirección, no un menú grande.
+ *
+ * El menú ayuda mientras se escribe. Esta página contesta lo que se preguntó,
+ * conserva la consulta al recargar y enseña también la ausencia de resultados.
+ */
+async function openSearchResults(text: string, push = true): Promise<void> {
+  const query = text.trim();
+  if (query === '') return;
+
+  opening += 1;
+  pageDelivery?.abort();
+  pageDelivery = null;
+  graphDelivery?.abort();
+  workspace.activePage = null;
+  workspace.focusRoot = null;
+  openView = null;
+  replica = null;
+  closeSettings();
+  $('#vera-root').classList.add('special-surface');
+  nameWindow(`Buscar: ${query}`);
+
+  const url = searchRoute(query);
+  if (push && window.location.pathname + window.location.search !== url) {
+    window.history.pushState({}, '', url);
+  }
+
+  const barInput = $<HTMLInputElement>('#search');
+  barInput.value = query;
+  const menu = $('#results');
+  menu.innerHTML = '';
+  menu.hidden = true;
+
+  const host = $('#text');
+  host.innerHTML = '';
+  const header = document.createElement('header');
+  header.className = 'search-page-header';
+  const title = document.createElement('h1');
+  title.textContent = 'Resultados de búsqueda';
+  const form = document.createElement('form');
+  form.className = 'search-page-form';
+  const field = document.createElement('input');
+  field.type = 'search';
+  field.value = query;
+  field.setAttribute('aria-label', 'Buscar en Vera');
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.textContent = 'Buscar';
+  form.append(field, submit);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void openSearchResults(field.value);
+  });
+  header.append(title, form);
+  host.append(header);
+
+  const status = document.createElement('p');
+  status.className = 'search-page-status';
+  status.textContent = `Buscando “${query}”…`;
+  status.setAttribute('aria-live', 'polite');
+  host.append(status);
+
+  let hits: Hit[];
+  try {
+    hits = await api.search(query);
+  } catch {
+    status.textContent = `No se pudo completar la búsqueda de “${query}”.`;
+    return;
+  }
+  // Otra búsqueda pudo reemplazar ésta mientras llegaba la red.
+  if (new URL(window.location.href).searchParams.get('q')?.trim() !== query) return;
+
+  const found = pageSearchResults(query, pages, hits);
+  status.textContent = found.length === 0
+    ? `No hay resultados para “${query}”.`
+    : `${found.length} ${found.length === 1 ? 'página' : 'páginas'} para “${query}”.`;
+  if (found.length === 0) return;
+
+  const list = document.createElement('ol');
+  list.className = 'search-page-results';
+  for (const result of found) {
+    const item = document.createElement('li');
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'search-page-result';
+    const heading = document.createElement('strong');
+    heading.textContent = result.page.title;
+    const evidence = document.createElement('span');
+    evidence.className = 'search-page-excerpt';
+    const count = result.matches === 1 ? '1 coincidencia interna' : `${result.matches} coincidencias internas`;
+    evidence.innerHTML = renderMarkdown(result.excerpt === null ? count : `${result.excerpt} · ${count}`);
+    link.append(heading, evidence);
+    link.addEventListener('click', () => {
+      barInput.value = '';
+      void openPage(result.page.id, null, { gesture: 'searched', title: result.page.title });
+    });
+    item.append(link);
+    list.append(item);
+  }
+  host.append(list);
+}
 
 function wireSearch(): void {
   const input = $<HTMLInputElement>('#search');
@@ -2462,6 +2600,12 @@ function wireSearch(): void {
       }
       if (turn !== searchTurn || input.value.trim() !== text) return;
 
+      const complete = pageSearchResults(text, pages, hits);
+      if (complete.length === 0) {
+        close();
+        void openSearchResults(text);
+        return;
+      }
       suggest(text, hits);
     }, 120);
   });
@@ -2478,14 +2622,14 @@ function wireSearch(): void {
       return;
     }
     if (event.key === 'Enter') {
-      // Sin nada señalado, el primero: escribir el nombre de una página y pulsar
-      // Enter tiene que llevar a esa página.
-      const chosen =
-        results.querySelector<HTMLElement>('.hit.picked') ??
-        results.querySelector<HTMLElement>('.hit');
-      if (chosen === null) return;
       event.preventDefault();
-      chosen.click();
+      const chosen = results.querySelector<HTMLElement>('.hit.picked');
+      if (chosen !== null) {
+        chosen.click();
+        return;
+      }
+      close();
+      void openSearchResults(input.value);
     }
   });
 

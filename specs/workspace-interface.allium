@@ -492,6 +492,7 @@ enum GraphViewMode { graph_2d | graph_3d }
 enum ColourScheme { light | dark }
 enum MapContentScope { own_space | published }
 enum BlockBehaviour { markdown | html | audio | video | drawing | p5js | svg | query | mermaid | table }
+enum SearchPresentation { completion | full_results }
 
 -- Qué hizo alguien para llegar a la página en la que está.
 --
@@ -572,6 +573,7 @@ entity DesignToken {
 entity SearchResult {
     graph: core/Graph
     text: String
+    presentation: SearchPresentation
     suggestions: PageSearchSuggestion with result = this
 }
 
@@ -954,7 +956,8 @@ rule ParticipantSearchesGraph {
     ensures:
         let result = SearchResult.created(
             graph: workspace.graph,
-            text: text
+            text: text,
+            presentation: completion
         )
         for suggestion in page_search_suggestions(workspace.graph, text, participant):
             PageSearchSuggestion.created(
@@ -964,6 +967,34 @@ rule ParticipantSearchesGraph {
                 internal_matches: suggestion.internal_matches,
                 rank: suggestion.rank
             )
+}
+
+rule ParticipantOpensFullSearchResults {
+    when: OpenFullSearchResults(participant, workspace, text)
+
+    requires: workspace.participant = participant
+    requires: text != ""
+
+    ensures:
+        let result = SearchResult.created(
+            graph: workspace.graph,
+            text: text,
+            presentation: full_results
+        )
+        for suggestion in page_search_suggestions(workspace.graph, text, participant):
+            PageSearchSuggestion.created(
+                result: result,
+                page: suggestion.page,
+                excerpt: suggestion.excerpt,
+                internal_matches: suggestion.internal_matches,
+                rank: suggestion.rank
+            )
+
+    @guidance
+        -- Enter commits the text as a search rather than choosing whichever
+        -- completion happened to be first. The full surface is also the answer
+        -- when completion found nothing: absence is shown as a result, not as a
+        -- dropdown that silently disappears.
 }
 
 rule ParticipantQueriesGraph {
@@ -1070,6 +1101,7 @@ surface VeraWorkspace {
         EditThemeSource(participant, workspace, stylesheet_source)
         EditDesignToken(participant, workspace, token, light_value, dark_value)
         SearchGraph(participant, workspace, text)
+        OpenFullSearchResults(participant, workspace, text)
         QueryGraph(participant, workspace, expression)
 
     contracts:
@@ -1324,6 +1356,13 @@ surface VeraWorkspace {
         -- exact title remains the strongest signal. The suggestion keeps one
         -- excerpt and the count, so collapsing repetition does not hide why the
         -- page was offered.
+
+    @guarantee CommittingSearchOpensItsOwnAddressableResults
+        -- Pressing Enter in the search field opens a full results surface for
+        -- exactly the written text. It does not silently open the first
+        -- completion. When completion has no answer, the same full surface
+        -- visibly says so. Its address preserves the query, so reload, Back and
+        -- Forward return to the same search rather than to an incidental page.
 
     @guarantee AVocabularyValueIsReachableFromWhereItIsAnswered
         -- Beside a controlled answer there is a way to the page that bears its

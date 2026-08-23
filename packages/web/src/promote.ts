@@ -125,11 +125,15 @@ export function seedTrail(
 export function blocksFor(
   trace: readonly TraceStep[],
   titleOf: (page: string) => string,
-): { content: string; testimony: string | null }[] {
-  const said: { content: string; testimony: string | null }[] = [];
+): { content: string; testimony: string | null; crossing: TraceStep['crossing'] }[] {
+  const said: { content: string; testimony: string | null; crossing: TraceStep['crossing'] }[] = [];
   trace.forEach((step, at) => {
-    if (at > 0) said.push({ content: '', testimony: testimonyFor(step, titleOf) });
-    said.push({ content: `[[${titleOf(step.page)}]]`, testimony: null });
+    if (at > 0) said.push({
+      content: step.crossing?.content ?? '',
+      testimony: testimonyFor(step, titleOf),
+      crossing: step.crossing ?? null,
+    });
+    said.push({ content: `[[${titleOf(step.page)}]]`, testimony: null, crossing: null });
   });
   return said;
 }

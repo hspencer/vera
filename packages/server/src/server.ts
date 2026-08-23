@@ -520,9 +520,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
   };
 
   /** Sólo los objetos nombrados desde una publicación explícita pueden salir. */
-  const publicMediaHashes = (): ReadonlySet<string> =>
+  const publicMediaHashes = (pages: ReadonlySet<string> = publicPageIds()): ReadonlySet<string> =>
     new Set(
-      [...publicPageIds()].flatMap((page) =>
+      [...pages].flatMap((page) =>
         [
           ...assetsOf(page).map((asset) => asset.url.slice('/media/'.length)),
           ...recordingsInPage(store, page).flatMap((recording) =>
@@ -907,6 +907,14 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             .propertiesOf(block.stableId)
             .find((one) => one.key.trim().toLowerCase() === TESTIMONY_KEY)
             ?.value ?? null,
+        citedCrossing:
+          graph.propertiesOf(block.stableId)
+            .find((one) => one.key.trim().toLowerCase() === 'conectiva')
+            ?.value ?? null,
+        citedRevision:
+          graph.propertiesOf(block.stableId)
+            .find((one) => one.key.trim().toLowerCase() === 'revisión de conectiva')
+            ?.value ?? null,
       })),
       resolve: (title) => graph.pageTitled(title)?.id ?? null,
       /*
@@ -1089,6 +1097,42 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     const publicOrigin = forcedPublic || (canonicalHost !== '' && host === canonicalHost);
     const publicAccess = publicOrigin;
 
+    // Un espacio elige un subgrafo, no una aplicación distinta. Las rutas bajo
+    // `/s/<slug>` llevan el ámbito consigo; las peticiones de la PWA a `/pages`,
+    // `/graph`, `/search` y medios lo heredan del documento que las inició.
+    //
+    // Antes se persistía ese ámbito en una cookie con `Path=/`. Después de leer
+    // un espacio, la cookie cercaba también cualquier publicación canónica del
+    // mismo dominio: todas las URL públicas parecían llevar de vuelta al poema.
+    // El referente no sobrevive como autoridad global y sólo puede estrechar la
+    // lectura a otro espacio que ya sea público.
+    const pathSpace = /^\/s\/([^/]+)(?:\/.*)?$/.exec(path);
+    let referringSpace: RegExpExecArray | null = null;
+    try {
+      const referred = request.headers.referer;
+      referringSpace = referred === undefined
+        ? null
+        : /^\/s\/([^/]+)(?:\/.*)?$/.exec(new URL(referred).pathname);
+    } catch {
+      referringSpace = null;
+    }
+    const scopedSegment = pathSpace?.[1] ?? referringSpace?.[1] ?? null;
+    const scopedSlug = scopedSegment === null ? null : decodeURIComponent(scopedSegment);
+    const scopedSpace = scopedSlug === null ? null : sharedSpaceBySlug(store, scopedSlug);
+    const publicScopedSpace = scopedSpace !== null && scopedSpace.status === 'active' && scopedSpace.audience === 'anybody'
+      ? scopedSpace
+      : null;
+    const scopedPageIds = publicScopedSpace === null
+      ? publicPageIds()
+      : new Set(graph.pages().filter((page) => graph.propertiesOf(page.id).some((property) =>
+          property.key === publicScopedSpace.selectorKey && property.value === publicScopedSpace.selectorValue,
+        )).map((page) => page.id));
+    const isPublicPage = (page: string): boolean => scopedPageIds.has(page);
+    if (publicAccess && pathSpace !== null) {
+      // Retira la cookie de versiones anteriores; ya no gobierna el ámbito.
+      response.setHeader('set-cookie', 'vera_public_space=; Path=/; Max-Age=0; SameSite=Lax');
+    }
+
     const publicReadThroughBody = request.method === 'POST' && path === '/query';
     if (publicAccess && request.method !== 'GET' && request.method !== 'HEAD' && !publicReadThroughBody) {
       send(response, 405, { error: 'anybody sólo puede leer' });
@@ -1097,6 +1141,11 @@ export function createVeraServer(options: ServerOptions): VeraServer {
 
     if (publicAccess) {
       const canonicalPublication = publicationAtPath(path);
+      const sharedSegments = pathSpace;
+      const sharedSlug = sharedSegments === null ? null : decodeURIComponent(sharedSegments[1] ?? '');
+      const publicSharedSpace = sharedSlug === null ? null : sharedSpaceBySlug(store, sharedSlug);
+      const publicSharedPath = publicSharedSpace !== null &&
+        publicSharedSpace.status === 'active' && publicSharedSpace.audience === 'anybody';
       const safe =
         path === '/' ||
         path === '/health' ||
@@ -1108,6 +1157,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         path.startsWith('/pages/') ||
         path.startsWith('/graph/') ||
         path.startsWith('/media/') ||
+        publicSharedPath ||
+        (publicScopedSpace !== null && path.startsWith('/p/')) ||
         canonicalPublication !== undefined ||
         path.startsWith('/build/') ||
         path.startsWith('/assets/') ||
@@ -1758,10 +1809,13 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         const slug = typeof body['slug'] === 'string' ? body['slug'].trim() : '';
         const key = typeof body['selectorKey'] === 'string' ? body['selectorKey'].trim() : '';
         const value = typeof body['selectorValue'] === 'string' ? body['selectorValue'].trim() : '';
+        const audience = body['audience'] === 'anybody' ? 'anybody' : 'restricted';
         if (name === '' || key === '' || value === '' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
           send(response, 400, { error: 'el espacio necesita name, slug canónico, selectorKey y selectorValue' }); return;
         }
-        try { send(response, 201, createSharedSpace(store, graph.owner!, { name, slug, selectorKey: key, selectorValue: value })); }
+        try { send(response, 201, createSharedSpace(store, graph.owner!, {
+          name, slug, selectorKey: key, selectorValue: value, audience,
+        })); }
         catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
       });
       return;
@@ -1782,10 +1836,13 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           const slug = String(body['slug'] ?? '').trim();
           const selectorKey = String(body['selectorKey'] ?? '').trim();
           const selectorValue = String(body['selectorValue'] ?? '').trim();
+          const audience = body['audience'] === 'anybody' ? 'anybody' : 'restricted';
           if (name === '' || selectorKey === '' || selectorValue === '' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
             send(response, 400, { error: 'nombre, slug canónico y criterio son obligatorios' }); return;
           }
-          send(response, 200, updateSharedSpace(store, space, { name, slug, selectorKey, selectorValue }));
+          send(response, 200, updateSharedSpace(store, space, {
+            name, slug, selectorKey, selectorValue, audience,
+          }));
         } catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
       });
       return;
@@ -1971,12 +2028,14 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       const slug = decodeURIComponent(segments[2] ?? '');
       const space = sharedSpaceBySlug(store, slug);
       if (space === null || space.status !== 'active') { send(response, 404, { error: 'el espacio no existe' }); return; }
-      const participant = participantForSession(store, cookie('vera_session'));
-      if (participant === null) { send(response, 401, { error: 'hace falta una sesión humana activa' }); return; }
-      const grant = store.db.prepare(`SELECT permissions FROM access_grants
-        WHERE space_id=? AND participant_id=? AND status='active'`).get(space.id, participant) as any;
-      if (grant === undefined || !String(grant.permissions).split(',').includes('read')) {
-        send(response, 403, { error: 'esta identidad no puede leer este espacio' }); return;
+      if (space.audience !== 'anybody') {
+        const participant = participantForSession(store, cookie('vera_session'));
+        if (participant === null) { send(response, 401, { error: 'hace falta una sesión humana activa' }); return; }
+        const grant = store.db.prepare(`SELECT permissions FROM access_grants
+          WHERE space_id=? AND participant_id=? AND status='active'`).get(space.id, participant) as any;
+        if (grant === undefined || !String(grant.permissions).split(',').includes('read')) {
+          send(response, 403, { error: 'esta identidad no puede leer este espacio' }); return;
+        }
       }
       const inside = (page: { id: string }): boolean => graph.propertiesOf(page.id).some((property) =>
         property.key === space.selectorKey && property.value === space.selectorValue);
@@ -4445,7 +4504,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         const visiblePages = publicAccess
           ? graph.pages().filter((page) => isPublicPage(page.id))
           : graph.pages();
-        const siteEntry = publicSite()?.entryPoint ?? null;
+          const siteEntry = publicScopedSpace === null
+            ? (publicSite()?.entryPoint ?? null)
+            : graph.pages().filter((page) => isPublicPage(page.id))
+                .sort((a, b) => a.title.localeCompare(b.title, 'es'))[0]?.id ?? null;
         send(response, 200, {
           graph: graph.name,
           access: publicAccess ? 'anybody' : 'owner',
@@ -4480,7 +4542,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             title: page.title,
             visibility: page.visibility,
             publicationPath: publicAccess
-              ? graph.publicationsOf(publicSite()?.id ?? '').find((one) => one.page === page.id)?.path ?? null
+              ? publicScopedSpace === null
+                ? graph.publicationsOf(publicSite()?.id ?? '').find((one) => one.page === page.id)?.path ?? null
+                : `s/${publicScopedSpace.slug}/p/${encodeURIComponent(page.title)}`
               : null,
             blockCount: graph.blocksOf(page.id).length,
             // Cuántas aristas toca. El cliente lo usa para no abrir de entrada
@@ -4765,6 +4829,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           return referencedTitles(gloss.content).map((targetTitle) => {
             const target = graph.pageTitled(targetTitle);
             return {
+              stableId: block.stableId,
               connective: block.stableId,
               said: gloss.content,
               fromBlock: block.stableId,
@@ -4773,11 +4838,14 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               toPage: target?.id ?? null,
               sense: 'directed' as const,
               term: null,
+              createdAt: block.createdAt,
+              updatedAt: block.createdAt,
             };
           });
         });
         const crossingRow = (crossing: (typeof glossCrossings)[number], outgoing: boolean) => ({
           ...crossing,
+          revision: null,
           title: outgoing
             ? (crossing.toPage === null
                 ? crossing.targetTitle
@@ -4787,7 +4855,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           says: excerpt(graph.block(crossing.fromBlock)?.content ?? ''),
         });
 
-        deliver({
+        const detail = {
           id: page.id,
           title: page.title,
           /*
@@ -4912,9 +4980,12 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             .filter((crossing) => !publicAccess || (crossing.toPage !== null && isPublicPage(crossing.toPage)))
             .map((crossing) => ({
             ...crossing,
+            revision: graph.revisions()
+              .filter((one) => one.crossing === crossing.stableId)
+              .at(-1)?.operation ?? null,
             title: crossing.toPage === null ? crossing.targetTitle : (graph.page(crossing.toPage)?.title ?? crossing.targetTitle),
             reads: crossing.term,
-            says: excerpt(graph.block(crossing.fromBlock)?.content ?? ''),
+            says: crossing.fromBlock === null ? '' : excerpt(graph.block(crossing.fromBlock)?.content ?? ''),
           })).concat(
             glossCrossings
               .filter((crossing) => crossing.fromPage === page.id)
@@ -4925,9 +4996,12 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             .filter((crossing) => !publicAccess || isPublicPage(crossing.fromPage))
             .map((crossing) => ({
             ...crossing,
+            revision: graph.revisions()
+              .filter((one) => one.crossing === crossing.stableId)
+              .at(-1)?.operation ?? null,
             title: graph.page(crossing.fromPage)?.title ?? crossing.fromPage,
             reads: inverseOf(crossing.term, relationVocabulary()),
-            says: excerpt(graph.block(crossing.fromBlock)?.content ?? ''),
+            says: crossing.fromBlock === null ? '' : excerpt(graph.block(crossing.fromBlock)?.content ?? ''),
           })).concat(
             glossCrossings
               .filter((crossing) => crossing.toPage === page.id)
@@ -5061,12 +5135,26 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             }
             return [...seen.values()];
           })(),
-        }, {
-          surface: 'GET /pages/:id',
+        };
+        const enrichment = url.searchParams.get('stage') === 'enrichment';
+        deliver(enrichment ? {
+          id: detail.id,
+          domains: detail.domains,
+          concept: detail.concept,
+          pendingLinks: detail.pendingLinks,
+          backlinks: detail.backlinks,
+          references: detail.references,
+          crossingsOut: detail.crossingsOut,
+          crossingsIn: detail.crossingsIn,
+          trail: detail.trail,
+        } : detail, {
+          surface: enrichment ? 'GET /pages/:id?stage=enrichment' : 'GET /pages/:id',
           subject: page.id,
           // Abrir una página se lleva la página entera y sus bloques: eso es lo
           // que se anota, y no sólo el título por el que se pidió.
-          delivered: [page.id, ...graph.blocksOf(page.id).map((block) => block.stableId)],
+          delivered: enrichment
+            ? [page.id]
+            : [page.id, ...graph.blocksOf(page.id).map((block) => block.stableId)],
         });
         return;
       }
@@ -5078,7 +5166,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         if (
           objectsRoot === null ||
           !HASH.test(hash) ||
-          (publicAccess && !publicMediaHashes().has(hash))
+          (publicAccess && !publicMediaHashes(scopedPageIds).has(hash))
         ) {
           send(response, 404, { error: 'no such media' });
           return;
@@ -5164,7 +5252,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           // El mapa público se calcula sobre el subgrafo inducido. Filtrar un
           // vecindario privado después de recorrerlo revelaría que dos páginas
           // públicas están conectadas por algo oculto.
-          const allowed = publicPageIds();
+          const allowed = scopedPageIds;
           const neighbours = new Map<string, Set<string>>();
           for (const id of allowed) neighbours.set(id, new Set());
           for (const id of allowed) {
@@ -5176,19 +5264,29 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               }
             }
           }
-          const distances = new Map<string, number>([[centred.id, 0]]);
-          const queue = [centred.id];
-          while (queue.length > 0) {
-            const current = queue.shift()!;
-            const distance = distances.get(current)!;
-            if (distance >= depth) continue;
-            for (const next of neighbours.get(current) ?? []) {
-              if (distances.has(next)) continue;
-              distances.set(next, distance + 1);
-              queue.push(next);
-            }
-          }
-          const shown = new Set(distances.keys());
+          // Un espacio compartido es la figura completa que su pertenencia
+          // recorta. Si se redujera al vecindario de la página abierta, una
+          // portada deliberadamente aislada ocultaría las demás componentes
+          // del espacio —precisamente la estructura que se vino a mirar.
+          // El sitio público canónico conserva, en cambio, el mapa local por
+          // profundidad que ya tenía.
+          const shown = publicScopedSpace === null
+            ? (() => {
+                const distances = new Map<string, number>([[centred.id, 0]]);
+                const queue = [centred.id];
+                while (queue.length > 0) {
+                  const current = queue.shift()!;
+                  const distance = distances.get(current)!;
+                  if (distance >= depth) continue;
+                  for (const next of neighbours.get(current) ?? []) {
+                    if (distances.has(next)) continue;
+                    distances.set(next, distance + 1);
+                    queue.push(next);
+                  }
+                }
+                return new Set(distances.keys());
+              })()
+            : new Set(allowed);
           const links: { source: string; target: string }[] = [];
           for (const source of shown) {
             for (const target of neighbours.get(source) ?? []) {

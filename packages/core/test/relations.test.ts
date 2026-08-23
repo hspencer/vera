@@ -14,7 +14,7 @@ import {
   titleIn,
   senseIn,
 } from '@vera/core';
-import { OWNER, inhabitedGraph, makeBlock, makePage, submit } from './helpers.ts';
+import { OWNER, applied, inhabitedGraph, makeBlock, makePage, submit } from './helpers.ts';
 
 /** Un bloque que explica: cuelga de aquel desde el que se afirma. */
 function explain(
@@ -33,7 +33,7 @@ function explain(
   return connective;
 }
 
-describe('los cruces se ven, no se guardan', () => {
+describe('las descripciones antiguas de relación siguen legibles durante la migración', () => {
   it('un bloque que lleva «explica» afirma algo sobre esa página', () => {
     const graph = inhabitedGraph();
     const from = makePage(graph, 'PICTOS');
@@ -64,7 +64,7 @@ describe('los cruces se ven, no se guardan', () => {
     assert.equal(graph.crossingsOut(to).length, 0);
   });
 
-  it('una relación mutua se lee en las dos columnas de las dos páginas', () => {
+  it('una marca antigua de mutualidad no inventa la conectiva inversa', () => {
     const graph = inhabitedGraph();
     const from = makePage(graph, 'Amereida');
     const to = makePage(graph, 'Memex');
@@ -75,8 +75,8 @@ describe('los cruces se ven, no se guardan', () => {
     });
 
     assert.equal(graph.crossingsOut(from).length, 1);
-    assert.equal(graph.crossingsIn(from).length, 1);
-    assert.equal(graph.crossingsOut(to).length, 1);
+    assert.equal(graph.crossingsIn(from).length, 0);
+    assert.equal(graph.crossingsOut(to).length, 0);
     assert.equal(graph.crossingsIn(to).length, 1);
   });
 
@@ -184,11 +184,46 @@ describe('el vocabulario de relaciones', () => {
     assert.equal(titleIn('  [[Ciudad Abierta]]  '), 'Ciudad Abierta');
   });
 
-  it('el sentido es dirigido salvo que se diga lo contrario', () => {
+  it('toda conectiva es dirigida; la vuelta es otra conectiva', () => {
     assert.equal(senseIn(null), 'directed');
-    assert.equal(senseIn('mutua'), 'mutual');
-    assert.equal(senseIn('MUTUAL'), 'mutual');
+    assert.equal(senseIn('mutua'), 'directed');
+    assert.equal(senseIn('MUTUAL'), 'directed');
     assert.equal(senseIn('cualquier cosa'), 'directed');
+  });
+});
+
+describe('conectivas persistentes', () => {
+  it('guarda una sola por par ordenado y admite otra de vuelta', () => {
+    const graph = inhabitedGraph();
+    const a = makePage(graph, 'A');
+    const b = makePage(graph, 'B');
+    const ida = applied(submit(graph, { kind: 'create_crossing', fromPage: a, toPage: b, content: 'ida' }));
+    const vuelta = applied(submit(graph, { kind: 'create_crossing', fromPage: b, toPage: a, content: 'vuelta' }));
+
+    assert.equal(graph.crossing(ida)?.said, 'ida');
+    assert.equal(graph.crossing(vuelta)?.said, 'vuelta');
+    assert.equal(graph.crossingsOut(a).length, 1);
+    assert.equal(graph.crossingsIn(a).length, 1);
+    const duplicate = submit(graph, {
+      kind: 'create_crossing', fromPage: a, toPage: b, content: 'duplicada',
+    });
+    assert.equal(duplicate.status, 'rejected');
+    if (duplicate.status === 'rejected') assert.match(duplicate.reason, /already a crossing/);
+  });
+
+  it('se edita sin cambiar identidad ni extremos y conserva revisiones', () => {
+    const graph = inhabitedGraph();
+    const a = makePage(graph, 'A');
+    const b = makePage(graph, 'B');
+    const crossing = applied(submit(graph, {
+      kind: 'create_crossing', fromPage: a, toPage: b, content: 'primera versión',
+    }));
+    submit(graph, { kind: 'edit_crossing', crossing, content: 'versión ampliada' });
+
+    assert.equal(graph.crossing(crossing)?.said, 'versión ampliada');
+    assert.equal(graph.crossing(crossing)?.fromPage, a);
+    assert.equal(graph.crossing(crossing)?.toPage, b);
+    assert.equal(graph.revisions().filter((one) => one.crossing === crossing).length, 2);
   });
 });
 

@@ -22,8 +22,10 @@ describe('enumerations', () => {
   it('declares exactly the change vocabulary the spec settled on', () => {
     assert.deepEqual([...CHANGE_KINDS].sort(), [
       'create_block',
+      'create_crossing',
       'create_page',
       'edit_block',
+      'edit_crossing',
       'move_block',
       'recover_page_origin',
       'remove_block',

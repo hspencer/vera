@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { EMPTY, parseRoute, routeTo, sameRoute } from '../src/router.ts';
+import { EMPTY, parseRoute, routeTo, sameRoute, searchRoute } from '../src/router.ts';
 
 const at = (href: string): URL => new URL(href, 'https://vera.example');
 
@@ -17,6 +17,7 @@ describe('parseRoute', () => {
       page: 'Lectogram',
       focus: null,
       block: null,
+      search: null,
     });
   });
 
@@ -28,6 +29,13 @@ describe('parseRoute', () => {
   it('acepta también la identidad estable', () => {
     // Un enlace escrito antes de un renombrado tiene que seguir resolviendo.
     assert.equal(parseRoute(at('/p/page:31015')).page, 'page:31015');
+  });
+
+  it('lee una página dentro del prefijo de un espacio', () => {
+    assert.equal(
+      parseRoute(new URL('https://vera.mediafranca.net/s/axis-mundae/p/1%20%E2%80%94%20La%20Luz')).page,
+      '1 — La Luz',
+    );
   });
 
   it('lee el enfoque de la vista', () => {
@@ -43,7 +51,16 @@ describe('parseRoute', () => {
       page: 'Lectogram',
       focus: 'block:1',
       block: 'block:2',
+      search: null,
     });
+  });
+
+  it('lee una búsqueda completa, también dentro de un espacio', () => {
+    assert.equal(parseRoute(at('/search?q=memoria%20soberana')).search, 'memoria soberana');
+    assert.equal(
+      parseRoute(at('/s/axis-mundae/search?q=luz')).search,
+      'luz',
+    );
   });
 
   it('una ruta que no es de página no nombra ninguna', () => {
@@ -54,6 +71,16 @@ describe('parseRoute', () => {
     // `%` suelto no es una secuencia válida y decodeURIComponent lanza.
     assert.doesNotThrow(() => parseRoute(at('/p/roto%')));
     assert.equal(parseRoute(at('/p/roto%')).page, 'roto%');
+  });
+});
+
+describe('searchRoute', () => {
+  it('conserva el cerco de un espacio público', () => {
+    assert.equal(searchRoute('la luz', '/s/axis-mundae/p/1'), '/s/axis-mundae/search?q=la%20luz');
+  });
+
+  it('usa la ruta general fuera de un espacio', () => {
+    assert.equal(searchRoute('memoria', '/p/Una'), '/search?q=memoria');
   });
 });
 
