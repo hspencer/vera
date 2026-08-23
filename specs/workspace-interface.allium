@@ -1363,6 +1363,9 @@ surface VeraWorkspace {
         -- completion. When completion has no answer, the same full surface
         -- visibly says so. Its address preserves the query, so reload, Back and
         -- Forward return to the same search rather than to an incidental page.
+        -- Once committed, the query lives in that results surface and the
+        -- transient completion field releases the top bar. On a narrow screen
+        -- it must not remain expanded over navigation after its job is done.
 
     @guarantee AVocabularyValueIsReachableFromWhereItIsAnswered
         -- Beside a controlled answer there is a way to the page that bears its

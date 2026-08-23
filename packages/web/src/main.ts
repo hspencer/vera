@@ -2386,7 +2386,11 @@ async function openSearchResults(text: string, push = true): Promise<void> {
   }
 
   const barInput = $<HTMLInputElement>('#search');
-  barInput.value = query;
+  // La consulta ya vive en la página y en su URL. Conservarla además en el
+  // campo transitorio mantiene `#bar.searching` abierto en móvil y tapa Atrás,
+  // inicio, voz y vistas después de terminada la búsqueda.
+  barInput.value = '';
+  $('#bar').classList.remove('searching');
   const menu = $('#results');
   menu.innerHTML = '';
   menu.hidden = true;
