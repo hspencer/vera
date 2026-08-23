@@ -487,6 +487,41 @@ const addHumanAuthentication: Migration = {
   },
 };
 
+/** 14 — pertenencia compuesta de espacios: criterios múltiples y páginas manuales. */
+const composeSharedSpaceMembership: Migration = {
+  version: 14,
+  name: 'criterios múltiples y páginas manuales en espacios compartidos',
+  apply(db) {
+    const columns = db.prepare('PRAGMA table_info(shared_spaces)').all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === 'criterion_combination')) {
+      db.exec("ALTER TABLE shared_spaces ADD COLUMN criterion_combination TEXT NOT NULL DEFAULT 'any' CHECK (criterion_combination IN ('any','all'))");
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS shared_space_criteria (
+        id TEXT PRIMARY KEY, space_id TEXT NOT NULL REFERENCES shared_spaces (id) ON DELETE CASCADE,
+        selector_key TEXT NOT NULL, selector_value TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('active','removed')),
+        added_by TEXT NOT NULL REFERENCES participants (id), added_at INTEGER NOT NULL, removed_at INTEGER
+      ) STRICT;
+      CREATE UNIQUE INDEX IF NOT EXISTS one_active_shared_space_criterion
+        ON shared_space_criteria(space_id,selector_key,selector_value) WHERE status='active';
+      CREATE TABLE IF NOT EXISTS shared_space_manual_pages (
+        id TEXT PRIMARY KEY, space_id TEXT NOT NULL REFERENCES shared_spaces (id) ON DELETE CASCADE,
+        page_id TEXT NOT NULL REFERENCES pages (id) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK (status IN ('active','removed')),
+        added_by TEXT NOT NULL REFERENCES participants (id), added_at INTEGER NOT NULL, removed_at INTEGER
+      ) STRICT;
+      CREATE UNIQUE INDEX IF NOT EXISTS one_active_manual_page_inclusion
+        ON shared_space_manual_pages(space_id,page_id) WHERE status='active';
+      INSERT INTO shared_space_criteria
+        (id,space_id,selector_key,selector_value,status,added_by,added_at)
+      SELECT 'criterion:migrated:' || id,id,selector_key,selector_value,'active',owner_id,created_at
+      FROM shared_spaces
+      WHERE NOT EXISTS (SELECT 1 FROM shared_space_criteria c WHERE c.space_id=shared_spaces.id);
+    `);
+  },
+};
+
 /** 13 — conectivas con identidad e historia propias. */
 const addCrossings: Migration = {
   version: 13,
@@ -531,6 +566,7 @@ export const MIGRATIONS: readonly Migration[] = [
   addSharedSpaces,
   addHumanAuthentication,
   addCrossings,
+  composeSharedSpaceMembership,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

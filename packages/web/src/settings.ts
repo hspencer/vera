@@ -132,6 +132,9 @@ export function renderSettings(
 type SharedPermission = 'read' | 'contribute' | 'edit';
 interface SharedAdministration {
   id: string; name: string; slug: string; selectorKey: string; selectorValue: string;
+  criterionCombination: 'any' | 'all';
+  criteria: { id: string; key: string; value: string; status: 'active' | 'removed' }[];
+  manualPages: string[];
   audience: 'restricted' | 'anybody';
   status: 'active' | 'withdrawn'; pageCount: number;
   invitations: { id: string; permissions: SharedPermission[]; intendedContact: string | null;
@@ -181,7 +184,7 @@ export async function drawSharing(host: HTMLElement): Promise<void> {
   catch (error) { status.textContent = error instanceof Error ? error.message : 'No se pudo leer la configuración.'; return; }
   status.textContent = `${spaces.length + 1} ${spaces.length === 0 ? 'forma' : 'formas'} de compartir: una pública y ${spaces.length} con acceso autenticado.`;
   host.append(publicSiteAdministration(host, publicSite, pages));
-  for (const space of spaces) host.append(spaceAdministration(host, space));
+  for (const space of spaces) host.append(spaceAdministration(host, space, pages));
   const add = document.createElement('button'); add.type = 'button'; add.className = 'sharing-add';
   add.textContent = 'Agregar espacio compartido'; add.setAttribute('aria-expanded', 'false');
   const creation = document.createElement('section'); creation.className = 'sharing-new-space'; creation.hidden = true;
@@ -289,7 +292,7 @@ function publicSiteAdministration(host: HTMLElement, site: PublicationSiteView, 
   body.append(intro, open, form, published, add); details.append(body); return details;
 }
 
-function spaceAdministration(host: HTMLElement, space: SharedAdministration): HTMLElement {
+function spaceAdministration(host: HTMLElement, space: SharedAdministration, pages: PageSummary[]): HTMLElement {
   const card = document.createElement('details'); card.className = 'sharing-space';
   const activeParticipants = space.participants.filter((one) => one.status === 'active').length;
   const isPublic = space.audience === 'anybody';
@@ -299,22 +302,29 @@ function spaceAdministration(host: HTMLElement, space: SharedAdministration): HT
     `${activeParticipants} ${activeParticipants === 1 ? 'participante' : 'participantes'}`);
   const body = document.createElement('div'); body.className = 'sharing-space-body';
   const count = document.createElement('p'); count.className = 'settings-note';
-  count.textContent = `${space.pageCount} ${space.pageCount === 1 ? 'página coincide' : 'páginas coinciden'} con ${space.selectorKey}:: ${space.selectorValue}.`;
+  count.textContent = `${space.pageCount} ${space.pageCount === 1 ? 'página pertenece' : 'páginas pertenecen'} a la unión efectiva del espacio.`;
   const visit = document.createElement('a'); visit.href = `/s/${encodeURIComponent(space.slug)}`; visit.target = '_blank'; visit.textContent = 'Abrir superficie compartida';
   const form = document.createElement('form'); form.className = 'sharing-form';
   const name = field('Nombre', space.name); const slug = field('Slug', space.slug);
-  const key = field('Propiedad', space.selectorKey); const value = field('Valor exacto', space.selectorValue);
+  const combinationLabel = document.createElement('label'); combinationLabel.className = 'sharing-field';
+  const combinationName = document.createElement('span'); combinationName.textContent = 'Combinar criterios';
+  const combination = document.createElement('select');
+  for (const [value, label] of [['any', 'Cualquiera (O)'], ['all', 'Todos (Y)']] as const) {
+    const option = document.createElement('option'); option.value = value; option.textContent = label;
+    option.selected = value === space.criterionCombination; combination.append(option);
+  }
+  combinationLabel.append(combinationName, combination);
   const publicAccess = document.createElement('label'); publicAccess.className = 'sharing-public-choice';
   const publicInput = document.createElement('input'); publicInput.type = 'checkbox'; publicInput.checked = isPublic;
   publicAccess.append(publicInput, document.createTextNode(' Acceso público, sin invitación'));
-  const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'Guardar criterio';
+  const save = document.createElement('button'); save.type = 'submit'; save.textContent = 'Guardar acceso y nombre';
   const saved = document.createElement('span'); saved.className = 'settings-note';
-  form.append(name.label, slug.label, key.label, value.label, publicAccess, save, saved);
+  form.append(name.label, slug.label, publicAccess, combinationLabel, save, saved);
   form.addEventListener('submit', (event) => void (async () => {
     event.preventDefault(); save.disabled = true;
     try {
       await sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}`, 'PATCH', {
-        name: name.input.value, slug: slug.input.value, selectorKey: key.input.value, selectorValue: value.input.value,
+        name: name.input.value, slug: slug.input.value, criterionCombination: combination.value,
         audience: publicInput.checked ? 'anybody' : 'restricted',
       });
       await drawSharing(host);
@@ -322,8 +332,64 @@ function spaceAdministration(host: HTMLElement, space: SharedAdministration): HT
   })());
   body.append(count, visit, form);
   if (!isPublic) body.append(invitationForm(host, space), invitations(host, space), participants(host, space));
+  body.append(criteriaAdministration(host, space), manualPagesAdministration(host, space, pages));
   card.append(title, body);
   return card;
+}
+
+function criteriaAdministration(host: HTMLElement, space: SharedAdministration): HTMLElement {
+  const box = document.createElement('div'); box.className = 'sharing-group';
+  const heading = document.createElement('h4'); heading.textContent = 'Criterios de pertenencia'; box.append(heading);
+  const list = document.createElement('ul'); list.className = 'sharing-list';
+  for (const criterion of space.criteria) {
+    const row = document.createElement('li'); const text = document.createElement('span');
+    text.textContent = `${criterion.key}:: ${criterion.value}`; row.append(text);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Quitar';
+    remove.disabled = space.criteria.length === 1;
+    remove.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/criteria/${encodeURIComponent(criterion.id)}`, 'DELETE')
+      .then(() => drawSharing(host)); row.append(remove); list.append(row);
+  }
+  const add = document.createElement('form'); add.className = 'sharing-publish';
+  const key = document.createElement('input'); key.placeholder = 'propiedad';
+  const value = document.createElement('input'); value.placeholder = 'valor exacto';
+  const button = document.createElement('button'); button.type = 'submit'; button.textContent = 'Agregar criterio';
+  add.append(key, value, button);
+  add.addEventListener('submit', (event) => void (async () => {
+    event.preventDefault(); if (key.value.trim() === '' || value.value.trim() === '') return;
+    button.disabled = true;
+    await sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/criteria`, 'POST',
+      { key: key.value, value: value.value }); await drawSharing(host);
+  })());
+  box.append(list, add); return box;
+}
+
+function manualPagesAdministration(host: HTMLElement, space: SharedAdministration, pages: PageSummary[]): HTMLElement {
+  const box = document.createElement('div'); box.className = 'sharing-group';
+  const heading = document.createElement('h4'); heading.textContent = 'Páginas incluidas explícitamente'; box.append(heading);
+  const list = document.createElement('ul'); list.className = 'sharing-list';
+  for (const pageId of space.manualPages) {
+    const row = document.createElement('li'); const text = document.createElement('span');
+    text.textContent = pages.find((page) => page.id === pageId)?.title ?? pageId; row.append(text);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Quitar';
+    remove.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/pages/${encodeURIComponent(pageId)}`, 'DELETE')
+      .then(() => drawSharing(host)); row.append(remove); list.append(row);
+  }
+  if (space.manualPages.length === 0) {
+    const empty = document.createElement('li'); empty.textContent = 'Ninguna; sólo se aplican los criterios.'; list.append(empty);
+  }
+  const add = document.createElement('form'); add.className = 'sharing-publish';
+  const select = document.createElement('select'); const first = document.createElement('option');
+  first.value = ''; first.textContent = 'Elegir página…'; select.append(first);
+  for (const page of pages.filter((one) => !space.manualPages.includes(one.id))) {
+    const option = document.createElement('option'); option.value = page.id; option.textContent = page.title; select.append(option);
+  }
+  const button = document.createElement('button'); button.type = 'submit'; button.textContent = 'Incluir página'; add.append(select, button);
+  add.addEventListener('submit', (event) => void (async () => {
+    event.preventDefault(); if (select.value === '') return; button.disabled = true;
+    await sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/pages`, 'POST', { page: select.value });
+    await drawSharing(host);
+  })());
+  box.append(list, add); return box;
 }
 
 function sharingSummary(icon: 'public' | 'authenticated', name: string, ...facts: string[]): HTMLElement {
@@ -429,8 +495,21 @@ function participants(host: HTMLElement, space: SharedAdministration): HTMLEleme
   for (const person of space.participants) {
     const row = document.createElement('li');
     const text = document.createElement('span');
-    text.textContent = `${person.name} · ${person.permissions.join(', ')} · ${person.authenticators} passkey · ${person.activeSessions} sesiones · ${person.status}`;
+    text.textContent = `${person.name} · ${person.authenticators} passkey · ${person.activeSessions} sesiones · ${person.status}`;
     row.append(text);
+    if (person.status === 'active') {
+      const permissionControls = document.createElement('span'); permissionControls.className = 'sharing-permissions';
+      for (const permission of ['read', 'contribute', 'edit'] as SharedPermission[]) {
+        const label = document.createElement('label'); const input = document.createElement('input'); input.type = 'checkbox';
+        input.checked = person.permissions.includes(permission); input.disabled = permission === 'read';
+        input.onchange = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/grants/${encodeURIComponent(person.grant)}`, 'PATCH', {
+          permissions: ['read', ...(['contribute', 'edit'] as SharedPermission[]).filter((one) =>
+            one === permission ? input.checked : person.permissions.includes(one))],
+        }).then(() => drawSharing(host));
+        label.append(input, ` ${permission}`); permissionControls.append(label);
+      }
+      row.append(permissionControls);
+    }
     if (person.activeSessions > 0) {
       const sessions = document.createElement('button'); sessions.textContent = 'Cerrar sesiones';
       sessions.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/participants/${encodeURIComponent(person.participant)}/sessions`, 'DELETE')

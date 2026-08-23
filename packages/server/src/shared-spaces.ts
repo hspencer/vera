@@ -3,8 +3,12 @@ import type { Store } from '@vera/store';
 import { digestOf } from './credentials.ts';
 
 export type SharedPermission = 'read' | 'contribute' | 'edit';
+export interface SharedSpaceCriterion {
+  id: string; key: string; value: string; status: 'active' | 'removed';
+}
 export interface SharedSpace {
   id: string; name: string; slug: string; selectorKey: string; selectorValue: string;
+  criterionCombination: 'any' | 'all'; criteria: SharedSpaceCriterion[]; manualPages: string[];
   audience: 'anybody' | 'restricted'; status: 'active' | 'withdrawn'; createdAt: number;
 }
 
@@ -33,39 +37,96 @@ export function createSharedSpace(store: Store, owner: string, input: {
 }): SharedSpace {
   const held: SharedSpace = { id: id('space'), name: input.name, slug: input.slug,
     selectorKey: input.selectorKey, selectorValue: input.selectorValue,
+    criterionCombination: 'any', criteria: [], manualPages: [],
     audience: input.audience ?? 'restricted', status: 'active', createdAt: Date.now() };
-  store.db.prepare(`INSERT INTO shared_spaces
+  const criterion = id('criterion');
+  store.db.exec('BEGIN');
+  try {
+    store.db.prepare(`INSERT INTO shared_spaces
     (id, graph_id, owner_id, name, slug, selector_key, selector_value, audience, status, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`)
     .run(held.id, store.graphId, owner, held.name, held.slug, held.selectorKey,
       held.selectorValue, held.audience, held.createdAt);
+    store.db.prepare(`INSERT INTO shared_space_criteria
+      (id,space_id,selector_key,selector_value,status,added_by,added_at)
+      VALUES (?,?,?,?,'active',?,?)`).run(criterion, held.id, held.selectorKey, held.selectorValue, owner, held.createdAt);
+    store.db.exec('COMMIT');
+  } catch (error) { store.db.exec('ROLLBACK'); throw error; }
+  held.criteria = [{ id: criterion, key: held.selectorKey, value: held.selectorValue, status: 'active' }];
   return held;
+}
+
+function hydrateSpace(store: Store, row: any): SharedSpace {
+  const criteria = (store.db.prepare(`SELECT id,selector_key,selector_value,status FROM shared_space_criteria
+    WHERE space_id=? AND status='active' ORDER BY added_at,id`).all(row.id) as any[]).map((one) => ({
+      id: one.id, key: one.selector_key, value: one.selector_value, status: one.status,
+    })) as SharedSpaceCriterion[];
+  const manualPages = (store.db.prepare(`SELECT page_id FROM shared_space_manual_pages
+    WHERE space_id=? AND status='active' ORDER BY added_at,id`).all(row.id) as any[]).map((one) => String(one.page_id));
+  return { id: row.id, name: row.name, slug: row.slug,
+    selectorKey: criteria[0]?.key ?? row.selector_key, selectorValue: criteria[0]?.value ?? row.selector_value,
+    criterionCombination: row.criterion_combination ?? 'any', criteria, manualPages,
+    audience: row.audience, status: row.status, createdAt: row.created_at };
 }
 
 export function sharedSpaceBySlug(store: Store, slug: string): SharedSpace | null {
   const row = store.db.prepare(`SELECT id, name, slug, selector_key, selector_value,
     audience, status, created_at FROM shared_spaces WHERE graph_id = ? AND slug = ?`)
     .get(store.graphId, slug) as any;
-  return row === undefined ? null : { id: row.id, name: row.name, slug: row.slug,
-    selectorKey: row.selector_key, selectorValue: row.selector_value,
-    audience: row.audience, status: row.status, createdAt: row.created_at };
+  return row === undefined ? null : hydrateSpace(store, row);
 }
 
 export function sharedSpaces(store: Store): SharedSpace[] {
-  return (store.db.prepare(`SELECT id,name,slug,selector_key,selector_value,audience,status,created_at
-    FROM shared_spaces WHERE graph_id=? ORDER BY created_at,id`).all(store.graphId) as any[]).map((row) => ({
-      id: row.id, name: row.name, slug: row.slug, selectorKey: row.selector_key,
-      selectorValue: row.selector_value, audience: row.audience, status: row.status, createdAt: row.created_at,
-    }));
+  return (store.db.prepare(`SELECT id,name,slug,selector_key,selector_value,criterion_combination,audience,status,created_at
+    FROM shared_spaces WHERE graph_id=? ORDER BY created_at,id`).all(store.graphId) as any[])
+    .map((row) => hydrateSpace(store, row));
 }
 
 export function updateSharedSpace(store: Store, held: SharedSpace, input: {
-  name: string; slug: string; selectorKey: string; selectorValue: string;
-  audience: 'restricted' | 'anybody';
+  name: string; slug: string; criterionCombination: 'any' | 'all'; audience: 'restricted' | 'anybody';
 }): SharedSpace {
-  store.db.prepare(`UPDATE shared_spaces SET name=?,slug=?,selector_key=?,selector_value=?,audience=? WHERE id=?`)
-    .run(input.name, input.slug, input.selectorKey, input.selectorValue, input.audience, held.id);
+  store.db.prepare(`UPDATE shared_spaces SET name=?,slug=?,criterion_combination=?,audience=? WHERE id=?`)
+    .run(input.name, input.slug, input.criterionCombination, input.audience, held.id);
   return { ...held, ...input };
+}
+
+export function addSharedSpaceCriterion(store: Store, owner: string, space: SharedSpace, key: string, value: string): SharedSpaceCriterion {
+  if (space.criteria.some((one) => one.key === key && one.value === value)) throw new Error('el criterio ya está activo');
+  const criterion = { id: id('criterion'), key, value, status: 'active' as const };
+  store.db.prepare(`INSERT INTO shared_space_criteria
+    (id,space_id,selector_key,selector_value,status,added_by,added_at) VALUES (?,?,?,?,'active',?,?)`)
+    .run(criterion.id, space.id, key, value, owner, Date.now());
+  return criterion;
+}
+
+export function removeSharedSpaceCriterion(store: Store, space: SharedSpace, criterion: string): boolean {
+  if (space.criteria.length <= 1) throw new Error('el espacio debe conservar al menos un criterio');
+  return Number(store.db.prepare(`UPDATE shared_space_criteria SET status='removed',removed_at=?
+    WHERE id=? AND space_id=? AND status='active'`).run(Date.now(), criterion, space.id).changes) > 0;
+}
+
+export function includeManualPage(store: Store, owner: string, space: SharedSpace, page: string): string {
+  if (space.manualPages.includes(page)) throw new Error('la página ya está incluida explícitamente');
+  const inclusion = id('inclusion');
+  store.db.prepare(`INSERT INTO shared_space_manual_pages
+    (id,space_id,page_id,status,added_by,added_at) VALUES (?,?,?,'active',?,?)`)
+    .run(inclusion, space.id, page, owner, Date.now());
+  return inclusion;
+}
+
+export function removeManualPage(store: Store, space: SharedSpace, page: string): boolean {
+  return Number(store.db.prepare(`UPDATE shared_space_manual_pages SET status='removed',removed_at=?
+    WHERE page_id=? AND space_id=? AND status='active'`).run(Date.now(), page, space.id).changes) > 0;
+}
+
+export function pageBelongsToSharedSpace(graph: { propertiesOf(id: string): { key: string; value: string }[] },
+  space: SharedSpace, page: string): boolean {
+  if (space.manualPages.includes(page)) return true;
+  const properties = graph.propertiesOf(page);
+  const matches = (criterion: SharedSpaceCriterion): boolean => properties.some((property) =>
+    property.key === criterion.key && property.value === criterion.value);
+  return space.criteria.length > 0 && (space.criterionCombination === 'all'
+    ? space.criteria.every(matches) : space.criteria.some(matches));
 }
 
 export function administrationOf(store: Store, space: SharedSpace, pageCount: number): SharedSpaceAdministration {
@@ -99,6 +160,14 @@ export function revokeInvitation(store: Store, space: SharedSpace, invitation: s
 export function revokeGrant(store: Store, space: SharedSpace, grant: string): boolean {
   return Number(store.db.prepare(`UPDATE access_grants SET status='revoked',revoked_at=?
     WHERE id=? AND space_id=? AND status='active'`).run(Date.now(), grant, space.id).changes) > 0;
+}
+
+export function changeGrantPermissions(store: Store, space: SharedSpace, grant: string,
+  permissions: SharedPermission[]): boolean {
+  const unique = [...new Set(permissions)].sort();
+  if (unique.length === 0 || !unique.includes('read')) throw new Error('el acceso debe incluir read');
+  return Number(store.db.prepare(`UPDATE access_grants SET permissions=?
+    WHERE id=? AND space_id=? AND status='active'`).run(unique.join(','), grant, space.id).changes) > 0;
 }
 
 export function revokeParticipantSessions(store: Store, space: SharedSpace, participant: string): number {

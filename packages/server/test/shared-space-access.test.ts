@@ -209,11 +209,42 @@ describe('primer corte vertical de espacios compartidos', () => {
     assert.equal((await call(`/shared-spaces/doctorado/grants/${encodeURIComponent(reader.grant)}`, 'DELETE')).status, 200);
 
     const changed = await call('/shared-spaces/doctorado', 'PATCH', {
-      name: 'Vera', slug: 'vera', selectorKey: 'concepto', selectorValue: 'Vera',
+      name: 'Vera', slug: 'vera', criterionCombination: 'any',
     });
     assert.equal(changed.status, 200, JSON.stringify(changed.json));
     admin = await call('/shared-spaces');
     assert.equal((admin.json['spaces'] as any[])[0].slug, 'vera');
-    assert.equal((admin.json['spaces'] as any[])[0].pageCount, 0);
+    assert.equal((admin.json['spaces'] as any[])[0].pageCount, 1);
+  });
+
+  it('compone varios criterios con páginas explícitas y cambia permisos', async () => {
+    const thematic = await write({ kind: 'create_page', title: 'Por tema', visibility: 'private' });
+    await write({ kind: 'set_property', page: thematic, propertyKey: 'tema', propertyValue: 'memoria' });
+    const manual = await write({ kind: 'create_page', title: 'Incluida a mano', visibility: 'private' });
+    const criterion = await call('/shared-spaces/vera/criteria', 'POST', { key: 'tema', value: 'memoria' });
+    assert.equal(criterion.status, 201, JSON.stringify(criterion.json));
+    assert.equal((await call('/shared-spaces/vera/pages', 'POST', { page: manual })).status, 201);
+
+    let pages = await call('/shared-spaces/vera/pages');
+    assert.deepEqual(new Set((pages.json['pages'] as any[]).map((page) => page.title)),
+      new Set(['Dentro', 'Por tema', 'Incluida a mano']));
+
+    const issued = await call('/shared-spaces/vera/invitations', 'POST', { permissions: ['read'] });
+    await call(`/invitations/${encodeURIComponent(issued.json['id'])}/redeem`, 'POST', {
+      secret: issued.json['secret'], name: 'Colaboradora',
+    });
+    const admin = await call('/shared-spaces');
+    const space = (admin.json['spaces'] as any[])[0];
+    const reader = space.participants.find((one: any) => one.name === 'Colaboradora');
+    assert.equal((await call(`/shared-spaces/vera/grants/${encodeURIComponent(reader.grant)}`, 'PATCH',
+      { permissions: ['read', 'contribute'] })).status, 200);
+    const refreshed = (await call('/shared-spaces')).json['spaces'][0];
+    assert.deepEqual(refreshed.participants.find((one: any) => one.name === 'Colaboradora').permissions,
+      ['contribute', 'read']);
+
+    assert.equal((await call(`/shared-spaces/vera/criteria/${encodeURIComponent(criterion.json['id'])}`, 'DELETE')).status, 200);
+    assert.equal((await call(`/shared-spaces/vera/pages/${encodeURIComponent(manual)}`, 'DELETE')).status, 200);
+    pages = await call('/shared-spaces/vera/pages');
+    assert.deepEqual((pages.json['pages'] as any[]).map((page) => page.title), ['Dentro']);
   });
 });

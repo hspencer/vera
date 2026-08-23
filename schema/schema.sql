@@ -82,11 +82,39 @@ CREATE TABLE IF NOT EXISTS shared_spaces (
     slug            TEXT NOT NULL,
     selector_key    TEXT NOT NULL,
     selector_value  TEXT NOT NULL,
+    criterion_combination TEXT NOT NULL DEFAULT 'any' CHECK (criterion_combination IN ('any', 'all')),
     audience        TEXT NOT NULL CHECK (audience IN ('anybody', 'restricted')),
     status          TEXT NOT NULL CHECK (status IN ('active', 'withdrawn')),
     created_at      INTEGER NOT NULL,
     UNIQUE (graph_id, slug)
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS shared_space_criteria (
+    id              TEXT PRIMARY KEY,
+    space_id        TEXT NOT NULL REFERENCES shared_spaces (id) ON DELETE CASCADE,
+    selector_key    TEXT NOT NULL,
+    selector_value  TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('active', 'removed')),
+    added_by        TEXT NOT NULL REFERENCES participants (id),
+    added_at        INTEGER NOT NULL,
+    removed_at      INTEGER
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS one_active_shared_space_criterion
+    ON shared_space_criteria(space_id, selector_key, selector_value) WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS shared_space_manual_pages (
+    id              TEXT PRIMARY KEY,
+    space_id        TEXT NOT NULL REFERENCES shared_spaces (id) ON DELETE CASCADE,
+    page_id         TEXT NOT NULL REFERENCES pages (id) ON DELETE CASCADE,
+    status          TEXT NOT NULL CHECK (status IN ('active', 'removed')),
+    added_by        TEXT NOT NULL REFERENCES participants (id),
+    added_at        INTEGER NOT NULL,
+    removed_at      INTEGER
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS one_active_manual_page_inclusion
+    ON shared_space_manual_pages(space_id, page_id) WHERE status = 'active';
 
 CREATE TABLE IF NOT EXISTS access_invitations (
     id                TEXT PRIMARY KEY,
