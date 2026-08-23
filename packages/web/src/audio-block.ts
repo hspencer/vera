@@ -223,7 +223,11 @@ export function renderRecorder(
             );
           }
           closeOverlay();
-          handlers.onSettled();
+          // `capture` devuelve la grabación canónica recién asociada. Entregarla
+          // a la vista permite incorporarla antes de redibujar; `onSettled`
+          // reconstruía desde la réplica estructural, que aún no conoce medios,
+          // y dejaba el bloque vacío hasta salir y volver a la página.
+          handlers.onChanged(captured);
         })
         .catch(() => {
           handlers.notify('no se pudo cerrar la grabación; lo dicho hasta ahí se ha perdido');

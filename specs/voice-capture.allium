@@ -319,6 +319,12 @@ surface VoiceCapture {
         -- without opening anything. A recording one has to go and find is a
         -- recording one stops checking against.
 
+    @guarantee AFinishedCaptureAppearsInItsBlock
+        -- Stopping a recording replaces the recorder with the stored audio in
+        -- the block where it was captured as soon as storage confirms it. The
+        -- speaker does not navigate away and back, reload, or need a keyboard to
+        -- make a recording that already exists in the corpus appear on screen.
+
     @guarantee ThreeThingsAndNoMore
         -- What a recording offers is: transcribe, transcribe again, discard. No
         -- step that must be completed, no state that must be advanced, nothing
