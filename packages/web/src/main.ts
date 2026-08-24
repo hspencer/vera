@@ -266,6 +266,7 @@ function closeSettings(): void {
   const panel = $('#tokens');
   panel.hidden = true;
   panel.innerHTML = '';
+  document.body.classList.remove('settings-open');
 }
 
 /** Lo que el grafo tiene. Se pide al arrancar y se enseña en Memoria. */
@@ -2658,6 +2659,7 @@ function wireTheme(): void {
   $('#brand').innerHTML = brandMark();
   $('#insert-voice').innerHTML = icon('mic');
   $('#search-open').innerHTML = icon('search');
+  $('#search-close').innerHTML = icon('x');
   $('#settings').innerHTML = icon('settings');
 
   // Atrás y adelante son los del navegador, no un rastro propio: cada documento
@@ -2837,6 +2839,7 @@ function wireTheme(): void {
       onClose: closeSettings,
       onOpenFiles: () => void openFilesAdministration(true),
     });
+    document.body.classList.add('settings-open');
     // Recordar la sección entre aperturas: se vuelve a la misma que se dejó.
     panel.querySelectorAll('.settings-tab').forEach((tab, at) => {
       if (isAnybody() && tab.textContent !== 'Apariencia') {
@@ -2879,15 +2882,21 @@ function wireTheme(): void {
     bar.classList.add('searching');
     search.focus();
   };
-  const closeSearch = (): void => {
-    if (search.value !== '') return;
+  const closeSearch = (cancel = false): void => {
+    if (!cancel && search.value !== '') return;
+    if (cancel) {
+      search.value = '';
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     bar.classList.remove('searching');
+    search.blur();
   };
 
   $('#search-open').addEventListener('click', () => {
     if (bar.classList.contains('searching')) closeSearch();
     else openSearch();
   });
+  $('#search-close').addEventListener('click', () => closeSearch(true));
   search.addEventListener('blur', () => window.setTimeout(closeSearch, 120));
   search.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;

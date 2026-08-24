@@ -1250,10 +1250,16 @@ input {
 }
 
 .page-heading {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.45rem;
   padding-right: 2rem;
+}
+
+.page-heading .page-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .page-header h1 {
@@ -3288,7 +3294,8 @@ code {
 
   /* Desplegado se pone encima de la primera fila, que es de donde salió. */
   #bar.searching #search-wrap {
-    display: block;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     position: absolute;
     left: calc(0.7rem + env(safe-area-inset-left));
     right: calc(0.7rem + env(safe-area-inset-right));
@@ -3298,6 +3305,23 @@ code {
 
   #bar.searching #search {
     width: 100%;
+  }
+
+  #search-close {
+    display: inline-flex;
+  }
+
+  .page-heading {
+    align-items: start;
+    padding-right: 1.65rem;
+  }
+
+  .page-header h1 {
+    font-size: clamp(1.65rem, 9vw, 2.2rem);
+  }
+
+  .properties-toggle {
+    margin-top: 0.05rem;
   }
 
   /* Ya no es una fila aparte: son tres botones más de la única que hay. */
@@ -3378,6 +3402,8 @@ code {
   width: 30rem;
   max-width: calc(100vw - 2rem);
   max-height: 78vh;
+  box-sizing: border-box;
+  overflow-x: hidden;
   overflow-y: auto;
   background: var(--bg-raised);
   border: 1px solid var(--rule);
@@ -3386,6 +3412,65 @@ code {
   font-family: var(--font-ui);
   font-size: 0.82rem;
   z-index: 30;
+}
+
+body.settings-open #text {
+  overflow: hidden;
+}
+
+#search-close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+#search-close:hover,
+#search-close:focus-visible {
+  color: var(--accent);
+}
+
+#search-close .icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+@media (max-width: 640px) {
+  #tokens {
+    inset: calc(0.5rem + env(safe-area-inset-top))
+      calc(0.5rem + env(safe-area-inset-right))
+      calc(0.5rem + env(safe-area-inset-bottom))
+      calc(0.5rem + env(safe-area-inset-left));
+    width: auto;
+    max-width: none;
+    max-height: none;
+    overscroll-behavior: contain;
+  }
+
+  .settings-tabs {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+
+  .settings-tab {
+    flex: 0 0 auto;
+  }
+
+  .settings-body,
+  .settings-body > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .media-table-scroll {
+    max-width: 100%;
+  }
 }
 
 /*
