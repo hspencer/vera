@@ -1793,10 +1793,17 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     if (request.method === 'GET' && path === '/shared-spaces') {
       const blocked = ownerOnly();
       if (blocked !== null) { send(response, 403, blocked); return; }
-      const countPages = (space: ReturnType<typeof sharedSpaceBySlug> & object): number => graph.pages()
-        .filter((page) => pageBelongsToSharedSpace(graph, space, page.id)).length;
+      const effectivePages = (space: ReturnType<typeof sharedSpaceBySlug> & object) => graph.pages()
+        .filter((page) => pageBelongsToSharedSpace(graph, space, page.id)).map((page) => {
+          const properties = graph.propertiesOf(page.id);
+          const reasons = space.criteria.filter((criterion) => properties.some((property) =>
+            property.key === criterion.key && property.value === criterion.value))
+            .map((criterion) => `${criterion.key}:: ${criterion.value}`);
+          if (space.manualPages.includes(page.id)) reasons.push('inclusión explícita');
+          return { page: page.id, reasons };
+        });
       send(response, 200, { spaces: sharedSpaces(store).map((space) =>
-        administrationOf(store, space, countPages(space))) });
+        administrationOf(store, space, effectivePages(space))) });
       return;
     }
 
@@ -1814,8 +1821,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         const key = typeof body['selectorKey'] === 'string' ? body['selectorKey'].trim() : '';
         const value = typeof body['selectorValue'] === 'string' ? body['selectorValue'].trim() : '';
         const audience = body['audience'] === 'anybody' ? 'anybody' : 'restricted';
-        if (name === '' || key === '' || value === '' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-          send(response, 400, { error: 'el espacio necesita name, slug canónico, selectorKey y selectorValue' }); return;
+        if (name === '' || (key === '') !== (value === '') || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+          send(response, 400, { error: 'el espacio necesita nombre, slug canónico y, si se inicia con criterio, propiedad y valor' }); return;
         }
         try { send(response, 201, createSharedSpace(store, graph.owner!, {
           name, slug, selectorKey: key, selectorValue: value, audience,

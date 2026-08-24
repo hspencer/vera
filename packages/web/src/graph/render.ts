@@ -184,7 +184,7 @@ export function renderGraph(
     .attr("height", height)
     .attr("viewBox", [0, 0, width, height])
     .attr("role", "img")
-    .attr("aria-label", "Knowledge graph visualization");
+    .attr("aria-label", "Visualización del grafo de conocimiento");
 
   const showEdges = settings.showEdges ?? true;
   const showNodes = settings.showNodes ?? true;
@@ -205,12 +205,8 @@ export function renderGraph(
       svg.transition().duration(300).call(zoomBehavior.scaleBy as any, 0.67);
     }
   }) as EventListener;
-  const onCenter = (() => {
-    svg.transition().duration(300).call(
-      zoomBehavior.transform as any,
-      d3.zoomIdentity.translate(width / 2, height / 2).scale(0.8).translate(-width / 2, -height / 2)
-    );
-  }) as EventListener;
+  let frameAll = (): void => undefined;
+  const onCenter = (() => frameAll()) as EventListener;
   document.addEventListener("constel:zoom", onZoom);
   document.addEventListener("constel:center", onCenter);
   active2dListeners = [
@@ -831,10 +827,35 @@ export function renderGraph(
     }
     place();
     remember();
-    if (needsCentre) {
+    if (!allPlaced && heldTransform === null) {
+      frameAll();
+    } else if (needsCentre) {
       const target = (data.nodes as any[]).find((item) => item.id === selected);
       if (target !== undefined) centre(target);
     }
+  };
+
+  /* Encuadra las cajas de los nombres, no sólo sus puntos. Ésta es la diferencia
+     entre ver un grafo y quedar con la cámara dentro de una palabra. */
+  frameAll = (): void => {
+    if (data.nodes.length === 0) return;
+    const bounds = data.nodes.map((item) => {
+      const box = dims.get(item.id) ?? { w: 24, h: 18 };
+      return { left: (item.x ?? 0) - box.w / 2, right: (item.x ?? 0) + box.w / 2,
+        top: (item.y ?? 0) - box.h / 2, bottom: (item.y ?? 0) + box.h / 2 };
+    });
+    const left = Math.min(...bounds.map((one) => one.left));
+    const right = Math.max(...bounds.map((one) => one.right));
+    const top = Math.min(...bounds.map((one) => one.top));
+    const bottom = Math.max(...bounds.map((one) => one.bottom));
+    const graphWidth = Math.max(1, right - left);
+    const graphHeight = Math.max(1, bottom - top);
+    const padding = Math.min(48, Math.max(20, Math.min(width, height) * 0.08));
+    const scale = Math.max(0.2, Math.min(1.5,
+      (width - padding * 2) / graphWidth, (height - padding * 2) / graphHeight));
+    const transform = d3.zoomIdentity.translate(width / 2, height / 2).scale(scale)
+      .translate(-(left + right) / 2, -(top + bottom) / 2);
+    zoomBehavior.transform(svg as any, transform);
   };
 
   /**

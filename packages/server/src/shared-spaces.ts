@@ -14,6 +14,7 @@ export interface SharedSpace {
 
 export interface SharedSpaceAdministration extends SharedSpace {
   pageCount: number;
+  effectivePages: { page: string; reasons: string[] }[];
   invitations: { id: string; permissions: SharedPermission[]; intendedContact: string | null;
     status: 'pending' | 'redeemed' | 'revoked' | 'expired'; issuedAt: number; expiresAt: number }[];
   participants: { grant: string; participant: string; name: string; permissions: SharedPermission[];
@@ -32,11 +33,11 @@ export const INVITATION_LIFETIMES = [
 export const DEFAULT_INVITATION_LIFETIME = INVITATION_LIFETIMES[2];
 
 export function createSharedSpace(store: Store, owner: string, input: {
-  name: string; slug: string; selectorKey: string; selectorValue: string;
+  name: string; slug: string; selectorKey?: string; selectorValue?: string;
   audience?: 'anybody' | 'restricted';
 }): SharedSpace {
   const held: SharedSpace = { id: id('space'), name: input.name, slug: input.slug,
-    selectorKey: input.selectorKey, selectorValue: input.selectorValue,
+    selectorKey: input.selectorKey ?? '', selectorValue: input.selectorValue ?? '',
     criterionCombination: 'any', criteria: [], manualPages: [],
     audience: input.audience ?? 'restricted', status: 'active', createdAt: Date.now() };
   const criterion = id('criterion');
@@ -47,12 +48,15 @@ export function createSharedSpace(store: Store, owner: string, input: {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`)
     .run(held.id, store.graphId, owner, held.name, held.slug, held.selectorKey,
       held.selectorValue, held.audience, held.createdAt);
-    store.db.prepare(`INSERT INTO shared_space_criteria
-      (id,space_id,selector_key,selector_value,status,added_by,added_at)
-      VALUES (?,?,?,?,'active',?,?)`).run(criterion, held.id, held.selectorKey, held.selectorValue, owner, held.createdAt);
+    if (held.selectorKey !== '' && held.selectorValue !== '') {
+      store.db.prepare(`INSERT INTO shared_space_criteria
+        (id,space_id,selector_key,selector_value,status,added_by,added_at)
+        VALUES (?,?,?,?,'active',?,?)`).run(criterion, held.id, held.selectorKey, held.selectorValue, owner, held.createdAt);
+    }
     store.db.exec('COMMIT');
   } catch (error) { store.db.exec('ROLLBACK'); throw error; }
-  held.criteria = [{ id: criterion, key: held.selectorKey, value: held.selectorValue, status: 'active' }];
+  held.criteria = held.selectorKey === '' ? [] :
+    [{ id: criterion, key: held.selectorKey, value: held.selectorValue, status: 'active' }];
   return held;
 }
 
@@ -100,7 +104,6 @@ export function addSharedSpaceCriterion(store: Store, owner: string, space: Shar
 }
 
 export function removeSharedSpaceCriterion(store: Store, space: SharedSpace, criterion: string): boolean {
-  if (space.criteria.length <= 1) throw new Error('el espacio debe conservar al menos un criterio');
   return Number(store.db.prepare(`UPDATE shared_space_criteria SET status='removed',removed_at=?
     WHERE id=? AND space_id=? AND status='active'`).run(Date.now(), criterion, space.id).changes) > 0;
 }
@@ -129,7 +132,8 @@ export function pageBelongsToSharedSpace(graph: { propertiesOf(id: string): { ke
     ? space.criteria.every(matches) : space.criteria.some(matches));
 }
 
-export function administrationOf(store: Store, space: SharedSpace, pageCount: number): SharedSpaceAdministration {
+export function administrationOf(store: Store, space: SharedSpace,
+  effectivePages: { page: string; reasons: string[] }[]): SharedSpaceAdministration {
   const now = Date.now();
   store.db.prepare(`UPDATE access_invitations SET status='expired'
     WHERE space_id=? AND status='pending' AND expires_at<=?`).run(space.id, now);
@@ -149,7 +153,7 @@ export function administrationOf(store: Store, space: SharedSpace, pageCount: nu
       permissions: String(row.permissions).split(',') as SharedPermission[], status: row.status,
       grantedAt: row.granted_at, authenticators: Number(row.authenticators), activeSessions: Number(row.active_sessions),
     }));
-  return { ...space, pageCount, invitations, participants };
+  return { ...space, pageCount: effectivePages.length, effectivePages, invitations, participants };
 }
 
 export function revokeInvitation(store: Store, space: SharedSpace, invitation: string): boolean {

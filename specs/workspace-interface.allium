@@ -1183,6 +1183,19 @@ surface VeraWorkspace {
         -- General styles and design tokens are editable from within Vera and
         -- remain accessible as source rather than opaque application state.
 
+    @guarantee CommonAppearancePrecedesTheDesignSystem
+        -- Appearance first offers the few choices a reader routinely changes:
+        -- scheme, text size, line height, column width and phone scale. The full
+        -- named token system remains available under an explicitly advanced
+        -- disclosure rather than confronting every reader with implementation
+        -- variables before those ordinary choices.
+
+    @guarantee RepeatedControlsNameTheirSubject
+        -- Repeated controls expose the thing they govern in their accessible
+        -- name. In particular, a block action names a stable fragment of its
+        -- block and the graph is announced in the workspace language; identical
+        -- controls must not become an indistinguishable list to a screen reader.
+
     @guarantee OneStrokeWeightJoinsTheIconFamily
         -- Every outlined interface icon uses the same stroke weight, including
         -- the text, map and hybrid view controls. A new icon joins that shared

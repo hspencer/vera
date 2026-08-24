@@ -47,7 +47,7 @@ import { when } from './dates.ts';
 import { isMCPPage, renderMCP } from './mcp-page.ts';
 import { isActivityPage, renderActivityPage } from './activity-page.ts';
 import { isServicePage, pickBibliography, renderService } from './service-page.ts';
-import { isPublicationPage, renderPublicationPage } from './publication-page.ts';
+import { isPublicationPage, renderPageSharing, renderPublicationPage } from './publication-page.ts';
 import {
   DEADLINE_KEY,
   LIST_KEY,
@@ -3673,6 +3673,14 @@ export function renderOutliner(
         },
       },
       {
+        label: 'Espacios compartidos de esta página',
+        icon: 'affiliate',
+        run: () => void renderPageSharing(page.id, page.title).then((panel) => {
+          container.querySelector('.page-sharing')?.remove();
+          header.after(panel);
+        }),
+      },
+      {
         // Deliberado y sobre esta página, nunca de oficio: resolver un enlace es
         // preguntarle al servidor que lo tiene, y eso le dice que aquí alguien
         // está leyendo sobre esto.
@@ -3975,7 +3983,10 @@ export function renderOutliner(
     // El punto lo dibuja la hoja de estilo y no un carácter: llena si lo escribió
     // una mano y hueca si una máquina, del mismo tamaño las dos. Ver `.bullet`.
     bullet.setAttribute('aria-haspopup', 'menu');
-    bullet.setAttribute('aria-label', 'acciones del bloque');
+    const blockSummary = node.block.content.trim().replace(/\s+/g, ' ').slice(0, 48);
+    bullet.setAttribute('aria-label', blockSummary === ''
+      ? `acciones del bloque vacío ${node.block.stableId}`
+      : `acciones del bloque: ${blockSummary}`);
 
     const body = document.createElement('div');
     body.className = 'body';
@@ -5090,6 +5101,16 @@ export function renderOutliner(
       from.className = 'relation-from markdown-preview';
       renderPreview(from, row.says, outgoing ? 'followed_reference' : 'followed_backlink');
       item.append(from);
+
+      // El botón anterior ya ofrece el destino. Si la cita vuelve a nombrar esa
+      // misma página, conservar otro enlace idéntico multiplica paradas para el
+      // teclado y el lector de pantalla sin añadir una acción nueva.
+      const destination = (outgoing ? row.targetTitle : row.title).toLowerCase();
+      for (const repeated of item.querySelectorAll<HTMLAnchorElement>('a.wiki')) {
+        if ((repeated.dataset['page'] ?? repeated.textContent ?? '').toLowerCase() !== destination) continue;
+        repeated.tabIndex = -1;
+        repeated.setAttribute('aria-hidden', 'true');
+      }
 
       list.append(item);
     }

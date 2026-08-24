@@ -247,4 +247,20 @@ describe('primer corte vertical de espacios compartidos', () => {
     pages = await call('/shared-spaces/vera/pages');
     assert.deepEqual((pages.json['pages'] as any[]).map((page) => page.title), ['Dentro']);
   });
+
+  it('permite comenzar vacío y explica por qué pertenece cada página', async () => {
+    const made = await call('/shared-spaces', 'POST', { name: 'Vacío', slug: 'vacio' });
+    assert.equal(made.status, 201, JSON.stringify(made.json));
+    let admin = await call('/shared-spaces');
+    let empty = (admin.json['spaces'] as any[]).find((space) => space.slug === 'vacio');
+    assert.equal(empty.pageCount, 0);
+    assert.deepEqual(empty.criteria, []);
+    assert.deepEqual(empty.effectivePages, []);
+
+    const page = await write({ kind: 'create_page', title: 'Manual vacía', visibility: 'private' });
+    assert.equal((await call('/shared-spaces/vacio/pages', 'POST', { page })).status, 201);
+    admin = await call('/shared-spaces');
+    empty = (admin.json['spaces'] as any[]).find((space) => space.slug === 'vacio');
+    assert.deepEqual(empty.effectivePages, [{ page, reasons: ['inclusión explícita'] }]);
+  });
 });

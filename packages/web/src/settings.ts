@@ -137,6 +137,7 @@ interface SharedAdministration {
   manualPages: string[];
   audience: 'restricted' | 'anybody';
   status: 'active' | 'withdrawn'; pageCount: number;
+  effectivePages: { page: string; reasons: string[] }[];
   invitations: { id: string; permissions: SharedPermission[]; intendedContact: string | null;
     status: 'pending' | 'redeemed' | 'revoked' | 'expired'; issuedAt: number; expiresAt: number }[];
   participants: { grant: string; participant: string; name: string; permissions: SharedPermission[];
@@ -183,6 +184,7 @@ export async function drawSharing(host: HTMLElement): Promise<void> {
   }
   catch (error) { status.textContent = error instanceof Error ? error.message : 'No se pudo leer la configuración.'; return; }
   status.textContent = `${spaces.length + 1} ${spaces.length === 0 ? 'forma' : 'formas'} de compartir: una pública y ${spaces.length} con acceso autenticado.`;
+  host.append(peopleDirectory(spaces));
   host.append(publicSiteAdministration(host, publicSite, pages));
   for (const space of spaces) host.append(spaceAdministration(host, space, pages));
   const add = document.createElement('button'); add.type = 'button'; add.className = 'sharing-add';
@@ -198,12 +200,44 @@ export async function drawSharing(host: HTMLElement): Promise<void> {
   host.append(add, creation);
 }
 
+/** Control contextual: pertenencia de una página sin obligar a reconstruirla
+ * mentalmente dentro del directorio completo. */
+export async function drawPageSharing(host: HTMLElement, page: string, title: string): Promise<void> {
+  host.innerHTML = '';
+  const head = document.createElement('header'); head.className = 'settings-head';
+  const heading = document.createElement('h2'); heading.textContent = `Espacios compartidos · ${title}`;
+  const close = document.createElement('button'); close.type = 'button'; close.className = 'settings-close';
+  close.innerHTML = icon('x'); close.setAttribute('aria-label', 'Cerrar espacios compartidos');
+  close.onclick = () => host.remove(); head.append(heading, close); host.append(head);
+  const body = document.createElement('div'); body.className = 'settings-body'; host.append(body);
+  const status = document.createElement('p'); status.className = 'settings-note'; status.textContent = 'Leyendo pertenencia…'; body.append(status);
+  try {
+    const spaces = (await sharingRequest('/shared-spaces')).spaces as SharedAdministration[];
+    status.textContent = 'La pertenencia por criterio es derivada; la inclusión explícita puede cambiarse aquí.';
+    const list = document.createElement('ul'); list.className = 'sharing-list';
+    for (const space of spaces) {
+      const admitted = space.effectivePages.find((one) => one.page === page);
+      const manual = space.manualPages.includes(page);
+      const row = document.createElement('li'); const text = document.createElement('span'); text.textContent = space.name;
+      const reason = document.createElement('small'); reason.textContent = admitted?.reasons.join(' + ') ?? 'no pertenece'; text.append(reason);
+      const action = document.createElement('button'); action.type = 'button';
+      action.textContent = manual ? 'Quitar inclusión' : admitted === undefined ? 'Incluir' : 'Pertenece por criterio';
+      action.disabled = admitted !== undefined && !manual;
+      action.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/pages${manual ? `/${encodeURIComponent(page)}` : ''}`,
+        manual ? 'DELETE' : 'POST', manual ? undefined : { page }).then(() => drawPageSharing(host, page, title));
+      row.append(text, action); list.append(row);
+    }
+    if (spaces.length === 0) { const empty = document.createElement('li'); empty.textContent = 'No hay espacios compartidos.'; list.append(empty); }
+    body.append(list);
+  } catch (error) { status.textContent = error instanceof Error ? error.message : 'No se pudo leer la pertenencia.'; }
+}
+
 function newSpaceForm(host: HTMLElement, veraDefaults = true): HTMLElement {
   const form = document.createElement('form'); form.className = 'sharing-form';
   const name = field('Nombre', veraDefaults ? 'Vera' : '', 'nombre del espacio');
   const slug = field('Slug', veraDefaults ? 'vera' : '', 'ruta-corta');
-  const key = field('Propiedad', veraDefaults ? 'concepto' : '', 'espacio');
-  const value = field('Valor exacto', veraDefaults ? 'Vera' : '', 'doctorado');
+  const key = field('Propiedad inicial (opcional)', veraDefaults ? 'concepto' : '', 'espacio');
+  const value = field('Valor inicial (opcional)', veraDefaults ? 'Vera' : '', 'doctorado');
   const publicAccess = document.createElement('label'); publicAccess.className = 'sharing-public-choice';
   const publicInput = document.createElement('input'); publicInput.type = 'checkbox';
   publicAccess.append(publicInput, document.createTextNode(' Acceso público, sin invitación'));
@@ -331,10 +365,51 @@ function spaceAdministration(host: HTMLElement, space: SharedAdministration, pag
     } catch (error) { saved.textContent = error instanceof Error ? error.message : 'No se pudo guardar.'; save.disabled = false; }
   })());
   body.append(count, visit, form);
-  if (!isPublic) body.append(invitationForm(host, space), invitations(host, space), participants(host, space));
-  body.append(criteriaAdministration(host, space), manualPagesAdministration(host, space, pages));
+  if (!isPublic) body.append(participants(host, space), invitations(host, space), invitationForm(host, space));
+  body.append(effectivePages(space, pages), criteriaAdministration(host, space), manualPagesAdministration(host, space, pages));
   card.append(title, body);
   return card;
+}
+
+function effectivePages(space: SharedAdministration, pages: PageSummary[]): HTMLElement {
+  const box = document.createElement('div'); box.className = 'sharing-group';
+  const heading = document.createElement('h4'); heading.textContent = 'Pertenencia efectiva'; box.append(heading);
+  const list = document.createElement('ul'); list.className = 'sharing-list sharing-effective-pages';
+  for (const admitted of space.effectivePages) {
+    const row = document.createElement('li');
+    const title = pages.find((page) => page.id === admitted.page)?.title ?? admitted.page;
+    const text = document.createElement('span'); text.textContent = title;
+    const reason = document.createElement('small'); reason.textContent = admitted.reasons.join(' + ') || 'sin razón declarada';
+    text.append(reason); row.append(text); list.append(row);
+  }
+  if (space.effectivePages.length === 0) {
+    const empty = document.createElement('li'); empty.textContent = 'El espacio todavía no contiene páginas.'; list.append(empty);
+  }
+  box.append(list); return box;
+}
+
+function peopleDirectory(spaces: SharedAdministration[]): HTMLElement {
+  const people = new Map<string, { name: string; grants: { space: string; permissions: SharedPermission[]; status: string }[] }>();
+  for (const space of spaces) for (const participant of space.participants) {
+    const person = people.get(participant.participant) ?? { name: participant.name, grants: [] };
+    person.grants.push({ space: space.name, permissions: participant.permissions, status: participant.status });
+    people.set(participant.participant, person);
+  }
+  const details = document.createElement('details'); details.className = 'sharing-people';
+  const summary = document.createElement('summary'); summary.textContent = `Personas · ${people.size}`; details.append(summary);
+  const note = document.createElement('p'); note.className = 'settings-note';
+  note.textContent = 'Vista transversal de identidades que ya aceptaron acceso; las invitaciones pendientes no aparecen aquí.';
+  details.append(note);
+  const list = document.createElement('ul'); list.className = 'sharing-list';
+  for (const person of people.values()) {
+    const row = document.createElement('li'); const text = document.createElement('span');
+    text.textContent = person.name;
+    const grants = document.createElement('small'); grants.textContent = person.grants
+      .map((grant) => `${grant.space}: ${grant.permissions.join(', ')} · ${grant.status}`).join(' / ');
+    text.append(grants); row.append(text); list.append(row);
+  }
+  if (people.size === 0) { const empty = document.createElement('li'); empty.textContent = 'Todavía no hay participantes autenticados.'; list.append(empty); }
+  details.append(list); return details;
 }
 
 function criteriaAdministration(host: HTMLElement, space: SharedAdministration): HTMLElement {
@@ -345,9 +420,11 @@ function criteriaAdministration(host: HTMLElement, space: SharedAdministration):
     const row = document.createElement('li'); const text = document.createElement('span');
     text.textContent = `${criterion.key}:: ${criterion.value}`; row.append(text);
     const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Quitar';
-    remove.disabled = space.criteria.length === 1;
     remove.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/criteria/${encodeURIComponent(criterion.id)}`, 'DELETE')
       .then(() => drawSharing(host)); row.append(remove); list.append(row);
+  }
+  if (space.criteria.length === 0) {
+    const empty = document.createElement('li'); empty.textContent = 'Ninguno; puedes comenzar vacío o usar inclusiones explícitas.'; list.append(empty);
   }
   const add = document.createElement('form'); add.className = 'sharing-publish';
   const key = document.createElement('input'); key.placeholder = 'propiedad';
@@ -948,11 +1025,18 @@ function drawAppearance(
   intro.className = 'settings-note';
   intro.textContent =
     `Se está editando el esquema ${scheme === 'dark' ? 'oscuro' : 'claro'}. ` +
-    'Cada token guarda su valor para los dos, así que cambiar de esquema no pisa el otro.';
+    'Los ajustes habituales están primero. El sistema completo de tokens queda disponible como apariencia avanzada.';
   host.append(intro);
 
   const list = document.createElement('div');
   list.className = 'tokens';
+  const advanced = document.createElement('details');
+  advanced.className = 'appearance-advanced';
+  const advancedSummary = document.createElement('summary');
+  advancedSummary.textContent = 'Apariencia avanzada';
+  const advancedList = document.createElement('div'); advancedList.className = 'tokens';
+  advanced.append(advancedSummary, advancedList);
+  const simpleTokens = new Set(['--text-size', '--line-height', '--content-width', '--phone-scale']);
 
   for (const token of tokens) {
     const row = document.createElement('label');
@@ -1088,10 +1172,10 @@ function drawAppearance(
     }
 
     row.append(name, control);
-    list.append(row);
+    (simpleTokens.has(token.name) ? list : advancedList).append(row);
   }
 
-  host.append(list);
+  host.append(list, advanced);
 
   const reset = document.createElement('button');
   reset.type = 'button';

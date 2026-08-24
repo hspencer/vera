@@ -5,7 +5,7 @@
 // administración. El componente vive en settings.ts para impedir que una
 // entrada avance mientras la otra conserva una versión parcial del gobierno.
 
-import { drawSharing } from './settings.ts';
+import { drawPageSharing, drawSharing } from './settings.ts';
 
 export function isPublicationPage(
   properties: readonly { key: string; value: string }[],
@@ -21,4 +21,9 @@ export async function renderPublicationPage(): Promise<HTMLElement> {
   panel.className = 'publication-page settings-sharing';
   await drawSharing(panel);
   return panel;
+}
+
+export async function renderPageSharing(page: string, title: string): Promise<HTMLElement> {
+  const panel = document.createElement('section'); panel.className = 'page-sharing settings-sharing';
+  await drawPageSharing(panel, page, title); return panel;
 }
