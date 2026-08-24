@@ -1139,7 +1139,17 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     }
 
     const publicReadThroughBody = request.method === 'POST' && path === '/query';
-    if (publicAccess && request.method !== 'GET' && request.method !== 'HEAD' && !publicReadThroughBody) {
+    // La invitación nace precisamente para alguien que todavía no pertenece a
+    // Vera. Su canje y la ceremonia WebAuthn deben, por tanto, poder ocurrir en
+    // el origen público sin convertir ese origen en una superficie de escritura
+    // general.
+    const publicAdmission = request.method === 'POST' && (
+      /^\/invitations\/[^/]+\/redeem$/.test(path) ||
+      path === '/human-auth/registration/options' ||
+      path === '/human-auth/registration/verify'
+    );
+    if (publicAccess && request.method !== 'GET' && request.method !== 'HEAD' &&
+      !publicReadThroughBody && !publicAdmission) {
       send(response, 405, { error: 'anybody sólo puede leer' });
       return;
     }
@@ -1162,6 +1172,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         path.startsWith('/pages/') ||
         path.startsWith('/graph/') ||
         path.startsWith('/media/') ||
+        path.startsWith('/invite/') ||
+        /^\/invitations\/[^/]+$/.test(path) ||
+        publicAdmission ||
         publicSharedPath ||
         (publicScopedSpace !== null && path.startsWith('/p/')) ||
         canonicalPublication !== undefined ||
@@ -1986,8 +1999,12 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           const invitation = inviteToSpace(store, graph.owner!, space, permissions,
             typeof body['intendedContact'] === 'string' ? body['intendedContact'] : undefined,
             typeof body['lifetimeMs'] === 'number' ? body['lifetimeMs'] : DEFAULT_INVITATION_LIFETIME);
-          send(response, 201, { ...invitation, space: space.name,
-            url: `/invite/${encodeURIComponent(invitation.id)}?secret=${encodeURIComponent(invitation.secret)}` });
+          const invitationPath = `/invite/${encodeURIComponent(invitation.id)}?secret=${encodeURIComponent(invitation.secret)}`;
+          const canonicalDomain = publicSite()?.canonicalDomain ?? options.publicSite?.canonicalDomain;
+          const invitationUrl = canonicalDomain === undefined
+            ? invitationPath
+            : new URL(invitationPath, `${canonicalDomain.replace(/\/$/, '')}/`).toString();
+          send(response, 201, { ...invitation, space: space.name, url: invitationUrl });
         } catch (error) { send(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
       });
       return;

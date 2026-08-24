@@ -12,7 +12,8 @@ let sequence = 0;
 
 before(() => {
   running = listen({ port: PORT, publicPreviewPort: PORT + 1,
-    databasePath: ':memory:', owner: { id: OWNER, name: 'Herbert' } });
+    databasePath: ':memory:', owner: { id: OWNER, name: 'Herbert' },
+    publicSite: { title: 'Vera', canonicalDomain: 'https://vera.mediafranca.net' } });
   base = `http://localhost:${PORT}`;
   publicBase = `http://localhost:${PORT + 1}`;
 });
@@ -21,6 +22,14 @@ after(async () => running.close());
 async function call(path: string, method = 'GET', body?: unknown, headers: Record<string, string> = {}) {
   const response = await fetch(`${base}${path}`, {
     method, headers: { 'content-type': 'application/json', ...headers },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  return { status: response.status, json: await response.json() as Record<string, any> };
+}
+
+async function callPublic(path: string, method = 'GET', body?: unknown) {
+  const response = await fetch(`${publicBase}${path}`, {
+    method, headers: { 'content-type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   return { status: response.status, json: await response.json() as Record<string, any> };
@@ -50,6 +59,7 @@ describe('primer corte vertical de espacios compartidos', () => {
     const issued = await call('/shared-spaces/doctorado/invitations', 'POST', { permissions: ['read'] });
     assert.equal(issued.status, 201, JSON.stringify(issued.json));
     assert.match(issued.json['secret'], /^vera_inv_/);
+    assert.equal(new URL(issued.json['url']).origin, 'https://vera.mediafranca.net');
     const invitation = issued.json['id'] as string;
     const proof = issued.json['secret'] as string;
 
@@ -71,6 +81,23 @@ describe('primer corte vertical de espacios compartidos', () => {
     assert.equal((await call(`/invitations/${encodeURIComponent(invitation)}/redeem`, 'POST', {
       secret: proof, name: 'Otra',
     })).status, 409);
+  });
+
+  it('permite abrir y canjear la invitación desde el origen público', async () => {
+    const issued = await call('/shared-spaces/doctorado/invitations', 'POST', { permissions: ['read'] });
+    const invitation = issued.json['id'] as string;
+    const proof = issued.json['secret'] as string;
+    const preview = await callPublic(`/invitations/${encodeURIComponent(invitation)}?secret=${encodeURIComponent(proof)}`);
+    assert.equal(preview.status, 200, JSON.stringify(preview.json));
+    assert.equal(preview.json['space'], 'Doctorado');
+    const redeemed = await callPublic(`/invitations/${encodeURIComponent(invitation)}/redeem`, 'POST', {
+      secret: proof, name: 'Invitada pública',
+    });
+    assert.equal(redeemed.status, 201, JSON.stringify(redeemed.json));
+    const passkey = await callPublic('/human-auth/registration/options', 'POST', {
+      enrollment: redeemed.json['enrollment'], secret: redeemed.json['enrollmentSecret'],
+    });
+    assert.equal(passkey.status, 200, JSON.stringify(passkey.json));
   });
 
   it('un secreto incorrecto no revela siquiera el nombre del espacio', async () => {
