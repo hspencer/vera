@@ -154,6 +154,33 @@ function connectPanel(connect: MCPConnect, host: HTMLElement): void {
   host.append(note);
 
   /*
+   * La configuración concreta y la explicación larga son dos escalas distintas.
+   * Las guías viven como páginas ordinarias —se enlazan, se buscan y se editan—,
+   * pero tienen que estar a la vista justo aquí, donde alguien está intentando
+   * conectar un cliente, no varios metros más abajo entre los bloques fuente.
+   */
+  const guides = document.createElement('nav');
+  guides.className = 'connect-guides';
+  guides.setAttribute('aria-label', 'guías para conectar inteligencias artificiales');
+  const guideHeading = document.createElement('strong');
+  guideHeading.textContent = 'Instrucciones por proveedor';
+  const guideList = document.createElement('ul');
+  for (const [title, label] of [
+    ['Vera — conectar OpenAI por MCP', 'OpenAI · Codex y ChatGPT'],
+    ['Vera — conectar Claude por MCP', 'Anthropic · Claude Code y Claude Desktop'],
+    ['Vera — conectar Gemini por MCP', 'Google · Gemini CLI'],
+  ] as const) {
+    const item = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = `/p/${encodeURIComponent(title)}`;
+    link.textContent = label;
+    item.append(link);
+    guideList.append(item);
+  }
+  guides.append(guideHeading, guideList);
+  host.append(guides);
+
+  /*
    * El nombre del cliente, una sola vez y arriba del todo.
    *
    * De todo lo que hay en este panel es lo único que es una decisión: los demás
