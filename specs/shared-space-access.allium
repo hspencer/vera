@@ -193,6 +193,7 @@ contract InvitationCapability {
     deliver: (invitation: AccessInvitation, channel: DeliveryChannel) -> AccessInvitation
     redeem: (invitation: AccessInvitation, proof: String) -> AccessInvitation
     revoke: (owner: core/Participant, invitation: AccessInvitation) -> AccessInvitation
+    delete: (owner: core/Participant, invitation: AccessInvitation) -> AccessInvitation
 
     @invariant DeliveryDoesNotBecomeIdentity
         -- Email, a message, a copied link and a QR code are ways to transport an
@@ -718,6 +719,18 @@ rule OwnerRevokesPendingInvitation {
     requires: invitation.status = pending
 
     ensures: invitation.status = revoked
+}
+
+rule OwnerDeletesInvitation {
+    when: DeleteInvitation(owner, invitation)
+
+    requires: invitation.space.owner = owner
+
+    ensures: not exists invitation
+
+    @guidance
+        -- Removing a redeemed invitation removes only the spent capability and
+        -- its administrative history. The participant and access grant remain.
 }
 
 rule PersonWithoutVeraRedeemsInvitation {
@@ -1345,6 +1358,7 @@ surface SharedSpaceAdministration {
         ChangeSharedSpacePermissions(owner, grant, permissions) when grant.space = space
         RevokeSharedSpaceAccess(owner, grant) when grant.space = space
         RevokeInvitation(owner, invitation) when invitation.space = space
+        DeleteInvitation(owner, invitation) when invitation.space = space
         ReviewSharedProposal(owner, proposal, accept)
             when proposal.space = space and proposal.status = awaiting_review
         ReviewSharedProposal(owner, proposal, reject)
@@ -1377,6 +1391,11 @@ surface SharedSpaceAdministration {
         -- may revoke it immediately from this administration until redemption
         -- or expiry. Seven days is offered by default; no invitation exceeds
         -- thirty days.
+
+    @guarantee EveryInvitationCanBeDeleted
+        -- The owner may permanently remove pending, expired, revoked or redeemed
+        -- invitations. Deleting a redeemed invitation does not revoke the
+        -- participant or their access grant.
 
     @guarantee InvitationsAreIssuedPerPerson
         -- Each invitation is a one-use capability intended for one person. The

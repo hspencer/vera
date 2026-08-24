@@ -161,6 +161,11 @@ export function revokeInvitation(store: Store, space: SharedSpace, invitation: s
     WHERE id=? AND space_id=? AND status='pending'`).run(invitation, space.id).changes) > 0;
 }
 
+export function deleteInvitation(store: Store, space: SharedSpace, invitation: string): boolean {
+  return Number(store.db.prepare(`DELETE FROM access_invitations
+    WHERE id=? AND space_id=?`).run(invitation, space.id).changes) > 0;
+}
+
 export function revokeGrant(store: Store, space: SharedSpace, grant: string): boolean {
   return Number(store.db.prepare(`UPDATE access_grants SET status='revoked',revoked_at=?
     WHERE id=? AND space_id=? AND status='active'`).run(Date.now(), grant, space.id).changes) > 0;

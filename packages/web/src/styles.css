@@ -7551,6 +7551,8 @@ body.settings-open #text {
 .sharing-list li button:disabled,
 .sharing-publish button:disabled,
 .sharing-issued-invitation button:disabled { opacity: .55; cursor: wait; }
+.sharing-list li button.danger { color: var(--danger, #9f2525); border-color: color-mix(in srgb, var(--danger, #9f2525) 55%, var(--rule)); }
+.sharing-list li button.danger:hover { background: color-mix(in srgb, var(--danger, #9f2525) 10%, var(--bg)); }
 .sharing-group { margin: 1.35rem 0; }
 .sharing-group h4 { margin-bottom: .6rem; }
 .sharing-permissions { display: flex; flex-wrap: wrap; gap: 1rem; margin: .75rem 0; }

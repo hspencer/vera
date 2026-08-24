@@ -142,6 +142,7 @@ import {
   addSharedSpaceCriterion,
   changeGrantPermissions,
   createSharedSpace,
+  deleteInvitation,
   includeManualPage,
   inspectInvitation,
   inviteToSpace,
@@ -1929,6 +1930,17 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       if (space === null) { send(response, 404, { error: 'el espacio no existe' }); return; }
       const changed = revokeInvitation(store, space, decodeURIComponent(parts[4] ?? ''));
       send(response, changed ? 200 : 409, changed ? { status: 'revoked' } : { error: 'la invitación ya no estaba pendiente' });
+      return;
+    }
+
+    if (request.method === 'DELETE' && /^\/shared-spaces\/[^/]+\/invitations\/[^/]+\/permanent$/.test(path)) {
+      const blocked = ownerOnly();
+      if (blocked !== null) { send(response, 403, blocked); return; }
+      const parts = path.split('/');
+      const space = sharedSpaceBySlug(store, decodeURIComponent(parts[2] ?? ''));
+      if (space === null) { send(response, 404, { error: 'el espacio no existe' }); return; }
+      const changed = deleteInvitation(store, space, decodeURIComponent(parts[4] ?? ''));
+      send(response, changed ? 200 : 404, changed ? { status: 'deleted' } : { error: 'la invitación no existe' });
       return;
     }
 

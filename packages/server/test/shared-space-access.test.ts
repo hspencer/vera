@@ -244,6 +244,34 @@ describe('primer corte vertical de espacios compartidos', () => {
     assert.equal((admin.json['spaces'] as any[])[0].pageCount, 1);
   });
 
+  it('elimina definitivamente invitaciones en cualquier estado sin revocar accesos', async () => {
+    const pending = await call('/shared-spaces/vera/invitations', 'POST', { permissions: ['read'], intendedContact: 'Pendiente' });
+    assert.equal((await call(`/shared-spaces/vera/invitations/${encodeURIComponent(pending.json['id'])}/permanent`, 'DELETE')).status, 200);
+
+    const revoked = await call('/shared-spaces/vera/invitations', 'POST', { permissions: ['read'], intendedContact: 'Revocada' });
+    assert.equal((await call(`/shared-spaces/vera/invitations/${encodeURIComponent(revoked.json['id'])}`, 'DELETE')).status, 200);
+    assert.equal((await call(`/shared-spaces/vera/invitations/${encodeURIComponent(revoked.json['id'])}/permanent`, 'DELETE')).status, 200);
+
+    const expired = await call('/shared-spaces/vera/invitations', 'POST', { permissions: ['read'], intendedContact: 'Caducada' });
+    running.vera.store.db.prepare(`UPDATE access_invitations SET expires_at=0 WHERE id=?`).run(expired.json['id']);
+    await call('/shared-spaces');
+    assert.equal((await call(`/shared-spaces/vera/invitations/${encodeURIComponent(expired.json['id'])}/permanent`, 'DELETE')).status, 200);
+
+    const redeemed = await call('/shared-spaces/vera/invitations', 'POST', { permissions: ['read'], intendedContact: 'Canjeada' });
+    const accepted = await call(`/invitations/${encodeURIComponent(redeemed.json['id'])}/redeem`, 'POST', {
+      secret: redeemed.json['secret'], name: 'Persistente',
+    });
+    assert.equal(accepted.status, 201, JSON.stringify(accepted.json));
+    assert.equal((await call(`/shared-spaces/vera/invitations/${encodeURIComponent(redeemed.json['id'])}/permanent`, 'DELETE')).status, 200);
+
+    const admin = await call('/shared-spaces');
+    const space = (admin.json['spaces'] as any[]).find((one) => one.slug === 'vera');
+    const removed = [pending, revoked, expired, redeemed].map((one) => one.json['id']);
+    assert.ok(!space.invitations.some((one: any) => removed.includes(one.id)));
+    assert.ok(space.participants.some((one: any) => one.name === 'Persistente' && one.status === 'active'));
+    assert.equal((await call(`/shared-spaces/vera/invitations/${encodeURIComponent(redeemed.json['id'])}/permanent`, 'DELETE')).status, 404);
+  });
+
   it('compone varios criterios con páginas explícitas y cambia permisos', async () => {
     const thematic = await write({ kind: 'create_page', title: 'Por tema', visibility: 'private' });
     await write({ kind: 'set_property', page: thematic, propertyKey: 'tema', propertyValue: 'memoria' });

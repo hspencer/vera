@@ -595,6 +595,16 @@ function invitations(host: HTMLElement, space: SharedAdministration): HTMLElemen
       revoke.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/invitations/${encodeURIComponent(invitation.id)}`, 'DELETE')
         .then(() => drawSharing(host)); row.append(revoke);
     }
+    const remove = document.createElement('button'); remove.textContent = 'Eliminar';
+    remove.className = 'danger';
+    remove.onclick = () => {
+      if (!confirm('¿Eliminar definitivamente esta invitación? Esta acción no se puede deshacer.')) return;
+      remove.disabled = true;
+      void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/invitations/${encodeURIComponent(invitation.id)}/permanent`, 'DELETE')
+        .then(() => drawSharing(host))
+        .catch((error: unknown) => { remove.disabled = false; alert(error instanceof Error ? error.message : 'No se pudo eliminar.'); });
+    };
+    row.append(remove);
     list.append(row);
   }
   box.append(list); return box;
