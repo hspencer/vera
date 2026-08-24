@@ -22,7 +22,7 @@ import {
   type DesignToken,
 } from './tokens.ts';
 
-export type Section = 'memoria' | 'archivos' | 'compartir' | 'teclado' | 'apariencia';
+export type Section = 'memoria' | 'archivos' | 'teclado' | 'apariencia';
 
 export interface SettingsHandlers {
   scheme(): ColourScheme;
@@ -32,6 +32,7 @@ export interface SettingsHandlers {
   onReset(): void;
   onClose(): void;
   onOpenFiles(): void;
+  onOpenSharing(): void;
   /**
    * Dibuja el estado del corpus y su índice.
    *
@@ -45,7 +46,6 @@ export interface SettingsHandlers {
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'memoria', label: 'Memoria' },
   { id: 'archivos', label: 'Archivos' },
-  { id: 'compartir', label: 'Compartir' },
   { id: 'teclado', label: 'Teclado' },
   { id: 'apariencia', label: 'Apariencia' },
 ];
@@ -105,6 +105,19 @@ export function renderSettings(
   head.append(close);
   host.append(head);
 
+  if (active !== 'apariencia' || !document.documentElement.dataset['access']?.includes('anybody')) {
+    const sharing = document.createElement('button');
+    sharing.type = 'button';
+    sharing.className = 'settings-destination';
+    const sharingName = document.createElement('strong');
+    sharingName.textContent = 'Espacios compartidos';
+    const sharingNote = document.createElement('span');
+    sharingNote.textContent = 'Administrar páginas, participantes e invitaciones';
+    sharing.append(sharingName, sharingNote);
+    sharing.addEventListener('click', handlers.onOpenSharing);
+    host.append(sharing);
+  }
+
   const tabs = document.createElement('nav');
   tabs.className = 'settings-tabs';
   for (const section of SECTIONS) {
@@ -124,7 +137,6 @@ export function renderSettings(
 
   if (active === 'memoria') drawMemory(body, handlers);
   else if (active === 'archivos') void drawFilesSummary(body, handlers);
-  else if (active === 'compartir') void drawSharing(body);
   else if (active === 'teclado') drawKeyboard(body);
   else drawAppearance(body, tokens, handlers);
 }
@@ -198,6 +210,30 @@ export async function drawSharing(host: HTMLElement): Promise<void> {
     if (!creation.hidden) creation.querySelector<HTMLInputElement>('input')?.focus();
   };
   host.append(add, creation);
+}
+
+/** Compartir tiene suficiente profundidad para ser una página, no una pestaña. */
+export async function renderSharingAdministration(host: HTMLElement): Promise<void> {
+  host.innerHTML = '';
+  const page = document.createElement('article');
+  page.className = 'sharing-administration';
+  const head = document.createElement('header');
+  head.className = 'special-page-header';
+  const title = document.createElement('h1');
+  title.textContent = 'Espacios compartidos';
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.textContent = '← Volver';
+  back.addEventListener('click', () => window.history.back());
+  head.append(title, back);
+  const body = document.createElement('div');
+  body.className = 'sharing-administration-body';
+  page.append(head, body);
+  host.append(page);
+  await drawSharing(body);
+  // En la página completa las acciones no deben quedar escondidas detrás del
+  // resumen del espacio: la invitación y su botón se ven al llegar.
+  body.querySelectorAll<HTMLDetailsElement>('.sharing-space').forEach((space) => { space.open = true; });
 }
 
 /** Control contextual: pertenencia de una página sin obligar a reconstruirla

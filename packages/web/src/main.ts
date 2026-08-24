@@ -37,7 +37,7 @@ import { holdViewport as holdTextViewport, restoreViewport as restoreTextViewpor
 import { onRecording } from './audio-block.ts';
 import { isDay, today } from './autocomplete.ts';
 import { GOVERNING_KINDS } from './governing-table.ts';
-import { renderFilesAdministration, renderSettings, type Section } from './settings.ts';
+import { renderFilesAdministration, renderSettings, renderSharingAdministration, type Section } from './settings.ts';
 import { parseRoute, routeTo, searchRoute } from './router.ts';
 import { voice } from './voice.ts';
 import { brandMark, icon, type IconName } from './icons.ts';
@@ -1367,6 +1367,10 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
  * así que el historial del navegador y el de Vera cuentan lo mismo.
  */
 async function applyRoute(): Promise<void> {
+  if (window.location.pathname === '/compartir') {
+    await openSharingAdministration();
+    return;
+  }
   if (window.location.pathname === '/archivos') {
     await openFilesAdministration();
     return;
@@ -1417,6 +1421,16 @@ async function applyRoute(): Promise<void> {
     reveal: route.block,
     gesture: 'opened_directly',
   });
+}
+
+async function openSharingAdministration(push = false): Promise<void> {
+  workspace.activePage = null;
+  workspace.focusRoot = null;
+  nameWindow('Espacios compartidos');
+  if (push && window.location.pathname !== '/compartir') window.history.pushState({}, '', '/compartir');
+  $('#vera-root').classList.add('special-surface');
+  closeSettings();
+  await renderSharingAdministration($('#text'));
 }
 
 async function openFilesAdministration(push = false): Promise<void> {
@@ -2838,6 +2852,7 @@ function wireTheme(): void {
       },
       onClose: closeSettings,
       onOpenFiles: () => void openFilesAdministration(true),
+      onOpenSharing: () => void openSharingAdministration(true),
     });
     document.body.classList.add('settings-open');
     // Recordar la sección entre aperturas: se vuelve a la misma que se dejó.
@@ -2846,7 +2861,7 @@ function wireTheme(): void {
         (tab as HTMLElement).hidden = true;
       }
       tab.addEventListener('click', () => {
-        section = (['memoria', 'archivos', 'compartir', 'teclado', 'apariencia'] as Section[])[at] ?? 'memoria';
+        section = (['memoria', 'archivos', 'teclado', 'apariencia'] as Section[])[at] ?? 'memoria';
       });
     });
   };

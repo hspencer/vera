@@ -3552,6 +3552,31 @@ body.settings-open #text {
   padding: 0.9rem;
 }
 
+.settings-destination {
+  display: grid;
+  width: calc(100% - 1.8rem);
+  margin: .75rem .9rem .15rem;
+  padding: .7rem .8rem;
+  text-align: left;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  border: 1px solid var(--rule);
+  border-radius: .45rem;
+  cursor: pointer;
+}
+.settings-destination:hover { border-color: var(--accent); }
+.settings-destination span { margin-top: .2rem; color: var(--text-dim); font-size: .76rem; }
+
+.sharing-administration { width: min(76rem, 100%); margin: 0 auto; padding: 1.5rem 2rem 4rem; box-sizing: border-box; }
+.sharing-administration .special-page-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.sharing-administration .special-page-header h1 { margin: 0; font-family: var(--font-body); font-weight: 400; }
+.sharing-administration .special-page-header button { color: var(--accent); background: none; border: 0; cursor: pointer; font: inherit; }
+.sharing-administration-body { width: 100%; }
+
+@media (max-width: 640px) {
+  .sharing-administration { padding: 1rem .8rem 3rem; }
+}
+
 .settings-note {
   margin: 0 0 0.9rem;
   color: var(--text-dim);
