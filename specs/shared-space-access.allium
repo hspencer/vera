@@ -726,11 +726,14 @@ rule OwnerDeletesInvitation {
 
     requires: invitation.space.owner = owner
 
-    ensures: not exists invitation
+    ensures:
+        if invitation.status = redeemed:
+            invitation.redeemed_by.grants.remove(grant => grant.space = invitation.space)
+        not exists invitation
 
     @guidance
-        -- Removing a redeemed invitation removes only the spent capability and
-        -- its administrative history. The participant and access grant remain.
+        -- Removing a redeemed invitation also revokes the access born from it.
+        -- The participant and access to any other shared spaces remain.
 }
 
 rule PersonWithoutVeraRedeemsInvitation {
@@ -1394,8 +1397,8 @@ surface SharedSpaceAdministration {
 
     @guarantee EveryInvitationCanBeDeleted
         -- The owner may permanently remove pending, expired, revoked or redeemed
-        -- invitations. Deleting a redeemed invitation does not revoke the
-        -- participant or their access grant.
+        -- invitations. Deleting a redeemed invitation also revokes the access it
+        -- granted, without removing the participant or unrelated grants.
 
     @guarantee InvitationsAreIssuedPerPerson
         -- Each invitation is a one-use capability intended for one person. The

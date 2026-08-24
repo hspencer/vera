@@ -598,7 +598,7 @@ function invitations(host: HTMLElement, space: SharedAdministration): HTMLElemen
     const remove = document.createElement('button'); remove.textContent = 'Eliminar';
     remove.className = 'danger';
     remove.onclick = () => {
-      if (!confirm('¿Eliminar definitivamente esta invitación? Esta acción no se puede deshacer.')) return;
+      if (!confirm('¿Eliminar definitivamente esta invitación? Si fue canjeada, también se revocará el acceso de esa persona. Esta acción no se puede deshacer.')) return;
       remove.disabled = true;
       void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/invitations/${encodeURIComponent(invitation.id)}/permanent`, 'DELETE')
         .then(() => drawSharing(host))

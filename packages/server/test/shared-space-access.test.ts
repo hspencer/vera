@@ -244,7 +244,7 @@ describe('primer corte vertical de espacios compartidos', () => {
     assert.equal((admin.json['spaces'] as any[])[0].pageCount, 1);
   });
 
-  it('elimina definitivamente invitaciones en cualquier estado sin revocar accesos', async () => {
+  it('elimina definitivamente invitaciones en cualquier estado y revoca el acceso canjeado', async () => {
     const pending = await call('/shared-spaces/vera/invitations', 'POST', { permissions: ['read'], intendedContact: 'Pendiente' });
     assert.equal((await call(`/shared-spaces/vera/invitations/${encodeURIComponent(pending.json['id'])}/permanent`, 'DELETE')).status, 200);
 
@@ -268,7 +268,7 @@ describe('primer corte vertical de espacios compartidos', () => {
     const space = (admin.json['spaces'] as any[]).find((one) => one.slug === 'vera');
     const removed = [pending, revoked, expired, redeemed].map((one) => one.json['id']);
     assert.ok(!space.invitations.some((one: any) => removed.includes(one.id)));
-    assert.ok(space.participants.some((one: any) => one.name === 'Persistente' && one.status === 'active'));
+    assert.ok(space.participants.some((one: any) => one.name === 'Persistente' && one.status === 'revoked'));
     assert.equal((await call(`/shared-spaces/vera/invitations/${encodeURIComponent(redeemed.json['id'])}/permanent`, 'DELETE')).status, 404);
   });
 

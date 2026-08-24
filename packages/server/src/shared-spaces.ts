@@ -162,8 +162,23 @@ export function revokeInvitation(store: Store, space: SharedSpace, invitation: s
 }
 
 export function deleteInvitation(store: Store, space: SharedSpace, invitation: string): boolean {
-  return Number(store.db.prepare(`DELETE FROM access_invitations
-    WHERE id=? AND space_id=?`).run(invitation, space.id).changes) > 0;
+  const row = store.db.prepare(`SELECT redeemed_by FROM access_invitations
+    WHERE id=? AND space_id=?`).get(invitation, space.id) as { redeemed_by: string | null } | undefined;
+  if (row === undefined) return false;
+  store.db.exec('BEGIN IMMEDIATE');
+  try {
+    if (row.redeemed_by !== null) {
+      store.db.prepare(`UPDATE access_grants SET status='revoked',revoked_at=?
+        WHERE space_id=? AND participant_id=? AND status='active'`)
+        .run(Date.now(), space.id, row.redeemed_by);
+    }
+    store.db.prepare(`DELETE FROM access_invitations WHERE id=? AND space_id=?`).run(invitation, space.id);
+    store.db.exec('COMMIT');
+    return true;
+  } catch (error) {
+    store.db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 export function revokeGrant(store: Store, space: SharedSpace, grant: string): boolean {
