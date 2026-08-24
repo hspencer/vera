@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
+import { compactDisconnectedComponents } from '../src/graph/render.ts';
 
 const graph = readFileSync(new URL('../src/graph/render.ts', import.meta.url), 'utf8');
 const settings = readFileSync(new URL('../src/settings.ts', import.meta.url), 'utf8');
@@ -11,6 +12,26 @@ describe('prioridades de interfaz posteriores al móvil', () => {
     assert.match(graph, /const bounds = data\.nodes\.map/);
     assert.match(graph, /dims\.get\(item\.id\)/);
     assert.match(graph, /if \(!allPlaced && heldTransform === null\)/);
+  });
+
+  it('acerca componentes desconectados sin inventar aristas', () => {
+    const nodes = [
+      { id: '1', name: '1', central: false, degree: 1, x: 0, y: 0 },
+      { id: '2', name: '2', central: false, degree: 1, x: 120, y: 0 },
+      { id: '0', name: '0', central: true, degree: 0, x: 1800, y: 1400 },
+    ];
+    const links = [{ source: '1', target: '2' }];
+    const count = compactDisconnectedComponents(
+      nodes,
+      links,
+      new Map(nodes.map((node) => [node.id, { w: 60, h: 20 }])),
+    );
+
+    assert.equal(count, 2);
+    assert.equal(links.length, 1);
+    const verticalSpan = Math.max(...nodes.map((node) => node.y!))
+      - Math.min(...nodes.map((node) => node.y!));
+    assert.ok(verticalSpan < 100);
   });
 
   it('expone pertenencia efectiva, personas y espacios inicialmente vacíos', () => {

@@ -73,6 +73,94 @@ const MAX_LABEL_CHARS = 24;
 /** El aire entre dos nombres. Sin él se tocan, y tocarse ya se lee como uno. */
 const COLLISION_PAD = 6;
 
+type NodeDimensions = Map<string, { w: number; h: number }>;
+
+/**
+ * Compone cerca los componentes sin conectarlos.
+ *
+ * La simulación de fuerzas no sabe que dos componentes pertenecen al mismo
+ * dibujo: sin un enlace que los sujete, uno puede acabar muy lejos del otro. El
+ * encuadre entonces hace lo correcto geométricamente y lo incorrecto para la
+ * lectura: reduce todo hasta que los nombres del componente denso son una mota.
+ *
+ * Aquí no se añade ninguna arista ni se cambia la forma interior de un
+ * componente. Sólo se trasladan sus cajas completas a una columna compacta,
+ * con el mayor primero y los demás centrados debajo.
+ */
+export function compactDisconnectedComponents(
+  nodes: GraphNode[],
+  links: GraphLink[],
+  dims: NodeDimensions,
+): number {
+  if (nodes.length < 2) return nodes.length;
+
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const adjacent = new Map(nodes.map((node) => [node.id, new Set<string>()]));
+  const endpoint = (value: string | GraphNode): string =>
+    typeof value === 'string' ? value : value.id;
+  for (const link of links) {
+    const source = endpoint(link.source);
+    const target = endpoint(link.target);
+    if (!byId.has(source) || !byId.has(target)) continue;
+    adjacent.get(source)?.add(target);
+    adjacent.get(target)?.add(source);
+  }
+
+  const unseen = new Set(nodes.map((node) => node.id));
+  const components: GraphNode[][] = [];
+  while (unseen.size > 0) {
+    const first = unseen.values().next().value as string;
+    const pending = [first];
+    const component: GraphNode[] = [];
+    unseen.delete(first);
+    while (pending.length > 0) {
+      const id = pending.pop()!;
+      const node = byId.get(id);
+      if (node !== undefined) component.push(node);
+      for (const neighbour of adjacent.get(id) ?? []) {
+        if (!unseen.delete(neighbour)) continue;
+        pending.push(neighbour);
+      }
+    }
+    components.push(component);
+  }
+  if (components.length < 2) return components.length;
+
+  const bounds = (component: GraphNode[]) => {
+    const boxes = component.map((node) => {
+      const box = dims.get(node.id) ?? { w: 40, h: 16 };
+      const x = node.x ?? 0;
+      const y = node.y ?? 0;
+      return { left: x - box.w / 2, right: x + box.w / 2,
+        top: y - box.h / 2, bottom: y + box.h / 2 };
+    });
+    return {
+      left: Math.min(...boxes.map((box) => box.left)),
+      right: Math.max(...boxes.map((box) => box.right)),
+      top: Math.min(...boxes.map((box) => box.top)),
+      bottom: Math.max(...boxes.map((box) => box.bottom)),
+    };
+  };
+
+  components.sort((a, b) => b.length - a.length);
+  const measured = components.map((component) => ({ component, box: bounds(component) }));
+  const widest = Math.max(...measured.map(({ box }) => box.right - box.left));
+  const gap = Math.max(36, COLLISION_PAD * 6);
+  let top = 0;
+  for (const { component, box } of measured) {
+    const width = box.right - box.left;
+    const dx = (widest - width) / 2 - box.left;
+    const dy = top - box.top;
+    for (const node of component) {
+      node.x = (node.x ?? 0) + dx;
+      node.y = (node.y ?? 0) + dy;
+    }
+    top += box.bottom - box.top + gap;
+  }
+
+  return components.length;
+}
+
 /** Split text into lines respecting word boundaries and max char width. */
 function wrapText(text: string, maxChars: number): string[] {
   if (text.length <= maxChars) return [text];
@@ -824,6 +912,7 @@ export function renderGraph(
     if (isTitle) {
       remeasure();
       untangle();
+      if (!allPlaced) compactDisconnectedComponents(data.nodes, data.links, dims);
     }
     place();
     remember();

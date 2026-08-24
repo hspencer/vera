@@ -469,6 +469,13 @@ contract InstallableWebApplication {
         -- Vera can be installed from a supporting browser and launched as an
         -- application without losing access to its web form.
 
+    @invariant ShellUpdatesAreAtomic
+        -- Every resource named by a candidate application shell exists and can be
+        -- retained before that shell takes control. A failed candidate leaves the
+        -- previous complete shell running; it never mixes an old document with
+        -- missing assets from a newer build and never turns an update into a blank
+        -- installed application.
+
     @invariant OfflineReadingAndWriting
         -- An authenticated participant can read available graph content and
         -- create or edit pages and blocks while the device has no connection.
@@ -1437,6 +1444,10 @@ surface VeraWorkspace {
         -- Framing is subordinate to intent. Once a reader has moved the view,
         -- the map does not reframe itself; it returns to where they left it,
         -- as TheMapHoldsItsPositions requires of the layout.
+        --
+        -- Disconnected components remain disconnected, but they are composed as
+        -- one compact drawing before framing. An isolated page must not push a
+        -- dense component so far away that its readable names shrink into a knot.
 }
 
 ------------------------------------------------------------
