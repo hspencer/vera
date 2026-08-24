@@ -11,4 +11,10 @@ describe('administración de invitaciones', () => {
     assert.match(settings, /también se revocará el acceso/);
     assert.match(settings, /invitations\/\$\{encodeURIComponent\(invitation\.id\)\}\/permanent/);
   });
+
+  it('no deja que un enlace anterior se confunda con el recién creado', () => {
+    assert.match(settings, /Invitación nueva · \$\{String\(made\.id\)\}/);
+    assert.match(settings, /result\.replaceChildren\(issued\)/);
+    assert.match(settings, /No se pudo copiar; el enlace quedó seleccionado/);
+  });
 });

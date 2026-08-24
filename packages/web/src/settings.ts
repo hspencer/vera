@@ -564,12 +564,22 @@ function invitationForm(host: HTMLElement, space: SharedAdministration): HTMLEle
       });
       const url = new URL(made.url, location.origin).href;
       const issued = document.createElement('div'); issued.className = 'sharing-issued-invitation';
+      const identity = document.createElement('p'); identity.className = 'settings-note';
+      identity.textContent = `Invitación nueva · ${String(made.id)}`;
       const output = document.createElement('input'); output.readOnly = true; output.value = url;
       const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copiar enlace';
-      copy.onclick = () => void navigator.clipboard.writeText(url).then(() => { copy.textContent = 'Copiado'; });
+      copy.onclick = () => void navigator.clipboard.writeText(url)
+        .then(() => { copy.textContent = 'Copiado'; })
+        .catch(() => {
+          output.focus(); output.select();
+          copy.textContent = 'No se pudo copiar; el enlace quedó seleccionado';
+        });
       const warning = document.createElement('p'); warning.className = 'settings-note';
       warning.textContent = `Este secreto sólo se muestra ahora. Vence ${new Date(made.expiresAt).toLocaleString()} y puede revocarse antes desde esta administración.`;
-      issued.append(output, copy, warning); result.prepend(issued);
+      issued.append(identity, output, copy, warning);
+      // Sólo el enlace vigente queda a la vista: varias tarjetas idénticas
+      // convertían un portapapeles viejo en una invitación aparentemente nueva.
+      result.replaceChildren(issued);
       contact.input.value = ''; create.textContent = 'Crear otro enlace'; create.disabled = false;
     } catch (error) {
       const failure = document.createElement('p'); failure.className = 'settings-note';
