@@ -730,6 +730,8 @@ export interface CorpusHealth {
   graph: string;
   /** `anybody` es la sesión pública anónima y nunca puede escribir. */
   access?: 'owner' | 'anybody';
+  /** Una sesión invitada puede escribir sin dejar de estar cercada al espacio. */
+  canEdit?: boolean;
   /** Falso en el origen público: anybody nunca puede elevarse desde allí. */
   canViewOwner?: boolean;
   /** Portada del sitio cuando la lectura ocurre por el origen público. */

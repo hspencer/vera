@@ -231,6 +231,80 @@ describe('primer corte vertical de espacios compartidos', () => {
     assert.deepEqual((await scopedPages.json() as any[]).map((page) => page.title), ['Dentro']);
   });
 
+  it('una sesión con edit modifica sólo páginas del espacio y firma como la invitada', async () => {
+    const inside = running.vera.graph.pageTitled('Dentro')!;
+    const insideBlock = await write({
+      kind: 'create_block', page: inside.id, parent: null, position: 0, content: 'Antes',
+    });
+    const outside = await write({ kind: 'create_page', title: 'Fuera del permiso', visibility: 'private' });
+    const outsideBlock = await write({
+      kind: 'create_block', page: outside, parent: null, position: 0, content: 'Privado',
+    });
+    const issued = await call('/shared-spaces/doctorado/invitations', 'POST', {
+      permissions: ['read', 'edit'],
+    });
+    const redeemed = await call(`/invitations/${encodeURIComponent(issued.json['id'])}/redeem`, 'POST', {
+      secret: issued.json['secret'], name: 'Editora',
+    });
+    const session = 'vera_session_editora';
+    const now = Date.now();
+    running.vera.store.db.prepare(`INSERT INTO human_sessions
+      (id,participant_id,proof_digest,status,began_at,expires_at,last_seen_at)
+      VALUES (?,?,?,'active',?,?,?)`).run('session:editora', redeemed.json['participant'],
+        digestOf(session), now, now + 60_000, now);
+    const headers = {
+      'content-type': 'application/json', cookie: `vera_session=${session}`,
+      referer: `${publicBase}/s/doctorado/p/Dentro`,
+    };
+
+    const health = await fetch(`${publicBase}/health`, { headers });
+    assert.equal(health.status, 200);
+    assert.equal((await health.json() as any).canEdit, true);
+    const edited = await fetch(`${publicBase}/operations`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ originId: 'shared:editora', change: {
+        kind: 'edit_block', block: insideBlock, content: 'Después',
+      } }),
+    });
+    assert.equal(edited.status, 201, await edited.text());
+    assert.equal(running.vera.graph.block(insideBlock)?.content, 'Después');
+    assert.equal(running.vera.graph.operations().at(-1)?.submission.submittedBy, redeemed.json['participant']);
+
+    const escaped = await fetch(`${publicBase}/operations`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ originId: 'shared:fuga', change: {
+        kind: 'edit_block', block: outsideBlock, content: 'Intrusión',
+      } }),
+    });
+    assert.equal(escaped.status, 403);
+    assert.equal(running.vera.graph.block(outsideBlock)?.content, 'Privado');
+  });
+
+  it('contribute no equivale a edición directa', async () => {
+    const issued = await call('/shared-spaces/doctorado/invitations', 'POST', {
+      permissions: ['read', 'contribute'],
+    });
+    const redeemed = await call(`/invitations/${encodeURIComponent(issued.json['id'])}/redeem`, 'POST', {
+      secret: issued.json['secret'], name: 'Proponente',
+    });
+    const session = 'vera_session_proponente';
+    const now = Date.now();
+    running.vera.store.db.prepare(`INSERT INTO human_sessions
+      (id,participant_id,proof_digest,status,began_at,expires_at,last_seen_at)
+      VALUES (?,?,?,'active',?,?,?)`).run('session:proponente', redeemed.json['participant'],
+        digestOf(session), now, now + 60_000, now);
+    const headers = { cookie: `vera_session=${session}`, referer: `${publicBase}/s/doctorado` };
+    const health = await fetch(`${publicBase}/health`, { headers });
+    assert.equal((await health.json() as any).canEdit, false);
+    const denied = await fetch(`${publicBase}/operations`, {
+      method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ originId: 'shared:propuesta-directa', change: {
+        kind: 'edit_block', block: 'block:no-importa', content: 'No',
+      } }),
+    });
+    assert.equal(denied.status, 405);
+  });
+
   it('administra criterio, invitaciones, participantes y revocaciones', async () => {
     const pending = await call('/shared-spaces/doctorado/invitations', 'POST', { permissions: ['read'], intendedContact: 'Ada' });
     let admin = await call('/shared-spaces');

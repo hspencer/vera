@@ -273,6 +273,7 @@ function closeSettings(): void {
 let corpus: CorpusHealth | null = null;
 
 const isAnybody = (): boolean => corpus?.access === 'anybody';
+const isReadOnly = (): boolean => isAnybody() && corpus?.canEdit !== true;
 
 function drawAudienceControl(): void {
   const control = document.querySelector<HTMLElement>('#map-audience');
@@ -987,7 +988,7 @@ async function openPage(
   derivedStale = false;
   window.clearTimeout(catchUpTimer);
 
-  renderOutliner(text, page, callbacksFor(page), focus, workspace.focusRoot, isAnybody());
+  renderOutliner(text, page, callbacksFor(page), focus, workspace.focusRoot, isReadOnly());
   if (options.reveal !== undefined && options.reveal !== null) {
     revealBlock(options.reveal, page.id);
   }
@@ -1021,7 +1022,7 @@ async function openPage(
           return;
         }
         const viewport = holdTextViewport(text);
-        renderOutliner(text, openView, callbacksFor(openView), null, workspace.focusRoot, isAnybody());
+        renderOutliner(text, openView, callbacksFor(openView), null, workspace.focusRoot, isReadOnly());
         restoreTextViewport(text, viewport);
       };
       finish();
@@ -1162,7 +1163,7 @@ function continueBackwards(from: string, keptScroll: number): void {
         // Cada tramo se dibuja con el mismo outliner que el día de arriba: se
         // edita igual, se pliega igual y habla con las mismas teclas. Un diario
         // que sólo se pudiera leer hacia atrás sería un archivo, no un cuaderno.
-        renderOutliner(slice, older, callbacksFor(older), null, null, isAnybody());
+        renderOutliner(slice, older, callbacksFor(older), null, null, isReadOnly());
         text.append(slice);
         journalDepth += 1;
         if (journalDepth >= refill) settle();
@@ -1308,7 +1309,7 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
         openView.blockProperties = blockPropertiesOf(replica);
         openView.properties = pagePropertiesOf(replica);
         openView.visibility = replica.graph.page(replica.page)?.visibility ?? openView.visibility;
-        renderOutliner(text, openView, callbacksFor(openView), focus, workspace.focusRoot, isAnybody());
+        renderOutliner(text, openView, callbacksFor(openView), focus, workspace.focusRoot, isReadOnly());
         restoreTextViewport(text, viewport);
         catchUp();
         return;

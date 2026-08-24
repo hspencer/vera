@@ -1145,6 +1145,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       scopedSpace.audience === 'anybody' ||
       String(scopedGrant?.permissions ?? '').split(',').includes('read')
     );
+    const scopedPermissions = String(scopedGrant?.permissions ?? '').split(',');
+    const canEditScopedSpace = canReadScopedSpace && scopedParticipant !== null &&
+      scopedPermissions.includes('edit');
     const publicScopedSpace = canReadScopedSpace ? scopedSpace : null;
     const scopedPageIds = publicScopedSpace === null
       ? publicPageIds()
@@ -1166,8 +1169,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       path === '/human-auth/registration/options' ||
       path === '/human-auth/registration/verify'
     );
+    const publicSharedEdit = request.method === 'POST' && path === '/operations' &&
+      publicScopedSpace !== null && canEditScopedSpace;
     if (publicAccess && request.method !== 'GET' && request.method !== 'HEAD' &&
-      !publicReadThroughBody && !publicAdmission) {
+      !publicReadThroughBody && !publicAdmission && !publicSharedEdit) {
       send(response, 405, { error: 'anybody sólo puede leer' });
       return;
     }
@@ -1192,6 +1197,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         path.startsWith('/invite/') ||
         /^\/invitations\/[^/]+$/.test(path) ||
         publicAdmission ||
+        publicSharedEdit ||
         publicSharedPath ||
         (publicScopedSpace !== null && path.startsWith('/p/')) ||
         canonicalPublication !== undefined ||
@@ -1298,16 +1304,29 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         // Quién escribe se decide aquí y no se lee del cuerpo. Antes de esto, el
         // cuerpo declaraba su propio participante: cualquiera que alcanzara el
         // puerto podía firmar como Herbert o como Cotito.
-        const who = authorise(
-          store,
-          graph,
-          request.headers.authorization,
-          body.participant,
-          input.change.kind,
-        );
+        const who = publicSharedEdit && scopedParticipant !== null
+          ? { participant: scopedParticipant, channel: null, credential: null } satisfies Submitter
+          : authorise(
+              store,
+              graph,
+              request.headers.authorization,
+              body.participant,
+              input.change.kind,
+            );
         if ('error' in who) {
           send(response, who.status, { status: 'rejected', reason: who.error });
           return;
+        }
+
+        if (publicSharedEdit) {
+          const touched = pageTouchedBy(input.change, null, (block) => graph.block(block)?.page);
+          if (touched === null || !scopedPageIds.has(touched)) {
+            send(response, 403, {
+              status: 'rejected',
+              reason: 'el permiso de edición sólo alcanza páginas de este espacio compartido',
+            });
+            return;
+          }
         }
 
         /*
@@ -4623,6 +4642,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         send(response, 200, {
           graph: graph.name,
           access: publicAccess ? 'anybody' : 'owner',
+          canEdit: publicAccess ? canEditScopedSpace : true,
           canViewOwner: !publicOrigin,
           entryPoint: publicAccess && siteEntry !== null && isPublicPage(siteEntry) ? siteEntry : null,
           /*
