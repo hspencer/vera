@@ -53,6 +53,16 @@ contract TruthfulWaiting {
         -- The indication ends when the work ends, whether it succeeded or failed.
         -- An indicator left behind is the worst available lie, because it reports
         -- that something is still happening when nothing is.
+
+    @invariant PeripheralAwarenessDoesNotReplaceExplanation
+        -- A single unobtrusive frame may make concurrent work perceptible across
+        -- the whole interface. It never replaces the local account of what is
+        -- happening, how long it has taken, what failed or what can be done.
+
+    @invariant MotionIsNeverRequiredToUnderstandWork
+        -- The global work signal remains legible without animation. A participant
+        -- who requests reduced motion receives a stable indication with the same
+        -- meaning as the breathing frame.
 }
 
 ------------------------------------------------------------
@@ -272,6 +282,11 @@ surface WaitIndication {
         -- The count appears where the participant last acted or where the result
         -- will appear, and not in a corner reserved for machine status. Someone who
         -- pressed a button looks at the button.
+
+    @guarantee ConcurrentWorkHasOnePeripheralSignal
+        -- One or several simultaneous waits produce one shared frame around the
+        -- interface. It remains until the last wait ends, while each wait keeps
+        -- its own name, elapsed count and available explanation at its origin.
 }
 
 ------------------------------------------------------------

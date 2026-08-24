@@ -33,6 +33,34 @@ const REMEMBERED = 7;
  */
 const THRESHOLD = 900;
 
+// Una sola conciencia periférica para todas las esperas visibles. No explica el
+// trabajo —eso sigue ocurriendo junto al gesto—: sólo hace perceptible que Vera
+// todavía sostiene algo. El contador evita que dos procesos simultáneos apaguen
+// el marco cuando termina sólo uno de ellos.
+let activeWork = 0;
+let slowWork: ReturnType<typeof setTimeout> | null = null;
+
+export function beginActivity(): () => void {
+  let open = true;
+  activeWork += 1;
+  if (activeWork === 1 && typeof document !== 'undefined') {
+    document.documentElement.dataset['working'] = 'true';
+    slowWork = setTimeout(() => {
+      if (activeWork > 0) document.documentElement.dataset['workingSlow'] = 'true';
+    }, THRESHOLD);
+  }
+  return () => {
+    if (!open) return;
+    open = false;
+    activeWork = Math.max(0, activeWork - 1);
+    if (activeWork > 0 || typeof document === 'undefined') return;
+    if (slowWork !== null) clearTimeout(slowWork);
+    slowWork = null;
+    delete document.documentElement.dataset['working'];
+    delete document.documentElement.dataset['workingSlow'];
+  };
+}
+
 type Durations = Record<string, number[]>;
 
 function stored(): Durations {
@@ -150,6 +178,7 @@ export function countInto(
     since?: number;
   } = {},
 ): Counting {
+  const endActivity = beginActivity();
   const now = options.now ?? Date.now;
   const started = options.since ?? now();
   let ticking: ReturnType<typeof setInterval> | null = null;
@@ -175,6 +204,7 @@ export function countInto(
       ticking = null;
       element.classList.remove('counting');
       if (key !== null && outcome === 'succeeded') remember(key, now() - started);
+      endActivity();
     },
   };
 }
@@ -217,6 +247,7 @@ export interface Pending {
 }
 
 export function pendingLine(host: HTMLElement, now: () => number = Date.now): Pending {
+  const endActivity = beginActivity();
   const line = document.createElement('li');
   line.className = 'process-step doing pending';
   const what = document.createElement('span');
@@ -259,6 +290,7 @@ export function pendingLine(host: HTMLElement, now: () => number = Date.now): Pe
       if (ticking !== null) clearInterval(ticking);
       ticking = null;
       line.remove();
+      endActivity();
     },
   };
 }

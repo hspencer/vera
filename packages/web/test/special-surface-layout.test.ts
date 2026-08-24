@@ -25,4 +25,11 @@ describe('superficies especiales', () => {
     assert.match(main, /counting\.close\('failed'\)/);
     assert.match(main, /counting\.close\(\)/);
   });
+
+  it('hace visible el trabajo global sin tapar la interfaz y respeta movimiento reducido', () => {
+    assert.match(styles, /html\[data-working='true'\]::after/);
+    assert.match(styles, /pointer-events:\s*none/);
+    assert.match(styles, /html\[data-working-slow='true'\]::after/);
+    assert.match(styles, /prefers-reduced-motion:\s*reduce/);
+  });
 });

@@ -19,7 +19,7 @@ const store = new Map<string, string>();
   length: 0,
 } as unknown as Storage;
 
-const { countInto, elapsedSaid, remember, saySeconds, usuallyTakes } = await import(
+const { beginActivity, countInto, elapsedSaid, remember, saySeconds, usuallyTakes } = await import(
   '../src/waiting.ts'
 );
 
@@ -179,6 +179,13 @@ describe('contar dentro de un elemento', () => {
     assert.ok(element.classes.has('counting'));
     counting.close();
     assert.ok(!element.classes.has('counting'));
+  });
+});
+
+describe('conciencia periférica del trabajo', () => {
+  it('cada actividad se cierra una sola vez', () => {
+    const close = beginActivity();
+    assert.doesNotThrow(() => { close(); close(); });
   });
 });
 
