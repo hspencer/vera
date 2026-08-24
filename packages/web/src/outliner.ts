@@ -512,6 +512,11 @@ function openBlockMenu(anchor: HTMLElement, groups: MenuAction[][]): void {
       const said = document.createElement('span');
       said.textContent = action.label;
       item.append(said);
+      // El cambio de foco ocurre en mousedown, antes del click. Si el bloque
+      // que estaba editándose aprovecha ese blur para guardarse y redibujar la
+      // página, el botón desaparece antes de recibir su primer click. Conservar
+      // el foco hasta ejecutar la acción evita ese primer gesto perdido.
+      item.addEventListener('mousedown', (event) => event.preventDefault());
       item.addEventListener('click', (event) => invokeMenuAction(event, action));
       menu.append(item);
     }

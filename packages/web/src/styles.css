@@ -157,6 +157,8 @@ input {
   border: 0;
 }
 
+button { touch-action: manipulation; }
+
 /* --- Armazón ----------------------------------------------------------- */
 
 /*
@@ -2299,6 +2301,10 @@ input {
 .block-menu-item:focus-visible:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
   outline: none;
+}
+
+.block-menu-item:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
 .block-menu-item:hover:not(:disabled) .icon,
@@ -7513,6 +7519,38 @@ body.settings-open #text {
 .sharing-field input, .sharing-invitation-result input { min-width: 0; padding: .55rem; color: var(--text); background: var(--bg); border: 1px solid var(--rule); border-radius: .25rem; font: inherit; }
 .sharing-field select, .sharing-publish select, .sharing-publish input { min-width: 0; padding: .55rem; color: var(--text); background: var(--bg); border: 1px solid var(--rule); border-radius: .25rem; font: inherit; }
 .sharing-form button, .sharing-form .settings-note { align-self: end; }
+.sharing-form button,
+.sharing-group > button,
+.sharing-list li button,
+.sharing-publish button,
+.sharing-issued-invitation button {
+  padding: .48rem .7rem;
+  color: var(--accent);
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--rule));
+  border-radius: .35rem;
+  cursor: pointer;
+}
+.sharing-form button:hover,
+.sharing-group > button:hover,
+.sharing-list li button:hover,
+.sharing-publish button:hover,
+.sharing-issued-invitation button:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+}
+.sharing-form button:active,
+.sharing-group > button:active,
+.sharing-list li button:active,
+.sharing-publish button:active,
+.sharing-issued-invitation button:active {
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg));
+  transform: translateY(1px);
+}
+.sharing-form button:disabled,
+.sharing-group > button:disabled,
+.sharing-list li button:disabled,
+.sharing-publish button:disabled,
+.sharing-issued-invitation button:disabled { opacity: .55; cursor: wait; }
 .sharing-group { margin: 1.35rem 0; }
 .sharing-group h4 { margin-bottom: .6rem; }
 .sharing-permissions { display: flex; flex-wrap: wrap; gap: 1rem; margin: .75rem 0; }
