@@ -13,6 +13,7 @@ let sequence = 0;
 before(() => {
   running = listen({ port: PORT, publicPreviewPort: PORT + 1,
     databasePath: ':memory:', owner: { id: OWNER, name: 'Herbert' },
+    webRoot: new URL('../../web/dist', import.meta.url).pathname,
     publicSite: { title: 'Vera', canonicalDomain: 'https://vera.mediafranca.net' } });
   base = `http://localhost:${PORT}`;
   publicBase = `http://localhost:${PORT + 1}`;
@@ -219,6 +220,15 @@ describe('primer corte vertical de espacios compartidos', () => {
     assert.equal(pages.status, 200);
     assert.deepEqual((pages.json['pages'] as any[]).map((page) => page.title), ['Dentro']);
     assert.equal((await call(`/s/doctorado/api/pages/${encodeURIComponent(outside)}`, 'GET', undefined, headers)).status, 404);
+
+    const shell = await fetch(`${publicBase}/s/doctorado`, { headers });
+    assert.equal(shell.status, 200);
+    assert.match(shell.headers.get('content-type') ?? '', /text\/html/);
+    const scopedPages = await fetch(`${publicBase}/pages`, {
+      headers: { ...headers, referer: `${publicBase}/s/doctorado` },
+    });
+    assert.equal(scopedPages.status, 200);
+    assert.deepEqual((await scopedPages.json() as any[]).map((page) => page.title), ['Dentro']);
   });
 
   it('administra criterio, invitaciones, participantes y revocaciones', async () => {

@@ -1087,6 +1087,13 @@ export function createVeraServer(options: ServerOptions): VeraServer {
   ): Promise<void> => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     const path = url.pathname;
+    const cookie = (name: string): string => {
+      for (const part of (request.headers.cookie ?? '').split(';')) {
+        const [key, ...value] = part.trim().split('=');
+        if (key === name) return decodeURIComponent(value.join('='));
+      }
+      return '';
+    };
 
     /*
      * Un origen público no es una segunda aplicación: es esta misma Vera bajo
@@ -1126,9 +1133,19 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     const scopedSegment = pathSpace?.[1] ?? referringSpace?.[1] ?? null;
     const scopedSlug = scopedSegment === null ? null : decodeURIComponent(scopedSegment);
     const scopedSpace = scopedSlug === null ? null : sharedSpaceBySlug(store, scopedSlug);
-    const publicScopedSpace = scopedSpace !== null && scopedSpace.status === 'active' && scopedSpace.audience === 'anybody'
-      ? scopedSpace
+    const scopedParticipant = publicAccess
+      ? participantForSession(store, cookie('vera_session'))
       : null;
+    const scopedGrant = scopedSpace === null || scopedParticipant === null
+      ? undefined
+      : store.db.prepare(`SELECT permissions FROM access_grants
+          WHERE space_id=? AND participant_id=? AND status='active'`)
+        .get(scopedSpace.id, scopedParticipant) as { permissions: string } | undefined;
+    const canReadScopedSpace = scopedSpace !== null && scopedSpace.status === 'active' && (
+      scopedSpace.audience === 'anybody' ||
+      String(scopedGrant?.permissions ?? '').split(',').includes('read')
+    );
+    const publicScopedSpace = canReadScopedSpace ? scopedSpace : null;
     const scopedPageIds = publicScopedSpace === null
       ? publicPageIds()
       : new Set(graph.pages().filter((page) => pageBelongsToSharedSpace(graph, publicScopedSpace, page.id))
@@ -1160,8 +1177,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       const sharedSegments = pathSpace;
       const sharedSlug = sharedSegments === null ? null : decodeURIComponent(sharedSegments[1] ?? '');
       const publicSharedSpace = sharedSlug === null ? null : sharedSpaceBySlug(store, sharedSlug);
-      const publicSharedPath = publicSharedSpace !== null &&
-        publicSharedSpace.status === 'active' && publicSharedSpace.audience === 'anybody';
+      const publicSharedPath = publicSharedSpace !== null && canReadScopedSpace;
       const safe =
         path === '/' ||
         path === '/health' ||
@@ -2052,13 +2068,6 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       return;
     }
 
-    const cookie = (name: string): string => {
-      for (const part of (request.headers.cookie ?? '').split(';')) {
-        const [key, ...value] = part.trim().split('=');
-        if (key === name) return decodeURIComponent(value.join('='));
-      }
-      return '';
-    };
     const ceremony = () => ceremonyFor(request.headers.host ?? 'localhost',
       typeof request.headers['x-forwarded-proto'] === 'string' ? request.headers['x-forwarded-proto'] : undefined);
     const setHumanSession = (secret: string, expiresAt: number): void => {
