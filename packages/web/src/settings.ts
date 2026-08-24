@@ -142,6 +142,16 @@ export function renderSettings(
 }
 
 type SharedPermission = 'read' | 'contribute' | 'edit';
+const invitationUrlKey = (id: string): string => `vera-invitation-url:${id}`;
+const rememberInvitationUrl = (id: string, url: string): void => {
+  try { localStorage.setItem(invitationUrlKey(id), url); } catch { /* La invitación sigue sirviendo; sólo no se recuerda aquí. */ }
+};
+const rememberedInvitationUrl = (id: string): string | null => {
+  try { return localStorage.getItem(invitationUrlKey(id)); } catch { return null; }
+};
+const forgetInvitationUrl = (id: string): void => {
+  try { localStorage.removeItem(invitationUrlKey(id)); } catch { /* Nada que impedir. */ }
+};
 interface SharedAdministration {
   id: string; name: string; slug: string; selectorKey: string; selectorValue: string;
   criterionCombination: 'any' | 'all';
@@ -563,6 +573,7 @@ function invitationForm(host: HTMLElement, space: SharedAdministration): HTMLEle
         lifetimeMs: Number(duration.value),
       });
       const url = new URL(made.url, location.origin).href;
+      rememberInvitationUrl(String(made.id), url);
       const issued = document.createElement('div'); issued.className = 'sharing-issued-invitation';
       const identity = document.createElement('p'); identity.className = 'settings-note';
       identity.textContent = `Invitación nueva · ${String(made.id)}`;
@@ -601,9 +612,19 @@ function invitations(host: HTMLElement, space: SharedAdministration): HTMLElemen
     const text = document.createElement('span'); text.textContent = `${invitation.intendedContact ?? 'Sin destinatario'} · ${invitation.permissions.join(', ')} · ${invitation.status}${expiry}`;
     row.append(text);
     if (invitation.status === 'pending') {
+      const heldUrl = rememberedInvitationUrl(invitation.id);
+      if (heldUrl !== null) {
+        const address = document.createElement('input'); address.readOnly = true; address.value = heldUrl;
+        address.setAttribute('aria-label', `Enlace pendiente para ${invitation.intendedContact ?? 'esta persona'}`);
+        const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = 'Copiar enlace';
+        copy.onclick = () => void navigator.clipboard.writeText(heldUrl)
+          .then(() => { copy.textContent = 'Copiado'; })
+          .catch(() => { address.focus(); address.select(); copy.textContent = 'Enlace seleccionado'; });
+        row.append(address, copy);
+      }
       const revoke = document.createElement('button'); revoke.textContent = 'Revocar';
       revoke.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/invitations/${encodeURIComponent(invitation.id)}`, 'DELETE')
-        .then(() => drawSharing(host)); row.append(revoke);
+        .then(() => { forgetInvitationUrl(invitation.id); void drawSharing(host); }); row.append(revoke);
     }
     const remove = document.createElement('button'); remove.textContent = 'Eliminar';
     remove.className = 'danger';
@@ -611,7 +632,13 @@ function invitations(host: HTMLElement, space: SharedAdministration): HTMLElemen
       if (!confirm('¿Eliminar definitivamente esta invitación? Si fue canjeada, también se revocará el acceso de esa persona. Esta acción no se puede deshacer.')) return;
       remove.disabled = true;
       void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/invitations/${encodeURIComponent(invitation.id)}/permanent`, 'DELETE')
-        .then(() => drawSharing(host))
+        .then(() => {
+          forgetInvitationUrl(invitation.id);
+          // La respuesta ya confirma el borrado. Quitar sólo esta fila conserva
+          // el details abierto y el lugar de lectura; redibujar toda la página
+          // cerraba el espacio y saltaba hacia arriba.
+          row.remove();
+        })
         .catch((error: unknown) => { remove.disabled = false; alert(error instanceof Error ? error.message : 'No se pudo eliminar.'); });
     };
     row.append(remove);

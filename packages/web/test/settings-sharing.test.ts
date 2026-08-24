@@ -17,4 +17,10 @@ describe('administración de invitaciones', () => {
     assert.match(settings, /result\.replaceChildren\(issued\)/);
     assert.match(settings, /No se pudo copiar; el enlace quedó seleccionado/);
   });
+
+  it('conserva visibles los enlaces pendientes y no colapsa al eliminar', () => {
+    assert.match(settings, /localStorage\.setItem\(invitationUrlKey\(id\), url\)/);
+    assert.match(settings, /rememberedInvitationUrl\(invitation\.id\)/);
+    assert.match(settings, /row\.remove\(\)/);
+  });
 });
