@@ -3388,7 +3388,20 @@ code {
   z-index: 30;
 }
 
-#vera-root.special-surface { grid-template-columns: 1fr; }
+/*
+ * Las superficies que no son una página —búsqueda, personas, administración—
+ * ocupan el lugar del documento entero. No basta con reducir la grilla a una
+ * columna: si se conservan las áreas `graph divider text`, `#text` sigue
+ * reclamando la tercera y CSS crea dos columnas implícitas vacías a su
+ * izquierda. Eso desplazaba los resultados a la derecha incluso en vista de
+ * texto. La superficie especial redefine también el mapa de áreas.
+ */
+#vera-root.special-surface {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    'bar'
+    'text';
+}
 #vera-root.special-surface #graph,
 #vera-root.special-surface #divider { display: none; }
 #vera-root.special-surface #text { max-width: none; width: 100%; }
