@@ -2438,14 +2438,17 @@ async function openSearchResults(text: string, push = true): Promise<void> {
   status.textContent = `Buscando “${query}”…`;
   status.setAttribute('aria-live', 'polite');
   host.append(status);
+  const counting = countInto(status, `Buscando “${query}”…`, 'search:corpus');
 
   let hits: Hit[];
   try {
     hits = await api.search(query);
   } catch {
+    counting.close('failed');
     status.textContent = `No se pudo completar la búsqueda de “${query}”.`;
     return;
   }
+  counting.close();
   // Otra búsqueda pudo reemplazar ésta mientras llegaba la red.
   if (new URL(window.location.href).searchParams.get('q')?.trim() !== query) return;
 

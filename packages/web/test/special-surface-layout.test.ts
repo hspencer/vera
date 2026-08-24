@@ -19,4 +19,10 @@ describe('superficies especiales', () => {
     assert.match(settings, /renderSharingAdministration/);
     assert.doesNotMatch(settings, /id: 'compartir', label: 'Compartir'/);
   });
+
+  it('cuenta la espera de una búsqueda comprometida y la cierra en éxito o fallo', () => {
+    assert.match(main, /countInto\(status, `Buscando “\$\{query\}”…`, 'search:corpus'\)/);
+    assert.match(main, /counting\.close\('failed'\)/);
+    assert.match(main, /counting\.close\(\)/);
+  });
 });
