@@ -6327,6 +6327,70 @@ html[data-working-slow='true']::after {
   max-width: 44rem;
 }
 
+/*
+ * Las guías de conexión son destinos, no una lista editorial dentro del texto.
+ *
+ * Cada renglón ofrece un blanco táctil completo. Sin estas reglas heredaban el
+ * azul, la sangría y el área de clic mínima del navegador, y parecían contenido
+ * sin terminar justo en la superficie que debe guiar una instalación.
+ */
+.connect-guides {
+  max-width: 44rem;
+  margin: 0.9rem 0 1.4rem;
+  font-family: var(--font-ui);
+}
+
+.connect-guides > strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 400;
+  font-family: var(--font-mono);
+}
+
+.connect-guides ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.connect-guides li {
+  margin: 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.connect-guides a {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.15rem;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: 3px;
+}
+
+.connect-guides a::after {
+  content: '→';
+  flex: none;
+  color: var(--text-dim);
+}
+
+.connect-guides a:hover,
+.connect-guides a:focus-visible {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  outline: none;
+}
+
+.connect-guides a:hover::after,
+.connect-guides a:focus-visible::after {
+  color: var(--accent);
+}
+
 .publication-form {
   display: grid;
   grid-template-columns: minmax(10rem, 0.8fr) minmax(16rem, 1.5fr) minmax(12rem, 1fr) auto;

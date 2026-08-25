@@ -3853,8 +3853,9 @@ export function renderOutliner(
         submitQuietly(change).then((applied) => {
           if (applied) callbacks.onReload(null);
           return applied;
-        }),
+      }),
       toast,
+      (title) => callbacks.onOpen(title, 'followed_reference'),
     ).then((made) => {
       list.hidden = false;
       if (made === null) return;

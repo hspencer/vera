@@ -135,7 +135,11 @@ export function remoteLaunch(connect: MCPConnect, client: string): string {
  * puerto dentro mentiría con toda confianza el día que se mueva cualquiera de
  * los dos.
  */
-function connectPanel(connect: MCPConnect, host: HTMLElement): void {
+function connectPanel(
+  connect: MCPConnect,
+  host: HTMLElement,
+  openGuide?: (title: string) => void,
+): void {
   const heading = document.createElement('h3');
   heading.className = 'governing-title';
   heading.textContent = 'Cómo se enchufa una IA a esta Vera';
@@ -174,6 +178,12 @@ function connectPanel(connect: MCPConnect, host: HTMLElement): void {
     const link = document.createElement('a');
     link.href = `/p/${encodeURIComponent(title)}`;
     link.textContent = label;
+    if (openGuide !== undefined) {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        openGuide(title);
+      });
+    }
     item.append(link);
     guideList.append(item);
   }
@@ -407,6 +417,7 @@ function connectPanel(connect: MCPConnect, host: HTMLElement): void {
 export async function renderMCP(
   write: Write,
   notify: (message: string) => void,
+  openGuide?: (title: string) => void,
 ): Promise<{ element: HTMLElement; declaring: Set<string> } | null> {
   const door = await api.mcp().catch(() => null);
   if (door === null || door.id === null) return null;
@@ -414,7 +425,7 @@ export async function renderMCP(
   const element = document.createElement('div');
   element.className = 'governing-tables';
 
-  if (door.connect !== undefined) connectPanel(door.connect, element);
+  if (door.connect !== undefined) connectPanel(door.connect, element, openGuide);
 
   /** Escribir una propiedad del bloque que declara, o quitarla si queda vacía. */
   const put = (block: string, key: string) => async (next: string): Promise<boolean> =>
