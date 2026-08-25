@@ -255,6 +255,8 @@ export interface ServerOptions {
    * la sabe quien la configuró; el proceso que corre detrás no.
    */
   reachableAt?: string;
+  /** Credencial cifrada para una puerta MCP lanzada por ssh. No contiene el secreto. */
+  remoteMcpCredential?: { client: string; file: string; name: string };
   /** Sitio estático que esta instancia publica, si su dueño lo configuró. */
   publicSite?: { title: string; canonicalDomain: string };
   /** Directorio estable que Tailscale Serve o el alojamiento público sirven. */
@@ -3817,6 +3819,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           user: userInfo().username,
           host: hostname(),
           reachableAt: options.reachableAt ?? null,
+          remoteCredential: options.remoteMcpCredential ?? null,
         });
         /*
          * Y lo que las máquinas pidieron que se fuera.

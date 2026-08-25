@@ -71,6 +71,15 @@ const declaredOwner =
  * `VERA_URL`, y sin esto habría que acordarse de memoria.
  */
 const reachableAt = setting('VERA_REACHABLE_AT');
+const remoteMcpClient = setting('VERA_MCP_REMOTE_CLIENT');
+const remoteMcpCredentialFile = setting('VERA_MCP_REMOTE_CREDENTIAL_FILE');
+const remoteMcpCredentialName = setting('VERA_MCP_REMOTE_CREDENTIAL_NAME');
+const remoteMcpCredential =
+  remoteMcpClient !== undefined &&
+  remoteMcpCredentialFile !== undefined &&
+  remoteMcpCredentialName !== undefined
+    ? { client: remoteMcpClient, file: remoteMcpCredentialFile, name: remoteMcpCredentialName }
+    : undefined;
 const publicDomain = setting('VERA_PUBLIC_DOMAIN');
 const publicTitle = setting('VERA_PUBLIC_TITLE') ?? 'Vera';
 const publicOutput = setting('VERA_PUBLIC_OUTPUT');
@@ -84,6 +93,7 @@ const { vera } = listen({
   webRoot,
   objectsRoot,
   ...(reachableAt === undefined ? {} : { reachableAt }),
+  ...(remoteMcpCredential === undefined ? {} : { remoteMcpCredential }),
   ...(publicDomain === undefined
     ? {}
     : { publicSite: { title: publicTitle, canonicalDomain: publicDomain } }),

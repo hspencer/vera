@@ -95,12 +95,18 @@ aplicación privada ni permitir lecturas anónimas.
 | `VERA_URL` | Dónde está la API. | `http://127.0.0.1:4173` |
 | `VERA_TOKEN_FILE` | Archivo con el secreto de la credencial. | — |
 | `VERA_TOKEN` | El secreto, si no hay archivo. | — |
+| `VERA_SYSTEMD_CREDENTIAL_FILE` | Credencial cifrada que se abre donde corre la puerta. | — |
+| `VERA_SYSTEMD_CREDENTIAL_NAME` | Nombre embebido de esa credencial cifrada. | — |
 | `VERA_CLIENT` | Cómo se declara el cliente en el registro de exposición. | `vera-mcp` |
 
 La credencial no se pasa nunca por argumentos: los argumentos de un proceso los
 lee cualquiera con un `ps`. `VERA_TOKEN_FILE` antes que `VERA_TOKEN`, porque una
 variable de entorno se hereda a todo lo que el proceso lance y un archivo con
 permisos no.
+
+Para una puerta lanzada por ssh, la pareja `VERA_SYSTEMD_CREDENTIAL_*` tiene
+precedencia y falla cerrada: si no puede descifrarse, el servidor MCP no inicia
+y nunca cae a la identidad del dueño por loopback.
 
 Sin credencial se entra como el dueño, que es lo que hoy es cierto en casa. El
 registro de exposición lo anota como lo que es —una lectura sin credencial— en

@@ -63,6 +63,12 @@ contract MCPIsADoorAndNotASecondMemory {
         -- cabecera sin verificar. Es la misma regla que ya rige en
         -- @invariant IdentityComesFromTheCredential, dicha para una puerta nueva.
 
+    @invariant ADeclaredRemoteConnectionFailsClosed
+        -- Si una conexión remota no puede abrir la credencial que se le declaró,
+        -- la puerta no inicia. Nunca degrada a una entrada anónima ni aprovecha
+        -- que el loopback trate al proceso como dueño: perder autenticación no
+        -- puede convertirse en ganar autoridad.
+
     @invariant TheServerNeedsNoModel
         -- Descubrir, buscar, leer, autorizar y escribir son deterministas. Un
         -- servidor que necesitara un modelo para decidir qué entregar tendría

@@ -19,6 +19,7 @@ const connect = (overrides: Partial<MCPConnect> = {}): MCPConnect => ({
   reachableAt: 'https://vera.una-tailnet.ts.net',
   node: 'v24.18.0',
   login: 'quien@maquina',
+  remoteCredential: null,
   present: true,
   ...overrides,
 });
@@ -35,7 +36,7 @@ describe('la configuración para otro equipo', () => {
     const one = connect();
     const said = JSON.parse(remoteLaunch(one, 'claude-desktop'));
     const order = said.mcpServers.vera.args.at(-1);
-    assert.ok(order.endsWith(`${one.command} ${one.args.join(' ')}`));
+    assert.ok(order.endsWith(`'${one.command}' ${one.args.map((arg) => `'${arg}'`).join(' ')}`));
   });
 
   it('cambiar cómo arranca la puerta cambia también esto', () => {
@@ -43,12 +44,41 @@ describe('la configuración para otro equipo', () => {
     // haya un segundo sitio que se quede atrás.
     const otro = connect({ command: '/opt/node', args: ['--flamante', '/otra/main.ts'] });
     const order = JSON.parse(remoteLaunch(otro, 'x')).mcpServers.vera.args.at(-1);
-    assert.ok(order.includes('/opt/node --flamante /otra/main.ts'));
+    assert.ok(order.includes("'/opt/node' '--flamante' '/otra/main.ts'"));
   });
 
   it('lleva el nombre del cliente, que es lo único que se decide', () => {
-    const order = JSON.parse(remoteLaunch(connect(), 'codex')).mcpServers.vera.args.at(-1);
-    assert.ok(order.startsWith('VERA_CLIENT=codex '));
+    const order = JSON.parse(remoteLaunch(connect(), 'otro')).mcpServers.vera.args.at(-1);
+    assert.ok(order.startsWith("VERA_CLIENT='otro' "));
+  });
+
+  it('dicta TOML nativo para Codex y evita confirmaciones redundantes', () => {
+    const said = remoteLaunch(connect(), 'codex-andrei');
+    assert.match(said, /^\[mcp_servers\.vera\]/);
+    assert.match(said, /default_tools_approval_mode = "auto"/);
+    assert.match(said, /required = true/);
+  });
+
+  it('abre en Alexei una credencial cifrada declarada, sin copiar el secreto', () => {
+    const said = remoteLaunch(
+      connect({
+        remoteCredential: {
+          client: 'codex-andrei',
+          file: '/seguro/vera-codex.cred',
+          name: 'vera-codex',
+        },
+      }),
+      'codex-andrei',
+    );
+    assert.match(said, /VERA_SYSTEMD_CREDENTIAL_FILE='\/seguro\/vera-codex\.cred'/);
+    assert.match(said, /VERA_SYSTEMD_CREDENTIAL_NAME='vera-codex'/);
+    assert.ok(!said.includes('VERA_TOKEN='));
+  });
+
+  it('el nombre del cliente no puede convertirse en una orden del shell remoto', () => {
+    const order = JSON.parse(remoteLaunch(connect(), "otro'; touch /tmp/nope; '"))
+      .mcpServers.vera.args.at(-1);
+    assert.match(order, /^VERA_CLIENT='otro'"'"'; touch \/tmp\/nope; '"'"'' /);
   });
 
   it('no lleva VERA_URL: el proceso nace al lado de Vera', () => {

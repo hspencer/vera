@@ -103,24 +103,34 @@ function reading(seen: SeenClient | null): string {
  * la ruta en el otro equipo, y es la misma en macOS y en Linux.
  */
 export function remoteLaunch(connect: MCPConnect, client: string): string {
-  return JSON.stringify(
-    {
-      mcpServers: {
-        vera: {
-          command: '/usr/bin/ssh',
-          args: [
-            '-q',
-            '-o',
-            'BatchMode=yes',
-            connect.login,
-            `VERA_CLIENT=${client} ${connect.command} ${connect.args.join(' ')}`,
-          ],
-        },
-      },
-    },
-    null,
-    2,
-  );
+  const credential = connect.remoteCredential?.client === client ? connect.remoteCredential : null;
+  const shellWord = (word: string): string => `'${word.replaceAll("'", `'"'"'`)}'`;
+  const remote = [
+    `VERA_CLIENT=${shellWord(client)}`,
+    ...(credential === null
+      ? []
+      : [
+          `VERA_SYSTEMD_CREDENTIAL_FILE=${shellWord(credential.file)}`,
+          `VERA_SYSTEMD_CREDENTIAL_NAME=${shellWord(credential.name)}`,
+        ]),
+    shellWord(connect.command),
+    ...connect.args.map(shellWord),
+  ].join(' ');
+  const args = ['-q', '-o', 'BatchMode=yes', connect.login, remote];
+
+  if (client.toLowerCase().includes('codex')) {
+    return [
+      '[mcp_servers.vera]',
+      'command = "/usr/bin/ssh"',
+      `args = [${args.map((part) => JSON.stringify(part)).join(', ')}]`,
+      'startup_timeout_sec = 20',
+      'tool_timeout_sec = 60',
+      'required = true',
+      'default_tools_approval_mode = "auto"',
+    ].join('\n');
+  }
+
+  return JSON.stringify({ mcpServers: { vera: { command: '/usr/bin/ssh', args } } }, null, 2);
 }
 
 /**
@@ -206,7 +216,7 @@ function connectPanel(
   const field = document.createElement('input');
   field.type = 'text';
   field.className = 'connect-client';
-  field.value = 'claude-desktop';
+  field.value = connect.remoteCredential?.client ?? 'claude-desktop';
   field.setAttribute('aria-label', 'cómo se va a llamar esta conexión');
   field.placeholder = 'nombre de la conexión';
   label.append(field);
@@ -380,7 +390,8 @@ function connectPanel(
     'tiene que poder entrar por ssh sin escribir una contraseña: `BatchMode=yes` hace que ' +
     'falle en vez de quedarse esperando delante de una app que no tiene dónde preguntarla. ' +
     'Eso es lo único de aquí que este equipo no puede comprobar, porque se comprueba desde ' +
-    'el otro.';
+    'el otro. Si el nombre contiene «codex», el bloque sale en TOML nativo y la conexión ' +
+    'queda requerida durante la sesión y sin confirmaciones redundantes.';
   there.append(remote, copyRemote, remoteSays);
 
   const sshPath = document.createElement('p');

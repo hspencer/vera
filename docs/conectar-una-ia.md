@@ -217,6 +217,18 @@ y la buena no es la obvia.
 **Lo que se hace:** que el cliente lance `ssh` y la puerta corra *aquí*, al lado
 de Vera.
 
+Para Codex, pega en `~/.codex/config.toml` el bloque TOML que dicta
+«Vera: Puerta MCP». En esta instancia ya sale preparado para `codex-andrei`: la
+credencial permanece cifrada en Alexei, se abre al iniciar la puerta y nunca se
+copia a Andrei. `required = true` hace visible un fallo de conexión y
+`default_tools_approval_mode = "auto"` evita una segunda confirmación por cada
+escritura: el límite efectivo sigue siendo la concesión de Vera, que no ofrece
+borrado.
+
+Después ejecuta `codex mcp list` y, dentro de Codex, `/mcp`. La primera llamada
+debe ser `vera_quien_soy` y responder `participant:codex`; cualquier otra
+identidad es un fallo, no una conexión degradada.
+
 ```json
 {
   "mcpServers": {
@@ -233,6 +245,9 @@ Nota que la parte remota es **una orden en una línea**, no un arreglo de
 argumentos: un shell remoto recibe texto. Y que `VERA_URL` no aparece: el
 proceso nace en la misma máquina que Vera, así que el loopback por omisión ya es
 el correcto.
+
+El JSON anterior sirve para clientes que lo esperan. Codex no usa ese formato:
+su configuración vigente es TOML o `codex mcp add`.
 
 **Lo que también funciona pero cuesta más:** tener el repositorio también en el
 otro equipo y apuntar `VERA_URL` a `connect.reachableAt` —la dirección de

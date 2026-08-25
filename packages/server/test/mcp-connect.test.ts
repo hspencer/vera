@@ -54,6 +54,12 @@ describe('los datos de conexión', () => {
     assert.equal(ask().login, 'quien@maquina');
   });
 
+  it('sólo dicta una credencial remota cuando el despliegue la declaró', () => {
+    assert.equal(ask().remoteCredential, null);
+    const credential = { client: 'codex-andrei', file: '/seguro/vera-codex.cred', name: 'vera-codex' };
+    assert.deepEqual(ask({ remoteCredential: credential }).remoteCredential, credential);
+  });
+
   it('el comando es la ruta entera de node y no la palabra', () => {
     // Un cliente MCP no hereda el PATH de nadie: «node» a secas no se encuentra.
     assert.equal(ask().command, '/usr/bin/node');

@@ -49,6 +49,8 @@ export interface MCPConnect {
    * se llama la máquina—, no una decisión que alguien deba escribir.
    */
   login: string;
+  /** Credencial cifrada que el proceso remoto puede abrir aquí, sin copiarla al cliente. */
+  remoteCredential: { client: string; file: string; name: string } | null;
   /**
    * Si la puerta está donde se dice que está.
    *
@@ -74,6 +76,7 @@ export function mcpConnect(options: {
   user: string;
   host: string;
   reachableAt?: string | null;
+  remoteCredential?: { client: string; file: string; name: string } | null;
   exists?: (path: string) => boolean;
 }): MCPConnect {
   const exists = options.exists ?? existsSync;
@@ -96,6 +99,7 @@ export function mcpConnect(options: {
     reachableAt: options.reachableAt ?? null,
     node: options.nodeVersion,
     login: `${options.user}@${options.host}`,
+    remoteCredential: options.remoteCredential ?? null,
     present: exists(door),
   };
 }

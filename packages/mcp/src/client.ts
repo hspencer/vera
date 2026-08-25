@@ -188,10 +188,26 @@ export interface Page {
 export function connectionFrom(
   env: Record<string, string | undefined>,
   readFile: (path: string) => string,
+  decryptCredential: (file: string, name: string) => string = () => '',
 ): Connection {
+  const encrypted = env.VERA_SYSTEMD_CREDENTIAL_FILE;
+  const encryptedName = env.VERA_SYSTEMD_CREDENTIAL_NAME;
   const file = env.VERA_TOKEN_FILE;
   let token: string | null = null;
-  if (file !== undefined && file !== '') {
+  if (
+    encrypted !== undefined &&
+    encrypted !== '' &&
+    encryptedName !== undefined &&
+    encryptedName !== ''
+  ) {
+    try {
+      token = decryptCredential(encrypted, encryptedName).trim();
+    } catch (cause) {
+      throw new Error(`no se pudo abrir la credencial cifrada «${encryptedName}»`, { cause });
+    }
+    if (token === '') throw new Error(`la credencial cifrada «${encryptedName}» está vacía`);
+  }
+  if ((token === null || token === '') && file !== undefined && file !== '') {
     try {
       token = readFile(file).trim();
     } catch {

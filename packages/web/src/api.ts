@@ -1449,6 +1449,8 @@ export interface MCPConnect {
    * por ssh y el proceso nace al lado de Vera.
    */
   login: string;
+  /** Credencial cifrada que puede abrirse en la máquina remota sin copiar el secreto. */
+  remoteCredential: { client: string; file: string; name: string } | null;
   /** Si la puerta está donde se dice que está. */
   present: boolean;
 }

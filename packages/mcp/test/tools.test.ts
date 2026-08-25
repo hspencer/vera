@@ -328,6 +328,41 @@ describe('la sangría', () => {
 });
 
 describe('de dónde sale la credencial', () => {
+  it('puede descifrar una credencial de systemd sin poner el secreto en la configuración', () => {
+    const connection = connectionFrom(
+      {
+        VERA_SYSTEMD_CREDENTIAL_FILE: '/credenciales/vera-codex.cred',
+        VERA_SYSTEMD_CREDENTIAL_NAME: 'vera-codex',
+        VERA_TOKEN: 'del-entorno',
+      },
+      () => '',
+      (file, name) => {
+        assert.equal(file, '/credenciales/vera-codex.cred');
+        assert.equal(name, 'vera-codex');
+        return '  descifrado\n';
+      },
+    );
+    assert.equal(connection.token, 'descifrado');
+  });
+
+  it('una credencial cifrada rota falla cerrada y nunca cae al dueño por loopback', () => {
+    assert.throws(
+      () =>
+        connectionFrom(
+          {
+            VERA_SYSTEMD_CREDENTIAL_FILE: '/credenciales/rota.cred',
+            VERA_SYSTEMD_CREDENTIAL_NAME: 'rota',
+            VERA_TOKEN: 'no debe usarse',
+          },
+          () => '',
+          () => {
+            throw new Error('no abre');
+          },
+        ),
+      /no se pudo abrir la credencial cifrada/,
+    );
+  });
+
   it('de un archivo antes que del entorno', () => {
     // Una variable de entorno se hereda a todo lo que el proceso lance; un
     // archivo con permisos, no.

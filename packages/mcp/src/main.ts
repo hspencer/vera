@@ -17,6 +17,7 @@
 //
 // Ver specs/mcp-server.allium.
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -76,8 +77,14 @@ Al escribir:
   páginas viajaron, hacia qué cliente y cuándo.`;
 
 async function main(): Promise<void> {
-  const connection: Connection = connectionFrom(process.env, (path) =>
-    readFileSync(path, 'utf8'),
+  const connection: Connection = connectionFrom(
+    process.env,
+    (path) => readFileSync(path, 'utf8'),
+    (file, name) =>
+      execFileSync('systemd-creds', ['--user', 'decrypt', `--name=${name}`, file, '-'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }),
   );
 
   const ask: Ask = (path, parameters) => askVera(connection, path, parameters);
