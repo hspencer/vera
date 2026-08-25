@@ -280,6 +280,19 @@ export function reloadOptionsFor(change: Change): ReloadOptions | undefined {
 }
 
 /**
+ * Una escritura que ocurrió fuera de la réplica abierta sólo puede verse
+ * volviendo una vez al corpus canónico.
+ *
+ * Procesar un bloque y transcribir audio escriben desde el servidor después de
+ * que un modelo termina. Ninguna de esas operaciones pasó por `applyLocally`,
+ * así que un redibujado corriente reconstruiría la página desde la versión
+ * anterior y haría parecer que la transformación no ocurrió.
+ */
+export function reloadAfterServerWriting(): ReloadOptions {
+  return { fromCorpus: true };
+}
+
+/**
  * El bloque donde hay que empezar a grabar en cuanto se dibuje.
  *
  * `/audio` ocurre en un editor que el redibujado se lleva por delante, así que
@@ -1993,7 +2006,7 @@ async function processBlock(
         ? `contestado: ${said.title ?? ''}`
         : `contestado: ${said.title ?? ''} · ${said.items} ítems`,
     );
-    callbacks.onReload(null);
+    callbacks.onReload(null, reloadAfterServerWriting());
   } catch {
     notify('el modelo no pudo procesar el bloque');
   } finally {
@@ -2490,7 +2503,7 @@ export function renderOutliner(
        * desaparecen de la pantalla. Volver una vez al corpus incorpora tanto
        * el bloque escrito como la operación que la réplica todavía no conoce.
        */
-      callbacks.onReload(null, { fromCorpus: true });
+      callbacks.onReload(null, reloadAfterServerWriting());
     },
   };
   const options: RenderOptions = { embedHosts };

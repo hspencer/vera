@@ -1,0 +1,409 @@
+-- allium: 3
+-- processing-forms.allium
+
+-- Scope: Las formas configurables con que Vera procesa páginas y bloques.
+-- Includes: cómo se declara una forma dentro del corpus, qué material puede
+--   recibir, qué resultado promete, qué contexto puede consultar, si propone o
+--   aplica, cómo se elige, qué se recuerda de cada ejecución y las formas
+--   iniciales para páginas y bloques.
+-- Excludes:
+--   - Cómo un modelo local carga pesos o ejecuta una inferencia.
+--   - La lectura estructural y puesta en forma ya especificadas en
+--     page-processing.allium.
+--   - El formato concreto de un prompt: es una implementación de la forma, no
+--     la forma que una persona elige.
+-- Dependencies: Page, Block, Participant y Change los gobierna core.allium.
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- Una forma dice qué trabajo ofrece antes de que alguien la ejecute.
+contract ProcessingFormDefinition {
+    available_for: (target: ProcessingTarget) -> Set<ProcessingForm>
+    instructions_of: (form: ProcessingForm) -> String
+
+    @invariant AFormIsMoreThanItsPrompt
+        -- Nombre, propósito, destino, contexto, resultado y política de cambio
+        -- son parte de la forma. Sus instrucciones pueden terminar convertidas
+        -- en un prompt, pero no sustituyen esas obligaciones observables.
+
+    @invariant ConfigurationLivesInTheCorpus
+        -- La definición legible y editable vive en una página especial de Vera.
+        -- Una ruta de binario, un secreto o los pesos de un modelo pertenecen a
+        -- la instalación y nunca se escriben en esa página.
+}
+
+-- Ejecutar una forma conserva el objeto de origen hasta que su política permita
+-- cambiarlo.
+contract ProcessingExecution {
+    execute: (form: ProcessingForm, target: ProcessingTarget, participant: core/Participant) -> ProcessingRun
+
+    @invariant TheTargetStillExistsWhenTheResultArrives
+        -- Si la página o el bloque desaparecieron durante el procesamiento, el
+        -- resultado no se aplica a otro objeto ni se localiza por coincidencia
+        -- de texto. La ejecución termina diciendo que su destino ya no existe.
+
+    @invariant TheInputRevisionIsRemembered
+        -- Toda ejecución nombra la revisión que leyó. Un resultado sobre una
+        -- revisión anterior no puede presentarse como si describiera el texto
+        -- que ahora se ve.
+
+    @invariant FailureWritesNothing
+        -- Un modelo ausente, una salida ilegible o una interrupción dejan página
+        -- y bloque exactamente como estaban y explican qué no pudo hacerse.
+
+    @invariant EveryMachineResultNamesItsOrigin
+        -- Se conserva la forma y su versión, el modelo efectivo y quién pidió la
+        -- ejecución. Cambiar la forma o el modelo mañana no vuelve anónimas las
+        -- transformaciones de ayer.
+}
+
+-- El juego con que una instalación puede empezar. Sembrar significa crear
+-- páginas especiales ordinarias: después se editan y versionan como tales.
+contract StarterProcessingForms {
+    seed: (graph: core/Graph) -> Set<ProcessingForm>
+
+    @invariant PageFormsStartWithFivePurposes
+        -- La semilla ofrece poner en forma, resumir, encontrar vínculos
+        -- horizontales, proponer conceptos y componer el pie de página.
+
+    @invariant BlockFormsStartWithFourPurposes
+        -- La semilla ofrece corregir Markdown, corregir Mermaid, corregir
+        -- ortografía y traducir.
+
+    @invariant ConservativeWorkAndInterpretiveWorkDiffer
+        -- Poner en forma puede aplicar sólo transformaciones que no añaden ni
+        -- quitan sentido. Resumir, vincular, clasificar y componer el pie
+        -- proponen. Las correcciones y traducciones de bloque muestran el texto
+        -- completo y exigen confirmación antes de reemplazarlo.
+
+    @invariant SeededDoesNotMeanHardCoded
+        -- Cada forma sembrada queda en una página especial editable. El código
+        -- aporta un comienzo, no un vocabulario cerrado ni nombres perpetuos.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum ProcessingScope { page | block }
+
+enum ContextAccess {
+    target_only
+    | linked_pages
+    | whole_graph
+    | ontology
+}
+
+enum ChangePolicy {
+    -- Sólo describe lo encontrado.
+    observe
+    -- Compone cambios concretos y una persona elige cuáles aplicar.
+    propose
+    -- Enseña el cambio completo y exige una confirmación antes de escribir.
+    confirm
+    -- Escribe al terminar, por la puerta canónica y con procedencia.
+    apply
+}
+
+enum ResultShape {
+    rewritten_text
+    | summary
+    | links
+    | properties
+    | footer
+    | structured_blocks
+}
+
+enum ProcessingStatus { running | observed | proposed | applied | failed | stale }
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+-- La definición que una persona elige y puede adaptar.
+entity ProcessingForm {
+    page: core/Page
+    name: String
+    purpose: String
+    scope: ProcessingScope
+    instructions: String
+    context_access: ContextAccess
+    change_policy: ChangePolicy
+    result_shape: ResultShape
+    enabled: Boolean
+    version: Integer
+}
+
+-- Una página o un bloque entregado a una forma.
+value ProcessingTarget {
+    scope: ProcessingScope
+    page: core/Page
+    block: core/Block?
+    revision: String
+}
+
+-- Una ejecución concreta, aun cuando falle o quede obsoleta.
+entity ProcessingRun {
+    form: ProcessingForm
+    form_version: Integer
+    target: ProcessingTarget
+    requested_by: core/Participant
+    status: ProcessingStatus
+    started_at: Timestamp
+    finished_at: Timestamp?
+    model: String?
+    explanation: String?
+    proposals: ProcessingProposal with run = this
+
+    transitions status {
+        running -> observed
+        running -> proposed
+        running -> applied
+        running -> failed
+        running -> stale
+        proposed -> applied
+        proposed -> stale
+        terminal: observed, applied, failed, stale
+    }
+}
+
+-- Un cambio producido por una ejecución. No es todavía un cambio del corpus.
+entity ProcessingProposal {
+    run: ProcessingRun
+    change: core/Change
+    explanation: String
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule ParticipantStartsProcessing {
+    when: ProcessWithForm(participant, form, target)
+
+    requires: form.enabled = true
+    requires: form.scope = target.scope
+    requires: target.scope = page or target.block != null
+
+    ensures:
+        let run = ProcessingRun.created(
+            form: form,
+            form_version: form.version,
+            target: target,
+            requested_by: participant,
+            status: running,
+            started_at: now,
+            finished_at: null,
+            model: null,
+            explanation: null
+        )
+        ProcessingRequested(run: run)
+}
+
+rule ProcessingReportsAnObservation {
+    when: ProcessingAnswered(run, model, changes, explanation)
+
+    requires: run.status = running
+    requires: run.form.change_policy = observe
+    requires: target_revision_still_current(run.target)
+
+    ensures:
+        run.status = observed
+        run.finished_at = now
+        run.model = model
+        run.explanation = explanation
+}
+
+rule ProcessingProducesProposals {
+    when: ProcessingAnswered(run, model, changes, explanation)
+
+    requires: run.status = running
+    requires: run.form.change_policy in {propose, confirm}
+    requires: target_revision_still_current(run.target)
+
+    ensures:
+        run.status = proposed
+        run.finished_at = now
+        run.model = model
+        run.explanation = explanation
+        for change in changes:
+            ProcessingProposal.created(run: run, change: change, explanation: explanation_of(change))
+}
+
+rule ProcessingAppliesItsAnswer {
+    when: ProcessingAnswered(run, model, changes, explanation)
+
+    requires: run.status = running
+    requires: run.form.change_policy = apply
+    requires: target_revision_still_current(run.target)
+
+    ensures:
+        run.status = applied
+        run.finished_at = now
+        run.model = model
+        run.explanation = explanation
+        for change in changes:
+            applied(change)
+
+    @invariant ItUsesTheOneDoor
+        -- Cada transformación entra como una operación canónica con autor,
+        -- canal y secuencia. Procesar no abre una segunda vía de escritura.
+}
+
+rule ParticipantAppliesAProposal {
+    when: ApplyProcessingProposal(participant, proposal)
+
+    requires: proposal.run.status = proposed
+    requires: proposal.run.requested_by = participant
+    requires: target_revision_still_current(proposal.run.target)
+
+    ensures:
+        applied(proposal.change)
+        proposal.run.status = applied
+}
+
+rule ProcessingFails {
+    when: ProcessingCouldNotAnswer(run, explanation)
+
+    requires: run.status = running
+
+    ensures:
+        run.status = failed
+        run.finished_at = now
+        run.explanation = explanation
+}
+
+rule AnOldAnswerBecomesStale {
+    when: ProcessingAnswered(run, model, changes, explanation)
+
+    requires: run.status = running
+    requires: not target_revision_still_current(run.target)
+
+    ensures:
+        run.status = stale
+        run.finished_at = now
+        run.model = model
+        run.explanation = explanation
+
+    @invariant StaleWorkNeverOverwritesNewWriting
+        -- El resultado queda explicable, pero no se aplica encima de una edición
+        -- que ocurrió mientras el modelo trabajaba.
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor ProcessingParticipant {
+    identified_by: core/Participant where kind = human | agent
+}
+
+actor LocalProcessingEngine {
+    identified_by: core/Participant where kind = agent
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface ProcessingForms {
+    facing participant: ProcessingParticipant
+    context form: ProcessingForm
+
+    exposes:
+        form.name
+        form.page
+        form.purpose
+        form.scope
+        form.context_access
+        form.change_policy
+        form.result_shape
+        form.enabled
+
+    provides:
+        ProcessWithForm(participant, form, target)
+
+    contracts:
+        fulfils ProcessingFormDefinition
+        fulfils ProcessingExecution
+        fulfils StarterProcessingForms
+
+    @guarantee OnlyApplicableFormsAreOffered
+        -- En una página aparecen sólo formas de página; en un bloque, sólo
+        -- formas de bloque. La persona no descubre la incompatibilidad después
+        -- de esperar al modelo.
+
+    @guarantee ConsequencesAreKnownBeforeStarting
+        -- Antes de ejecutar se sabe si la forma observará, propondrá, pedirá
+        -- confirmación o escribirá directamente, y qué parte del corpus podrá
+        -- consultar.
+}
+
+surface ProcessingResult {
+    facing participant: ProcessingParticipant
+    context run: ProcessingRun where requested_by = participant
+
+    exposes:
+        run.status
+        run.form
+        run.form_version
+        run.target
+        run.started_at
+        run.model
+        run.explanation
+        run.finished_at
+        for proposal in run.proposals:
+            proposal.change
+            proposal.explanation
+
+    related:
+        for proposal in run.proposals:
+            ProcessingProposalResult(proposal)
+
+    @guarantee CanonicalChangesAppearImmediately
+        -- Cuando una ejecución escribe o una propuesta se aplica, la página
+        -- abierta incorpora la versión canónica al terminar. No exige salir y
+        -- volver para ver una transformación que ya ocurrió.
+}
+
+surface ProcessingProposalResult {
+    facing participant: ProcessingParticipant
+    context proposal: ProcessingProposal where run.requested_by = participant
+
+    exposes:
+        proposal.change
+        proposal.explanation
+
+    provides:
+        ApplyProcessingProposal(participant, proposal) when proposal.run.status = proposed
+}
+
+surface LocalProcessing {
+    facing engine: LocalProcessingEngine
+    context run: ProcessingRun where status = running
+
+    exposes:
+        engine.name
+        run.form.instructions
+        run.form.context_access
+        run.form.result_shape
+        run.target
+
+    provides:
+        ProcessingAnswered(run, model, changes, explanation)
+        ProcessingCouldNotAnswer(run, explanation)
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "¿El pie de página es contenido canónico que se escribe en bloques, o una proyección derivada que Vera dibuja sin añadir texto a la página?"
+open question "¿Las formas pueden encadenarse en una secuencia guardada —poner en forma, resumir, vincular y clasificar— o cada ejecución debe empezar siempre por una elección explícita?"
+open question "¿Corregir Markdown, Mermaid u ortografía debe exigir confirmación bloque por bloque o basta una previsualización con deshacer?"
+open question "¿La lengua de destino de Traducir se elige al ejecutar, se guarda en cada forma o ambas cosas son posibles?"
+open question "¿Quién puede editar una forma incorporada y cómo se conserva una versión anterior cuando ya tiene ejecuciones atribuidas?"

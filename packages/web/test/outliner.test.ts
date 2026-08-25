@@ -19,6 +19,7 @@ import {
   matchingMovePages,
   nodeMarkdown,
   projectedReferenceText,
+  reloadAfterServerWriting,
   reloadOptionsFor,
 } from '../src/outliner.ts';
 import type { BlockView } from '../src/api.ts';
@@ -54,6 +55,10 @@ describe('redibujar después de escribir', () => {
       reloadOptionsFor({ kind: 'edit_block', block: 'block:1', content: 'texto' }),
       undefined,
     );
+  });
+
+  it('una transformación escrita por el servidor vuelve al corpus', () => {
+    assert.deepEqual(reloadAfterServerWriting(), { fromCorpus: true });
   });
 });
 
