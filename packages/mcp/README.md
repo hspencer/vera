@@ -82,9 +82,11 @@ env = { VERA_URL = "http://127.0.0.1:4173", VERA_CLIENT = "codex" }
 }
 ```
 
-Las versiones web —claude.ai, chatgpt.com— no pueden conectarse por aquí:
-necesitan un servidor remoto con OAuth, que es M5 y M6, y que no empieza
-mientras haya un camino anónimo que se hace pasar por el dueño.
+Los servicios alojados por el proveedor —incluido ChatGPT— no pueden conectarse
+por aquí: necesitan una puerta MCP Streamable HTTP públicamente alcanzable por
+HTTPS y estrictamente autenticada. Esa superficie aislada es M5; OAuth para los
+clientes que lo exijan es M6. «Públicamente alcanzable» no significa publicar la
+aplicación privada ni permitir lecturas anónimas.
 
 ## El entorno
 

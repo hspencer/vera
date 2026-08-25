@@ -51,7 +51,7 @@ Al día de hoy, aplicado a los servicios más habituales:
 | Proveedor | Cliente que entra | Cliente que no |
 | --- | --- | --- |
 | Anthropic | Claude Code, Claude Desktop | claude.ai en el navegador |
-| OpenAI | Codex CLI, la app de escritorio de ChatGPT | chatgpt.com en el navegador |
+| OpenAI | Codex CLI y Codex app | ChatGPT, porque el servicio se ejecuta en la nube |
 | Google | Gemini CLI | Gemini en el navegador |
 | Microsoft | VS Code / Copilot (`mcp.json`) | Copilot en el navegador |
 | DeepSeek, Mistral, otros | cualquier cliente suyo que corra en tu equipo | sus interfaces web |
@@ -63,11 +63,10 @@ arriba —**dónde corre**— no envejece, y es la que conviene aplicar.
 
 ## Los cinco valores
 
-Todo formulario de «agregar servidor MCP» pide estos cinco, con distintos
-nombres. La app de escritorio de ChatGPT, por ejemplo, los llama «Tipo»,
-«Comando para iniciar», «Argumentos», «Variables de entorno» y «Directorio de
-trabajo»; un archivo JSON los llama `type`, `command`, `args`, `env` y `cwd`.
-Son lo mismo.
+Todo formulario local de «agregar servidor MCP por stdio» pide estos cinco, con
+distintos nombres. Un archivo JSON los llama `type`, `command`, `args`, `env` y
+`cwd`. Son lo mismo. ChatGPT no pertenece a este caso: necesita una URL HTTPS
+de Streamable HTTP que sus servidores puedan alcanzar.
 
 | Lo que te pide el formulario | Qué es | Valor |
 | --- | --- | --- |
@@ -184,7 +183,6 @@ Cambian el nombre del archivo y, en dos casos, el dialecto:
 | Claude Code | ya está: el `.mcp.json` de la raíz lo declara | — |
 | Claude Desktop | `claude_desktop_config.json` | ninguna |
 | Gemini CLI | `~/.gemini/settings.json` | ninguna |
-| App de escritorio de ChatGPT | su formulario de servidores MCP | campo a campo |
 | Codex | `~/.codex/config.toml` | TOML, ver abajo |
 | VS Code / Copilot | `.vscode/mcp.json` | la clave es `servers`, y lleva `"type": "stdio"` |
 
@@ -323,16 +321,20 @@ Dicho aparte para no confundir lo construido con lo previsto.
 - **Edición y descarte completos desde la IA.** MCP permite crear páginas y
   bloques y gestionar propiedades mediante operaciones atribuidas e idempotentes.
   Todavía no edita, mueve ni descarta páginas o bloques.
-- **Un servidor MCP remoto.** No existe. `/mcp` es el JSON de la página de la
+- **Un servidor MCP remoto y público.** No existe. `/mcp` es el JSON de la página de la
   puerta, no un endpoint del protocolo, y `packages/mcp` sólo habla stdio. Por
-  eso ningún cliente web se conecta. Es **M5**, y la pieza está a mano —el SDK
+  eso ChatGPT y cualquier cliente alojado por un proveedor no se conectan. La
+  ruta prevista debe quedar públicamente alcanzable por HTTPS —por ejemplo bajo
+  `vera.mediafranca.net` en una ruta dedicada— aunque el corpus siga siendo
+  privado y cada solicitud exija autorización. Es **M5**, y la pieza está a mano —el SDK
   instalado ya trae el transporte Streamable HTTP—, pero exige antes una regla
   más estricta que la del resto de Vera: en esa ruta no hay caída al dueño, sin
   credencial válida es 401 y nada más.
-- **Publicarlo con Tailscale Funnel.** Se puede, y hoy sería un error: la regla
+- **Publicar toda Vera con Tailscale Funnel.** Se puede, y hoy sería un error: la regla
   actual mapea `/` al puerto de Vera, así que publicaría la API entera —incluido
   `POST /operations`, que sin credencial escribe como el dueño—. Cuando exista el
-  endpoint remoto, se funnelea **esa ruta** con `--set-path`, nunca `/`. Y siguen
+  endpoint remoto, se expone **sólo esa ruta** —mediante Funnel o el proxy HTTPS
+  público—, nunca `/`. Y siguen
   faltando validación de origen y host, protección contra DNS rebinding, CORS
   restrictivo y límites por identidad y herramienta.
 - **OAuth.** Es M6. Para los formularios HTTP que aceptan un bearer y cabeceras

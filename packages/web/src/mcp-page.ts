@@ -170,7 +170,7 @@ function connectPanel(
   guideHeading.textContent = 'Instrucciones por proveedor';
   const guideList = document.createElement('ul');
   for (const [title, label] of [
-    ['Vera — conectar OpenAI por MCP', 'OpenAI · Codex y ChatGPT'],
+    ['Vera — conectar OpenAI por MCP', 'OpenAI · Codex; ChatGPT requiere HTTPS'],
     ['Vera — conectar Claude por MCP', 'Anthropic · Claude Code y Claude Desktop'],
     ['Vera — conectar Gemini por MCP', 'Google · Gemini CLI'],
   ] as const) {
@@ -406,9 +406,10 @@ function connectPanel(
   const http = document.createElement('p');
   http.className = 'governing-note';
   http.textContent =
-    'La otra opción de esos formularios —tipo HTTP, con una URL y un bearer— todavía ' +
-    'no existe: la puerta sólo habla por stdio. Es lo que hace falta para una IA que ' +
-    'corra en el navegador, y es M5.';
+    'La puerta pública para servicios en la nube todavía no existe: hoy Vera sólo habla ' +
+    'por stdio. ChatGPT y otros clientes alojados por su proveedor necesitarán un endpoint ' +
+    'MCP Streamable HTTP con HTTPS, públicamente alcanzable y cerrado por autenticación. ' +
+    'Publicar la aplicación privada completa no lo reemplaza; esa puerta aislada es M5.';
   host.append(http);
 
   settleWhere();
