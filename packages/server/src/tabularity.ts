@@ -56,8 +56,6 @@ export interface Plan {
  * Los números que deciden dónde se corta. Están juntos porque son lo único
  * discutible: el resto es leer el texto que ya hay.
  */
-const TARGET = 350; // a cuánto se apunta por bloque al partir un párrafo
-const MIN = 120; // y por debajo de esto no se cierra un trozo, para no picar
 const DEEPEST = 6; // no hay encabezado de nivel siete
 
 const HEADING = /^(#{1,6})\s+\S/;
@@ -174,19 +172,14 @@ function headingLevelOf(content: string): number | null {
   return found === null ? null : (found[1] ?? '#').length;
 }
 
-/** Las frases de un texto, cortadas por sus cierres y con el cierre dentro. */
-function sentencesOf(text: string): string[] {
-  const parts = text.split(/(?<=[.!?…])\s+/);
-  return parts.map((one) => one.trim()).filter((one) => one !== '');
-}
-
 /**
- * En qué trozos se parte un párrafo largo.
+ * Los trozos que el propio texto ya declara.
  *
- * Si el texto ya trae saltos de línea, se parte por ahí: quien escribió ya dijo
- * dónde separaba, y adivinarlo otra vez sólo puede empeorarlo. Si no, se juntan
- * frases hasta llegar a un tamaño de lectura —ni el párrafo entero ni una frase
- * por bloque, que es la fragmentación mecánica que la página prohíbe.
+ * Un salto de línea escrito puede separar unidades. La longitud, los puntos y
+ * un umbral mecánico no: partir una sola línea en bloques hermanos atomiza el
+ * texto y aplana la relación que todavía habría que comprender. Ese trabajo es
+ * interpretativo y pertenece a una propuesta de estructura, no a este plan que
+ * se aplica solo.
  */
 export function piecesOf(content: string): string[] {
   const lines = content
@@ -194,31 +187,7 @@ export function piecesOf(content: string): string[] {
     .map((line) => line.trim())
     .filter((line) => line !== '');
   if (lines.length > 1) return lines;
-
-  const sentences = sentencesOf(content);
-  if (sentences.length < 2) return [content.trim()];
-
-  const pieces: string[] = [];
-  let open = '';
-  for (const sentence of sentences) {
-    const next = open === '' ? sentence : `${open} ${sentence}`;
-    if (open !== '' && next.length > TARGET && open.length >= MIN) {
-      pieces.push(open);
-      open = sentence;
-      continue;
-    }
-    open = next;
-  }
-  if (open !== '') pieces.push(open);
-  // Un último trozo demasiado corto se queda con el anterior: un bloque que dice
-  // «Y ya.» no es una unidad de sentido.
-  if (pieces.length > 1) {
-    const last = pieces.at(-1) ?? '';
-    if (last.length < MIN) {
-      pieces.splice(-2, 2, `${pieces.at(-2) ?? ''} ${last}`);
-    }
-  }
-  return pieces;
+  return [content.trim()];
 }
 
 /**
@@ -423,7 +392,9 @@ export function planTabularity(page: string, blocks: Block[], structure: PageStr
       continue;
     }
 
-    // 4. Un párrafo largo, partido por donde ya estaba partido.
+    // 4. Un párrafo largo sólo se parte si el texto ya traía cortes. Una sola
+    //    línea larga se observa, pero deducir sus unidades y su parentesco es
+    //    trabajo interpretativo: hacerlo aquí fue lo que atomizaba y aplanaba.
     if (has.has('monolithic_paragraph')) {
       const pieces = piecesOf(content);
       if (pieces.length > 1) {

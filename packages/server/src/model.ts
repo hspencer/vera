@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { findTool } from './transcribe.ts';
-import { titleKey } from '@vera/core';
+import { titleKey, type Change } from '@vera/core';
 import {
   describeCandidates,
   describeOntology,
@@ -159,6 +159,118 @@ export interface Reading {
   existingConcepts: string[];
   /** Nombres que no corresponden a ninguno de los candidatos ofrecidos. */
   newConcepts: string[];
+}
+
+export interface StructureBlock {
+  stableId: string;
+  page: string;
+  parent: string | null;
+  position: number;
+  content: string;
+}
+
+/**
+ * Lee una estructura latente sin reescribir ni reordenar el contenido.
+ *
+ * Sólo se permiten movimientos que aumentan la profundidad: el modelo puede
+ * decir que un bloque desarrolla a otro, pero nunca aplanar lo que ya estaba
+ * anidado ni inventar texto. La salida sigue siendo una propuesta que la
+ * persona revisa en el panel de procesamiento.
+ */
+export async function proposeHierarchy(
+  title: string,
+  blocks: StructureBlock[],
+): Promise<{ changes: Change[]; explanation: string } | { error: string }> {
+  const candidates = blocks
+    .slice(0, 40)
+    .map((block) => ({
+      id: block.stableId,
+      parent: block.parent,
+      text: block.content.replace(/\s+/g, ' ').slice(0, 180),
+    }));
+  if (candidates.length < 2) return { changes: [], explanation: 'no hay suficientes bloques' };
+
+  const answer = await ask(`Eres un editor que reconstruye la jerarquía de bloques de una memoria personal.
+
+La página se llama «${title}». Cada renglón trae un ID estable, su padre actual y su texto:
+${JSON.stringify(candidates)}
+
+Responde SÓLO con JSON de esta forma:
+{"parents":[{"block":"block:…","parent":"block:…"}],"explanation":"…"}
+
+- Propón sólo relaciones claras: un bloque desarrolla, enumera, ejemplifica o depende del padre.
+- No reescribas texto y no cambies el orden de lectura.
+- No propongas parent null: esta tarea anida, nunca aplana.
+- No muevas un bloque que ya tiene padre.
+- No formes ciclos. Si dudas, omite el bloque.
+- explanation es una frase breve en castellano.`, { maxTokens: 500 });
+  if ('error' in answer) return answer;
+  const parsed = lastObjectIn(answer.text);
+  if (parsed === null || !Array.isArray(parsed.parents)) {
+    return { error: 'el modelo no respondió con una propuesta de estructura legible' };
+  }
+  return hierarchyFrom(parsed, blocks);
+}
+
+/** Ata la propuesta probabilística al árbol y a identidades que sí existen. */
+export function hierarchyFrom(
+  parsed: { parents?: unknown; explanation?: unknown },
+  blocks: StructureBlock[],
+): { changes: Change[]; explanation: string } {
+  const byId = new Map(blocks.map((block) => [block.stableId, block]));
+  const order = new Map(blocks.map((block, at) => [block.stableId, at]));
+  const parentOf = new Map(blocks.map((block) => [block.stableId, block.parent]));
+  const proposed = new Map<string, string>();
+  for (const raw of Array.isArray(parsed.parents) ? parsed.parents : []) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const block = (raw as { block?: unknown }).block;
+    const parent = (raw as { parent?: unknown }).parent;
+    if (typeof block !== 'string' || typeof parent !== 'string') continue;
+    if (block === parent || !byId.has(block) || !byId.has(parent)) continue;
+    // Un padre se lee antes que lo que desarrolla. Aceptar el caso inverso
+    // cambiaría el orden de lectura aunque la salida sólo dijera «parent».
+    if ((order.get(parent) ?? Number.MAX_SAFE_INTEGER) >= (order.get(block) ?? -1)) continue;
+    // Estructurar aumenta información: nunca aplana ni cambia una relación que
+    // alguien ya declaró manualmente.
+    if (parentOf.get(block) !== null) continue;
+    proposed.set(block, parent);
+  }
+
+  const finalParent = new Map(parentOf);
+  for (const [block, parent] of proposed) finalParent.set(block, parent);
+  const cyclic = (start: string): boolean => {
+    const seen = new Set<string>();
+    let at: string | null = start;
+    while (at !== null) {
+      if (seen.has(at)) return true;
+      seen.add(at);
+      at = finalParent.get(at) ?? null;
+    }
+    return false;
+  };
+  const inCycles = new Set([...proposed.keys()].filter(cyclic));
+  for (const block of inCycles) proposed.delete(block);
+
+  const positions = new Map<string, number>();
+  const changes: Change[] = [];
+  for (const block of blocks) {
+    const parent = proposed.get(block.stableId);
+    if (parent === undefined) continue;
+    const position = positions.get(parent) ?? (blocks.filter((one) => one.parent === parent).length);
+    positions.set(parent, position + 1);
+    changes.push({ kind: 'move_block', block: block.stableId, page: blockPage(blocks), parent, position });
+  }
+  return {
+    changes,
+    explanation:
+      typeof parsed.explanation === 'string' && parsed.explanation.trim() !== ''
+        ? parsed.explanation.trim()
+        : `${changes.length} relaciones jerárquicas propuestas`,
+  };
+}
+
+function blockPage(blocks: StructureBlock[]): string {
+  return blocks[0]?.page ?? '';
 }
 
 /**
@@ -392,6 +504,8 @@ export function lastObjectIn(text: string): {
   concepts?: unknown;
   existingConcepts?: unknown;
   newConcepts?: unknown;
+  parents?: unknown;
+  explanation?: unknown;
 } | null {
   let start = text.lastIndexOf('{');
   while (start !== -1) {
@@ -409,7 +523,8 @@ export function lastObjectIn(text: string): {
               'types' in parsed ||
               'concepts' in parsed ||
               'existingConcepts' in parsed ||
-              'newConcepts' in parsed
+              'newConcepts' in parsed ||
+              'parents' in parsed
             ) return parsed;
           } catch {
             // No era JSON válido; se sigue buscando hacia atrás.

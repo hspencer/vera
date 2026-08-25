@@ -1211,6 +1211,8 @@ interface PageReading {
     written: string;
     backlinks: number;
   }[];
+  /** Una jerarquía latente propuesta por el modelo, nunca aplicada sola. */
+  hierarchy?: { changes: Change[]; explanation: string };
   notDone: string[];
 }
 
@@ -1459,7 +1461,19 @@ async function processPage(
             const section = String(event['section'] ?? '');
             const part =
               of > 1 ? ` · parte ${which} de ${of}${section === '' ? '' : ` · «${section}»`}` : '';
-            if (event['state'] === 'asking') {
+            if (event['state'] === 'structuring') {
+              pending.say('preguntando cómo se relacionan los bloques planos', 'process:model');
+            } else if (event['state'] === 'structure_failed') {
+              step(String(event['why']), 'bad');
+              pending.say('el servidor sigue trabajando');
+            } else if (event['state'] === 'structured') {
+              const moves = Number(event['moves'] ?? 0);
+              step(
+                moves === 0 ? 'no encontró una jerarquía clara' : `propuso tabular ${moves} bloques`,
+                moves === 0 ? 'note' : 'ok',
+              );
+              pending.say('el servidor sigue trabajando');
+            } else if (event['state'] === 'asking') {
               /*
                * La espera larga del proceso, y la única de la que se sabe de
                * antemano que va a serlo.
@@ -1632,6 +1646,15 @@ async function processPage(
           ? `dice «${mention.written}» · ${mention.backlinks} páginas ya la enlazan`
           : `dice «${mention.written}»`,
       changes: [{ kind: 'edit_block', block: mention.block, content: mention.next }],
+      approved: true,
+    });
+  }
+
+  if ((reading.hierarchy?.changes.length ?? 0) > 0) {
+    suggestions.push({
+      what: `estructurar ${reading.hierarchy?.changes.length ?? 0} bloques`,
+      detail: reading.hierarchy?.explanation ?? '',
+      changes: reading.hierarchy?.changes ?? [],
       approved: true,
     });
   }
@@ -5046,6 +5069,52 @@ export function renderOutliner(
           member.mentioned && !member.linked ? 'mención potencial' : '',
         ].filter(Boolean).join(' · ');
         row.append(link, modes);
+        if (member.mentioned && !member.linked && member.formalization !== null) {
+          const proposal = member.formalization;
+          const formalize = document.createElement('button');
+          formalize.type = 'button';
+          formalize.className = 'concept-formalize';
+          formalize.textContent = 'formalizar enlace';
+          formalize.setAttribute(
+            'aria-label',
+            `Formalizar «${proposal.written}» como enlace a ${page.title}`,
+          );
+          formalize.addEventListener('click', () => {
+            void (async () => {
+              formalize.disabled = true;
+              try {
+                // La fila es derivada y puede haber envejecido. Se vuelve a leer
+                // sólo la página fuente antes de escribir para no reemplazar una
+                // edición posterior con el texto desde el que nació la sugerencia.
+                const source = await api.page(member.page, 10_000);
+                const current = source.blocks.find(
+                  (block) => block.stableId === proposal.block,
+                );
+                if (current?.content !== proposal.content) {
+                  toast('la mención cambió; se actualizó la lista sin escribir');
+                  callbacks.onReload(null);
+                  return;
+                }
+                const outcome = await api.submitCanonical({
+                  kind: 'edit_block',
+                  block: proposal.block,
+                  content: proposal.next,
+                });
+                if (outcome.status === 'rejected') {
+                  toast(`no se pudo formalizar: ${outcome.reason}`);
+                  formalize.disabled = false;
+                  return;
+                }
+                toast(`enlazada «${proposal.written}» con «${page.title}»`);
+                callbacks.onReload(null);
+              } catch {
+                toast('no se pudo comprobar ni formalizar la mención');
+                formalize.disabled = false;
+              }
+            })();
+          });
+          row.append(formalize);
+        }
         if (member.excerpt !== '') {
           const said = document.createElement('div');
           said.className = 'markdown-preview';

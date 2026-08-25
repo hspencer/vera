@@ -144,6 +144,12 @@ export interface PageView {
       declared: boolean;
       linked: boolean;
       mentioned: boolean;
+      formalization: {
+        block: string;
+        content: string;
+        next: string;
+        written: string;
+      } | null;
     }[];
   } | null;
   assets: AssetView[];
@@ -1299,6 +1305,20 @@ export const api = {
     }
 
     return this.send(change, channel, origin);
+  },
+
+  /**
+   * Escribe directamente en el corpus canónico cuando el cambio apunta a una
+   * página que la réplica abierta no contiene.
+   *
+   * Sigue usando POST /operations; sólo evita pedirle a la réplica de la página
+   * actual que aplique un bloque de otra página y lo rechace como inexistente.
+   */
+  submitCanonical(
+    change: Change,
+    channel: 'typed_text' | 'drawn' | 'walked' = 'typed_text',
+  ): Promise<SubmitResult> {
+    return this.send(change, channel, originId());
   },
 
   /** El viaje, que a partir de ahora puede ocurrir con nadie esperándolo. */

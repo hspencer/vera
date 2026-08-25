@@ -3,7 +3,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mentionsOf } from '../src/mentions.ts';
+import { formalizationOf, mentionsOf } from '../src/mentions.ts';
 
 const corpus = [
   { id: 'page:1', title: 'Ciudad Abierta', backlinks: 12 },
@@ -123,5 +123,26 @@ describe('mentionsOf', () => {
   it('no toca la clave de una propiedad', () => {
     const found = mentionsOf([block('block:1', 'Diseño:: algo')], corpus);
     assert.deepEqual(found, []);
+  });
+});
+
+describe('formalizationOf', () => {
+  it('formaliza con un clic también un concepto común escrito en minúsculas', () => {
+    const found = formalizationOf(
+      block('block:1', 'la hospitalidad radical aparece sin enlace'),
+      { id: 'page:9', title: 'hospitalidad radical', backlinks: 2 },
+    );
+    assert.equal(found?.next, 'la [[hospitalidad radical]] aparece sin enlace');
+    assert.equal(found?.block, 'block:1');
+  });
+
+  it('no ofrece formalizar una aparición que ya está enlazada', () => {
+    assert.equal(
+      formalizationOf(
+        block('block:1', 'ver [[hospitalidad radical]]'),
+        { id: 'page:9', title: 'hospitalidad radical', backlinks: 2 },
+      ),
+      null,
+    );
   });
 });

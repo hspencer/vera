@@ -9,11 +9,46 @@ import assert from 'node:assert/strict';
 
 import {
   lastObjectIn,
+  hierarchyFrom,
   mergeReadings,
   readingFrom,
   readingPrompt,
   READING_PROMPT_CHARS,
 } from '../src/model.ts';
+
+const flat = [
+  { stableId: 'block:1', page: 'page:1', parent: null, position: 0, content: 'Problema' },
+  { stableId: 'block:2', page: 'page:1', parent: null, position: 1, content: 'Primer detalle' },
+  { stableId: 'block:3', page: 'page:1', parent: null, position: 2, content: 'Segundo detalle' },
+];
+
+describe('propuesta de jerarquía', () => {
+  it('convierte parentescos válidos en movimientos sin reescribir ni reordenar', () => {
+    const proposal = hierarchyFrom({
+      parents: [
+        { block: 'block:2', parent: 'block:1' },
+        { block: 'block:3', parent: 'block:1' },
+      ],
+      explanation: 'Los detalles desarrollan el problema.',
+    }, flat);
+    assert.deepEqual(proposal.changes, [
+      { kind: 'move_block', block: 'block:2', page: 'page:1', parent: 'block:1', position: 0 },
+      { kind: 'move_block', block: 'block:3', page: 'page:1', parent: 'block:1', position: 1 },
+    ]);
+  });
+
+  it('rechaza identidades inventadas, padres posteriores y cambios sobre jerarquía existente', () => {
+    const nested = flat.map((block) =>
+      block.stableId === 'block:3' ? { ...block, parent: 'block:1' } : block,
+    );
+    const proposal = hierarchyFrom({ parents: [
+      { block: 'block:1', parent: 'block:2' },
+      { block: 'block:3', parent: 'block:2' },
+      { block: 'block:404', parent: 'block:1' },
+    ] }, nested);
+    assert.deepEqual(proposal.changes, []);
+  });
+});
 
 describe('el objeto que el modelo devolvió', () => {
   it('lo encuentra cuando viene solo', () => {

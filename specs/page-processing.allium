@@ -13,8 +13,8 @@
 --     vocabulario y no de la forma (ver controlled-ontology.allium)
 --   - La resolución de enlaces externos, que ya vive en ParticipantProcessesAPage
 --   - Ordenar los bloques por la lógica del material y la explosión de una
---     página en varias: se declaran aquí como pendientes y sus decisiones siguen
---     abiertas al final de este archivo
+--     página en varias: pertenecen a formas interpretativas que proponen y no
+--     a la puesta en forma conservadora de este archivo
 --   - La edición ordinaria de un bloque (ver block-editing.allium)
 -- Dependencies: Graph, Page y Block los gobierna core.allium; la aplicación de
 --   cualquier cambio change-application.allium
@@ -128,6 +128,7 @@ contract SectionedReading {
 -- Por eso ocurre haya modelo o no, y por eso lo que afirma se puede probar.
 contract CorpusMentions {
     find: (page: core/Page) -> Mention
+    formalize: (mention: Mention) -> core/Change
 
     @invariant AMentionIsNotYetALink
         -- Encontrar un nombre no escribe un enlace. Que una frase diga «Ciudad
@@ -149,6 +150,11 @@ contract CorpusMentions {
         -- como el texto entero que ese bloque tendría, así que dos son dos
         -- versiones del mismo párrafo: aceptar las dos deja la segunda y hace
         -- desaparecer un enlace que nadie descartó.
+
+    @invariant FormalizingTouchesTheExactOccurrence
+        -- La propuesta recuerda el bloque y el texto escrito. Aceptarla envuelve
+        -- esa ocurrencia exacta; nunca vuelve a buscar por parecido ni enlaza
+        -- otra aparición por accidente.
 }
 
 -- Lo que se arregla sin preguntarle a nadie.
@@ -213,9 +219,9 @@ enum FixKind {
     -- Marcar como encabezado lo que ya se comportaba como encabezado. El nivel
     -- sale de lo hondo que esté, no de adivinar su importancia.
     | mark_heading
-    -- Partir un párrafo largo por donde el texto ya venía partido: por sus
-    -- saltos de línea si los trae, y si no juntando frases hasta un tamaño de
-    -- lectura. Ni el párrafo entero ni una frase por bloque.
+    -- Partir sólo por cortes que el texto ya declara: saltos de párrafo,
+    -- encabezados o ítems Markdown. La longitud y la puntuación no autorizan a
+    -- inventar unidades ni a dejar una ristra plana de frases hermanas.
     | split_paragraph
     -- Llevar un encabezado al nivel que su propia marca declara, cuando cuelga
     -- de otro más hondo. Mueve el bloque; no toca una letra.
@@ -444,6 +450,23 @@ rule ProcessingFindsWhatTheCorpusAlreadyNames {
         -- enlace a donde ya se está no lleva a ninguna parte.
 }
 
+-- Convertir una mención visible en enlace es un gesto explícito y no exige
+-- procesar de nuevo la página que la contiene.
+rule ParticipantFormalizesAMention {
+    when: FormalizeMention(participant, graph, mention)
+
+    let membership = core/Membership{graph: graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: mention.block.page.graph = graph
+    ensures: applied(CorpusMentions.formalize(mention))
+
+    @invariant FormalizingIsAnExplicitCanonicalEdit
+        -- El gesto es la confirmación humana y el cambio entra por la puerta
+        -- canónica con autoría. La lista derivada no escribe a escondidas.
+}
+
 -- Los huecos que dejó la captura.
 --
 -- De todos los defectos de forma que se saben ver, éste es el único cuyo arreglo
@@ -623,6 +646,7 @@ surface PageProcessing {
 
     provides:
         ProcessPage(participant, page.graph, page)
+        FormalizeMention(participant, page.graph, mention)
 
     contracts:
         fulfils StructuralReading
@@ -634,6 +658,11 @@ surface PageProcessing {
         -- Una mención propuesta dice a qué página uniría ésta y cuántas la
         -- enlazan ya. Aceptar un enlace es entrar en un vecindario del corpus, y
         -- quien lo acepta tiene que poder ver en cuál entra.
+
+    @guarantee AnUnformalizedMentionCanBeFormalizedHere
+        -- Donde una mención potencial se enseña también se puede aceptar. El
+        -- gesto muestra la frase y el destino, escribe una vez y desaparece al
+        -- convertirse en enlace; no obliga a abrir y reprocesar la otra página.
 
     @guarantee ALongPageIsReadWholeOrSaysWhereItStopped
         -- De una página larga se lee la página, no su primera pantalla. Se lee
@@ -681,3 +710,4 @@ open question "¿Las propiedades type y concepto siguen siendo la proyección ca
 -- Y dos que aparecieron al escribir esta spec.
 open question "¿Una sección es siempre un encabezado con lo que cuelga de él, o una página sin ningún encabezado tiene secciones por otro criterio?"
 open question "¿La lectura estructural se guarda con la página, para poder comparar la forma de hoy con la de la semana pasada, o se recalcula entera cada vez y no deja rastro?"
+open question "¿Formalizar una mención debe exigir que el bloque conserve la revisión leída, o basta rechazar si ya no contiene exactamente la aparición propuesta?"

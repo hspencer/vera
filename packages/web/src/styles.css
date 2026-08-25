@@ -5116,6 +5116,13 @@ html[data-working-slow='true']::after {
   color: var(--text-dim);
   font: 0.72rem var(--font-mono);
 }
+.concept-members .concept-formalize {
+  margin-left: 0.7rem;
+  color: var(--text-dim);
+  font: 0.72rem var(--font-mono);
+}
+.concept-members .concept-formalize::before { content: '· '; }
+.concept-members .concept-formalize:disabled { cursor: wait; opacity: 0.55; }
 .concept-members p { margin: 0.2rem 0 0; color: var(--text-dim); }
 
 

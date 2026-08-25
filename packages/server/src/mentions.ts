@@ -47,6 +47,44 @@ export interface MentionOptions {
   self?: string;
 }
 
+/**
+ * La primera aparición exacta de un título en un bloque, lista para que una
+ * persona la formalice desde una vista derivada del concepto.
+ *
+ * Aquí no se descartan títulos comunes: la lista ya está abierta en la página
+ * que fija el destino y enseña la frase. El clic humano resuelve la ambigüedad
+ * que obliga a ser conservadores durante el procesamiento automático.
+ */
+export function formalizationOf(
+  block: { stableId: string; content: string },
+  target: KnownPage,
+): Mention | null {
+  const key = titleKey(target.title);
+  if (key === '') return null;
+  const { text, at } = fold(block.content);
+  const spans = protectedSpans(block.content);
+  let index = text.indexOf(key);
+  while (index !== -1) {
+    const from = at[index] ?? 0;
+    const to = at[index + key.length] ?? block.content.length;
+    const covered = spans.some(([desde, hasta]) => from < hasta && to > desde);
+    if (whole(text, index, index + key.length) && !covered) {
+      const written = block.content.slice(from, to);
+      return {
+        title: target.title,
+        page: target.id,
+        block: block.stableId,
+        content: block.content,
+        next: `${block.content.slice(0, from)}[[${written}]]${block.content.slice(to)}`,
+        written,
+        backlinks: target.backlinks,
+      };
+    }
+    index = text.indexOf(key, index + 1);
+  }
+  return null;
+}
+
 /*
  * Los trozos donde un nombre no es una mención: lo que ya es enlace, lo que es
  * dirección y lo que es código. Envolver ahí rompe lo que había.

@@ -157,19 +157,10 @@ describe('planTabularity', () => {
     assert.equal((steps[2]?.change as { position: number }).position, 2);
   });
 
-  it('parte un párrafo largo y deja los trozos como hermanos, en orden', () => {
+  it('no atomiza una sola línea larga por puntos ni por longitud', () => {
     const largo = [frase(1), frase(2), frase(3), frase(4), frase(5)].join(' ');
     const blocks = page(largo);
-    const { steps } = plan(blocks);
-    assert.equal(steps[0]?.change.kind, 'edit_block');
-    assert.ok(steps.length > 1);
-    for (const [at, step] of steps.slice(1).entries()) {
-      assert.equal(step.change.kind, 'create_block');
-      assert.equal((step.change as { position: number }).position, at + 1);
-    }
-    // Nada se pierde ni se reescribe: los trozos son el texto original.
-    const juntos = steps.map((step) => (step.change as { content: string }).content).join(' ');
-    assert.equal(juntos.replace(/\s+/g, ' '), largo.replace(/\s+/g, ' '));
+    assert.deepEqual(plan(blocks).steps, []);
   });
 
   it('endereza un encabezado que cuelga de otro más hondo', () => {
@@ -237,20 +228,15 @@ describe('piecesOf', () => {
     assert.deepEqual(piecesOf('uno\ndos\ntres'), ['uno', 'dos', 'tres']);
   });
 
-  it('junta frases hasta un tamaño de lectura, sin picar frase por frase', () => {
-    const pieces = piecesOf([frase(1), frase(2), frase(3), frase(4)].join(' '));
-    assert.ok(pieces.length > 1);
-    assert.ok(pieces.length < 4);
+  it('no convierte la puntuación en estructura', () => {
+    const text = [frase(1), frase(2), frase(3), frase(4)].join(' ');
+    assert.deepEqual(piecesOf(text), [text]);
   });
 
   it('un texto de una sola frase no se parte', () => {
     assert.deepEqual(piecesOf('Una sola frase.'), ['Una sola frase.']);
   });
 
-  it('no deja un último trozo demasiado corto', () => {
-    const pieces = piecesOf([frase(1), frase(2), 'Y ya.'].join(' '));
-    assert.ok(!pieces.some((one) => one.length < 20));
-  });
 });
 
 describe('describePlan', () => {

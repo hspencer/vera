@@ -66,9 +66,11 @@ contract ProcessingExecution {
 contract StarterProcessingForms {
     seed: (graph: core/Graph) -> Set<ProcessingForm>
 
-    @invariant PageFormsStartWithFivePurposes
-        -- La semilla ofrece poner en forma, resumir, encontrar vínculos
-        -- horizontales, proponer conceptos y componer el pie de página.
+    @invariant PageFormsStartWithSixPurposes
+        -- La semilla distingue poner en forma de estructurar contenido, y ofrece
+        -- además resumir, encontrar vínculos horizontales, proponer conceptos y
+        -- componer el pie de página. Conservar una estructura ya declarada y
+        -- proponer una estructura latente no son la misma autoridad.
 
     @invariant BlockFormsStartWithFourPurposes
         -- La semilla ofrece corregir Markdown, corregir Mermaid, corregir
@@ -76,9 +78,10 @@ contract StarterProcessingForms {
 
     @invariant ConservativeWorkAndInterpretiveWorkDiffer
         -- Poner en forma puede aplicar sólo transformaciones que no añaden ni
-        -- quitan sentido. Resumir, vincular, clasificar y componer el pie
-        -- proponen. Las correcciones y traducciones de bloque muestran el texto
-        -- completo y exigen confirmación antes de reemplazarlo.
+        -- quitan sentido ni deducen parentesco por longitud o puntuación.
+        -- Estructurar, resumir, vincular, clasificar y componer el pie proponen.
+        -- Las correcciones y traducciones de bloque muestran el texto completo y
+        -- exigen confirmación antes de reemplazarlo.
 
     @invariant SeededDoesNotMeanHardCoded
         -- Cada forma sembrada queda en una página especial editable. El código
@@ -116,6 +119,7 @@ enum ResultShape {
     | properties
     | footer
     | structured_blocks
+    | block_tree
 }
 
 enum ProcessingStatus { running | observed | proposed | applied | failed | stale }

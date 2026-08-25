@@ -391,11 +391,25 @@ describe('lecturas', () => {
     await write({ kind: 'create_block', page: mentioned, parent: null, position: 0, content: 'la hospitalidad radical aparece sin enlace' });
 
     const detail = (await get(`/pages/${encodeURIComponent(concept)}`)) as {
-      concept: { members: { page: string; declared: boolean; linked: boolean; mentioned: boolean }[] };
+      concept: { members: {
+        page: string;
+        declared: boolean;
+        linked: boolean;
+        mentioned: boolean;
+        formalization: { block: string; next: string } | null;
+      }[] };
     };
     assert.equal(detail.concept.members.find((one) => one.page === declared)?.declared, true);
     assert.equal(detail.concept.members.find((one) => one.page === linked)?.linked, true);
     assert.equal(detail.concept.members.find((one) => one.page === mentioned)?.mentioned, true);
+    assert.match(
+      detail.concept.members.find((one) => one.page === mentioned)?.formalization?.next ?? '',
+      /\[\[hospitalidad radical\]\]/,
+    );
+    assert.equal(
+      detail.concept.members.find((one) => one.page === linked)?.formalization,
+      null,
+    );
   });
 
   it('entrega el grafo en la forma que consume constel', async () => {

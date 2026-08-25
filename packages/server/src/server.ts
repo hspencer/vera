@@ -99,13 +99,14 @@ import {
   readPage,
   mergeReadings,
   modelPresence,
+  proposeHierarchy,
   MOST_PASSES,
   READABLE_CHARS,
   STARTER_TYPES,
 } from './model.ts';
 import { relevantConcepts, type ConceptCandidate } from './ontology-context.ts';
 import { LOCAL_MODEL, LOCAL_MODEL_NAME, promptFor, readAnswer } from './answer.ts';
-import { mentionsOf } from './mentions.ts';
+import { formalizationOf, mentionsOf } from './mentions.ts';
 import { composePaper, toPdf } from './paper.ts';
 import { CLIENT_KEY, MCP_KIND, mcpPage } from './mcp-page.ts';
 import { mcpConnect } from './mcp-connect.ts';
@@ -3388,7 +3389,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         passes: MOST_PASSES,
       });
 
-      const asked: Promise<{ reading: Reading; notDone: string[] }> = (async () => {
+      const asked: Promise<{ reading: Reading; hierarchy: { changes: Change[]; explanation: string }; notDone: string[] }> = (async () => {
         const notDone: string[] = [];
         if (reparto.left > 0) {
           notDone.push(
@@ -3403,6 +3404,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           say({ step: 'model', state: 'failed', why: 'no hay un modelo local instalado' });
           return {
             reading: { types: [], existingConcepts: [], newConcepts: [] },
+            hierarchy: { changes: [], explanation: '' },
             notDone: [...notDone, 'no hay un modelo local instalado'],
           };
         }
@@ -3440,7 +3442,28 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           existingConcepts: reading.existingConcepts,
           newConcepts: reading.newConcepts,
         });
-        return { reading, notDone };
+        let hierarchy = { changes: [] as Change[], explanation: '' };
+        if (structure.observations.some((one) => one.defect === 'flat_list')) {
+          say({ step: 'model', state: 'structuring' });
+          const proposed = await proposeHierarchy(page.title, blocks);
+          if ('error' in proposed) {
+            notDone.push(`la estructura latente no se pudo proponer: ${proposed.error}`);
+            say({ step: 'model', state: 'structure_failed', why: proposed.error });
+          } else {
+            const remade = new Set(plan.touched);
+            hierarchy = {
+              ...proposed,
+              changes: proposed.changes.filter(
+                (change) =>
+                  change.kind === 'move_block' &&
+                  !remade.has(change.block) &&
+                  (change.parent === null || !remade.has(change.parent)),
+              ),
+            };
+            say({ step: 'model', state: 'structured', moves: hierarchy.changes.length });
+          }
+        }
+        return { reading, hierarchy, notDone };
       })();
 
       const followed = readLinks(text, {}, (link, done, total) => {
@@ -3578,6 +3601,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             written: mention.written,
             backlinks: mention.backlinks,
           })),
+          hierarchy: understood.hierarchy,
           notDone,
         });
         response.end();
@@ -5059,6 +5083,12 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 .find((gloss) => gloss !== undefined && titleKey(gloss.content).includes(needle));
               const mentioned = matchingBlock !== undefined || matchingGloss !== undefined;
               if (!declared && !linked && !mentioned) return [];
+              const formalization = !linked && matchingBlock !== undefined
+                ? formalizationOf(
+                    { stableId: matchingBlock.stableId, content: matchingBlock.content },
+                    { id: page.id, title: page.title, backlinks: linkedPages.size },
+                  )
+                : null;
               return [{
                 page: candidate.id,
                 title: candidate.title,
@@ -5066,6 +5096,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 declared,
                 linked,
                 mentioned,
+                formalization,
               }];
             }).sort((a, b) => a.title.localeCompare(b.title));
             return { members };
