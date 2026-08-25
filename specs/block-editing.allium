@@ -17,7 +17,9 @@
 --   - Properties, their types and their cardinality, which the corpus already carries
 --     and no interface yet edits
 --   - Undo and redo
---   - What the autocomplete searches and how it ranks (see search-index.allium)
+--   - Full-text search and block ranking (see search-index.allium). Completing
+--     page names is governed here because it must follow typing from the local
+--     page index rather than becoming a corpus search on every keystroke.
 -- Dependencies: Page, Block and Participant are governed by core.allium
 -- References: ../logseq/specs distils this behaviour from Logseq's editor. Vera keeps
 --   the behaviour and drops the vocabulary: a page is not a block here, and a block's
@@ -169,6 +171,13 @@ contract EditorAutocomplete {
     @invariant AutocompleteOwnsItsKeys
         -- While an autocomplete is open the keys that navigate it belong to it, so
         -- the same key can indent a block and choose an entry without ambiguity.
+
+    @invariant PageNameCompletionNeverWaitsForTheCorpus
+        -- Page and tag suggestions come from the page index already held by the
+        -- workspace. Typing inside double brackets performs no network request;
+        -- an unavailable or slow corpus cannot delay one keystroke behind another.
+        -- Block completion may search the corpus because block text is not part of
+        -- that local index and is explicitly a different, heavier gesture.
 }
 
 ------------------------------------------------------------

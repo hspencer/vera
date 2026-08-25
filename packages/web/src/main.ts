@@ -1236,6 +1236,7 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
   return {
     // Pulsar el nombre de otra página dentro del texto que se lee.
     onNavigate: (title) => void openTitle(title, 'followed_reference'),
+    pageTitles: () => pages,
     onOpen: (target, gesture, crossing) => void openPage(
       target,
       null,

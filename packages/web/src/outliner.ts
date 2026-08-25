@@ -19,6 +19,7 @@ import {
   looksLikeQuery,
   readDrawing,
   renderMarkdown,
+  suggestTitles,
   titleKey,
   uniqueAnchors,
   type RenderOptions,
@@ -221,6 +222,9 @@ function wireExternalLinks(container: HTMLElement): void {
 
 export interface OutlinerCallbacks {
   onNavigate(title: string): void;
+  /** El índice que ya vive en el taller. Autocompletar una página no consulta
+   *  el corpus por cada tecla: escribir tiene que seguir a la mano. */
+  pageTitles?(): readonly PageSummary[];
   /** La página ya no existe: el espacio de trabajo poda sus copias y decide adónde volver. */
   onDeleted?(page: { id: string; title: string }): void | Promise<void>;
   /** Deshacer el último gesto de esta página, o rehacerlo. Lo calcula el
@@ -5950,7 +5954,11 @@ interface Candidate {
  * el grafo; los comandos son una lista fija que vive en el cliente porque no
  * dependen del contenido.
  */
-async function candidatesFor(open: Open, query: string): Promise<Candidate[]> {
+async function candidatesFor(
+  open: Open,
+  query: string,
+  pages: readonly PageSummary[] = [],
+): Promise<Candidate[]> {
   if (open.trigger === 'comando') {
     return matchingCommands(query).map((command) => ({
       value: command.name,
@@ -5960,6 +5968,21 @@ async function candidatesFor(open: Open, query: string): Promise<Candidate[]> {
   }
 
   if (query.trim() === '') return [];
+
+  /*
+   * Una referencia a página sólo necesita títulos.
+   *
+   * El índice ya está en memoria para navegar, resolver direcciones y completar
+   * enlaces. Pedir `/search` aquí hacía una búsqueda de texto completo en cada
+   * pulsación y dejaba varias peticiones compitiendo mientras se escribía. Las
+   * etiquetas nombran páginas también, así que siguen exactamente este camino.
+   */
+  if (open.trigger === 'pagina' || open.trigger === 'etiqueta') {
+    return suggestTitles(query, pages, 8).map((page) => ({
+      value: page.title,
+      label: page.title,
+    }));
+  }
 
   const hits = await api.search(query);
   const seen = new Set<string>();
@@ -6760,7 +6783,7 @@ function startEditing(
     // Cada búsqueda lleva turno: una respuesta lenta no pisa a una más reciente.
     queryTurn += 1;
     const turn = queryTurn;
-    void candidatesFor(open, query).then((found) => {
+    void candidatesFor(open, query, callbacks.pageTitles?.() ?? []).then((found) => {
       if (turn !== queryTurn || open === null) return;
       candidates = found;
       highlighted = 0;
