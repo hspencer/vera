@@ -337,7 +337,7 @@ function drawMemory(host: HTMLElement): void {
    * imposible es una pantalla que enseña a desconfiar del resto.
    */
 
-  // Las páginas que gobiernan a Vera.
+  // Las páginas mediante las que Vera hace visible su gobierno.
   //
   // El listado de las doscientas más conectadas que había aquí era un índice de
   // todo, y un índice de todo no es un índice: para eso está el buscador, que
@@ -361,8 +361,13 @@ function drawMemory(host: HTMLElement): void {
 
   const heading = document.createElement('h3');
   heading.className = 'settings-group';
-  heading.textContent = 'Páginas especiales';
+  heading.textContent = 'Gobierno de Vera';
   host.append(heading);
+
+  const explanation = document.createElement('p');
+  explanation.className = 'settings-note';
+  explanation.textContent = 'Distingue lo que rige el software de las superficies, proyecciones y documentos que sólo lo explican.';
+  host.append(explanation);
 
   const special = document.createElement('div');
   special.id = 'special-pages';
@@ -400,7 +405,10 @@ function drawMemory(host: HTMLElement): void {
       // hablar con dos servicios. Se dibujan las que haya, cada una con su
       // título, que es lo que la distingue de la otra.
       const known = KNOWN.find((one) => one.key === page.kind);
-      const item = row(page.title, known?.what ?? `gobierna «${page.kind}»`);
+      const item = row(
+        page.title,
+        known === undefined ? `clase no reconocida · ${page.kind}` : `${known.mode} · ${known.what}`,
+      );
       item.addEventListener('click', () => {
         closeSettings();
         // Del menú: se llegó de fuera, sin que nada de lo leído lo explique.
@@ -422,8 +430,8 @@ function drawMemory(host: HTMLElement): void {
     for (const kind of KNOWN) {
       if (kind.key === 'service') continue;
       if (found.some((page) => page.kind === kind.key)) continue;
-      const item = row(`${kind.label} — sin definir`, kind.what);
-      item.title = `Todavía no hay una página que gobierne ${kind.label.toLowerCase()}. Rige lo que trae Vera.`;
+      const item = row(`${kind.label} — sin definir`, `${kind.mode} · ${kind.what}`);
+      item.title = `Todavía no hay una página especial de ${kind.label.toLowerCase()}. Su modo previsto es ${kind.mode}.`;
       item.disabled = true;
     }
   });

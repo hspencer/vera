@@ -1,8 +1,8 @@
 -- allium: 3
 -- special-pages.allium
 
--- Scope: The pages by which Vera describes itself — its ontology, its
---   presentation, and the standing instructions its agents work under
+-- Scope: The pages by which Vera makes its governance visible — including
+--   rector pages, administrative surfaces, derived registers and documentation
 -- Includes: What makes a page special, what a special page may and may not
 --   decide, who may change one, and what happens when what it says cannot be
 --   understood
@@ -22,10 +22,12 @@ use "./core.allium" as core
 
 -- Vera described inside Vera.
 --
--- What governs the system — the vocabulary it classifies with, the colours it
--- draws itself in, the standing instructions its librarian works under — lives
--- in the corpus it governs, as pages, written in the same Markdown as everything
--- else.
+-- What the corpus truly governs — such as its vocabulary and service
+-- declarations — lives in pages written in the same Markdown as everything
+-- else. Other special pages may instead administer state held elsewhere,
+-- project derived records or document behaviour not yet wired to the program.
+-- Their status is visible: being special never silently claims that prose is
+-- executable configuration.
 --
 -- The reason is not elegance. A configuration file has no history, no author and
 -- no provenance: it says what it says now, and nothing about who decided it or
@@ -114,8 +116,10 @@ contract SelfDescription {
 -- would be four copies of the same three fields.
 enum SpecialKind {
     ontology | properties | objects | presentation | instructions | publication |
-    service | mcp
+    service | mcp | activity
 }
+
+enum SpecialMode { rector | surface | derived | documentation }
 
 enum ProposalStatus { proposed | accepted | rejected }
 
@@ -132,6 +136,7 @@ entity SpecialPage {
     graph: core/Graph
     page: core/Page
     kind: SpecialKind
+    mode: SpecialMode
 }
 
 -- A change an agent wants made to a special page, waiting for a person.
@@ -229,13 +234,26 @@ invariant OneKindPerSpecialPage {
             other.page = special.page implies other = special
 }
 
+invariant EachSpecialKindHasAnHonestMode {
+    for special in SpecialPages:
+        (special.kind = ontology implies special.mode = rector) and
+        (special.kind = properties implies special.mode = rector) and
+        (special.kind = objects implies special.mode = rector) and
+        (special.kind = service implies special.mode = rector) and
+        (special.kind = mcp implies special.mode = rector) and
+        (special.kind = publication implies special.mode = surface) and
+        (special.kind = activity implies special.mode = derived) and
+        (special.kind = presentation implies special.mode = documentation) and
+        (special.kind = instructions implies special.mode = documentation)
+}
+
 -- La publicación tiene una sola puerta de gobierno por grafo. Su título no es
 -- una clave oculta —el kind sigue siendo la autoridad—, pero sí la dirección
 -- humana estable desde la que el dueño reconoce y enlaza esa configuración.
 invariant OneCanonicalPublicationPagePerGraph {
     for special in SpecialPages:
         special.kind = publication implies
-            special.page.title = "Vera:Publicación" and
+            special.page.title = "Vera: Publicación" and
             SpecialPages.all(other =>
                 other.kind != publication or
                 other.graph != special.graph or
@@ -268,10 +286,10 @@ surface SpecialPageAdministration {
         fulfils SelfDescription
 
     @guarantee ASpecialPageSaysWhatItGoverns
-        -- Reading a special page tells a participant what it decides and what
-        -- happens if it is wrong, without leaving it. A page that silently
-        -- governs is worse than a config file: at least a config file is
-        -- obviously not prose.
+        -- Reading a special page tells a participant whether its declarations
+        -- rule behaviour, administer state held elsewhere, project derived
+        -- records or merely document an intended behaviour. A page that looks
+        -- executable while nobody reads it is worse than ordinary prose.
 
     @guarantee WhatVeraCouldNotUnderstandIsSaid
         -- When a special page contains something Vera cannot read, it says so
@@ -280,7 +298,7 @@ surface SpecialPageAdministration {
 
     @guarantee EverythingAConfigurationNamesIsFollowable
         -- What a special page lists — a type, a property, a concept, a theme
-        -- token, an instruction the librarian works under — is reached from
+        -- token or instruction — is reached from
         -- where it is listed. These are not strings in a settings screen: each
         -- is a page of the corpus with an author, a history and a definition,
         -- and the configuration is a view onto them rather than the place they
@@ -302,6 +320,12 @@ surface SpecialPageAdministration {
         -- The page-level actions do not offer deleting, reading as a trail or
         -- automatic processing for a special page. The same restrictions hold
         -- at the writing boundary, so another client cannot bypass the page.
+
+    @guarantee SpecialityDoesNotPretendToBeExecution
+        -- A special page whose mode is documentation never says that editing
+        -- its blocks changes running behaviour. A surface or derived page says
+        -- where its effective state comes from instead of presenting its prose
+        -- as a second source of truth.
 }
 
 ------------------------------------------------------------

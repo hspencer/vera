@@ -44,18 +44,27 @@ import { cellIn, chipsCell, editableCell, rowIn, section, type TableBody } from 
  * la vista. Una lista privada de lo que se sabe enseñar sería la lista privada
  * que @invariant SpecialityIsDeclaredNotGuessed prohíbe.
  */
-export const GOVERNING_KINDS: { key: string; label: string; what: string }[] = [
-  { key: 'ontology', label: 'Ontología', what: 'con qué vocabulario se clasifica' },
-  { key: 'properties', label: 'Propiedades', what: 'cada propiedad y qué clase de campo es' },
-  { key: 'objects', label: 'Objetos', what: 'cada clase de cosa y qué propiedades la constituyen' },
-  { key: 'instructions', label: 'Instrucciones', what: 'lo que el bibliotecario tiene dicho' },
-  { key: 'presentation', label: 'Presentación', what: 'los tokens de diseño' },
-  { key: 'service', label: 'Servicio', what: 'con qué servicio de fuera habla el corpus' },
-  { key: 'publication', label: 'Publicación', what: 'qué sitio se proyecta y qué páginas lo componen' },
+export type SpecialPageMode = 'rectora' | 'superficie' | 'derivada' | 'documentación';
+
+export const GOVERNING_KINDS: {
+  key: string;
+  label: string;
+  mode: SpecialPageMode;
+  what: string;
+}[] = [
+  { key: 'ontology', label: 'Ontología', mode: 'rectora', what: 'relaciones, incrustaciones y compatibilidad del vocabulario' },
+  { key: 'properties', label: 'Propiedades', mode: 'rectora', what: 'cada propiedad y qué clase de campo es' },
+  { key: 'objects', label: 'Objetos', mode: 'rectora', what: 'cada clase de cosa y qué propiedades la constituyen' },
+  { key: 'service', label: 'Servicio', mode: 'rectora', what: 'con qué servicio de fuera habla el corpus' },
+  { key: 'mcp', label: 'Puerta MCP', mode: 'rectora', what: 'quién entra, con qué identidad y permiso declarado' },
+  { key: 'publication', label: 'Publicación', mode: 'superficie', what: 'administra el sitio guardado en el registro' },
+  { key: 'activity', label: 'Actividad', mode: 'derivada', what: 'proyecta operaciones y eliminaciones registradas' },
+  { key: 'presentation', label: 'Presentación', mode: 'documentación', what: 'describe el diseño; los ajustes efectivos viven por participante' },
+  { key: 'instructions', label: 'Instrucciones', mode: 'documentación', what: 'referencia histórica; todavía no alimenta a los agentes' },
 ];
 
 /** Cómo se lee una clase de gobierno, cuando este cliente la conoce. */
-export function kindSays(value: string): { label: string; what: string } | null {
+export function kindSays(value: string): { label: string; mode: SpecialPageMode; what: string } | null {
   return GOVERNING_KINDS.find((one) => one.key === value.trim().toLowerCase()) ?? null;
 }
 

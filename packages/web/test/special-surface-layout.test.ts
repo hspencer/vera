@@ -6,6 +6,7 @@ const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const settings = readFileSync(new URL('../src/settings.ts', import.meta.url), 'utf8');
 const mcp = readFileSync(new URL('../src/mcp-page.ts', import.meta.url), 'utf8');
+const governing = readFileSync(new URL('../src/governing-table.ts', import.meta.url), 'utf8');
 
 describe('superficies especiales', () => {
   it('reemplazan las áreas del mapa y ocupan la columna completa', () => {
@@ -26,6 +27,15 @@ describe('superficies especiales', () => {
     assert.match(mcp, /Vera — conectar Claude por MCP/);
     assert.match(mcp, /Vera — conectar Gemini por MCP/);
     assert.match(mcp, /aria-label', 'guías para conectar inteligencias artificiales'/);
+  });
+
+  it('distingue gobierno efectivo, superficies, proyecciones y documentación', () => {
+    assert.match(main, /Gobierno de Vera/);
+    assert.match(main, /conocida.*known\.mode/s);
+    assert.match(governing, /'rectora' \| 'superficie' \| 'derivada' \| 'documentación'/);
+    assert.match(governing, /key: 'activity'.*mode: 'derivada'/);
+    assert.match(governing, /key: 'presentation'.*mode: 'documentación'/);
+    assert.match(governing, /key: 'instructions'.*mode: 'documentación'/);
   });
 
   it('cuenta la espera de una búsqueda comprometida y la cierra en éxito o fallo', () => {
