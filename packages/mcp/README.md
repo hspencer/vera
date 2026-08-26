@@ -57,15 +57,23 @@ claude mcp add vera --scope user -- \
 }
 ```
 
-**Codex** — en `~/.codex/config.toml`:
+**Codex local** — en `~/.codex/config.toml`, siempre con una credencial propia:
 
 ```toml
 [mcp_servers.vera]
-command = "node"
+command = "/usr/bin/node"
 args = ["--experimental-strip-types", "--no-warnings",
         "/home/hspencer/Sites/vera/packages/mcp/src/main.ts"]
-env = { VERA_URL = "http://127.0.0.1:4173", VERA_CLIENT = "codex" }
+env = { VERA_URL = "http://127.0.0.1:4173", VERA_CLIENT = "codex", VERA_TOKEN_FILE = "/ruta/privada/vera-codex.token" }
 ```
+
+**Codex en otro equipo** — no copies el secreto ni el repositorio. Abre
+«Vera: Puerta MCP», elige «otro equipo» y copia el bloque TOML calculado para
+esa conexión. En el despliegue de Alexei, `codex-andrei` arranca la puerta por
+SSH y descifra allí `vera-codex.cred`; el bloque deja la conexión como
+`required = true` y evita aprobaciones MCP redundantes. Comprueba el resultado
+con `codex mcp list`, luego `/mcp`, y llama primero a `vera_quien_soy`: debe
+responder `participant:codex`. Otra identidad es un fallo de configuración.
 
 **Gemini CLI** — en `~/.gemini/settings.json`:
 
@@ -81,6 +89,10 @@ env = { VERA_URL = "http://127.0.0.1:4173", VERA_CLIENT = "codex" }
   }
 }
 ```
+
+No uses una receta sin credencial como configuración normal: en loopback puede
+caer silenciosamente al dueño y atribuirle a Herbert las lecturas o escrituras
+del agente.
 
 Los servicios alojados por el proveedor —incluido ChatGPT— no pueden conectarse
 por aquí: necesitan una puerta MCP Streamable HTTP públicamente alcanzable por

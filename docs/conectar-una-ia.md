@@ -149,10 +149,11 @@ repositorio se movió—. Los valores se calculan igual, pero no van a funcionar
   cualquiera con un `ps`. `VERA_TOKEN_FILE` antes que `VERA_TOKEN`, porque una
   variable de entorno se hereda a todo lo que el proceso lance y un archivo con
   permisos no.
-- **Sin credencial se entra como el dueño.** Es lo que hoy es cierto en una
-  instalación local de un solo usuario, y el registro lo anota como lo que es
-  —una lectura sin credencial— en vez de disimularlo. Para que una IA tenga
-  nombre propio, [emítele una credencial](#emitir-una-credencial).
+- **Sin credencial se entra como el dueño.** Esa compatibilidad local todavía
+  existe, pero no es una receta aceptable para agentes: atribuye a Herbert lo
+  que leyó o escribió otro proceso. Para que una IA tenga identidad propia,
+  [emítele una credencial](#emitir-una-credencial) y trata cualquier caída al
+  dueño como un fallo de configuración.
 
 ---
 
@@ -203,6 +204,11 @@ args = ["--experimental-strip-types", "--no-warnings",
         "/ruta/a/vera/packages/mcp/src/main.ts"]
 env = { VERA_URL = "http://127.0.0.1:4173", VERA_CLIENT = "codex" }
 ```
+
+Ese bloque sólo muestra el dialecto TOML. Para usarlo, añade
+`VERA_TOKEN_FILE = "/ruta/privada/vera-codex.token"` al `env`, o copia el bloque
+completo que genera «Vera: Puerta MCP» después de crear la conexión. No dejes
+Codex sin credencial.
 
 **Vera tiene que estar corriendo** (`npm run serve`). El proceso de la puerta no
 abre la base de datos: le pregunta a la API como cualquiera.
