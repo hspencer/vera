@@ -287,6 +287,28 @@ en stdio. Una petición sin bearer o con una credencial retirada obtiene `401`
 antes de ver el catálogo. Comprueba con `codex mcp list`, `/mcp` y
 `vera_quien_soy`.
 
+### Pendiente: instalarla en Andrei
+
+No hace falta emitir otra credencial si se reutiliza la conexión «Codex en
+Andrei»: su secreto ya fue emitido y está cifrado en Alexei como
+`vera-codex.cred`. Cuando Andrei esté disponible, se descifra **una sola vez en
+Alexei** y se transfiere por un canal directo; no se pega en una conversación,
+un commit ni `config.toml`.
+
+En Andrei, `VERA_CODEX_TOKEN` debe existir en el entorno desde el que se inicia
+Codex. El registro sólo contiene el nombre de la variable:
+
+```sh
+codex mcp add vera --url https://vera.mediafranca.net/mcp \
+  --bearer-token-env-var VERA_CODEX_TOKEN
+```
+
+Al terminar, `codex mcp list` y `/mcp` deben mostrar `vera`; la primera llamada
+debe ser `vera_quien_soy` y responder `participant:codex`, con alcances `read` y
+`write`. Un `401` significa que la variable no llegó, que el secreto está mal o
+que la credencial fue retirada. La configuración SSH anterior se retira sólo
+después de esta prueba. Esta instalación queda deliberadamente pendiente.
+
 ---
 
 ## Emitir una credencial
@@ -309,6 +331,12 @@ y apunta `VERA_TOKEN_FILE` ahí:
 install -m 600 /dev/null ~/.config/vera/claude-desktop.token
 # pegar el secreto dentro
 ```
+
+Para una credencial nueva de Codex, abre [[Vera: Puerta MCP]], crea «Codex en
+Andrei», elige los alcances `read` y `write`, y copia el secreto que Vera muestra
+al terminar. El token no se calcula en Andrei ni se obtiene de la URL: Vera lo
+genera aleatoriamente, guarda sólo su digest y nunca puede volver a mostrarlo.
+Si se pierde, se revoca esa credencial y se emite otra.
 
 ```json
 "env": {

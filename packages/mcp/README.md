@@ -87,6 +87,12 @@ El secreto vive en el equipo cliente como variable protegida; no se escribe en
 `config.toml`. La URL es pública, el corpus no: sin bearer válido la puerta
 responde `401` antes de inicializar MCP o enumerar herramientas.
 
+El token lo genera Vera al crear la conexión en «Vera: Puerta MCP» y se muestra
+una sola vez. Para la conexión ya existente «Codex en Andrei» hay una copia
+cifrada en Alexei; no hace falta emitir otra. Si el secreto se pierde, no se
+recupera: se revoca la credencial y se crea una nueva. La instalación pública en
+Andrei queda pendiente hasta tener acceso a ese equipo.
+
 **Gemini CLI** — en `~/.gemini/settings.json`:
 
 ```json
