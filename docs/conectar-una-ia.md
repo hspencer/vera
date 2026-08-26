@@ -34,17 +34,16 @@ Lo que decide no es la marca. Es **dónde corre el cliente**.
 | --- | --- | --- |
 | **En este equipo** — una app de escritorio o una CLI | Sí | [Caso A](#caso-a--el-cliente-corre-en-este-equipo) |
 | **En otro equipo tuyo** de la tailnet | Sí | [Caso B](#caso-b--el-cliente-corre-en-otro-equipo) |
-| **En la nube del proveedor** — una pestaña del navegador | **No, todavía** | Ver [Lo que no hay](#lo-que-no-hay) |
+| **Cliente configurable desde cualquier red** | Sí | [Caso C](#caso-c--url-https-pública) |
+| **En la nube del proveedor** — una pestaña del navegador | Depende: si exige OAuth, todavía no | Ver [Lo que no hay](#lo-que-no-hay) |
 
-La razón es la forma de la puerta: hoy habla por **entrada y salida estándar**.
-No hay un puerto escuchando ni una dirección que pegar. El cliente lanza un
-proceso en tu máquina y le habla por tuberías. Un cliente que vive en un
-servidor ajeno no puede lanzar un proceso en tu casa.
+Vera ofrece dos transportes para el mismo contrato: **stdio** dentro de casa y
+**Streamable HTTP** en `https://vera.mediafranca.net/mcp`. La segunda dirección
+es públicamente alcanzable, pero no anónima: exige una credencial bearer válida
+antes de inicializar el protocolo.
 
-Así que la pregunta correcta ante un servicio nuevo no es «¿soporta Vera?», sino
-**«¿tiene una app de escritorio o una CLI que acepte MCP por stdio?»**. Si la
-tiene, entra hoy sin que Vera cambie nada. Si sólo tiene una pestaña, no entra
-todavía, y da igual el proveedor.
+La pregunta correcta ante un servicio nuevo es si acepta MCP por stdio o una URL
+Streamable HTTP con bearer. Si exige OAuth, queda para M6.
 
 Al día de hoy, aplicado a los servicios más habituales:
 
@@ -266,6 +265,30 @@ decir nada, porque nadie está mirando esa terminal.
 
 ---
 
+## Caso C — URL HTTPS pública
+
+Para Codex o cualquier cliente que acepte Streamable HTTP y bearer, la puerta es:
+
+```text
+https://vera.mediafranca.net/mcp
+```
+
+Codex puede registrarla sin guardar el secreto en `config.toml`:
+
+```sh
+export VERA_CODEX_TOKEN='el secreto emitido para Codex'
+codex mcp add vera --url https://vera.mediafranca.net/mcp \
+  --bearer-token-env-var VERA_CODEX_TOKEN
+```
+
+La URL se alcanza desde cualquier red y no requiere Tailscale, SSH ni una copia
+del repositorio. La credencial conserva la identidad y los mismos alcances que
+en stdio. Una petición sin bearer o con una credencial retirada obtiene `401`
+antes de ver el catálogo. Comprueba con `codex mcp list`, `/mcp` y
+`vera_quien_soy`.
+
+---
+
 ## Emitir una credencial
 
 En la página «Vera: la puerta MCP», sección **«Conectar una IA»**:
@@ -342,22 +365,12 @@ Dicho aparte para no confundir lo construido con lo previsto.
 - **Edición y descarte completos desde la IA.** MCP permite crear páginas y
   bloques y gestionar propiedades mediante operaciones atribuidas e idempotentes.
   Todavía no edita, mueve ni descarta páginas o bloques.
-- **Un servidor MCP remoto y público.** No existe. `/mcp` es el JSON de la página de la
-  puerta, no un endpoint del protocolo, y `packages/mcp` sólo habla stdio. Por
-  eso ChatGPT y cualquier cliente alojado por un proveedor no se conectan. La
-  ruta prevista debe quedar públicamente alcanzable por HTTPS —por ejemplo bajo
-  `vera.mediafranca.net` en una ruta dedicada— aunque el corpus siga siendo
-  privado y cada solicitud exija autorización. Es **M5**, y la pieza está a mano —el SDK
-  instalado ya trae el transporte Streamable HTTP—, pero exige antes una regla
-  más estricta que la del resto de Vera: en esa ruta no hay caída al dueño, sin
-  credencial válida es 401 y nada más.
-- **Publicar toda Vera con Tailscale Funnel.** Se puede, y hoy sería un error: la regla
-  actual mapea `/` al puerto de Vera, así que publicaría la API entera —incluido
-  `POST /operations`, que sin credencial escribe como el dueño—. Cuando exista el
-  endpoint remoto, se expone **sólo esa ruta** —mediante Funnel o el proxy HTTPS
-  público—, nunca `/`. Y siguen
-  faltando validación de origen y host, protección contra DNS rebinding, CORS
-  restrictivo y límites por identidad y herramienta.
+- **OAuth para servicios alojados.** La puerta pública con bearer ya existe en
+  `https://vera.mediafranca.net/mcp`. Los clientes que no permiten declarar un
+  bearer y exigen descubrir y completar OAuth todavía necesitan M6.
+- **Publicar toda Vera con Tailscale Funnel.** Sigue siendo un error: M5 expone
+  únicamente `/mcp` mediante el frente HTTPS existente. La aplicación privada,
+  `POST /operations` y el resto de la API no forman parte de esa puerta.
 - **OAuth.** Es M6. Para los formularios HTTP que aceptan un bearer y cabeceras
   propias no hace falta, así que no bloquea M5.
 

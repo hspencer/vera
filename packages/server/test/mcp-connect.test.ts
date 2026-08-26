@@ -50,6 +50,11 @@ describe('los datos de conexión', () => {
     assert.equal(ask({ reachableAt: 'https://v.ts.net' }).reachableAt, 'https://v.ts.net');
   });
 
+  it('la puerta pública sólo aparece cuando el despliegue la declaró', () => {
+    assert.equal(ask().publicMcp, null);
+    assert.equal(ask({ publicMcp: 'https://vera.example/mcp' }).publicMcp, 'https://vera.example/mcp');
+  });
+
   it('con qué se entra desde otro equipo sale de quién corre y dónde', () => {
     assert.equal(ask().login, 'quien@maquina');
   });

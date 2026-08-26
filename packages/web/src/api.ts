@@ -1440,6 +1440,8 @@ export interface MCPConnect {
   url: string;
   /** Y desde otro equipo, cuando alguien lo declaró. Nulo si no se sabe. */
   reachableAt: string | null;
+  /** URL HTTPS pública de Streamable HTTP, cuando M5 está publicado. */
+  publicMcp: string | null;
   node: string;
   /**
    * Con qué se entra a este equipo desde otro para lanzar la puerta aquí.

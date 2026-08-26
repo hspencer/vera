@@ -75,6 +75,18 @@ SSH y descifra allí `vera-codex.cred`; el bloque deja la conexión como
 con `codex mcp list`, luego `/mcp`, y llama primero a `vera_quien_soy`: debe
 responder `participant:codex`. Otra identidad es un fallo de configuración.
 
+**Codex por la puerta pública** — desde cualquier red, sin Tailscale ni SSH:
+
+```sh
+export VERA_CODEX_TOKEN='el secreto de la credencial de Codex'
+codex mcp add vera --url https://vera.mediafranca.net/mcp \
+  --bearer-token-env-var VERA_CODEX_TOKEN
+```
+
+El secreto vive en el equipo cliente como variable protegida; no se escribe en
+`config.toml`. La URL es pública, el corpus no: sin bearer válido la puerta
+responde `401` antes de inicializar MCP o enumerar herramientas.
+
 **Gemini CLI** — en `~/.gemini/settings.json`:
 
 ```json
@@ -94,11 +106,10 @@ No uses una receta sin credencial como configuración normal: en loopback puede
 caer silenciosamente al dueño y atribuirle a Herbert las lecturas o escrituras
 del agente.
 
-Los servicios alojados por el proveedor —incluido ChatGPT— no pueden conectarse
-por aquí: necesitan una puerta MCP Streamable HTTP públicamente alcanzable por
-HTTPS y estrictamente autenticada. Esa superficie aislada es M5; OAuth para los
-clientes que lo exijan es M6. «Públicamente alcanzable» no significa publicar la
-aplicación privada ni permitir lecturas anónimas.
+Los clientes configurables ya pueden conectarse por Streamable HTTP. Los
+servicios alojados que exijan OAuth —incluido ChatGPT— requieren todavía M6.
+«Públicamente alcanzable» no significa publicar la aplicación privada ni
+permitir lecturas anónimas.
 
 ## El entorno
 

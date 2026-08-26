@@ -30,7 +30,7 @@ import {
 import { ask as askVera, connectionFrom, submit as submitVera, type Connection } from './client.ts';
 import { TOOLS, toolNamed, type Ask, type Write } from './tools.ts';
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 
 /**
  * Lo que un cliente lee antes de decidir cómo usar esto.
@@ -76,17 +76,7 @@ Al escribir:
 - Todo lo que leas queda anotado en el registro de exposición del dueño: qué
   páginas viajaron, hacia qué cliente y cuándo.`;
 
-async function main(): Promise<void> {
-  const connection: Connection = connectionFrom(
-    process.env,
-    (path) => readFileSync(path, 'utf8'),
-    (file, name) =>
-      execFileSync('systemd-creds', ['--user', 'decrypt', `--name=${name}`, file, '-'], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }),
-  );
-
+export function mcpServer(connection: Connection): Server {
   const ask: Ask = (path, parameters) => askVera(connection, path, parameters);
   const write: Write = (origin, change) => submitVera(connection, origin, change);
 
@@ -135,7 +125,20 @@ async function main(): Promise<void> {
     }
   });
 
-  await server.connect(new StdioServerTransport());
+  return server;
+}
+
+async function main(): Promise<void> {
+  const connection: Connection = connectionFrom(
+    process.env,
+    (path) => readFileSync(path, 'utf8'),
+    (file, name) =>
+      execFileSync('systemd-creds', ['--user', 'decrypt', `--name=${name}`, file, '-'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }),
+  );
+  await mcpServer(connection).connect(new StdioServerTransport());
 }
 
 /*
@@ -143,7 +146,9 @@ async function main(): Promise<void> {
  * `console.log` suelto rompe la conversación con un JSON-RPC inválido. Los avisos
  * van a la de errores, que el cliente recoge en su registro.
  */
-main().catch((trouble: unknown) => {
-  process.stderr.write(`vera-mcp no pudo arrancar: ${String(trouble)}\n`);
-  process.exit(1);
-});
+if (process.argv[1] !== undefined && import.meta.url === new URL(process.argv[1], 'file:').href) {
+  main().catch((trouble: unknown) => {
+    process.stderr.write(`vera-mcp no pudo arrancar: ${String(trouble)}\n`);
+    process.exit(1);
+  });
+}

@@ -35,6 +35,8 @@ export interface MCPConnect {
    * sabe, que es mejor que ofrecer una dirección que puede no existir.
    */
   reachableAt: string | null;
+  /** URL Streamable HTTP pública; nula cuando el despliegue no publicó M5. */
+  publicMcp: string | null;
   node: string;
   /**
    * Con qué se entra a este equipo desde otro para lanzar la puerta aquí.
@@ -76,6 +78,7 @@ export function mcpConnect(options: {
   user: string;
   host: string;
   reachableAt?: string | null;
+  publicMcp?: string | null;
   remoteCredential?: { client: string; file: string; name: string } | null;
   exists?: (path: string) => boolean;
 }): MCPConnect {
@@ -97,6 +100,7 @@ export function mcpConnect(options: {
     cwd: root,
     url: `http://127.0.0.1:${options.port}`,
     reachableAt: options.reachableAt ?? null,
+    publicMcp: options.publicMcp ?? null,
     node: options.nodeVersion,
     login: `${options.user}@${options.host}`,
     remoteCredential: options.remoteCredential ?? null,

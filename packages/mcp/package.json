@@ -11,7 +11,8 @@
     "./client": "./src/client.ts"
   },
   "bin": {
-    "vera-mcp": "./src/main.ts"
+    "vera-mcp": "./src/main.ts",
+    "vera-mcp-http": "./src/http.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

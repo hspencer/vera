@@ -118,6 +118,32 @@ contract MCPIsADoorAndNotASecondMemory {
         -- vieja mediante dos operaciones auditables; nunca reescribe la base.
 }
 
+-- Publicar el transporte no publica la memoria ni debilita su identidad.
+contract PublicMCPFailsClosed {
+    serve_publicly: (connection: Connection) -> Session
+
+    @invariant NoCredentialMeansNoProtocol
+        -- Una petición pública sin credencial válida se rechaza antes de
+        -- inicializar MCP, enumerar herramientas o consultar el corpus. No hay
+        -- sesión anónima y nunca se aprovecha la compatibilidad del loopback que
+        -- asume al dueño.
+
+    @invariant OnlyTheMCPRouteIsPublic
+        -- La publicación expone una ruta HTTPS dedicada. No vuelve públicas la
+        -- aplicación privada, la API, POST /operations ni los secretos usados
+        -- para autenticar a sus participantes.
+
+    @invariant ThePublicDoorHasBounds
+        -- La puerta limita el tamaño de cada petición y el tiempo que puede
+        -- ocupar. Rechaza lo que excede el límite entero; nunca procesa un
+        -- prefijo ni mantiene sesiones abandonadas indefinidamente.
+
+    @invariant TransportDoesNotChangeAuthority
+        -- La misma credencial obtiene la misma identidad y alcances por stdio o
+        -- HTTPS. Que una ruta sea alcanzable desde Internet no concede ninguna
+        -- herramienta, página ni operación adicional.
+}
+
 -- Un alcance no es una concesión.
 --
 -- Hoy una credencial dice `read`, `write` o `discard`, y eso alcanza para un
@@ -459,6 +485,29 @@ surface MemoryOverMCP {
         -- El transporte de casa es un proceso que el cliente arranca, sin puerto
         -- abierto. Publicar la puerta en una red es una decisión aparte, con su
         -- propio endurecimiento, y no un ajuste de configuración.
+}
+
+surface PublicMemoryOverHTTPS {
+    facing client: core/Participant
+    context connection: Connection
+
+    exposes:
+        Grant
+        Exposure
+
+    contracts:
+        fulfils MCPIsADoorAndNotASecondMemory
+        fulfils PublicMCPFailsClosed
+        fulfils WhatWasReadIsRecorded
+
+    provides:
+        ReadThroughMCP(participant, connection, subject)
+        WriteThroughMCP(participant, connection, proposal)
+
+    @guarantee PublicMeansReachableAndNotAnonymous
+        -- Un cliente compatible puede alcanzar la puerta por una URL HTTPS
+        -- desde cualquier red. Poder llegar hasta ella no permite cruzarla: la
+        -- credencial se comprueba antes de hablar el protocolo.
 }
 
 ------------------------------------------------------------

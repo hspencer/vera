@@ -5,7 +5,7 @@
 // y sólo entonces persiste. No hay ningún camino que escriba en la base sin
 // pasar por ahí.
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createReadStream, existsSync, readFileSync, statSync, unlinkSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { hostname, userInfo } from 'node:os';
@@ -259,6 +259,8 @@ export interface ServerOptions {
   remoteMcpCredential?: { client: string; file: string; name: string };
   /** Sitio estático que esta instancia publica, si su dueño lo configuró. */
   publicSite?: { title: string; canonicalDomain: string };
+  /** Origen loopback de la única ruta MCP expuesta por el dominio público. */
+  publicMcpOrigin?: string;
   /** Directorio estable que Tailscale Serve o el alojamiento público sirven. */
   publicOutput?: string;
   /** Iconos y manifiesto que acompañan a la proyección pública. */
@@ -1113,6 +1115,37 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     }
     const publicOrigin = forcedPublic || (canonicalHost !== '' && host === canonicalHost);
     const publicAccess = publicOrigin;
+
+    /*
+     * La puerta pública es una sola grieta deliberada en el origen público.
+     *
+     * Se reenvía antes del guard de `anybody`, porque éste rechaza todo POST;
+     * pero sólo para la ruta exacta y sólo hacia un origen loopback declarado.
+     * El proceso MCP vuelve a comprobar el bearer antes de hablar protocolo.
+     * Ninguna otra ruta, incluida /operations, comparte este reenvío.
+     */
+    if (publicOrigin && path === '/mcp' && options.publicMcpOrigin !== undefined) {
+      const target = new URL('/mcp', options.publicMcpOrigin);
+      const headers: Record<string, string> = {};
+      for (const name of ['authorization', 'content-type', 'accept', 'mcp-session-id', 'mcp-protocol-version', 'x-vera-client']) {
+        const value = request.headers[name];
+        if (typeof value === 'string') headers[name] = value;
+      }
+      const upstream = httpRequest(target, { method: request.method, headers }, (fromMcp) => {
+        response.writeHead(fromMcp.statusCode ?? 502, {
+          ...fromMcp.headers,
+          'cache-control': 'no-store',
+        });
+        fromMcp.pipe(response);
+      });
+      upstream.setTimeout(30_000, () => upstream.destroy(new Error('MCP timeout')));
+      upstream.on('error', () => {
+        if (!response.headersSent) send(response, 502, { error: 'la puerta MCP no está disponible' });
+        else response.end();
+      });
+      request.pipe(upstream);
+      return;
+    }
 
     // Un espacio elige un subgrafo, no una aplicación distinta. Las rutas bajo
     // `/s/<slug>` llevan el ámbito consigo; las peticiones de la PWA a `/pages`,
@@ -3819,6 +3852,9 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           user: userInfo().username,
           host: hostname(),
           reachableAt: options.reachableAt ?? null,
+          publicMcp: options.publicMcpOrigin === undefined
+            ? null
+            : new URL('/mcp', publicSite()?.canonicalDomain ?? options.publicSite?.canonicalDomain).toString(),
           remoteCredential: options.remoteMcpCredential ?? null,
         });
         /*

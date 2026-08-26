@@ -416,11 +416,12 @@ function connectPanel(
 
   const http = document.createElement('p');
   http.className = 'governing-note';
-  http.textContent =
-    'La puerta pública para servicios en la nube todavía no existe: hoy Vera sólo habla ' +
-    'por stdio. ChatGPT y otros clientes alojados por su proveedor necesitarán un endpoint ' +
-    'MCP Streamable HTTP con HTTPS, públicamente alcanzable y cerrado por autenticación. ' +
-    'Publicar la aplicación privada completa no lo reemplaza; esa puerta aislada es M5.';
+  http.textContent = connect.publicMcp === null
+    ? 'Este despliegue no ha publicado una puerta Streamable HTTP.'
+    : `Puerta pública para Codex y clientes MCP configurables: ${connect.publicMcp}. ` +
+      'Se alcanza desde cualquier red y exige una credencial bearer válida antes de iniciar ' +
+      'el protocolo. Para Codex: `codex mcp add vera --url URL ' +
+      '--bearer-token-env-var VERA_CODEX_TOKEN`. OAuth para ChatGPT sigue siendo M6.';
   host.append(http);
 
   settleWhere();
