@@ -69,13 +69,13 @@ const WORLD_FONT_CENTRAL = 5.5;
  *
  * El par era 8 y 22, calibrado a ojo y corto: con el mapa lleno, casi todos los
  * nombres caían en el suelo y el mapa se leía como una mancha gris de la que
- * había que acercarse para sacar cualquier palabra. Calibrado a 1.25 del
- * anterior —diez y veintisiete y medio—, que es un cuarto más de cuerpo sin
- * tocar la proporción entre uno y otro: el rango sigue siendo el mismo rango,
- * sólo que más grande.
+ * había que acercarse para sacar cualquier palabra. Después pasó a 10 y 27,5.
+ * El rango vigente —11 y 31— abre un poco más ambos extremos: el suelo gana
+ * legibilidad y el techo presencia, sin dejar que un nombre cercano se coma el
+ * vecindario.
  */
-const SCREEN_FONT_MIN = 10;
-const SCREEN_FONT_MAX = 27.5;
+const SCREEN_FONT_MIN = 11;
+const SCREEN_FONT_MAX = 31;
 
 /** Un nombre se parte antes de atravesar el mapa. Igual que en dos dimensiones. */
 const MAX_LABEL_CHARS = 24;

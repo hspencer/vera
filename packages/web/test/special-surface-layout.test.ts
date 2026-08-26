@@ -7,6 +7,7 @@ const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const settings = readFileSync(new URL('../src/settings.ts', import.meta.url), 'utf8');
 const mcp = readFileSync(new URL('../src/mcp-page.ts', import.meta.url), 'utf8');
 const governing = readFileSync(new URL('../src/governing-table.ts', import.meta.url), 'utf8');
+const graph3d = readFileSync(new URL('../src/graph/render3d.ts', import.meta.url), 'utf8');
 
 describe('superficies especiales', () => {
   it('reemplazan las áreas del mapa y ocupan la columna completa', () => {
@@ -50,5 +51,10 @@ describe('superficies especiales', () => {
     assert.match(styles, /pointer-events:\s*none/);
     assert.match(styles, /html\[data-working-slow='true'\]::after/);
     assert.match(styles, /prefers-reduced-motion:\s*reduce/);
+  });
+
+  it('mantiene legibles los nombres del mapa 3D sin dejar que cubran el vecindario', () => {
+    assert.match(graph3d, /const SCREEN_FONT_MIN = 11;/);
+    assert.match(graph3d, /const SCREEN_FONT_MAX = 31;/);
   });
 });
