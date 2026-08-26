@@ -89,6 +89,30 @@ Después: `claude mcp list`, `claude mcp get vera`, `/mcp` y
 `vera_quien_soy`. La identidad debe ser la de Claude, nunca
 `participant:herbert`.
 
+**LM Studio** — desde 0.3.17 admite servidores remotos en `mcp.json`. Abre
+Program → Install → Edit mcp.json y añade:
+
+```json
+{
+  "mcpServers": {
+    "vera": {
+      "url": "https://vera.mediafranca.net/mcp",
+      "headers": {
+        "Authorization": "Bearer <TOKEN_EXCLUSIVO_DE_LM_STUDIO>"
+      }
+    }
+  }
+}
+```
+
+Su documentación no promete expansión de variables dentro de `headers`: el
+bearer queda escrito en ese archivo. Usa una credencial exclusiva, protege el
+archivo y no generes un deeplink con esa configuración, porque transportaría el
+secreto dentro de la URL. Con un modelo capaz de usar herramientas, prueba
+`vera_quien_soy`, luego `vera_preparar_escritura` y una escritura pequeña. En
+Alexei conviene la declaración `stdio` de arriba: es más rápida y puede leer un
+`VERA_TOKEN_FILE` privado.
+
 **Codex local** — en `~/.codex/config.toml`, siempre con una credencial propia:
 
 ```toml

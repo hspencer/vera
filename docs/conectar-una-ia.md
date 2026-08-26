@@ -51,6 +51,7 @@ Al día de hoy, aplicado a los servicios más habituales:
 | --- | --- | --- |
 | Anthropic | Claude Code y clientes de escritorio con HTTP + bearer | claude.ai cuando exige un conector alojado |
 | OpenAI | Codex CLI, extensión y app; ChatGPT de escritorio en el mismo host | ChatGPT web no lee la configuración local de Codex |
+| LM Studio | la app 0.3.17 o posterior, con un modelo capaz de usar herramientas | — |
 | Google | Gemini CLI | Gemini en el navegador |
 | Microsoft | VS Code / Copilot (`mcp.json`) | Copilot en el navegador |
 | DeepSeek, Mistral, otros | cualquier cliente suyo que corra en tu equipo | sus interfaces web |
@@ -300,6 +301,36 @@ claude mcp add-json --scope user vera \
 Comprueba con `claude mcp list`, `claude mcp get vera`, `/mcp` y
 `vera_quien_soy`. La respuesta debe ser la identidad propia de Claude, nunca
 `participant:herbert`.
+
+LM Studio 0.3.17 o posterior también acepta servidores MCP remotos. En
+**Program → Install → Edit mcp.json**, añade una conexión con credencial propia:
+
+```json
+{
+  "mcpServers": {
+    "vera": {
+      "url": "https://vera.mediafranca.net/mcp",
+      "headers": {
+        "Authorization": "Bearer <TOKEN_EXCLUSIVO_DE_LM_STUDIO>"
+      }
+    }
+  }
+}
+```
+
+LM Studio documenta el bearer literal y no documenta expansión de variables en
+`headers`. Por eso esa credencial debe pertenecer sólo a LM Studio, el archivo
+debe quedar con permisos restrictivos y no se debe compartir mediante un
+deeplink —el secreto quedaría embebido en la URL—. Reinicia la integración,
+elige un modelo capaz de llamar herramientas y pídele explícitamente ejecutar
+`vera_quien_soy`; debe responder la identidad de LM Studio y sus alcances. Para
+escribir, comprueba primero `vera_preparar_escritura` y luego una contribución
+pequeña con `vera_escribir`.
+
+En Alexei también puede declararse la puerta local `stdio` con `command`,
+`args`, `env.VERA_URL`, `env.VERA_CLIENT` y `env.VERA_TOKEN_FILE`. Es la opción
+más rápida y evita guardar el bearer en `mcp.json`; la pública corresponde a un
+LM Studio remoto.
 
 Codex CLI, la extensión y la aplicación comparten `~/.codex/config.toml`.
 ChatGPT de escritorio también puede usar los servidores configurados en el host

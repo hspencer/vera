@@ -182,6 +182,7 @@ function connectPanel(
   for (const [title, label] of [
     ['Vera — conectar OpenAI por MCP', 'OpenAI · Codex y ChatGPT de escritorio'],
     ['Vera — conectar Claude por MCP', 'Anthropic · Claude Code por HTTPS o stdio'],
+    ['Vera — conectar LM Studio por MCP', 'LM Studio · modelos locales por HTTPS o stdio'],
     ['Vera — conectar Gemini por MCP', 'Google · Gemini CLI'],
   ] as const) {
     const item = document.createElement('li');

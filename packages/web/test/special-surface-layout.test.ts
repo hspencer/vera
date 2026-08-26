@@ -22,9 +22,10 @@ describe('superficies especiales', () => {
     assert.doesNotMatch(settings, /id: 'compartir', label: 'Compartir'/);
   });
 
-  it('vincula desde la propia puerta las tres guías de conexión por proveedor', () => {
+  it('vincula desde la propia puerta las cuatro guías de conexión por proveedor', () => {
     assert.match(mcp, /Vera — conectar OpenAI por MCP/);
     assert.match(mcp, /Vera — conectar Claude por MCP/);
+    assert.match(mcp, /Vera — conectar LM Studio por MCP/);
     assert.match(mcp, /Vera — conectar Gemini por MCP/);
     assert.match(mcp, /aria-label', 'guías para conectar inteligencias artificiales'/);
   });
