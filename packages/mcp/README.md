@@ -32,6 +32,11 @@ recetas de siempre.
 
 Vera tiene que estar corriendo (`npm run serve`, por omisión en el 4173).
 
+No hay una forma «más nueva» que deba sustituir a todas las demás. En la máquina
+donde vive Vera, `stdio` evita una vuelta innecesaria por Internet. En otro
+equipo, Streamable HTTP elimina el repositorio, SSH y Tailscale. El contrato, la
+identidad y los alcances son los mismos; cambia sólo el recorrido.
+
 **Claude Code** — ya está: el `.mcp.json` de la raíz del repositorio lo declara.
 Al abrir Claude Code aquí, pregunta si se confía en el servidor del proyecto.
 Para tenerlo en cualquier directorio y no sólo en éste:
@@ -57,6 +62,33 @@ claude mcp add vera --scope user -- \
 }
 ```
 
+**Claude Code por la puerta pública** — desde cualquier red, sin Tailscale ni
+SSH. La variable se expande al cargar la configuración y el secreto no entra en
+Git:
+
+```json
+{
+  "mcpServers": {
+    "vera": {
+      "type": "http",
+      "url": "https://vera.mediafranca.net/mcp",
+      "headers": { "Authorization": "Bearer ${VERA_CLAUDE_TOKEN}" }
+    }
+  }
+}
+```
+
+En alcance personal, el mismo bloque se registra así:
+
+```sh
+claude mcp add-json --scope user vera \
+  '{"type":"http","url":"https://vera.mediafranca.net/mcp","headers":{"Authorization":"Bearer ${VERA_CLAUDE_TOKEN}"}}'
+```
+
+Después: `claude mcp list`, `claude mcp get vera`, `/mcp` y
+`vera_quien_soy`. La identidad debe ser la de Claude, nunca
+`participant:herbert`.
+
 **Codex local** — en `~/.codex/config.toml`, siempre con una credencial propia:
 
 ```toml
@@ -75,7 +107,8 @@ SSH y descifra allí `vera-codex.cred`; el bloque deja la conexión como
 con `codex mcp list`, luego `/mcp`, y llama primero a `vera_quien_soy`: debe
 responder `participant:codex`. Otra identidad es un fallo de configuración.
 
-**Codex por la puerta pública** — desde cualquier red, sin Tailscale ni SSH:
+**Codex y OpenAI por la puerta pública** — desde cualquier red, sin Tailscale ni
+SSH:
 
 ```sh
 export VERA_CODEX_TOKEN='el secreto de la credencial de Codex'
@@ -86,6 +119,11 @@ codex mcp add vera --url https://vera.mediafranca.net/mcp \
 El secreto vive en el equipo cliente como variable protegida; no se escribe en
 `config.toml`. La URL es pública, el corpus no: sin bearer válido la puerta
 responde `401` antes de inicializar MCP o enumerar herramientas.
+
+Codex CLI, la extensión y la aplicación de escritorio comparten esta
+configuración. ChatGPT de escritorio también puede usar los servidores MCP
+configurados en el host de Codex. ChatGPT web no lee `~/.codex/config.toml`: usa
+plugins alojados y queda fuera de esta receta local.
 
 El token lo genera Vera al crear la conexión en «Vera: Puerta MCP» y se muestra
 una sola vez. Para la conexión ya existente «Codex en Andrei» hay una copia
@@ -112,10 +150,27 @@ No uses una receta sin credencial como configuración normal: en loopback puede
 caer silenciosamente al dueño y atribuirle a Herbert las lecturas o escrituras
 del agente.
 
-Los clientes configurables ya pueden conectarse por Streamable HTTP. Los
-servicios alojados que exijan OAuth —incluido ChatGPT— requieren todavía M6.
+Los clientes configurables ya pueden conectarse por Streamable HTTP.
 «Públicamente alcanzable» no significa publicar la aplicación privada ni
-permitir lecturas anónimas.
+permitir lecturas anónimas. OAuth sigue siendo M6 para los servicios alojados
+que lo exijan; no es requisito de Codex, Claude Code ni ChatGPT de escritorio
+cuando el host puede proporcionar el bearer.
+
+## Latencia: pública no significa local
+
+Medición real desde Alexei, 2026-08-26, treinta llamadas consecutivas a
+`vera_quien_soy`:
+
+| Transporte | Arranque | Mediana por herramienta | p95 |
+| --- | ---: | ---: | ---: |
+| `stdio` local | 152 ms | 12,3 ms | 14,8 ms |
+| HTTPS pública | 1.171 ms | 293,2 ms | 487,6 ms |
+
+La diferencia está en el recorrido TLS/Cloudflare, no en el corpus ni en MCP.
+Por eso Cotito y los clientes que corren en Alexei conservan el camino local.
+La puerta pública se usa donde compra algo concreto: acceso desde otra red sin
+SSH, tailnet ni copia del código. En otro equipo hay que medir allí antes de
+retirar el transporte anterior.
 
 ## El entorno
 

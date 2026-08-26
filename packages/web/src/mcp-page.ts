@@ -180,8 +180,8 @@ function connectPanel(
   guideHeading.textContent = 'Instrucciones por proveedor';
   const guideList = document.createElement('ul');
   for (const [title, label] of [
-    ['Vera — conectar OpenAI por MCP', 'OpenAI · Codex; ChatGPT requiere HTTPS'],
-    ['Vera — conectar Claude por MCP', 'Anthropic · Claude Code y Claude Desktop'],
+    ['Vera — conectar OpenAI por MCP', 'OpenAI · Codex y ChatGPT de escritorio'],
+    ['Vera — conectar Claude por MCP', 'Anthropic · Claude Code por HTTPS o stdio'],
     ['Vera — conectar Gemini por MCP', 'Google · Gemini CLI'],
   ] as const) {
     const item = document.createElement('li');
@@ -418,10 +418,13 @@ function connectPanel(
   http.className = 'governing-note';
   http.textContent = connect.publicMcp === null
     ? 'Este despliegue no ha publicado una puerta Streamable HTTP.'
-    : `Puerta pública para Codex y clientes MCP configurables: ${connect.publicMcp}. ` +
+    : `Puerta pública para Codex, Claude Code y clientes MCP configurables: ${connect.publicMcp}. ` +
       'Se alcanza desde cualquier red y exige una credencial bearer válida antes de iniciar ' +
       'el protocolo. Para Codex: `codex mcp add vera --url URL ' +
-      '--bearer-token-env-var VERA_CODEX_TOKEN`. OAuth para ChatGPT sigue siendo M6.';
+      '--bearer-token-env-var VERA_CODEX_TOKEN`. Para Claude Code se declara un servidor HTTP ' +
+      'con `Authorization: Bearer ${VERA_CLAUDE_TOKEN}`. Los clientes que viven junto a Vera ' +
+      'conservan stdio: la URL pública compra alcance, no menor latencia. ChatGPT web no lee la ' +
+      'configuración local; los servicios alojados que exijan OAuth siguen siendo M6.';
   host.append(http);
 
   settleWhere();

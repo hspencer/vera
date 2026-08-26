@@ -35,7 +35,7 @@ Lo que decide no es la marca. Es **dónde corre el cliente**.
 | **En este equipo** — una app de escritorio o una CLI | Sí | [Caso A](#caso-a--el-cliente-corre-en-este-equipo) |
 | **En otro equipo tuyo** de la tailnet | Sí | [Caso B](#caso-b--el-cliente-corre-en-otro-equipo) |
 | **Cliente configurable desde cualquier red** | Sí | [Caso C](#caso-c--url-https-pública) |
-| **En la nube del proveedor** — una pestaña del navegador | Depende: si exige OAuth, todavía no | Ver [Lo que no hay](#lo-que-no-hay) |
+| **En la nube del proveedor** — una pestaña del navegador | Depende de si acepta bearer o exige OAuth | Ver [Lo que no hay](#lo-que-no-hay) |
 
 Vera ofrece dos transportes para el mismo contrato: **stdio** dentro de casa y
 **Streamable HTTP** en `https://vera.mediafranca.net/mcp`. La segunda dirección
@@ -49,8 +49,8 @@ Al día de hoy, aplicado a los servicios más habituales:
 
 | Proveedor | Cliente que entra | Cliente que no |
 | --- | --- | --- |
-| Anthropic | Claude Code, Claude Desktop | claude.ai en el navegador |
-| OpenAI | Codex CLI y Codex app | ChatGPT, porque el servicio se ejecuta en la nube |
+| Anthropic | Claude Code y clientes de escritorio con HTTP + bearer | claude.ai cuando exige un conector alojado |
+| OpenAI | Codex CLI, extensión y app; ChatGPT de escritorio en el mismo host | ChatGPT web no lee la configuración local de Codex |
 | Google | Gemini CLI | Gemini en el navegador |
 | Microsoft | VS Code / Copilot (`mcp.json`) | Copilot en el navegador |
 | DeepSeek, Mistral, otros | cualquier cliente suyo que corra en tu equipo | sus interfaces web |
@@ -267,7 +267,8 @@ decir nada, porque nadie está mirando esa terminal.
 
 ## Caso C — URL HTTPS pública
 
-Para Codex o cualquier cliente que acepte Streamable HTTP y bearer, la puerta es:
+Para Codex, Claude Code o cualquier cliente que acepte Streamable HTTP y bearer,
+la puerta es:
 
 ```text
 https://vera.mediafranca.net/mcp
@@ -287,7 +288,33 @@ en stdio. Una petición sin bearer o con una credencial retirada obtiene `401`
 antes de ver el catálogo. Comprueba con `codex mcp list`, `/mcp` y
 `vera_quien_soy`.
 
-### Pendiente: instalarla en Andrei
+Claude Code puede guardar la referencia a una variable sin copiar el secreto al
+archivo de configuración:
+
+```sh
+export VERA_CLAUDE_TOKEN='el secreto emitido para Claude'
+claude mcp add-json --scope user vera \
+  '{"type":"http","url":"https://vera.mediafranca.net/mcp","headers":{"Authorization":"Bearer ${VERA_CLAUDE_TOKEN}"}}'
+```
+
+Comprueba con `claude mcp list`, `claude mcp get vera`, `/mcp` y
+`vera_quien_soy`. La respuesta debe ser la identidad propia de Claude, nunca
+`participant:herbert`.
+
+Codex CLI, la extensión y la aplicación comparten `~/.codex/config.toml`.
+ChatGPT de escritorio también puede usar los servidores configurados en el host
+de Codex. ChatGPT web usa plugins alojados y no lee esa configuración local.
+
+### Elegir transporte por su costo real
+
+La puerta pública compra portabilidad, no velocidad local. Desde Alexei, treinta
+llamadas consecutivas a `vera_quien_soy` dieron 12,3 ms de mediana y 14,8 ms de
+p95 por `stdio`; por HTTPS pública dieron 293,2 ms y 487,6 ms. El costo está en
+la vuelta TLS/Cloudflare. Por eso Cotito y los clientes que viven junto a Vera
+conservan el camino local; los clientes remotos usan HTTPS cuando evitar SSH,
+Tailscale y una copia del repositorio compensa esa vuelta.
+
+### Pendiente: instalarla y medirla en Andrei
 
 No hace falta emitir otra credencial si se reutiliza la conexión «Codex en
 Andrei»: su secreto ya fue emitido y está cifrado en Alexei como
@@ -307,7 +334,10 @@ Al terminar, `codex mcp list` y `/mcp` deben mostrar `vera`; la primera llamada
 debe ser `vera_quien_soy` y responder `participant:codex`, con alcances `read` y
 `write`. Un `401` significa que la variable no llegó, que el secreto está mal o
 que la credencial fue retirada. La configuración SSH anterior se retira sólo
-después de esta prueba. Esta instalación queda deliberadamente pendiente.
+después de medir treinta lecturas y una escritura real, y sólo si identidad,
+alcances y latencia resultan aceptables. La URL pública no es por sí sola una
+razón para sacrificar el transporte persistente más rápido. Esta instalación
+queda deliberadamente pendiente.
 
 ---
 
@@ -395,7 +425,8 @@ Dicho aparte para no confundir lo construido con lo previsto.
   Todavía no edita, mueve ni descarta páginas o bloques.
 - **OAuth para servicios alojados.** La puerta pública con bearer ya existe en
   `https://vera.mediafranca.net/mcp`. Los clientes que no permiten declarar un
-  bearer y exigen descubrir y completar OAuth todavía necesitan M6.
+  bearer y exigen descubrir y completar OAuth todavía necesitan M6. No bloquea
+  Codex, Claude Code ni ChatGPT de escritorio cuando su host aporta el bearer.
 - **Publicar toda Vera con Tailscale Funnel.** Sigue siendo un error: M5 expone
   únicamente `/mcp` mediante el frente HTTPS existente. La aplicación privada,
   `POST /operations` y el resto de la API no forman parte de esa puerta.
