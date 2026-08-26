@@ -3407,11 +3407,17 @@ export function renderOutliner(
          * se escribe, pulsando el hueco de la fila: las palabras no, que cada
          * una lleva a su página.
          */
-        value.title = `editar ${property.key}`;
-        value.addEventListener('click', (event) => {
-          if ((event.target as HTMLElement).closest('.property-word') !== null) return;
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'property-edit';
+        edit.innerHTML = icon('edit-2');
+        edit.setAttribute('aria-label', `editar ${property.key}`);
+        edit.title = `editar ${property.key}`;
+        edit.addEventListener('click', (event) => {
+          event.stopPropagation();
           editInPlace(value, property.value, `valor de ${property.key}`, answer);
         });
+        value.append(edit);
       }
     } else {
       /*

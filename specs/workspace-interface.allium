@@ -390,6 +390,13 @@ contract PageFrontMatter {
         -- reader who wants to know what `proyecto` means would otherwise have to
         -- assign it to find out.
 
+    @invariant ALinkedAnswerRemainsEditable
+        -- When a property value is presented as one or more links, the same row
+        -- also presents a separate, visible editing control. Following a value
+        -- and changing the written answer are distinct gestures; turning every
+        -- word into navigation must never leave the answer impossible to revise
+        -- or extend.
+
     @invariant TheControlChangesTheQuestionNotTheFile
         -- What a control writes is the same `key:: value` line the projection
         -- has always written. A redesign of the header that changed the Markdown

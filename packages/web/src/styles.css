@@ -1382,6 +1382,27 @@ button { touch-action: manipulation; }
   cursor: pointer;
 }
 
+.property-edit {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 0.05rem;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.property-edit .icon {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.property-edit:hover,
+.property-edit:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
 .property-choose:hover,
 .property-choose:focus-visible {
   color: var(--accent);
