@@ -60,6 +60,7 @@ contract MaximallyFluidLocalFirstWorkspace {
 
 enum ReplicaAvailability { empty | hydrating | available }
 enum ContentOrigin { canonical | retained }
+enum RetainedValidation { unchecked | checking | current | divergent | unreachable }
 enum ConnectionState { online | offline }
 enum PendingStatus { local | sending | acknowledged | rejected | conflicted }
 enum SynchronisationStatus {
@@ -150,6 +151,7 @@ entity RetainedPage {
     -- not require the server.
     content: core/Page
     last_read_at: Timestamp
+    validation: RetainedValidation
 }
 
 entity SynchronisationState {
@@ -285,6 +287,8 @@ rule ShowRetainedPageAtOnce {
             origin: retained
         )
         replica.showing = retained
+        RetainedPage{replica: replica, page: page}.validation = checking
+        CanonicalValidationRequested(replica: replica, page: page)
         BackgroundSynchronisationBegins(replica: replica)
 
     @guidance
@@ -300,14 +304,81 @@ rule ShowRetainedPageAtOnce {
         -- opened for the fiftieth time, paid it fifty times. Over a tunnelled link that
         -- is the difference between a workspace and a form.
         --
-        -- What follows is not a fetch of the same page: it is the cheap question, asked
-        -- in the background, of what has happened since the cursor. See
-        -- PullOperationsAfterCursor.
+        -- The operation cursor remains the cheap continuous question. Opening a
+        -- retained page additionally validates that exact snapshot once: a cursor
+        -- may itself have been retained too early, and equal block counts do not make
+        -- equal prose. Until that answer arrives the page says that it is checking.
         --
         -- The replica seeded from retained content accepts gestures exactly as one
         -- seeded from a canonical delivery, so a page read yesterday can be written into
         -- today with no connection at all, and what is written leaves through the outbox
         -- like everything else.
+}
+
+rule ConfirmRetainedPageIsCurrent {
+    when: CanonicalValidationAnswered(replica, page, canonical)
+
+    let retained = RetainedPage{replica: replica, page: page}
+
+    requires: exists retained
+    requires: same_page_meaning(retained.content, canonical)
+
+    ensures:
+        retained.validation = current
+        replica.showing = canonical
+        RetainedSnapshotConfirmed(replica: replica, page: page)
+}
+
+rule ReplaceDivergentRetainedPageBeforeWriting {
+    when: CanonicalValidationAnswered(replica, page, canonical)
+
+    let retained = RetainedPage{replica: replica, page: page}
+
+    requires: exists retained
+    requires: not same_page_meaning(retained.content, canonical)
+    requires: not participant_is_editing(page)
+    requires: not exists pending_change_for_page(replica, page)
+
+    ensures:
+        retained.validation = divergent
+        PageDelivered(replica: replica, page: canonical, origin: canonical)
+        RetainedDivergenceAnnounced(replica: replica, page: page)
+
+    @guidance
+        -- This is cache validation at the threshold of a reading, not remote work
+        -- arriving underneath an established reading. A stale cache has no authored
+        -- claim of its own, so replacing it is correction rather than conflict.
+}
+
+rule PreserveWritingWhenRetainedPageDiverged {
+    when: CanonicalValidationAnswered(replica, page, canonical)
+
+    let retained = RetainedPage{replica: replica, page: page}
+
+    requires: exists retained
+    requires: not same_page_meaning(retained.content, canonical)
+    requires: participant_is_editing(page) or exists pending_change_for_page(replica, page)
+
+    ensures:
+        retained.validation = divergent
+        RetainedDivergenceRequiresAttention(replica: replica, page: page)
+        no PageDelivered(replica: replica, page: canonical, origin: canonical)
+
+    @guidance
+        -- Validation never erases text under a hand. The local draft remains visible
+        -- and recoverable while Vera says plainly that the corpus has another version.
+}
+
+rule SayWhenRetainedPageCouldNotBeValidated {
+    when: CanonicalValidationFailed(replica, page)
+
+    let retained = RetainedPage{replica: replica, page: page}
+
+    requires: exists retained
+
+    ensures:
+        retained.validation = unreachable
+        RetainedValidationFailureAnnounced(replica: replica, page: page)
 }
 
 rule DeliverCanonicallyWhatWasNeverRead {

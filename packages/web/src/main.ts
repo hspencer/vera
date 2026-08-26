@@ -45,6 +45,7 @@ import { is } from './bindings.ts';
 import { pageSearchResults } from './search-results.ts';
 import { createPage } from './pages.ts';
 import { changesGraphMeaning } from './invalidation.ts';
+import { sameReadablePage } from './page-validation.ts';
 import { behind, disagreements, said, type Behind, type Disagreement } from './behind.ts';
 import { askAboutDisagreements, type Resolved } from './reconcile.ts';
 import { forgetPositions, renderGraph, selectNode, type ThreadSettings } from './graph/render.ts';
@@ -700,18 +701,29 @@ function awaiting(title: string | null, since: number): Counting {
  * puesta sería mentir sobre el estado de la máquina para explicar de dónde salió un
  * texto.
  */
-function markShowing(text: HTMLElement, kept: boolean): void {
+function markShowing(
+  text: HTMLElement,
+  kept: boolean,
+  validation: 'checking' | 'current' | 'divergent' | 'unreachable' = 'checking',
+): void {
   text.querySelector('.page-kept')?.remove();
   if (!kept) return;
   const offline = !navigator.onLine;
   const said = document.createElement('p');
-  said.className = offline ? 'page-kept offline' : 'page-kept';
-  said.textContent = offline
-    ? 'de lo guardado en este aparato · sin conexión con el corpus'
-    : 'de lo guardado en este aparato';
-  said.title = offline
-    ? 'Se puede escribir igual. Lo que se escriba sale solo cuando vuelva la red, y entonces la página se pone al día.'
-    : 'Se lee desde aquí, sin esperar al corpus. Si algo cambió allá, la barra lo dice y lo traes tú.';
+  said.className = `page-kept ${offline ? 'offline' : ''} ${validation}`.trim();
+  if (offline || validation === 'unreachable') {
+    said.textContent = 'copia de este aparato · no se pudo verificar con el corpus';
+    said.title = 'Se puede seguir leyendo. Antes de escribir, conviene recuperar la conexión para comprobar que esta copia sigue vigente.';
+  } else if (validation === 'divergent') {
+    said.textContent = 'atención · esta copia difiere del corpus';
+    said.title = 'Vera conservó lo que está en el editor y no lo sustituyó. Hay otra versión canónica que debe reconciliarse.';
+  } else if (validation === 'current') {
+    said.textContent = 'copia local verificada con el corpus';
+    said.title = 'Esta página se abrió desde este aparato y Vera comprobó que coincide con la versión canónica.';
+  } else {
+    said.textContent = 'copia de este aparato · verificando con el corpus…';
+    said.title = 'La página ya se puede leer. Vera está comprobando que esta copia retenida siga siendo la canónica.';
+  }
   (text.querySelector('.page-header') ?? text.firstElementChild)?.append(said);
 }
 
@@ -748,6 +760,8 @@ async function openPage(
     /** Un renombrado corrige la dirección actual; no es una navegación nueva. */
     replaceRoute?: boolean;
     crossing?: { id: string; revision: string; content: string } | null;
+    /** Entrega canónica ya obtenida al validar una copia retenida. */
+    delivered?: PageView;
   } = {},
 ): Promise<void> {
   const thisOpening = ++opening;
@@ -803,6 +817,7 @@ async function openPage(
   /** Si esta página salió de lo retenido y no del corpus. */
   let fromKept = false;
   let needsEnrichment = false;
+  let validation: Promise<PageView> | null = null;
 
   /*
    * Lo que este aparato ya tenía, antes de preguntar nada.
@@ -820,7 +835,7 @@ async function openPage(
    * Lo que va detrás no es volver a pedir la página: es la pregunta barata de qué
    * ha pasado desde el cursor. Ver `catchUpWithCorpus`.
    */
-  let kept = here || isAnybody() ? null : await held.page(id);
+  let kept = options.delivered !== undefined || here || isAnybody() ? null : await held.page(id);
   /*
    * Una copia anterior al arreglo puede haber sobrevivido con el cursor ya
    * avanzado. El índice trae el número canónico de bloques y permite reconocer
@@ -839,10 +854,14 @@ async function openPage(
     if (slow !== null) clearTimeout(slow);
     fromKept = true;
     page = kept;
+    if (navigator.onLine) validation = api.readablePage(kept.id, delivery.signal);
   }
 
   try {
-    if (page === undefined) {
+    if (options.delivered !== undefined) {
+      page = options.delivered;
+      needsEnrichment = true;
+    } else if (page === undefined) {
       page = await api.readablePage(id, delivery.signal);
       needsEnrichment = true;
       // Leerla es lo que hace que se retenga. rule RetainDeliveredPage.
@@ -1002,6 +1021,58 @@ async function openPage(
   }
   showingKept = fromKept;
   markShowing(text, fromKept);
+
+  /*
+   * Una copia retenida abre primero, pero ya no pasa por canónica por silencio.
+   *
+   * El cursor incremental sigue siendo la forma barata de saber qué ocurrió
+   * mientras se lee. Al abrir, sin embargo, hay que validar una vez la página
+   * exacta: el cursor y el índice también pueden ser copias viejas, y comparar
+   * sólo la cantidad de bloques dejó pasar cambios de contenido con la misma
+   * forma. Ver ConfirmRetainedPageIsCurrent y las dos reglas de divergencia.
+   */
+  if (validation !== null) {
+    void validation.then((canonical) => {
+      if (opening !== thisOpening || workspace.activePage !== canonical.id || openView === null) return;
+      if (sameReadablePage(retained as PageView, canonical)) {
+        showingKept = false;
+        markShowing(text, true, 'current');
+        return;
+      }
+
+      void held.forgetPage(canonical.id);
+      const active = document.activeElement;
+      const writing = active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement ||
+        (active instanceof HTMLElement && active.isContentEditable);
+      const blockIds = new Set(openView.blocks.map((block) => block.stableId));
+      const pendingHere = (outbox?.pending() ?? []).some((one) => {
+        const change = one.change;
+        if ('page' in change && change.page === canonical.id) return true;
+        if ('block' in change && typeof change.block === 'string' && blockIds.has(change.block)) return true;
+        return false;
+      });
+
+      if (writing || pendingHere) {
+        markShowing(text, true, 'divergent');
+        announcing = {
+          state: 'attention-required',
+          message: 'dos versiones aquí',
+          title: 'La copia en la que escribes difiere del corpus. Vera conservó tu texto y no sustituyó ninguna versión.',
+        };
+        paintSync();
+        return;
+      }
+
+      void openPage(canonical.id, null, {
+        fromUrl: true,
+        replaceRoute: true,
+        delivered: canonical,
+      }).then(() => notice('La copia local estaba desactualizada; Vera trajo la versión canónica.'));
+    }).catch(() => {
+      if (opening !== thisOpening || workspace.activePage !== page.id) return;
+      markShowing(text, true, 'unreachable');
+    });
+  }
   if (needsEnrichment) {
     markEnrichment(text, 'working');
     void api.pageEnrichment(page.id, delivery.signal).then((complete) => {

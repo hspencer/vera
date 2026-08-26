@@ -7125,6 +7125,12 @@ html[data-working-slow='true']::after {
   border-left: 2px solid var(--text-dim);
 }
 
+.page-kept.divergent,
+.page-kept.unreachable {
+  color: var(--voice);
+  border-left-color: var(--voice);
+}
+
 /* La escritura ya está: esto califica solamente lo que Vera sigue derivando. */
 .page-enrichment {
   font-family: var(--font-ui);
