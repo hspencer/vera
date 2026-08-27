@@ -142,7 +142,9 @@ import {
   administrationOf,
   addSharedSpaceCriterion,
   changeGrantPermissions,
+  createSharedProposal,
   createSharedSpace,
+  decideSharedProposal,
   deleteInvitation,
   includeManualPage,
   inspectInvitation,
@@ -156,6 +158,7 @@ import {
   revokeInvitation,
   revokeParticipantSessions,
   sharedSpaceBySlug,
+  sharedProposal,
   sharedSpaces,
   updateSharedSpace,
   type SharedPermission,
@@ -1184,6 +1187,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     const scopedPermissions = String(scopedGrant?.permissions ?? '').split(',');
     const canEditScopedSpace = canReadScopedSpace && scopedParticipant !== null &&
       scopedPermissions.includes('edit');
+    const canContributeScopedSpace = canReadScopedSpace && scopedParticipant !== null &&
+      scopedPermissions.includes('contribute');
     const publicScopedSpace = canReadScopedSpace ? scopedSpace : null;
     const scopedPageIds = publicScopedSpace === null
       ? publicPageIds()
@@ -1207,8 +1212,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     );
     const publicSharedEdit = request.method === 'POST' && path === '/operations' &&
       publicScopedSpace !== null && canEditScopedSpace;
+    const publicSharedContribution = request.method === 'POST' && path === '/shared-proposals' &&
+      publicScopedSpace !== null && canContributeScopedSpace;
     if (publicAccess && request.method !== 'GET' && request.method !== 'HEAD' &&
-      !publicReadThroughBody && !publicAdmission && !publicSharedEdit) {
+      !publicReadThroughBody && !publicAdmission && !publicSharedEdit && !publicSharedContribution) {
       send(response, 405, { error: 'anybody sólo puede leer' });
       return;
     }
@@ -1234,6 +1241,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         /^\/invitations\/[^/]+$/.test(path) ||
         publicAdmission ||
         publicSharedEdit ||
+        publicSharedContribution ||
         publicSharedPath ||
         (publicScopedSpace !== null && path.startsWith('/p/')) ||
         canonicalPublication !== undefined ||
@@ -2050,6 +2058,49 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       if (space === null) { send(response, 404, { error: 'el espacio no existe' }); return; }
       const count = revokeParticipantSessions(store, space, decodeURIComponent(parts[4] ?? ''));
       send(response, 200, { status: 'revoked', sessions: count });
+      return;
+    }
+
+    if (request.method === 'POST' && path === '/shared-proposals') {
+      if (publicScopedSpace === null || scopedParticipant === null || !canContributeScopedSpace) {
+        send(response, 403, { error: 'esta identidad no puede proponer cambios aquí' }); return;
+      }
+      const chunks: Buffer[] = []; request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+          const originId = String(body['originId'] ?? '').trim();
+          const change = body['change'] as Change | undefined;
+          if (originId === '' || change === undefined) {
+            send(response, 400, { error: 'la propuesta necesita originId y change' }); return;
+          }
+          const page = pageTouchedBy(change, null, (block) => graph.block(block)?.page);
+          if (page === null || !pageBelongsToSharedSpace(graph, publicScopedSpace, page)) {
+            send(response, 403, { error: 'la propuesta debe actuar sobre una página de este espacio' }); return;
+          }
+          const proposal = createSharedProposal(store, publicScopedSpace, scopedParticipant, page, originId, change);
+          send(response, 201, { status: 'awaiting_review', proposal: proposal.id, page });
+        } catch (error) { send(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
+      }); return;
+    }
+
+    if (request.method === 'POST' && /^\/shared-spaces\/[^/]+\/proposals\/[^/]+\/(accept|reject)$/.test(path)) {
+      const blocked = ownerOnly(); if (blocked !== null) { send(response, 403, blocked); return; }
+      const parts = path.split('/'); const space = sharedSpaceBySlug(store, decodeURIComponent(parts[2] ?? ''));
+      if (space === null) { send(response, 404, { error: 'el espacio no existe' }); return; }
+      const proposal = sharedProposal(store, space, decodeURIComponent(parts[4] ?? ''));
+      if (proposal === null || proposal.status !== 'awaiting_review') {
+        send(response, 409, { error: 'la propuesta ya no está pendiente' }); return;
+      }
+      const decision = parts[5] === 'accept' ? 'accepted' : 'rejected';
+      if (decision === 'accepted') {
+        const outcome = graph.submitOperation({ originId: `proposal:${proposal.id}`,
+          participant: proposal.author as ParticipantId, channel: 'typed_text', change: proposal.change as Change });
+        if (outcome.status === 'rejected') { send(response, 422, { error: outcome.reason }); return; }
+        if (outcome.status === 'applied') recordOperation(store, graph, outcome.operation);
+      }
+      const changed = decideSharedProposal(store, space, proposal.id, graph.owner!, decision);
+      send(response, changed ? 200 : 409, changed ? { status: decision } : { error: 'la propuesta ya no está pendiente' });
       return;
     }
 
@@ -4706,6 +4757,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           graph: graph.name,
           access: publicAccess ? 'anybody' : 'owner',
           canEdit: publicAccess ? canEditScopedSpace : true,
+          canContribute: publicAccess ? canContributeScopedSpace : false,
           canViewOwner: !publicOrigin,
           entryPoint: publicAccess && siteEntry !== null && isPublicPage(siteEntry) ? siteEntry : null,
           /*

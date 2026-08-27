@@ -19,6 +19,13 @@ export interface SharedSpaceAdministration extends SharedSpace {
     status: 'pending' | 'redeemed' | 'revoked' | 'expired'; issuedAt: number; expiresAt: number }[];
   participants: { grant: string; participant: string; name: string; permissions: SharedPermission[];
     status: 'active' | 'revoked'; grantedAt: number; authenticators: number; activeSessions: number }[];
+  proposals: SharedProposal[];
+}
+
+export interface SharedProposal {
+  id: string; page: string; author: string; authorName: string; originId: string;
+  change: unknown; status: 'awaiting_review' | 'accepted' | 'rejected'; proposedAt: number;
+  reviewedBy: string | null; reviewedAt: number | null;
 }
 
 const secret = (prefix: string): string => `${prefix}${randomBytes(32).toString('base64url')}`;
@@ -153,7 +160,47 @@ export function administrationOf(store: Store, space: SharedSpace,
       permissions: String(row.permissions).split(',') as SharedPermission[], status: row.status,
       grantedAt: row.granted_at, authenticators: Number(row.authenticators), activeSessions: Number(row.active_sessions),
     }));
-  return { ...space, pageCount: effectivePages.length, effectivePages, invitations, participants };
+  const proposals = proposalsForSpace(store, space);
+  return { ...space, pageCount: effectivePages.length, effectivePages, invitations, participants, proposals };
+}
+
+export function proposalsForSpace(store: Store, space: SharedSpace): SharedProposal[] {
+  return (store.db.prepare(`SELECT q.id,q.page_id,q.author_id,p.name AS author_name,q.origin_id,
+      q.change_json,q.status,q.proposed_at,q.reviewed_by,q.reviewed_at
+    FROM shared_proposals q JOIN participants p ON p.id=q.author_id
+    WHERE q.space_id=? ORDER BY q.proposed_at DESC,q.id`).all(space.id) as any[]).map((row) => ({
+      id: row.id, page: row.page_id, author: row.author_id, authorName: row.author_name,
+      originId: row.origin_id, change: JSON.parse(row.change_json), status: row.status,
+      proposedAt: row.proposed_at, reviewedBy: row.reviewed_by, reviewedAt: row.reviewed_at,
+    }));
+}
+
+export function createSharedProposal(store: Store, space: SharedSpace, author: string,
+  page: string, originId: string, change: unknown): SharedProposal {
+  const proposalId = id('proposal'); const proposedAt = Date.now();
+  try {
+    store.db.prepare(`INSERT INTO shared_proposals
+      (id,space_id,page_id,author_id,origin_id,change_json,status,proposed_at)
+      VALUES (?,?,?,?,?,?,'awaiting_review',?)`)
+      .run(proposalId, space.id, page, author, originId, JSON.stringify(change), proposedAt);
+  } catch (error) {
+    const existing = proposalsForSpace(store, space).find((one) => one.author === author && one.originId === originId);
+    if (existing !== undefined) return existing;
+    throw error;
+  }
+  return { id: proposalId, page, author, authorName: '', originId, change,
+    status: 'awaiting_review', proposedAt, reviewedBy: null, reviewedAt: null };
+}
+
+export function sharedProposal(store: Store, space: SharedSpace, proposal: string): SharedProposal | null {
+  return proposalsForSpace(store, space).find((one) => one.id === proposal) ?? null;
+}
+
+export function decideSharedProposal(store: Store, space: SharedSpace, proposal: string,
+  owner: string, decision: 'accepted' | 'rejected'): boolean {
+  return Number(store.db.prepare(`UPDATE shared_proposals SET status=?,reviewed_by=?,reviewed_at=?
+    WHERE id=? AND space_id=? AND status='awaiting_review'`)
+    .run(decision, owner, Date.now(), proposal, space.id).changes) > 0;
 }
 
 export function revokeInvitation(store: Store, space: SharedSpace, invitation: string): boolean {

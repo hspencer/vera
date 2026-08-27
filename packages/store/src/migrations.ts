@@ -522,6 +522,27 @@ const composeSharedSpaceMembership: Migration = {
   },
 };
 
+/** 15 — propuestas editoriales atribuidas dentro de espacios compartidos. */
+const addSharedProposals: Migration = {
+  version: 15,
+  name: 'propuestas editoriales de espacios compartidos',
+  apply(db) {
+    db.exec(`CREATE TABLE IF NOT EXISTS shared_proposals (
+      id TEXT PRIMARY KEY,
+      space_id TEXT NOT NULL REFERENCES shared_spaces (id) ON DELETE CASCADE,
+      page_id TEXT NOT NULL REFERENCES pages (id) ON DELETE CASCADE,
+      author_id TEXT NOT NULL REFERENCES participants (id),
+      origin_id TEXT NOT NULL,
+      change_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('awaiting_review','accepted','rejected')),
+      proposed_at INTEGER NOT NULL,
+      reviewed_by TEXT REFERENCES participants (id),
+      reviewed_at INTEGER,
+      UNIQUE (space_id, author_id, origin_id)
+    ) STRICT;`);
+  },
+};
+
 /** 13 — conectivas con identidad e historia propias. */
 const addCrossings: Migration = {
   version: 13,
@@ -567,6 +588,7 @@ export const MIGRATIONS: readonly Migration[] = [
   addHumanAuthentication,
   addCrossings,
   composeSharedSpaceMembership,
+  addSharedProposals,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

@@ -164,6 +164,9 @@ interface SharedAdministration {
     status: 'pending' | 'redeemed' | 'revoked' | 'expired'; issuedAt: number; expiresAt: number }[];
   participants: { grant: string; participant: string; name: string; permissions: SharedPermission[];
     status: 'active' | 'revoked'; grantedAt: number; authenticators: number; activeSessions: number }[];
+  proposals: { id: string; page: string; author: string; authorName: string; originId: string;
+    change: Record<string, unknown>; status: 'awaiting_review' | 'accepted' | 'rejected';
+    proposedAt: number; reviewedBy: string | null; reviewedAt: number | null }[];
 }
 
 async function sharingRequest(path: string, method = 'GET', body?: unknown): Promise<any> {
@@ -411,10 +414,34 @@ function spaceAdministration(host: HTMLElement, space: SharedAdministration, pag
     } catch (error) { saved.textContent = error instanceof Error ? error.message : 'No se pudo guardar.'; save.disabled = false; }
   })());
   body.append(count, visit, form);
-  if (!isPublic) body.append(participants(host, space), invitations(host, space), invitationForm(host, space));
+  if (!isPublic) body.append(proposals(host, space, pages), participants(host, space), invitations(host, space), invitationForm(host, space));
   body.append(effectivePages(space, pages), criteriaAdministration(host, space), manualPagesAdministration(host, space, pages));
   card.append(title, body);
   return card;
+}
+
+function proposals(host: HTMLElement, space: SharedAdministration, pages: PageSummary[]): HTMLElement {
+  const box = document.createElement('div'); box.className = 'sharing-group';
+  const pending = space.proposals.filter((proposal) => proposal.status === 'awaiting_review');
+  const heading = document.createElement('h4'); heading.textContent = `Propuestas pendientes · ${pending.length}`; box.append(heading);
+  const list = document.createElement('ul'); list.className = 'sharing-list';
+  for (const proposal of pending) {
+    const row = document.createElement('li');
+    const page = pages.find((candidate) => candidate.id === proposal.page)?.title ?? proposal.page;
+    const kind = String(proposal.change.kind ?? 'cambio');
+    const text = document.createElement('span');
+    text.textContent = `${proposal.authorName} propone ${kind} en ${page}`;
+    const detail = document.createElement('small'); detail.textContent = new Date(proposal.proposedAt).toLocaleString(); text.append(detail);
+    const accept = document.createElement('button'); accept.type = 'button'; accept.textContent = 'Aceptar';
+    accept.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/proposals/${encodeURIComponent(proposal.id)}/accept`, 'POST')
+      .then(() => drawSharing(host));
+    const reject = document.createElement('button'); reject.type = 'button'; reject.textContent = 'Rechazar';
+    reject.onclick = () => void sharingRequest(`/shared-spaces/${encodeURIComponent(space.slug)}/proposals/${encodeURIComponent(proposal.id)}/reject`, 'POST')
+      .then(() => drawSharing(host));
+    row.append(text, accept, reject); list.append(row);
+  }
+  if (pending.length === 0) { const empty = document.createElement('li'); empty.textContent = 'No hay propuestas esperando revisión.'; list.append(empty); }
+  box.append(list); return box;
 }
 
 function effectivePages(space: SharedAdministration, pages: PageSummary[]): HTMLElement {

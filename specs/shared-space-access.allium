@@ -877,6 +877,7 @@ rule OwnerAcceptsSharedProposal {
     requires: proposal.status = awaiting_review
 
     ensures:
+        applied_atomically(proposal.change, attributed_to: proposal.author)
         proposal.status = accepted
         proposal.reviewed_by = owner
         proposal.reviewed_at = now
@@ -1520,7 +1521,7 @@ surface FederatedLoginBoundary {
 -- Open Questions
 ------------------------------------------------------------
 
-open question "Does accepting a contribution apply its changes as one attributed batch, and what structural subsets may the owner accept?"
+open question "Should a later editorial surface let the owner accept structural subsets of a contribution, or must every proposal remain indivisible?"
 open question "May one person retain several independent guest identities in the same graph before explicitly linking them?"
 open question "What event requires a fresh authenticator gesture rather than an existing session — destructive editing, publication, grant administration, or all three?"
 open question "How does a federated Vera rotate its identity key without breaking durable bindings at remote shared spaces?"

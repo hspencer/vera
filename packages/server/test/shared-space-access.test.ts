@@ -305,6 +305,43 @@ describe('primer corte vertical de espacios compartidos', () => {
     assert.equal(denied.status, 405);
   });
 
+  it('guarda una contribución para revisión y sólo la aceptación cambia el corpus', async () => {
+    const inside = running.vera.graph.pageTitled('Dentro')!;
+    const block = await write({ kind: 'create_block', page: inside.id, parent: null, position: 0, content: 'Original' });
+    const issued = await call('/shared-spaces/doctorado/invitations', 'POST', {
+      permissions: ['read', 'contribute'],
+    });
+    const redeemed = await call(`/invitations/${encodeURIComponent(issued.json['id'])}/redeem`, 'POST', {
+      secret: issued.json['secret'], name: 'Colaboradora editorial',
+    });
+    const session = 'vera_session_colaboradora_editorial'; const now = Date.now();
+    running.vera.store.db.prepare(`INSERT INTO human_sessions
+      (id,participant_id,proof_digest,status,began_at,expires_at,last_seen_at)
+      VALUES (?,?,?,'active',?,?,?)`).run('session:colaboradora-editorial', redeemed.json['participant'],
+        digestOf(session), now, now + 60_000, now);
+    const proposed = await fetch(`${publicBase}/shared-proposals`, {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: `vera_session=${session}`,
+        referer: `${publicBase}/s/doctorado/p/Dentro` },
+      body: JSON.stringify({ originId: 'shared:proposal:1', change: {
+        kind: 'edit_block', block, content: 'Propuesto',
+      } }),
+    });
+    const proposalBody = await proposed.text();
+    assert.equal(proposed.status, 201, proposalBody);
+    const proposal = JSON.parse(proposalBody) as any;
+    assert.equal(running.vera.graph.block(block)?.content, 'Original');
+
+    let admin = await call('/shared-spaces');
+    let space = (admin.json['spaces'] as any[]).find((one) => one.slug === 'doctorado');
+    assert.equal(space.proposals.find((one: any) => one.id === proposal.proposal).authorName, 'Colaboradora editorial');
+    const accepted = await call(`/shared-spaces/doctorado/proposals/${encodeURIComponent(proposal.proposal)}/accept`, 'POST');
+    assert.equal(accepted.status, 200, JSON.stringify(accepted.json));
+    assert.equal(running.vera.graph.block(block)?.content, 'Propuesto');
+    assert.equal(running.vera.graph.operations().at(-1)?.submission.submittedBy, redeemed.json['participant']);
+    admin = await call('/shared-spaces'); space = (admin.json['spaces'] as any[]).find((one) => one.slug === 'doctorado');
+    assert.equal(space.proposals.find((one: any) => one.id === proposal.proposal).status, 'accepted');
+  });
+
   it('administra criterio, invitaciones, participantes y revocaciones', async () => {
     const pending = await call('/shared-spaces/doctorado/invitations', 'POST', { permissions: ['read'], intendedContact: 'Ada' });
     let admin = await call('/shared-spaces');

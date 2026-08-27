@@ -363,6 +363,20 @@ CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5 (
     tokenize = 'unicode61 remove_diacritics 2'
 );
 
+CREATE TABLE IF NOT EXISTS shared_proposals (
+  id TEXT PRIMARY KEY,
+  space_id TEXT NOT NULL REFERENCES shared_spaces (id) ON DELETE CASCADE,
+  page_id TEXT NOT NULL REFERENCES pages (id) ON DELETE CASCADE,
+  author_id TEXT NOT NULL REFERENCES participants (id),
+  origin_id TEXT NOT NULL,
+  change_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('awaiting_review','accepted','rejected')),
+  proposed_at INTEGER NOT NULL,
+  reviewed_by TEXT REFERENCES participants (id),
+  reviewed_at INTEGER,
+  UNIQUE (space_id, author_id, origin_id)
+) STRICT;
+
 CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5 (
     title,
     content = 'pages',
