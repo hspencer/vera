@@ -1242,7 +1242,7 @@ function continueBackwards(from: string, keptScroll: number): void {
         // Cada tramo se dibuja con el mismo outliner que el día de arriba: se
         // edita igual, se pliega igual y habla con las mismas teclas. Un diario
         // que sólo se pudiera leer hacia atrás sería un archivo, no un cuaderno.
-        renderOutliner(slice, older, callbacksFor(older), null, null, isReadOnly());
+        renderOutliner(slice, older, callbacksForJournalSlice(older, slice), null, null, isReadOnly());
         text.append(slice);
         journalDepth += 1;
         if (journalDepth >= refill) settle();
@@ -1263,6 +1263,31 @@ function continueBackwards(from: string, keptScroll: number): void {
   journalPull = pull;
   text.addEventListener('scroll', pull, { passive: true });
   pull();
+}
+
+/**
+ * Un día anterior comparte pantalla con el día abierto, no su identidad activa.
+ *
+ * Los callbacks generales redibujan `workspace.activePage`, que es correcto para
+ * la página superior y falso para cada tramo añadido debajo. Guardar allí abría
+ * de nuevo el día superior y desmontaba precisamente el tramo que se estaba
+ * editando. Cada tramo vuelve a pedir y redibuja sólo su propia página, sin
+ * cambiar URL, página activa ni profundidad del diario.
+ */
+function callbacksForJournalSlice(page: PageView, slice: HTMLElement): OutlinerCallbacks {
+  const callbacks = callbacksFor(page);
+  callbacks.onReload = (focus) => {
+    void api.page(page.id).then((fresh) => {
+      if (!slice.isConnected) return;
+      const text = $('#text');
+      const viewport = holdTextViewport(text);
+      renderOutliner(slice, fresh, callbacksForJournalSlice(fresh, slice), focus, null, isReadOnly());
+      restoreTextViewport(text, viewport);
+    }).catch((error) => {
+      notice(`No se pudo actualizar ${page.title}: ${error instanceof Error ? error.message : 'error'}.`);
+    });
+  };
+  return callbacks;
 }
 
 /**

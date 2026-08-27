@@ -305,6 +305,11 @@ surface DailyLogView {
         -- From a day one can see what was inscribed out of it. A testimony that
         -- cannot show what it produced invites the belief that nothing was done
         -- with it.
+
+    @guarantee AContinuousJournalKeepsEachDaysEditingContext
+        -- When several days are read together, editing an earlier day redraws
+        -- that day in place. Saving never navigates to the leading day, changes
+        -- the address, or discards the reader's position in the continuous log.
 }
 
 ------------------------------------------------------------
