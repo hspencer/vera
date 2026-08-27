@@ -156,6 +156,40 @@ export interface CompleteOptions {
   choices?: readonly Choice[];
   /** Se llama cuando se salió sin cambiar nada, para deshacer lo que se preparó. */
   onCancel?: () => void;
+  /**
+   * Edita una respuesta dentro de una lista escrita en el mismo campo.
+   *
+   * `concepto` guarda varias respuestas separadas por comas. El autocompletado
+   * tiene que buscar y sustituir sólo la respuesta donde está el cursor: tratar
+   * `diseño, memoria` como una consulta única no puede encontrar ninguna de las
+   * dos y escoger una sugerencia no debe borrar la otra.
+   */
+  separatedBy?: string;
+}
+
+/** El trozo separado que se está escribiendo en un campo de una línea. */
+export function separatedQuery(value: string, cursor: number, separator: string): string {
+  const before = value.lastIndexOf(separator, Math.max(0, cursor - 1));
+  const after = value.indexOf(separator, cursor);
+  return value.slice(before + separator.length, after < 0 ? value.length : after).trim();
+}
+
+/** Sustituye sólo el trozo del cursor y conserva las demás respuestas. */
+export function replaceSeparated(
+  value: string,
+  cursor: number,
+  choice: string,
+  separator: string,
+): { value: string; cursor: number } {
+  const before = value.lastIndexOf(separator, Math.max(0, cursor - 1));
+  const after = value.indexOf(separator, cursor);
+  const start = before < 0 ? 0 : before + separator.length;
+  const end = after < 0 ? value.length : after;
+  const prefix = value.slice(0, start);
+  const suffix = value.slice(end);
+  const leading = start > 0 ? ' ' : '';
+  const next = `${prefix}${leading}${choice.trim()}${suffix}`;
+  return { value: next, cursor: prefix.length + leading.length + choice.trim().length };
 }
 
 export function completeInPlace(
@@ -190,7 +224,8 @@ export function completeInPlace(
   host.innerHTML = '';
   host.append(field);
   field.focus();
-  field.select();
+  if (options.separatedBy === undefined) field.select();
+  else field.setSelectionRange(field.value.length, field.value.length);
 
   let choices: readonly Choice[] = options.choices ?? [];
   /** Si todavía no se ha tecleado nada desde que se abrió. Ver `matching`. */
@@ -226,7 +261,13 @@ export function completeInPlace(
      * actual— justo cuando alguien la abre para cambiarlo. Se ofrece el
      * vocabulario entero, y en cuanto se teclea algo vuelve a filtrarse.
      */
-    const query = fresh ? '' : titleKey(field.value);
+    const query = fresh
+      ? ''
+      : titleKey(
+          options.separatedBy === undefined
+            ? field.value
+            : separatedQuery(field.value, field.selectionStart ?? field.value.length, options.separatedBy),
+        );
     const missing = choices.filter((one) => one.first === true);
     if (query === '') {
       const rest = choices.filter((one) => one.first !== true);
@@ -298,7 +339,7 @@ export function completeInPlace(
       // habría cerrado el campo y guardado lo que hubiera escrito.
       item.addEventListener('mousedown', (event) => {
         event.preventDefault();
-        finish(choice.value);
+        finishChoice(choice.value);
       });
       list.append(item);
     }
@@ -330,6 +371,20 @@ export function completeInPlace(
       if (!applied) host.innerHTML = held;
     });
   }
+
+  const finishChoice = (choice: string): void => {
+    if (options.separatedBy === undefined) {
+      finish(choice);
+      return;
+    }
+    const replaced = replaceSeparated(
+      field.value,
+      field.selectionStart ?? field.value.length,
+      choice,
+      options.separatedBy,
+    );
+    finish(replaced.value);
+  };
 
   const cancel = (): void => {
     if (settled) return;
@@ -373,13 +428,27 @@ export function completeInPlace(
     }
     if (event.key === 'Enter') {
       event.preventDefault();
-      finish(shown[highlighted]?.value ?? field.value);
+      const chosen = shown[highlighted]?.value;
+      if (chosen === undefined) finish(field.value);
+      else finishChoice(chosen);
       return;
     }
     if (event.key === 'Tab' && highlighted >= 0) {
       // Completar sin cerrar: se rellena el campo y se sigue.
       event.preventDefault();
-      field.value = shown[highlighted]?.value ?? field.value;
+      const chosen = shown[highlighted]?.value;
+      if (chosen !== undefined && options.separatedBy !== undefined) {
+        const replaced = replaceSeparated(
+          field.value,
+          field.selectionStart ?? field.value.length,
+          chosen,
+          options.separatedBy,
+        );
+        field.value = replaced.value;
+        field.setSelectionRange(replaced.cursor, replaced.cursor);
+      } else {
+        field.value = chosen ?? field.value;
+      }
       highlighted = -1;
       draw();
       return;
@@ -411,4 +480,3 @@ export function completeInPlace(
     },
   };
 }
-

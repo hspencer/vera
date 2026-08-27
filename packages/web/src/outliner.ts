@@ -3300,8 +3300,9 @@ export function renderOutliner(
      */
     const answers = answersIn(property.value);
     const several = answers.length > 1;
+    const openVocabulary = property.key === corpusNames().topic;
 
-    if (isChoosable(offered) || several) {
+    if (isChoosable(offered) || several || openVocabulary) {
       /*
        * Un valor de vocabulario se contesta eligiendo y se sigue pulsando, y son
        * dos cosas distintas con dos sitios distintos.
@@ -3415,7 +3416,15 @@ export function renderOutliner(
         edit.title = `editar ${property.key}`;
         edit.addEventListener('click', (event) => {
           event.stopPropagation();
-          editInPlace(value, property.value, `valor de ${property.key}`, answer);
+          const completion = {
+            initial: property.value,
+            choices: offered.map((option) => ({
+              value: option.value,
+              hint: option.uses === 1 ? '1 página' : `${option.uses} páginas`,
+            })),
+            ...(openVocabulary ? { separatedBy: ',' } : {}),
+          };
+          completeInPlace(value, `valor de ${property.key}`, answer, completion);
         });
         value.append(edit);
       }

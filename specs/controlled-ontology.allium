@@ -877,6 +877,12 @@ surface OntologyCuration {
         -- vocabulary that can only grow through a curation screen stops growing,
         -- and what stops with it is the labelling.
 
+    @guarantee ACompoundVocabularyEditsOneWordAtATime
+        -- When one property carries several vocabulary words, editing and
+        -- autocomplete act on the word beside the caret. Choosing `memoria` in
+        -- `diseño, mem, soberanía` preserves the other two answers. The whole
+        -- stored value remains visible and can still be rewritten deliberately.
+
     @guarantee AnUnclassifiedPageReadsAsANote
         -- A page with no confirmed semantic type reads as a note. That reading
         -- is not stored: no assignment is created, no participant is credited
