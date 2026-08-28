@@ -126,6 +126,12 @@ const sight = (overrides: Partial<Sight> = {}): Sight => ({
 });
 
 describe('lo que se escribe se ve', () => {
+  it('reserva arriba la toolbar además del margen tipográfico', () => {
+    assert.equal(scrollDeltaFor(sight({
+      top: -20, height: 900, caret: 72, topInset: 56,
+    })), -4);
+  });
+
   it('lo que ya se ve no se mueve', () => {
     // Y es la respuesta corriente. Un editor que recoloca la página en cada
     // pulsación es más difícil de leer que uno que la deja quieta.

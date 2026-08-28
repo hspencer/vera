@@ -26,3 +26,4 @@ objects/
 # anidados y jamás forman parte del producto.
 .claude/
 .codex/
+.allium-loop/

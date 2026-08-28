@@ -38,6 +38,8 @@ import {
 } from './api.ts';
 
 import { scrollDeltaFor, sourceOffsetFor } from './caret.ts';
+import { parseOutlineClipboard } from './outline-clipboard.ts';
+import { selectedSiblingMove } from './selection-movement.ts';
 import { completeInPlace, editInPlace, placeNear, type Choice } from './fields.ts';
 import { governingKind, kindSays, renderGoverning } from './governing-table.ts';
 import { answerQueryBlock } from './query-block.ts';
@@ -4289,9 +4291,17 @@ export function renderOutliner(
             },
           },
           {
-            label: 'Mover…',
+            label: picked.has(node.block.stableId) && picked.size > 1 ? 'Mover selección…' : 'Mover…',
             icon: 'corner-up-right',
             run: () => {
+              if (picked.has(node.block.stableId) && picked.size > 1) {
+                openBlockMenu(bullet, [[
+                  { label: 'Arriba', icon: 'arrow-up', run: () => void movePickedVertically(true) },
+                  { label: 'Abajo', icon: 'arrow-down', run: () => void movePickedVertically(false) },
+                  { label: 'A otra página…', icon: 'search', run: () => void movePickedToPage() },
+                ]]);
+                return;
+              }
               const near = neighbourhoods.get(node.block.stableId);
               const hasNextSibling = near !== undefined && [...neighbourhoods.values()].some(
                 (candidate) => candidate.parent === near.parent && candidate.index === near.index + 1,
@@ -4695,6 +4705,60 @@ export function renderOutliner(
     return visible.filter((id) => picked.has(id) && !under(id));
   };
 
+  /** Sube o baja un tramo de hermanos sin alterar su orden ni sus subárboles. */
+  const movePickedVertically = async (up: boolean): Promise<void> => {
+    const roots = pickedRoots();
+    if (roots.length === 0) return;
+    const parent = parentOf(roots[0] ?? '');
+    if (roots.some((id) => parentOf(id) !== parent)) {
+      toast('para mover un tramo, sus raíces deben ser hermanas');
+      return;
+    }
+    const move = selectedSiblingMove(
+      childrenOf(parent).map((block) => block.stableId),
+      roots,
+      up,
+    );
+    if (move === null) {
+      toast(up ? 'el tramo ya está arriba' : 'el tramo ya está abajo');
+      return;
+    }
+    if (!(await submitQuietly({
+      kind: 'move_block',
+      block: move.block,
+      page: page.id,
+      parent,
+      position: move.position,
+    }))) return;
+    callbacks.onReload(null);
+  };
+
+  /** Lleva las raíces escogidas, en orden, al final de otra página. */
+  const movePickedToPage = async (): Promise<void> => {
+    const roots = pickedRoots();
+    if (roots.length === 0) return;
+    let destination: PageSummary | null;
+    try {
+      destination = await chooseMovePage(page.id);
+    } catch {
+      toast('no se pudieron traer las páginas');
+      return;
+    }
+    if (destination === null) return;
+    for (const id of roots) {
+      if (!(await submitQuietly({
+        kind: 'move_block',
+        block: id,
+        page: destination.id,
+        parent: null,
+        position: Number.MAX_SAFE_INTEGER,
+      }))) return;
+    }
+    clearPicked();
+    callbacks.onChanged();
+    callbacks.onOpen(destination.id, 'searched');
+  };
+
   /**
    * Indentar o desindentar lo escogido, con la misma semantica que un bloque suelto.
    *
@@ -5020,6 +5084,12 @@ export function renderOutliner(
     if (event.key === 'Escape' && picked.size > 0) {
       event.preventDefault();
       clearPicked();
+      return;
+    }
+    if (event.altKey && event.shiftKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      if (picked.size === 0) return;
+      event.preventDefault();
+      void movePickedVertically(event.key === 'ArrowUp');
       return;
     }
     if (event.shiftKey && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
@@ -6193,7 +6263,9 @@ function keepCaretInSight(editor: HTMLTextAreaElement, at: number): void {
   const frame = scroller.getBoundingClientRect();
   const line = lineHeightOf(editor);
   const margin = Math.max(16, line);
-  const tall = box.height + margin * 2 > view;
+  const toolbar = document.querySelector<HTMLElement>('.format-bar');
+  const topInset = toolbar === null ? margin : toolbar.getBoundingClientRect().height + 12;
+  const tall = box.height + topInset + margin > view;
 
   const delta = scrollDeltaFor({
     top: box.top - frame.top,
@@ -6202,6 +6274,7 @@ function keepCaretInSight(editor: HTMLTextAreaElement, at: number): void {
     line,
     view,
     margin,
+    topInset,
   });
   if (delta !== 0) scroller.scrollTop += delta;
 }
@@ -6857,9 +6930,64 @@ function startEditing(
 
   editor.addEventListener('paste', (event) => {
     const files = admissibleFiles(event.clipboardData?.files ?? null);
-    if (files.length === 0) return;
+    if (files.length > 0) {
+      event.preventDefault();
+      void attach(files);
+      return;
+    }
+
+    const outline = parseOutlineClipboard(event.clipboardData?.getData('text/plain') ?? '');
+    if (outline === null) return;
     event.preventDefault();
-    void attach(files);
+
+    void (async () => {
+      const head = editor.value.slice(0, editor.selectionStart);
+      const tail = editor.value.slice(editor.selectionEnd);
+      const firstContent = `${head}${outline[0]?.content ?? ''}${tail}`;
+      const edited = await api.submit({
+        kind: 'edit_block',
+        block: block.stableId,
+        content: firstContent,
+      });
+      if (edited.status === 'rejected') {
+        toast(`no se pudo pegar: ${edited.reason}`);
+        return;
+      }
+
+      const parentAtDepth: string[] = [block.stableId];
+      const nextPosition = new Map<string | null, number>([
+        [context.near.parent, context.near.index + 1],
+        [block.stableId, context.children.length],
+      ]);
+      let lastCreated = block.stableId;
+
+      for (const item of outline.slice(1)) {
+        const parent = item.depth === 0 ? context.near.parent : parentAtDepth[item.depth - 1] ?? null;
+        if (item.depth > 0 && parent === null) {
+          toast('no se pudo pegar: la jerarquía no tiene padre');
+          return;
+        }
+        const position = nextPosition.get(parent) ?? 0;
+        const created = await api.submit({
+          kind: 'create_block',
+          page: context.page,
+          parent,
+          position,
+          content: item.content,
+        });
+        if (created.status === 'rejected') {
+          toast(`pegado incompleto: ${created.reason}`);
+          callbacks.onReload(null);
+          return;
+        }
+        nextPosition.set(parent, position + 1);
+        nextPosition.set(created.subjectId, 0);
+        parentAtDepth[item.depth] = created.subjectId;
+        parentAtDepth.length = item.depth + 1;
+        lastCreated = created.subjectId;
+      }
+      callbacks.onReload({ block: lastCreated, at: Number.MAX_SAFE_INTEGER });
+    })().catch(() => toast('no se pudo pegar: sin conexión con el servidor'));
   });
 
   editor.addEventListener('dragover', (event) => {
@@ -6907,6 +7035,12 @@ function startEditing(
   editor.addEventListener('keyup', (event) => {
     if (!MOVES_CARET.has(event.key)) return;
     keepCaretInSight(editor, editor.selectionStart);
+  });
+
+  editor.addEventListener('select', () => {
+    keepCaretInSight(editor, editor.selectionDirection === 'backward'
+      ? editor.selectionStart
+      : editor.selectionEnd);
   });
 
   editor.addEventListener('blur', () => {

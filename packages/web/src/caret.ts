@@ -138,6 +138,8 @@ export interface Sight {
   view: number;
   /** Lo que se respeta arriba, para no dejar el texto pegado al canto. */
   margin: number;
+  /** Zona superior ocupada por controles flotantes o persistentes. */
+  topInset?: number;
 }
 
 /**
@@ -165,9 +167,10 @@ const COMFORT = 1 / 3;
  */
 export function scrollDeltaFor(sight: Sight): number {
   const { top, height, caret, line, view, margin } = sight;
+  const topMargin = Math.max(margin, sight.topInset ?? 0);
 
-  if (height + margin * 2 <= view) {
-    if (top < margin) return top - margin;
+  if (height + topMargin + margin <= view) {
+    if (top < topMargin) return top - topMargin;
     const bottom = top + height;
     if (bottom > view - margin) return bottom - (view - margin);
     return 0;
@@ -178,7 +181,7 @@ export function scrollDeltaFor(sight: Sight): number {
   // de la banda y no al centro: corregir de más es un salto que nadie pidió.
   const comfort = Math.max(margin, view * COMFORT);
   const y = top + caret;
-  if (y < margin) return y - margin;
+  if (y < topMargin) return y - topMargin;
   if (y + line > view - comfort) return y + line - (view - comfort);
   return 0;
 }
