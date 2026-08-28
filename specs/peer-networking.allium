@@ -1,0 +1,194 @@
+-- allium: 3
+-- peer-networking.allium
+
+-- Scope: Horizontal connectivity between intermittently available Vera instances
+-- Includes: Cryptographic peer identity, invitations, local and Internet discovery,
+--   direct connection, bounded relay fallback and exchange of authorised work
+-- Excludes:
+--   - Shared-space permissions and human identity (shared-space-access.allium)
+--   - Meaning, ordering and review of exchanged changes
+--     (federated-sharing.allium and offline-reconciliation.allium)
+--   - Transport, NAT traversal and packaging implementation
+-- Dependencies: Graph and Participant are governed by core.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract HorizontalPeerNetworking {
+    establish_identity: (instance: VeraPeer) -> PeerIdentity
+    invite: (sender: VeraPeer, recipient: PeerIdentity, scope: SharedScope) -> PeerInvitation
+    discover: (seeker: VeraPeer, recipient: PeerIdentity) -> Reachability
+    connect: (initiator: VeraPeer, recipient: PeerIdentity) -> PeerConnection
+    exchange: (connection: PeerConnection, scope: SharedScope, work: List<ExchangeEnvelope>) -> PeerExchange
+
+    @invariant IdentityDoesNotDependOnAnAddress
+        -- A Vera instance remains the same peer when its IP address, network or
+        -- public reachability changes. Its stable identity is cryptographic, not
+        -- a domain name, account at a beacon or mutable network location.
+
+    @invariant InvitationPrecedesDiscovery
+        -- Global discovery is not a directory of Vera people or corpora. A peer
+        -- looks for another peer only after receiving an explicit invitation or
+        -- otherwise learning its stable identity through an authorised channel.
+
+    @invariant DirectIsPreferredAndRelayIsEquivalent
+        -- Peers attempt a direct encrypted connection first. When domestic
+        -- network boundaries prevent it, a bounded relay may carry the same
+        -- exchange without gaining authority or changing its meaning.
+
+    @invariant OnlyAuthorisedScopesTravel
+        -- Connectivity never implies access to a graph. Every exchange names a
+        -- delimited shared scope already authorised by Vera, and carries no work
+        -- from outside that scope.
+
+    @invariant IntermittenceDoesNotLoseAuthoredWork
+        -- A peer may disappear and return without losing locally durable work.
+        -- Exchange resumes from known progress and repeated envelopes remain
+        -- idempotent rather than creating duplicate changes.
+}
+
+contract BeaconAssistance {
+    announce: (beacon: Beacon, peer: VeraPeer) -> Reachability
+    locate: (beacon: Beacon, seeker: VeraPeer, recipient: PeerIdentity) -> Reachability
+    relay: (beacon: Beacon, connection: PeerConnection, envelopes: List<ExchangeEnvelope>) -> RelayedPassage
+
+    @invariant TheBeaconHelpsPeersFindNotKnowEachOther
+        -- A beacon exposes no browsable participant, graph or content directory.
+        -- It answers only a peer that already names the intended recipient.
+
+    @invariant TheBeaconIsNeitherCorpusNorAuthority
+        -- A beacon does not own a graph, grant permissions, establish human
+        -- identity, interpret operations or become the canonical history.
+
+    @invariant RelayCannotReadOrRewrite
+        -- Content and authorisation evidence are protected end to end. A relay
+        -- can forward, limit or refuse passage but cannot read, forge, reorder as
+        -- valid, or attribute an envelope to another peer.
+
+    @invariant BeaconsArePluralAndReplaceable
+        -- No particular beacon is required by the protocol. An installation may
+        -- know several independently operated beacons and retain useful peer
+        -- knowledge when one disappears.
+
+    @invariant AssistanceIsBounded
+        -- Discovery records expire and relay use is bounded. Operating a beacon
+        -- never silently turns it into indefinite storage for another person's
+        -- knowledge graph.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum PeerAvailability { unknown | local | directly_reachable | relay_reachable | unavailable }
+enum ConnectionPath { local_network | direct_internet | relayed }
+enum ConnectionStatus { negotiating | connected | interrupted | ended }
+enum ExchangeStatus { pending | transferring | acknowledged | interrupted | rejected }
+
+------------------------------------------------------------
+-- Entities and Values
+------------------------------------------------------------
+
+value PeerIdentity {
+    public_key: String
+}
+
+value SharedScope {
+    graph: core/Graph
+    scope_id: String
+}
+
+entity VeraPeer {
+    identity: PeerIdentity
+    participant: core/Participant
+    known_beacons: List<Beacon>
+    connections: PeerConnection with local_peer = this
+}
+
+entity Beacon {
+    identity: PeerIdentity
+    address: String
+    operator: String
+}
+
+entity PeerInvitation {
+    sender: VeraPeer
+    recipient: PeerIdentity
+    scope: SharedScope
+    capability: String
+    expires_at: Timestamp
+}
+
+entity Reachability {
+    subject: PeerIdentity
+    availability: PeerAvailability
+    observed_at: Timestamp
+    expires_at: Timestamp
+}
+
+entity PeerConnection {
+    local_peer: VeraPeer
+    remote_peer: PeerIdentity
+    path: ConnectionPath
+    status: ConnectionStatus
+    scopes: List<SharedScope>
+}
+
+entity ExchangeEnvelope {
+    envelope_id: String
+    sender: PeerIdentity
+    scope: SharedScope
+    encrypted_payload: String
+    signature: String
+}
+
+entity PeerExchange {
+    connection: PeerConnection
+    scope: SharedScope
+    envelopes: List<ExchangeEnvelope>
+    status: ExchangeStatus
+}
+
+entity RelayedPassage {
+    beacon: Beacon
+    connection: PeerConnection
+    envelope_ids: List<String>
+    expires_at: Timestamp
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant AnExchangeUsesAnAuthorisedConnectionScope {
+    for exchange in PeerExchanges:
+        exchange.scope in exchange.connection.scopes
+}
+
+invariant EveryEnvelopeStaysWithinItsExchangeScope {
+    for exchange in PeerExchanges:
+        exchange.envelopes.all(envelope => envelope.scope = exchange.scope)
+}
+
+invariant EnvelopeIdentityIsStableWithinItsSender {
+    for a in ExchangeEnvelopes:
+        for b in ExchangeEnvelopes:
+            a != b implies a.sender != b.sender or a.envelope_id != b.envelope_id
+}
+
+invariant RelayedPassageCarriesOnlyNamedEnvelopes {
+    for passage in RelayedPassages:
+        passage.envelope_ids.all(id => passage.connection.status = connected)
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "How is one person's durable Vera identity related to several device peer identities without making a beacon an account authority?"
+open question "Should an optional custodian retain end-to-end encrypted envelopes while both peers are offline, and under what explicit limit and consent?"
+open question "Which metadata must a beacon retain for abuse prevention, and for how little time, without creating a social graph?"
+open question "When a shared scope is withdrawn, how quickly must beacons forget its reachability and relays reject its pending passage?"
