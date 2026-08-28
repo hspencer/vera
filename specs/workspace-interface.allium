@@ -159,6 +159,12 @@ contract NativeMarkdownEditing {
         -- with the editor. While a block taller than the viewport is edited, the
         -- bar remains at the top of the visible text pane instead of scrolling
         -- outside the screen.
+
+    @invariant FormattingNeverCoversWhatIsBeingWritten
+        -- Floating cannot make the bar an obstacle. It never covers the caret,
+        -- the current selection, an autocomplete result or the line being
+        -- edited; when the available edge cannot hold it, it moves, collapses or
+        -- closes rather than asking the participant to write underneath it.
 }
 
 -- A block has one primary way of being read, but no stored type field is needed.
@@ -197,12 +203,16 @@ contract BlockBehaviourPresentation {
 contract BlockManipulation {
     copy_reference: (block: core/Block) -> BlockReference
     copy_block: (block: core/Block) -> String
+    copy_selection: (selection: BlockSelection) -> String
+    paste_outline: (participant: core/Participant, at: core/Block, source: String) -> core/Page
     move_to_page: (block: core/Block, page: core/Page) -> core/Block
     discard_empty: (participant: core/Participant, block: core/Block) -> core/Page
     discard_subtree: (participant: core/Participant, block: core/Block, confirmed_descendant_count: Integer) -> core/Page
     select_range: (from: core/Block, to: core/Block) -> BlockSelection
     discard_selection: (participant: core/Participant, selection: BlockSelection) -> core/Page
     shift_selection: (participant: core/Participant, selection: BlockSelection, deeper: Bool) -> core/Page
+    move_selection: (participant: core/Participant, selection: BlockSelection, up: Bool) -> core/Page
+    move_selection_to_page: (participant: core/Participant, selection: BlockSelection, page: core/Page) -> core/Page
 
     @invariant ReferenceNamesStableIdentity
         -- A copied reference names the block's stable_id, so it keeps pointing at
@@ -227,6 +237,18 @@ contract BlockManipulation {
         -- Moving a block to a searched destination keeps its stable identity
         -- and descendants, makes it a root block there, and places it after the
         -- destination page's existing root blocks.
+
+    @invariant CopyAndPasteRoundTripsAnOutline
+        -- Copying one block or a selected range writes portable Markdown whose
+        -- indentation represents the visible parent-child structure. Pasting
+        -- that Markdown into Vera creates one block per item and reconstructs
+        -- the same relative hierarchy and order; descendant bullets never
+        -- become literal hyphen-prefixed lines inside one large block.
+
+    @invariant PlainTextStillPastesAsText
+        -- Text that does not unambiguously describe an outline remains the text
+        -- of the current block. Structural paste is recognised from structure,
+        -- not guessed from every hyphen or indented paragraph in ordinary prose.
 
     @invariant OnlyEmptyBlocksAreDiscarded
         -- Discarding by emptying removes a block only when its content is empty.
@@ -302,6 +324,16 @@ contract BlockManipulation {
         -- Shifting leaves the same blocks chosen, so the gesture can be repeated
         -- without pointing at them again. Indenting three levels is three
         -- presses, not three selections.
+
+    @invariant ASelectedRangeMovesAsOneGesture
+        -- Moving a selected range up or down preserves the order and complete
+        -- subtrees of its selected roots. The range crosses the adjacent visible
+        -- sibling as one unit and remains selected so the gesture can be repeated.
+
+    @invariant ASelectedRangeTravelsTogetherToAnotherPage
+        -- Moving a selection to another page appends its selected roots there in
+        -- their reading order, with every descendant still beneath the same root.
+        -- Vera never flattens the range or asks for one destination per block.
 
     @invariant NothingIsSelectedWhileWriting
         -- A selection and a caret are two different answers to "what does the
