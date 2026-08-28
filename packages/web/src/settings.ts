@@ -165,7 +165,8 @@ interface SharedAdministration {
   participants: { grant: string; participant: string; name: string; permissions: SharedPermission[];
     status: 'active' | 'revoked'; grantedAt: number; authenticators: number; activeSessions: number }[];
   proposals: { id: string; page: string; author: string; authorName: string; originId: string;
-    change: Record<string, unknown>; status: 'awaiting_review' | 'accepted' | 'rejected';
+    channel: 'typed_text' | 'drawn' | 'walked'; change: Record<string, unknown>;
+    status: 'awaiting_review' | 'accepted' | 'rejected';
     proposedAt: number; reviewedBy: string | null; reviewedAt: number | null }[];
 }
 

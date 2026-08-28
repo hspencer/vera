@@ -295,7 +295,9 @@ describe('primer corte vertical de espacios compartidos', () => {
         digestOf(session), now, now + 60_000, now);
     const headers = { cookie: `vera_session=${session}`, referer: `${publicBase}/s/doctorado` };
     const health = await fetch(`${publicBase}/health`, { headers });
-    assert.equal((await health.json() as any).canEdit, false);
+    const capability = await health.json() as any;
+    assert.equal(capability.canEdit, false);
+    assert.equal(capability.canContribute, true);
     const denied = await fetch(`${publicBase}/operations`, {
       method: 'POST', headers: { ...headers, 'content-type': 'application/json' },
       body: JSON.stringify({ originId: 'shared:propuesta-directa', change: {

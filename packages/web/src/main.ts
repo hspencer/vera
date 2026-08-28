@@ -252,6 +252,11 @@ function wireSubmissionState(): void {
       say('rejected', 'rechazado', activity.reason);
       return;
     }
+    if (activity.phase === 'proposed') {
+      say('proposed', 'en revisión', 'La propuesta fue enviada; el corpus no cambia hasta que sea aceptada.');
+      clearTimer = window.setTimeout(() => { indicator.hidden = true; }, 5000);
+      return;
+    }
     if (pending.size > 0) {
       say('synchronising', `guardando ${pending.size}…`);
       return;
@@ -274,7 +279,7 @@ function closeSettings(): void {
 let corpus: CorpusHealth | null = null;
 
 const isAnybody = (): boolean => corpus?.access === 'anybody';
-const isReadOnly = (): boolean => isAnybody() && corpus?.canEdit !== true;
+const isReadOnly = (): boolean => isAnybody() && corpus?.canEdit !== true && corpus?.canContribute !== true;
 
 function drawAudienceControl(): void {
   const control = document.querySelector<HTMLElement>('#map-audience');

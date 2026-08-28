@@ -544,6 +544,7 @@ export type SubmissionActivity =
   | { phase: 'local'; originId: string }
   | { phase: 'sending'; originId: string; startedAt: number }
   | { phase: 'synchronised'; originId: string; durationMs: number; sequence: number }
+  | { phase: 'proposed'; originId: string; durationMs: number; proposal: string }
   | { phase: 'rejected'; originId: string; durationMs: number; reason: string }
   | { phase: 'offline'; originId: string; durationMs: number };
 
@@ -619,6 +620,7 @@ export type LocalWrite = (
 ) => { applied: true; subjectId: string } | { applied: false; reason: string } | null;
 
 let writeLocally: LocalWrite | null = null;
+let proposeInsteadOfWriting = false;
 
 function setLocalWriter(writer: LocalWrite | null): void {
   writeLocally = writer;
@@ -738,6 +740,8 @@ export interface CorpusHealth {
   access?: 'owner' | 'anybody';
   /** Una sesión invitada puede escribir sin dejar de estar cercada al espacio. */
   canEdit?: boolean;
+  /** Una sesión invitada puede proponer sin modificar todavía el corpus. */
+  canContribute?: boolean;
   /** Falso en el origen público: anybody nunca puede elevarse desde allí. */
   canViewOwner?: boolean;
   /** Portada del sitio cuando la lectura ocurre por el origen público. */
@@ -762,7 +766,11 @@ export interface CorpusHealth {
 }
 
 export const api = {
-  health: () => json<CorpusHealth>('/health'),
+  health: async (): Promise<CorpusHealth> => {
+    const health = await json<CorpusHealth>('/health');
+    proposeInsteadOfWriting = health.canContribute === true && health.canEdit !== true;
+    return health;
+  },
 
   /** Incorpora el estado y los objetos de otro archivo portable de Vera. */
   importVera: async (
@@ -1253,6 +1261,10 @@ export const api = {
      */
     change = named(change);
 
+    // Una propuesta todavía no es parte del corpus. No se aplica a la réplica
+    // optimista ni entra a su bandeja de sincronización como si lo fuera.
+    if (proposeInsteadOfWriting) return this.send(change, channel, origin);
+
     /*
      * Primero en casa, y la red después.
      *
@@ -1329,6 +1341,30 @@ export const api = {
   ): Promise<SubmitResult> {
     const startedAt = performance.now();
     reportSubmission({ phase: 'sending', originId: origin, startedAt });
+
+    if (proposeInsteadOfWriting) {
+      try {
+        const response = await fetch('/shared-proposals', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ originId: origin, channel, change }),
+        });
+        const said = await response.json() as { proposal?: string; page?: string; error?: string };
+        if (!response.ok || said.proposal === undefined) {
+          const reason = said.error ?? `el servidor contestó ${response.status}`;
+          reportSubmission({ phase: 'rejected', originId: origin,
+            durationMs: performance.now() - startedAt, reason });
+          return { status: 'rejected', reason };
+        }
+        reportSubmission({ phase: 'proposed', originId: origin,
+          durationMs: performance.now() - startedAt, proposal: said.proposal });
+        const target = change as Change & { stableId?: string; block?: string; page?: string };
+        return { status: 'applied', sequence: 0,
+          subjectId: target.stableId ?? target.block ?? target.page ?? said.page ?? '' };
+      } catch (error) {
+        reportSubmission({ phase: 'offline', originId: origin, durationMs: performance.now() - startedAt });
+        throw error;
+      }
+    }
 
     let response: Response;
     try {

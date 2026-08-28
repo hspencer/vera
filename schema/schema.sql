@@ -369,6 +369,7 @@ CREATE TABLE IF NOT EXISTS shared_proposals (
   page_id TEXT NOT NULL REFERENCES pages (id) ON DELETE CASCADE,
   author_id TEXT NOT NULL REFERENCES participants (id),
   origin_id TEXT NOT NULL,
+  channel TEXT NOT NULL CHECK (channel IN ('typed_text','drawn','walked')),
   change_json TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('awaiting_review','accepted','rejected')),
   proposed_at INTEGER NOT NULL,

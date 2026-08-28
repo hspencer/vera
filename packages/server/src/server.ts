@@ -2070,6 +2070,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         try {
           const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
           const originId = String(body['originId'] ?? '').trim();
+          const channel = body['channel'] === 'drawn' || body['channel'] === 'walked' ? body['channel'] : 'typed_text';
           const change = body['change'] as Change | undefined;
           if (originId === '' || change === undefined) {
             send(response, 400, { error: 'la propuesta necesita originId y change' }); return;
@@ -2078,7 +2079,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           if (page === null || !pageBelongsToSharedSpace(graph, publicScopedSpace, page)) {
             send(response, 403, { error: 'la propuesta debe actuar sobre una página de este espacio' }); return;
           }
-          const proposal = createSharedProposal(store, publicScopedSpace, scopedParticipant, page, originId, change);
+          const proposal = createSharedProposal(store, publicScopedSpace, scopedParticipant, page, originId, channel, change);
           send(response, 201, { status: 'awaiting_review', proposal: proposal.id, page });
         } catch (error) { send(response, 400, { error: error instanceof Error ? error.message : String(error) }); }
       }); return;
@@ -2095,7 +2096,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       const decision = parts[5] === 'accept' ? 'accepted' : 'rejected';
       if (decision === 'accepted') {
         const outcome = graph.submitOperation({ originId: `proposal:${proposal.id}`,
-          participant: proposal.author as ParticipantId, channel: 'typed_text', change: proposal.change as Change });
+          participant: proposal.author as ParticipantId, channel: proposal.channel, change: proposal.change as Change });
         if (outcome.status === 'rejected') { send(response, 422, { error: outcome.reason }); return; }
         if (outcome.status === 'applied') recordOperation(store, graph, outcome.operation);
       }
