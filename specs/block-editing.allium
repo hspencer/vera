@@ -45,6 +45,7 @@ given {
 
 contract FluidBlockEditing {
     begin: (participant: core/Participant, block: core/Block, at: Integer) -> EditSession
+    begin_selected: (participant: core/Participant, block: core/Block, start: Integer, end: Integer) -> EditSession
     settle: (session: EditSession) -> core/Block
 
     @invariant TypingIsNeverLost
@@ -78,6 +79,12 @@ contract FluidBlockEditing {
         -- Where the gesture names no position — arriving with a key, or landing
         -- past the end of the text — the caret goes where that gesture means.
 
+    @invariant ATextSelectionSurvivesEnteringItsBlock
+        -- A partial text selection wholly inside one block remains selected when
+        -- that block reveals its Markdown source, provided the same characters
+        -- can be located there. A selection spanning blocks remains a reading
+        -- selection and does not accidentally open the block where its drag ended.
+
     -- Y sigue a la vista mientras se escribe, con sitio por debajo.
     --
     -- Un bloque más alto que la ventana es un caso corriente aquí: el editor
@@ -107,6 +114,7 @@ contract FluidBlockEditing {
 
 contract OutlineManipulation {
     move: (block: core/Block, up: Boolean) -> core/Block
+    drag: (block: core/Block, parent: core/Block?, position: Integer) -> core/Block
     collapse: (participant: core/Participant, block: core/Block, folded: Boolean) -> FoldState
     focus: (block: core/Block?) -> OutlineView
     mark: (block: core/Block, style: ChildListStyle) -> ChildListMarking
@@ -139,6 +147,11 @@ contract OutlineManipulation {
         -- preserving every parent-child relationship within it. The result is
         -- identical whether the root was expanded or collapsed: a fold changes
         -- what is visible, never which descendants travel with their root.
+
+    @invariant TheBulletCarriesTheSubtree
+        -- Dragging begins only from the bullet. Before release, the outline marks
+        -- whether the subtree will land between siblings or inside a new parent;
+        -- releasing moves its root and every descendant as one structural gesture.
 
     @invariant FoldingIsNotAChange
         -- Collapsing is what one participant is looking at, not what the graph
@@ -270,6 +283,25 @@ rule ParticipantBeginsEditing {
         session.cursor = at
         session.selection_start = at
         session.selection_end = at
+        session.action = none
+        session.query_start = null
+        session.dirty = false
+        session.last_input_at = now
+}
+
+rule ParticipantBeginsEditingWithSelection {
+    when: BeginEditingSelection(participant, block, start, end)
+
+    requires: session.mode = idle
+    requires: start < end
+
+    ensures:
+        session.mode = editing
+        session.block = block
+        session.buffer = block.content
+        session.cursor = end
+        session.selection_start = start
+        session.selection_end = end
         session.action = none
         session.query_start = null
         session.dirty = false
@@ -641,6 +673,18 @@ rule RefuseMoveAtTheEdge {
     ensures: StructuralRefusal.created(block: block, reason: nothing_to_merge)
 }
 
+rule DragBlockToShownDestination {
+    when: DragBlock(block, parent, position)
+
+    requires: parent = null or parent.page = block.page
+    requires: parent = null or parent != block
+    requires: parent = null or not is_descendant(parent, block)
+
+    ensures:
+        block.parent = parent
+        block.position = position
+}
+
 -- @invariant FoldingIsNotAChange made operational: this rule ensures a FoldState
 -- and nothing else. No Operation, no Revision, no entry in the log.
 rule ParticipantFoldsBlock {
@@ -857,6 +901,9 @@ surface BlockEditor {
 
     provides:
         BeginEditing(participant, block, at)
+        BeginEditingSelection(participant, block, start, end)
+        MoveBlock(block, up)
+        DragBlock(block, parent, position)
         PressEnter()
         PressTab(forward)
         BackspaceAtStart()

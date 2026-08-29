@@ -40,6 +40,7 @@ import {
 import { scrollDeltaFor, sourceOffsetFor } from './caret.ts';
 import { parseOutlineClipboard } from './outline-clipboard.ts';
 import { selectedSiblingMove } from './selection-movement.ts';
+import { sourceSelection, type SourceSelection } from './source-selection.ts';
 import { completeInPlace, editInPlace, placeNear, type Choice } from './fields.ts';
 import { governingKind, kindSays, renderGoverning } from './governing-table.ts';
 import { answerQueryBlock } from './query-block.ts';
@@ -2481,6 +2482,13 @@ export function renderOutliner(
   }
   /** Dónde quedó dibujado cada bloque, para poder devolverle el cursor. */
   const editors = new Map<string, { node: Node; body: HTMLElement }>();
+  let draggedBlock: string | null = null;
+  let draggedMoved = false;
+  const clearDropMarks = (): void => {
+    for (const marked of container.querySelectorAll('.drop-before, .drop-after, .drop-inside')) {
+      marked.classList.remove('drop-before', 'drop-after', 'drop-inside');
+    }
+  };
   const folded = new Set(page.folded);
   const special = isSpecialPage(page.properties);
   // @invariant SpokenContentNamesItsRecording: un bloque hablado lo dice.
@@ -4051,6 +4059,79 @@ export function renderOutliner(
       ? `acciones del bloque vacío ${node.block.stableId}`
       : `acciones del bloque: ${blockSummary}`);
 
+    if (!readOnly) {
+      bullet.draggable = true;
+      bullet.addEventListener('dragstart', (event) => {
+        draggedBlock = node.block.stableId;
+        draggedMoved = true;
+        row.classList.add('dragging-block');
+        event.dataTransfer?.setData('text/plain', node.block.stableId);
+        if (event.dataTransfer !== null) event.dataTransfer.effectAllowed = 'move';
+      });
+      bullet.addEventListener('dragend', () => {
+        draggedBlock = null;
+        row.classList.remove('dragging-block');
+        clearDropMarks();
+        // `dragend` precede al click en algunos navegadores.
+        window.setTimeout(() => { draggedMoved = false; }, 0);
+      });
+
+      row.addEventListener('dragover', (event) => {
+        const moved = draggedBlock;
+        if (moved === null || moved === node.block.stableId) return;
+        if (withDescendants(moved).includes(node.block.stableId)) return;
+        event.preventDefault();
+        if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'move';
+        clearDropMarks();
+        const box = row.getBoundingClientRect();
+        const bodyBox = body.getBoundingClientRect();
+        const inside = event.clientX > bodyBox.left + 32;
+        row.classList.add(inside
+          ? 'drop-inside'
+          : event.clientY < box.top + box.height / 2 ? 'drop-before' : 'drop-after');
+      });
+
+      row.addEventListener('dragleave', (event) => {
+        if (event.relatedTarget instanceof globalThis.Node && row.contains(event.relatedTarget)) return;
+        row.classList.remove('drop-before', 'drop-after', 'drop-inside');
+      });
+
+      row.addEventListener('drop', (event) => {
+        const moved = draggedBlock ?? event.dataTransfer?.getData('text/plain') ?? null;
+        if (moved === null || moved === '' || moved === node.block.stableId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (withDescendants(moved).includes(node.block.stableId)) {
+          toast('un bloque no puede entrar dentro de lo que cuelga de él');
+          clearDropMarks();
+          return;
+        }
+
+        const inside = row.classList.contains('drop-inside');
+        const after = row.classList.contains('drop-after');
+        const parent = inside ? node.block.stableId : parentOf(node.block.stableId);
+        const siblings = childrenOf(parent);
+        let position = inside
+          ? siblings.length
+          : siblings.findIndex((candidate) => candidate.stableId === node.block.stableId) + (after ? 1 : 0);
+        const oldParent = parentOf(moved);
+        if (oldParent === parent) {
+          const oldPosition = childrenOf(oldParent).findIndex((candidate) => candidate.stableId === moved);
+          if (oldPosition >= 0 && oldPosition < position) position -= 1;
+        }
+        clearDropMarks();
+        void submitQuietly({
+          kind: 'move_block',
+          block: moved,
+          page: page.id,
+          parent,
+          position: Math.max(0, position),
+        }).then((applied) => {
+          if (applied) callbacks.onReload(null);
+        });
+      });
+    }
+
     const body = document.createElement('div');
     body.className = 'body';
 
@@ -4221,6 +4302,7 @@ export function renderOutliner(
 
     bullet.addEventListener('click', (event) => {
       event.stopPropagation();
+      if (draggedMoved) return;
       /*
        * Cinco grupos, y el orden de los cinco es un argumento.
        *
@@ -4440,7 +4522,29 @@ export function renderOutliner(
       if (picked.size > 0) clearPicked();
       pickedOn = node.block.stableId;
       pickedTo = node.block.stableId;
-      openEditor(node, body, caretFromClick(node.block, body, event));
+      const caret = caretFromClick(node.block, body, event);
+      const readingSelection = window.getSelection();
+      // Una selección de lectura que cruza bloques no pide editar el bloque en
+      // que terminó el arrastre. Se conserva para copiarla o formatearla.
+      if (readingSelection !== null
+        && !readingSelection.isCollapsed
+        && (readingSelection.anchorNode === null
+          || readingSelection.focusNode === null
+          || !body.contains(readingSelection.anchorNode)
+          || !body.contains(readingSelection.focusNode))) return;
+      const selected = readingSelection !== null
+        && !readingSelection.isCollapsed
+        && readingSelection.anchorNode !== null
+        && readingSelection.focusNode !== null
+        && body.contains(readingSelection.anchorNode)
+        && body.contains(readingSelection.focusNode)
+        ? sourceSelection(
+            node.block.content,
+            readingSelection.toString(),
+            caret ?? Number.MAX_SAFE_INTEGER,
+          )
+        : null;
+      openEditor(node, body, selected ?? caret);
     });
 
     /*
@@ -4870,7 +4974,11 @@ export function renderOutliner(
     callbacks.onReload(null);
   };
 
-  function openEditor(node: Node, body: HTMLElement, caret?: number): void {
+  function openEditor(
+    node: Node,
+    body: HTMLElement,
+    placement?: number | SourceSelection,
+  ): void {
     /*
      * Un dibujo recibe el cursor y no el editor.
      *
@@ -4902,7 +5010,7 @@ export function renderOutliner(
         near,
         children: node.children.map((child) => child.block.stableId),
       },
-      caret,
+      placement,
     );
   }
 
@@ -6285,7 +6393,7 @@ function startEditing(
   callbacks: OutlinerCallbacks,
   options: RenderOptions,
   context: { page: string; view: PageView; near: Neighbourhood; children: string[] },
-  caret = Number.MAX_SAFE_INTEGER,
+  placement: number | SourceSelection = Number.MAX_SAFE_INTEGER,
 ): void {
   if (body.querySelector('textarea') !== null) return;
   const session = createSession(block.content);
@@ -6463,7 +6571,8 @@ function startEditing(
   updateHeadingState();
   formatBar.prepend(headings);
 
-  const at = Math.min(caret, editor.value.length);
+  const requested = typeof placement === 'number' ? placement : placement.start;
+  const at = Math.min(requested, editor.value.length);
   /*
    * El foco no desplaza; desplazar es cosa nuestra.
    *
@@ -6473,8 +6582,16 @@ function startEditing(
    * Con `preventScroll` hay un solo movimiento y lo decide `keepCaretInSight`.
    */
   editor.focus({ preventScroll: true });
-  editor.setSelectionRange(at, at);
-  keepCaretInSight(editor, at);
+  if (typeof placement === 'number') editor.setSelectionRange(at, at);
+  else {
+    editor.setSelectionRange(
+      Math.min(placement.start, editor.value.length),
+      Math.min(placement.end, editor.value.length),
+    );
+  }
+  keepCaretInSight(editor, typeof placement === 'number'
+    ? at
+    : Math.min(placement.end, editor.value.length));
 
   /** Volver a la vista de lectura, conservando la grabación por el mismo motivo. */
   const render = (content: string): void => {

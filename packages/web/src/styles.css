@@ -2595,6 +2595,25 @@ button { touch-action: manipulation; }
   border-radius: 3px;
 }
 
+/* La viñeta mueve el subárbol. La marca enseña el destino antes de soltar: una
+   raya entre hermanos, un recinto tenue cuando el bloque pasará a ser hijo. */
+.block.drop-before::before,
+.block.drop-after::after {
+  content: '';
+  position: absolute;
+  left: var(--block-indent, 0);
+  right: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.block.drop-before::before { top: -1px; }
+.block.drop-after::after { bottom: -1px; }
+.block.drop-inside > .body { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.block.dragging-block { opacity: 0.45; }
+
 /* Sin anillo de foco: el fondo ya dice dónde está el cursor, y el anillo que
    pinta el navegador es justo el contorno que se acaba de quitar. */
 .editor:focus,
