@@ -97,17 +97,28 @@ con `TheMachineIsTheLastResort`); cifrado con passphrase de la persona
 exigir reconexión manual tras restaurar (más simple, pierde comodidad).
 
 **Decisión (2026-08-30, Herbert):** cifrado con passphrase de la persona
-(opción b). Esto exige, antes de tocar `packages/store/src/secrets.ts`,
-decidir dónde se pide la passphrase (¿al arrancar el servidor? ¿por
-variable de entorno para uso no interactivo? ¿ambas?), cómo se deriva la
-clave (Argon2id o scrypt sobre la passphrase, con una sal propia guardada
-junto al dato cifrado — nunca la passphrase misma), y qué pasa si se escribe
-mal: `service-connections.allium` necesita una spec nueva para esto antes de
-escribir código, porque es comportamiento nuevo con casos límite (passphrase
-olvidada, cambio de passphrase, arranque no interactivo) que nadie ha
-decidido todavía. La unidad `u1.3b` de `cola-priorizada.md` pasa a depender
-de esa spec, no de una decisión de arquitectura de cifrado en abstracto — el
-algoritmo no es lo que falta decidir, es el recorrido.
+(opción b). Al elicitar el mecanismo (`u1.3b-spec`, ver
+`specs/corpus-encryption.allium`), Herbert amplió el alcance de fondo: no es
+cifrar `service_secrets`, es que **la base entera no se abra sin la
+passphrase**. Mecanismo acordado: la passphrase llega por variable de
+entorno o por una acción autenticada desde Ajustes, desde cualquier aparato
+con la PWA; mientras la instancia está bloqueada ni siquiera puede verificar
+una sesión (las tablas de autenticación también están cifradas), así que el
+único filtro es la red de confianza más un límite de intentos — tres fallos
+seguidos cuestan un minuto de espera; olvidar la passphrase no pierde el
+corpus porque se genera una clave de recuperación una sola vez al activar el
+cifrado (mostrada una vez, nunca guardada por Vera); cambiar la passphrase
+re-cifra todo y regenera esa clave. Quedan como preguntas abiertas en la
+propia spec: el formato de la clave de recuperación, si un reinicio de
+proceso necesita su propia regla de re-bloqueo, si el desbloqueo puede
+esperar a `is_local_to_the_instance` (sin código todavía, ver E-1 y u1.4d), y
+qué ve un cliente MCP contra una instancia bloqueada.
+
+**Consecuencia técnica para quien implemente `u1.3b`:** cifrar el archivo
+`.sqlite` completo probablemente exige migrar de `node:sqlite` a un motor que
+soporte cifrado nativo (SQLCipher u otro) — un cambio de raíz, no una capa
+que se agrega encima. No es una decisión que esta auditoría tome; queda
+señalada para quien tome la unidad.
 
 ### E-5. Recuperación raíz acumula credenciales sin revocar las anteriores
 Cada ejecución de `npm run owner:credential` (`issue-owner.ts`) emite un
