@@ -5,6 +5,13 @@ import assert from 'node:assert/strict';
 const settings = readFileSync(new URL('../src/settings.ts', import.meta.url), 'utf8');
 
 describe('administración de invitaciones', () => {
+  it('abre los espacios en el origen público y conserva el slug', () => {
+    assert.match(settings,
+      /new URL\(`\/s\/\$\{encodeURIComponent\(space\.slug\)\}`,[\s\S]*publicOrigin\)\.toString\(\)/);
+    assert.match(settings,
+      /spaceAdministration\(host, space, pages, publicSite\.canonicalDomain\)/);
+  });
+
   it('permite eliminar definitivamente invitaciones de cualquier estado con confirmación', () => {
     assert.match(settings, /remove\.textContent = 'Eliminar'/);
     assert.match(settings, /¿Eliminar definitivamente esta invitación\?/);

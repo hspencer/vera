@@ -212,7 +212,9 @@ export async function drawSharing(host: HTMLElement): Promise<void> {
   status.textContent = `${spaces.length + 1} ${spaces.length === 0 ? 'forma' : 'formas'} de compartir: una pública y ${spaces.length} con acceso autenticado.`;
   host.append(peopleDirectory(spaces));
   host.append(publicSiteAdministration(host, publicSite, pages));
-  for (const space of spaces) host.append(spaceAdministration(host, space, pages));
+  for (const space of spaces) {
+    host.append(spaceAdministration(host, space, pages, publicSite.canonicalDomain));
+  }
   const add = document.createElement('button'); add.type = 'button'; add.className = 'sharing-add';
   add.textContent = 'Agregar espacio compartido'; add.setAttribute('aria-expanded', 'false');
   const creation = document.createElement('section'); creation.className = 'sharing-new-space'; creation.hidden = true;
@@ -376,7 +378,8 @@ function publicSiteAdministration(host: HTMLElement, site: PublicationSiteView, 
   body.append(intro, open, form, published, add); details.append(body); return details;
 }
 
-function spaceAdministration(host: HTMLElement, space: SharedAdministration, pages: PageSummary[]): HTMLElement {
+function spaceAdministration(host: HTMLElement, space: SharedAdministration, pages: PageSummary[],
+  publicOrigin: string): HTMLElement {
   const card = document.createElement('details'); card.className = 'sharing-space';
   const activeParticipants = space.participants.filter((one) => one.status === 'active').length;
   const isPublic = space.audience === 'anybody';
@@ -387,7 +390,9 @@ function spaceAdministration(host: HTMLElement, space: SharedAdministration, pag
   const body = document.createElement('div'); body.className = 'sharing-space-body';
   const count = document.createElement('p'); count.className = 'settings-note';
   count.textContent = `${space.pageCount} ${space.pageCount === 1 ? 'página pertenece' : 'páginas pertenecen'} a la unión efectiva del espacio.`;
-  const visit = document.createElement('a'); visit.href = `/s/${encodeURIComponent(space.slug)}`; visit.target = '_blank'; visit.textContent = 'Abrir superficie compartida';
+  const visit = document.createElement('a');
+  visit.href = new URL(`/s/${encodeURIComponent(space.slug)}`, publicOrigin).toString();
+  visit.target = '_blank'; visit.rel = 'noreferrer'; visit.textContent = 'Abrir superficie compartida';
   const form = document.createElement('form'); form.className = 'sharing-form';
   const name = field('Nombre', space.name); const slug = field('Slug', space.slug);
   const combinationLabel = document.createElement('label'); combinationLabel.className = 'sharing-field';
