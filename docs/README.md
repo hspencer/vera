@@ -35,6 +35,7 @@ desplegar y contribuir al programa.
 - [Que la mano no espere](plan-local-first.md)
 - [Del rastro al argumento](plan-recorridos.md)
 - [Nadie por omisión](plan-nadie-por-omision.md)
+- [Plan maestro: auditoría e índice de ejecución por fases](plan-maestro/README.md)
 
 ### Gobierno
 
