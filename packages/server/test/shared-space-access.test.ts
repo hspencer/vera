@@ -46,7 +46,8 @@ async function write(change: unknown): Promise<string> {
 describe('primer corte vertical de espacios compartidos', () => {
   it('delimita exactamente las páginas que llevan la propiedad', async () => {
     const inside = await write({ kind: 'create_page', title: 'Dentro', visibility: 'private' });
-    await write({ kind: 'set_property', page: inside, propertyKey: 'espacio', propertyValue: 'doctorado' });
+    await write({ kind: 'set_property', page: inside,
+      propertyKey: 'espacio', propertyValue: 'personal, Doctorado, conocimiento' });
     await write({ kind: 'create_page', title: 'Fuera', visibility: 'private' });
     const made = await call('/shared-spaces', 'POST', {
       name: 'Doctorado', slug: 'doctorado', selectorKey: 'espacio', selectorValue: 'doctorado',
@@ -54,6 +55,10 @@ describe('primer corte vertical de espacios compartidos', () => {
     assert.equal(made.status, 201, JSON.stringify(made.json));
     const pages = await call('/shared-spaces/doctorado/pages');
     assert.deepEqual((pages.json['pages'] as any[]).map((page) => page.title), ['Dentro']);
+    const admin = await call('/shared-spaces');
+    const space = (admin.json['spaces'] as any[]).find((one) => one.slug === 'doctorado');
+    assert.deepEqual(space.effectivePages.find((one: any) => one.page === inside).reasons,
+      ['espacio:: doctorado']);
   });
 
   it('muestra el secreto de invitación una vez, lo canjea y no permite repetirlo', async () => {

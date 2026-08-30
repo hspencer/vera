@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { answersIn } from '@vera/core';
 import type { Store } from '@vera/store';
 import { digestOf } from './credentials.ts';
 
@@ -135,9 +136,16 @@ export function pageBelongsToSharedSpace(graph: { propertiesOf(id: string): { ke
   if (space.manualPages.includes(page)) return true;
   const properties = graph.propertiesOf(page);
   const matches = (criterion: SharedSpaceCriterion): boolean => properties.some((property) =>
-    property.key === criterion.key && property.value === criterion.value);
+    propertyMatchesSharedSpaceCriterion(property, criterion));
   return space.criteria.length > 0 && (space.criterionCombination === 'all'
     ? space.criteria.every(matches) : space.criteria.some(matches));
+}
+
+export function propertyMatchesSharedSpaceCriterion(property: { key: string; value: string },
+  criterion: Pick<SharedSpaceCriterion, 'key' | 'value'>): boolean {
+  if (property.key !== criterion.key) return false;
+  const sought = criterion.value.trim().toLocaleLowerCase();
+  return answersIn(property.value).some((answer) => answer.toLocaleLowerCase() === sought);
 }
 
 export function administrationOf(store: Store, space: SharedSpace,

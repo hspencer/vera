@@ -151,6 +151,7 @@ import {
   inviteToSpace,
   DEFAULT_INVITATION_LIFETIME,
   pageBelongsToSharedSpace,
+  propertyMatchesSharedSpaceCriterion,
   redeemInvitation,
   removeManualPage,
   removeSharedSpaceCriterion,
@@ -1890,7 +1891,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         .filter((page) => pageBelongsToSharedSpace(graph, space, page.id)).map((page) => {
           const properties = graph.propertiesOf(page.id);
           const reasons = space.criteria.filter((criterion) => properties.some((property) =>
-            property.key === criterion.key && property.value === criterion.value))
+            propertyMatchesSharedSpaceCriterion(property, criterion)))
             .map((criterion) => `${criterion.key}:: ${criterion.value}`);
           if (space.manualPages.includes(page.id)) reasons.push('inclusión explícita');
           return { page: page.id, reasons };
