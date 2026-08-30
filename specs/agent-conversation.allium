@@ -1,0 +1,585 @@
+-- allium: 3
+-- agent-conversation.allium
+
+-- Scope: Conversation with a named agent from inside Vera
+-- Includes: One conversation reached by voice, command, block or conversation
+--   page; explicit graph context; request lifecycle; attributed replies;
+--   truthful waiting, cancellation, retry and separately reviewable proposals
+-- Excludes:
+--   - Mirroring Telegram or another external channel automatically
+--   - Model choice, prompts, token budgets and OpenClaw's internal session format
+--   - Chain-of-thought, caches, queues, credentials and secrets
+--   - Applying proposed graph operations, governed by change-application.allium
+-- Dependencies: Participants, pages, blocks and changes are governed by
+--   core.allium; agent identity and authorship by agent-participation.allium;
+--   recordings by voice-capture.allium; waiting by waiting.allium
+
+use "./core.allium" as core
+use "./voice-capture.allium" as voice
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract ConversationWithAgent {
+    ask: (request: ConversationRequest) -> AgentReply
+    propose: (reply: AgentReply, changes: List<core/Change>) -> OperationProposal
+
+    @invariant FourEntrancesOneConversation
+        -- Audio, command, block and conversation page are entrances to the same
+        -- conversation model. Moving between them does not silently start a new
+        -- identity, lose prior turns or create four incompatible histories.
+
+    @invariant ContextIsShownBeforeItIsSent
+        -- A request records exactly the pages and blocks delivered to the agent,
+        -- together with a snapshot of what they said at that moment. Vera never
+        -- grants the whole corpus merely because the agent could read it.
+
+    @invariant AReplyIsNotAnAppliedChange
+        -- Replying, proposing graph operations and applying graph operations are
+        -- distinct observable acts. Text that says it changed Vera is not proof
+        -- that anything changed, and a reply cannot mutate the corpus as a side
+        -- effect of appearing.
+
+    @invariant EveryTurnNamesItsHandAndDoor
+        -- Every request and reply names who produced it and the modality by which
+        -- it entered. Generated text never passes as Herbert's writing, and a
+        -- transcript never passes as typed text.
+
+    @invariant FailureLeavesARecoverableTurn
+        -- If Vera, OpenClaw or the model stops, the request remains pending or
+        -- failed with its text and context intact. Retrying creates a new attempt
+        -- linked to the old one instead of pretending the first attempt worked.
+
+    @invariant ExternalChannelsDoNotMirrorByDefault
+        -- A Telegram thread and a Vera conversation may be handed to one another
+        -- explicitly. They are not copied in both directions merely because the
+        -- same human and agent participate in both.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum ConversationStatus { active | closed }
+enum RequestModality { audio | command | block | conversation_page }
+enum RequestStatus { queued | working | answered | failed | cancelled }
+enum ProposalStatus { proposed | accepted | rejected }
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity Conversation {
+    graph: core/Graph
+    human: core/Participant
+    agent: core/Participant
+    title: String
+    status: ConversationStatus
+    created_at: Timestamp
+    requests: ConversationRequest with conversation = this
+
+    invariant HumanAndAgentRemainDistinct {
+        human != agent and human.kind = human and agent.kind = agent
+    }
+}
+
+entity ConversationRequest {
+    conversation: Conversation
+    asked_by: core/Participant
+    modality: RequestModality
+    text: String
+    source_page: core/Page?
+    source_block: core/Block?
+    recording: voice/Recording?
+    context_pages: Set<core/Page>
+    context_blocks: Set<core/Block>
+    context_snapshot: String
+    retry_of: ConversationRequest?
+    status: RequestStatus
+    created_at: Timestamp
+    started_at: Timestamp?
+    finished_at: Timestamp?
+    failure_reason: String?
+    reply: AgentReply with request = this
+
+    transitions status {
+        queued -> working
+        queued -> failed
+        queued -> cancelled
+        working -> answered
+        working -> failed
+        working -> cancelled
+        terminal: answered, failed, cancelled
+    }
+
+    invariant AudioKeepsItsRecording {
+        modality = audio implies recording != null
+    }
+
+    invariant BlockEntranceKeepsItsBlock {
+        modality = block implies source_block != null
+    }
+
+    invariant ContextBelongsToTheConversationGraph {
+        context_pages.all(p => p.graph = conversation.graph)
+        and context_blocks.all(b => b.page.graph = conversation.graph)
+    }
+}
+
+entity AgentReply {
+    request: ConversationRequest
+    answered_by: core/Participant
+    text: String
+    created_at: Timestamp
+    proposal: OperationProposal with reply = this
+}
+
+entity OperationProposal {
+    reply: AgentReply
+    proposed_by: core/Participant
+    changes: List<core/Change>
+    status: ProposalStatus
+    proposed_at: Timestamp
+    decided_by: core/Participant?
+    decided_at: Timestamp?
+
+    transitions status {
+        proposed -> accepted
+        proposed -> rejected
+        terminal: accepted, rejected
+    }
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule HumanStartsConversation {
+    when: StartConversation(human, agent, graph, title)
+
+    requires: human.kind = human
+    requires: agent.kind = agent
+    requires: human != agent
+    requires: exists core/Membership{graph: graph, participant: human}
+    requires: exists core/Membership{graph: graph, participant: agent}
+
+    ensures: Conversation.created(
+        graph: graph,
+        human: human,
+        agent: agent,
+        title: title,
+        status: active,
+        created_at: now
+    )
+}
+
+rule HumanClosesConversation {
+    when: CloseConversation(human, conversation)
+
+    requires: conversation.human = human
+    requires: conversation.status = active
+
+    ensures: conversation.status = closed
+}
+
+rule HumanReopensConversation {
+    when: ReopenConversation(human, conversation)
+
+    requires: conversation.human = human
+    requires: conversation.status = closed
+
+    ensures: conversation.status = active
+}
+
+rule HumanAsksCotitoByAudio {
+    when: AskCotitoByAudio(human, conversation, recording, transcript, context_pages, context_blocks)
+
+    requires: conversation.human = human
+    requires: conversation.status = active
+    requires: recording.graph = conversation.graph
+    requires: recording.captured_by = human
+    requires: transcript != ""
+
+    ensures: ConversationRequest.created(
+        conversation: conversation,
+        asked_by: human,
+        modality: audio,
+        text: transcript,
+        source_page: recording.placed_in?.page,
+        source_block: recording.placed_in,
+        recording: recording,
+        context_pages: context_pages,
+        context_blocks: context_blocks,
+        context_snapshot: snapshot(context_pages, context_blocks),
+        retry_of: null,
+        status: queued,
+        created_at: now,
+        started_at: null,
+        finished_at: null,
+        failure_reason: null
+    )
+}
+
+rule HumanAsksCotitoByCommand {
+    when: AskCotitoByCommand(human, conversation, text, source_page, context_pages, context_blocks)
+
+    requires: conversation.human = human
+    requires: conversation.status = active
+    requires: text != ""
+    requires: source_page = null or source_page.graph = conversation.graph
+
+    ensures: ConversationRequest.created(
+        conversation: conversation,
+        asked_by: human,
+        modality: command,
+        text: text,
+        source_page: source_page,
+        source_block: null,
+        recording: null,
+        context_pages: context_pages,
+        context_blocks: context_blocks,
+        context_snapshot: snapshot(context_pages, context_blocks),
+        retry_of: null,
+        status: queued,
+        created_at: now,
+        started_at: null,
+        finished_at: null,
+        failure_reason: null
+    )
+}
+
+rule HumanAsksCotitoFromBlock {
+    when: AskCotitoFromBlock(human, conversation, block, instruction, context_pages, context_blocks)
+
+    requires: conversation.human = human
+    requires: conversation.status = active
+    requires: block.page.graph = conversation.graph
+    requires: instruction != ""
+
+    ensures: ConversationRequest.created(
+        conversation: conversation,
+        asked_by: human,
+        modality: block,
+        text: instruction,
+        source_page: block.page,
+        source_block: block,
+        recording: null,
+        context_pages: context_pages,
+        context_blocks: context_blocks + { block },
+        context_snapshot: snapshot(context_pages, context_blocks + { block }),
+        retry_of: null,
+        status: queued,
+        created_at: now,
+        started_at: null,
+        finished_at: null,
+        failure_reason: null
+    )
+
+    @guidance
+        -- Asking from a block attaches it; it does not replace or rewrite it.
+        -- This is conversation with Cotito, distinct from block-as-request.allium,
+        -- where a local model deliberately replaces the request block.
+}
+
+rule HumanAsksCotitoFromConversationPage {
+    when: AskCotitoFromConversationPage(human, conversation, text, context_pages, context_blocks)
+
+    requires: conversation.human = human
+    requires: conversation.status = active
+    requires: text != ""
+
+    ensures: ConversationRequest.created(
+        conversation: conversation,
+        asked_by: human,
+        modality: conversation_page,
+        text: text,
+        source_page: null,
+        source_block: null,
+        recording: null,
+        context_pages: context_pages,
+        context_blocks: context_blocks,
+        context_snapshot: snapshot(context_pages, context_blocks),
+        retry_of: null,
+        status: queued,
+        created_at: now,
+        started_at: null,
+        finished_at: null,
+        failure_reason: null
+    )
+}
+
+rule CotitoBeginsARequest {
+    when: BeginAgentRequest(agent, request)
+
+    requires: request.conversation.agent = agent
+    requires: request.status = queued
+
+    ensures:
+        request.status = working
+        request.started_at = now
+}
+
+rule CotitoAnswersARequest {
+    when: AnswerAgentRequest(agent, request, text, changes)
+
+    requires: request.conversation.agent = agent
+    requires: request.status = working
+    requires: text != ""
+
+    ensures:
+        request.status = answered
+        request.finished_at = now
+        let reply = AgentReply.created(
+            request: request,
+            answered_by: agent,
+            text: text,
+            created_at: now
+        )
+        if changes.count > 0:
+            OperationProposal.created(
+                reply: reply,
+                proposed_by: agent,
+                changes: changes,
+                status: proposed,
+                proposed_at: now,
+                decided_by: null,
+                decided_at: null
+            )
+}
+
+rule CotitoReportsARequestFailure {
+    when: FailAgentRequest(agent, request, reason)
+
+    requires: request.conversation.agent = agent
+    requires: request.status in {queued, working}
+
+    ensures:
+        request.status = failed
+        request.finished_at = now
+        request.failure_reason = reason
+}
+
+rule HumanCancelsARequest {
+    when: CancelAgentRequest(human, request)
+
+    requires: request.conversation.human = human
+    requires: request.status in {queued, working}
+
+    ensures:
+        request.status = cancelled
+        request.finished_at = now
+}
+
+rule HumanRetriesARequest {
+    when: RetryAgentRequest(human, request)
+
+    requires: request.conversation.human = human
+    requires: request.status in {failed, cancelled}
+    requires: request.conversation.status = active
+
+    ensures: ConversationRequest.created(
+        conversation: request.conversation,
+        asked_by: human,
+        modality: request.modality,
+        text: request.text,
+        source_page: request.source_page,
+        source_block: request.source_block,
+        recording: request.recording,
+        context_pages: request.context_pages,
+        context_blocks: request.context_blocks,
+        context_snapshot: request.context_snapshot,
+        retry_of: request,
+        status: queued,
+        created_at: now,
+        started_at: null,
+        finished_at: null,
+        failure_reason: null
+    )
+}
+
+rule HumanAcceptsAProposal {
+    when: AcceptAgentProposal(human, proposal)
+
+    requires: proposal.reply.request.conversation.human = human
+    requires: proposal.status = proposed
+
+    ensures:
+        proposal.status = accepted
+        proposal.decided_by = human
+        proposal.decided_at = now
+        AcceptedAgentOperations(human: human, proposal: proposal, changes: proposal.changes)
+}
+
+rule HumanRejectsAProposal {
+    when: RejectAgentProposal(human, proposal)
+
+    requires: proposal.reply.request.conversation.human = human
+    requires: proposal.status = proposed
+
+    ensures:
+        proposal.status = rejected
+        proposal.decided_by = human
+        proposal.decided_at = now
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor HumanConversant {
+    identified_by: core/Participant where kind = human and status = active
+}
+
+actor ConversationalAgent {
+    identified_by: core/Participant where kind = agent and status = active
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface CotitoByAudio {
+    facing human: HumanConversant
+    context conversation: Conversation where human = human and status = active
+
+    exposes:
+        conversation.agent
+        conversation.requests
+
+    provides:
+        AskCotitoByAudio(human, conversation, recording, transcript, context_pages, context_blocks)
+
+    contracts:
+        fulfils ConversationWithAgent
+
+    @guarantee AudioRemainsAudibleBesideItsTurn
+        -- The spoken request keeps the recording that proves and replays it. Its
+        -- transcript is editable context, not a replacement for the audio.
+}
+
+surface CotitoByCommand {
+    facing human: HumanConversant
+    context conversation: Conversation where human = human and status = active
+
+    exposes:
+        conversation.agent
+        conversation.requests
+
+    provides:
+        AskCotitoByCommand(human, conversation, text, source_page, context_pages, context_blocks)
+
+    contracts:
+        fulfils ConversationWithAgent
+
+    @guarantee CommandIsAnEntranceNotASeparateHistory
+        -- Invoking Cotito quickly from elsewhere appends to the chosen
+        -- conversation and remains readable from its conversation page.
+}
+
+surface CotitoFromBlock {
+    facing human: HumanConversant
+    context conversation: Conversation where human = human and status = active
+
+    exposes:
+        conversation.agent
+        conversation.requests
+
+    provides:
+        AskCotitoFromBlock(human, conversation, block, instruction, context_pages, context_blocks)
+
+    contracts:
+        fulfils ConversationWithAgent
+
+    @guarantee AskingDoesNotConsumeTheBlock
+        -- The source block stays where it is and keeps its content and author.
+        -- The conversation points back to it and snapshots what Cotito received.
+}
+
+surface CotitoConversationPage {
+    facing human: HumanConversant
+    context conversation: Conversation where human = human
+
+    exposes:
+        conversation.title
+        conversation.status
+        conversation.agent
+        conversation.requests
+        ConversationRequest.modality
+        ConversationRequest.text
+        ConversationRequest.context_pages
+        ConversationRequest.context_blocks
+        ConversationRequest.context_snapshot
+        ConversationRequest.status
+        ConversationRequest.failure_reason
+        AgentReply.text
+        OperationProposal.changes
+        OperationProposal.status
+
+    provides:
+        StartConversation(human, agent, graph, title)
+        AskCotitoFromConversationPage(human, conversation, text, context_pages, context_blocks)
+            when conversation.status = active
+        CloseConversation(human, conversation) when conversation.status = active
+        ReopenConversation(human, conversation) when conversation.status = closed
+        CancelAgentRequest(human, request)
+            when request.status in {queued, working}
+        RetryAgentRequest(human, request)
+            when request.status in {failed, cancelled} and conversation.status = active
+        AcceptAgentProposal(human, proposal) when proposal.status = proposed
+        RejectAgentProposal(human, proposal) when proposal.status = proposed
+
+    contracts:
+        fulfils ConversationWithAgent
+
+    @guarantee TheConversationPageIsTheWholeReadableThread
+        -- Whatever entrance a request used, the page shows its modality, author,
+        -- context, state, reply and proposal without requiring OpenClaw's logs.
+
+    @guarantee WaitingIsCountedWhereTheReplyWillAppear
+        -- While Cotito works, the request names the work and counts elapsed time.
+        -- A spinner or typing theatre is not evidence that work continues.
+}
+
+surface CotitoConversationWorker {
+    facing agent: ConversationalAgent
+    context conversation: Conversation where agent = agent and status = active
+
+    exposes:
+        conversation.requests
+        ConversationRequest.text
+        ConversationRequest.context_snapshot
+        ConversationRequest.status
+
+    provides:
+        BeginAgentRequest(agent, request) when request.status = queued
+        AnswerAgentRequest(agent, request, text, changes) when request.status = working
+        FailAgentRequest(agent, request, reason)
+            when request.status in {queued, working}
+
+    contracts:
+        demands ConversationWithAgent
+
+    @guarantee TheWorkerReceivesOnlyTheRecordedContext
+        -- The agent receives the request and its explicit snapshot. Additional
+        -- graph reading requires ordinary agent permission and is not smuggled
+        -- into the conversation merely because the worker runs beside Vera.
+}
+
+------------------------------------------------------------
+-- Deferred Specifications
+------------------------------------------------------------
+
+deferred AcceptedAgentOperations.apply -- see: change-application.allium
+deferred TruthfulConversationWaiting.present -- see: waiting.allium
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Cuando Herbert dice 'hazlo' dentro de una conversación, ¿Cotito puede aplicar operaciones autorizadas directamente y dejar un recibo, o el primer corte debe exigir siempre aceptar una propuesta separada?"
+
+open question "¿El traspaso explícito entre Telegram y Vera mueve la continuidad al nuevo canal, o permite que ambos sigan enviando turnos al mismo hilo después del traspaso?"
+
+open question "¿Qué conversaciones se conservan completas, cuáles se destilan en decisiones y cuáles pueden caducar sin entrar al corpus durable?"
+
+open question "¿Un comando sin conversación elegida retoma el último hilo activo, pregunta cuál usar o crea uno nuevo?"
