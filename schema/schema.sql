@@ -175,6 +175,15 @@ CREATE TABLE IF NOT EXISTS webauthn_challenges (
     expires_at      INTEGER NOT NULL
 ) STRICT;
 
+-- rule FreshInstanceBeginsOwnerAuthenticationBootstrap,
+-- rule FirstOwnerPasskeyCompletesBootstrap (shared-space-access.allium).
+-- Una fila por graph_id: el dueño no tiene passkey activa hasta que registra
+-- la primera, y hasta entonces el único camino de alta es la máquina.
+CREATE TABLE IF NOT EXISTS human_access_bootstrap (
+    graph_id  TEXT PRIMARY KEY REFERENCES graphs (id),
+    status    TEXT NOT NULL CHECK (status IN ('awaiting_first_passkey', 'ready'))
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS human_sessions (
     id              TEXT PRIMARY KEY,
     participant_id  TEXT NOT NULL REFERENCES participants (id),

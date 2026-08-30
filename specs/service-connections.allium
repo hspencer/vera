@@ -199,8 +199,12 @@ surface ServicePage {
 -- Open Questions
 ------------------------------------------------------------
 
--- La credencial se guarda tal cual en la base de datos local. Cifrarla exigiría
--- una llave, y esa llave viviría al lado, que es cifrar mudándose de problema.
+-- El 30 de agosto de 2026 se elicitó cifrar el corpus entero con una
+-- passphrase del dueño (specs/corpus-encryption.allium, ahora retirada):
+-- exigía migrar de motor de base de datos, y si la passphrase y su clave de
+-- recuperación se perdían a la vez, no había vuelta atrás para el corpus
+-- completo. Herbert decidió no pagar ese costo — la pregunta original sigue
+-- abierta, con esa exploración ya hecha para quien la retome.
 open question "¿Debería una credencial guardada estar cifrada con algo que no viva en la misma máquina —una frase que se escribe al arrancar, la llave del sistema— o el límite honesto es que quien alcanza el disco ya alcanzó el corpus entero?"
 
 -- Hoy Vera trae material cuando alguien lo pide, uno a uno. Un servicio también

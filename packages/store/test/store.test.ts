@@ -441,6 +441,69 @@ describe('persistencia', () => {
     assert.equal(count(store, 'operations'), before, 'no queda media operación escrita');
     store.close();
   });
+
+  it('reconstruir del log tras un fallo de persistencia devuelve un grafo consistente con el disco', () => {
+    // `packages/server/src/server.ts` (`persist`, todos los sitios que llaman
+    // `recordOperation`) reacciona a este mismo fallo reconstruyendo `graph`
+    // desde el log en vez de seguir sirviendo la mutación en memoria que el
+    // disco nunca guardó. Esto prueba que ese mecanismo de recuperación es
+    // sólido: el grafo reconstruido no arrastra la operación que falló, y una
+    // escritura legítima posterior sigue funcionando con normalidad — no queda
+    // el dominio en un estado del que no se pueda seguir escribiendo.
+    const { store, graph } = freshStore();
+    const outcome = graph.submitOperation({
+      originId: 'ok-antes-del-fallo',
+      participant: OWNER,
+      channel: 'typed_text',
+      change: { kind: 'create_page', title: 'Antes del fallo', visibility: 'private' },
+    });
+    assert.equal(outcome.status, 'applied');
+    if (outcome.status !== 'applied') return;
+    recordOperation(store, graph, outcome.operation);
+
+    const failing = graph.submitOperation({
+      originId: 'esto-no-se-va-a-guardar',
+      participant: OWNER,
+      channel: 'typed_text',
+      change: { kind: 'create_page', title: 'Nunca llega al disco', visibility: 'private' },
+    });
+    assert.equal(failing.status, 'applied');
+    if (failing.status !== 'applied') return;
+    // El dominio ya mutó `graph` en memoria: existe antes de que la escritura
+    // falle, que es justo la ventana que vuelve peligroso no reconstruir.
+    assert.ok(graph.pageTitled('Nunca llega al disco') !== undefined);
+
+    const corrupted = {
+      ...failing.operation,
+      submission: { ...failing.operation.submission, channel: 'authenticated_voice' as const },
+    };
+    assert.throws(() => recordOperation(store, graph, corrupted));
+
+    // Reconstruir del log — lo que `persist` hace en cuanto `recordOperation`
+    // lanza — es la única forma de que memoria y disco vuelvan a decir lo
+    // mismo.
+    const reconstructed = loadGraph(store, graph.id);
+    assert.ok(
+      reconstructed.pageTitled('Antes del fallo') !== undefined,
+      'lo que sí se guardó antes del fallo sigue ahí',
+    );
+    assert.equal(
+      reconstructed.pageTitled('Nunca llega al disco'),
+      undefined,
+      'la mutación en memoria que nunca llegó al disco no sobrevive a la reconstrucción',
+    );
+
+    // Y el dominio reconstruido sigue aceptando escritura normal: el fallo no
+    // deja el grafo en un estado del que no se pueda seguir trabajando.
+    const after = reconstructed.submitOperation({
+      originId: 'sigue-funcionando-despues',
+      participant: OWNER,
+      channel: 'typed_text',
+      change: { kind: 'create_page', title: 'Después de reconstruir', visibility: 'private' },
+    });
+    assert.equal(after.status, 'applied');
+    store.close();
+  });
 });
 
 // ---------------------------------------------------------------------------
