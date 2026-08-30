@@ -40,6 +40,10 @@ sesión humana sólo se ejerce para invitados.
 Esta es una decisión de producto y de seguridad, no de implementación: decide
 quién puede llegar a ser el dueño de una instancia y por qué puerta.
 
+**Decisión (2026-08-30, Herbert):** construir el *bootstrap* de passkey del
+dueño tal como `shared-space-access.allium` ya lo especifica (opción a). La
+unidad `u1.4a` de `cola-priorizada.md` queda desbloqueada.
+
 ### E-2. Invariante citado en código que no existe en ninguna spec
 `packages/server/src/transcribe.ts:6` declara implementar
 `@invariant EveryLinkIsHumanlyConfirmed`. Ese nombre no aparece en ninguno de
@@ -91,6 +95,19 @@ adicional.
 con `TheMachineIsTheLastResort`); cifrado con passphrase de la persona
 (más seguro, más fricción); o excluir la tabla de cualquier respaldo y
 exigir reconexión manual tras restaurar (más simple, pierde comodidad).
+
+**Decisión (2026-08-30, Herbert):** cifrado con passphrase de la persona
+(opción b). Esto exige, antes de tocar `packages/store/src/secrets.ts`,
+decidir dónde se pide la passphrase (¿al arrancar el servidor? ¿por
+variable de entorno para uso no interactivo? ¿ambas?), cómo se deriva la
+clave (Argon2id o scrypt sobre la passphrase, con una sal propia guardada
+junto al dato cifrado — nunca la passphrase misma), y qué pasa si se escribe
+mal: `service-connections.allium` necesita una spec nueva para esto antes de
+escribir código, porque es comportamiento nuevo con casos límite (passphrase
+olvidada, cambio de passphrase, arranque no interactivo) que nadie ha
+decidido todavía. La unidad `u1.3b` de `cola-priorizada.md` pasa a depender
+de esa spec, no de una decisión de arquitectura de cifrado en abstracto — el
+algoritmo no es lo que falta decidir, es el recorrido.
 
 ### E-5. Recuperación raíz acumula credenciales sin revocar las anteriores
 Cada ejecución de `npm run owner:credential` (`issue-owner.ts`) emite un

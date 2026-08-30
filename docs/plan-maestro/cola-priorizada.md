@@ -13,6 +13,10 @@ dependencia real, no de número.
 ## Fase 1 — soberanía local-first y sincronización
 
 ### u1.1 — Capturar el fallo de persistencia en los nueve sitios de escritura que no lo hacen
+- **Hecho (2026-08-30):** rama `v0.6-fallo-persistencia`, commit `de661e9`.
+  `make check` en verde (1299 tests, typecheck y build limpios). Encontró un
+  décimo sitio no anticipado (transcripción de voz, ~línea 3229) que ya tenía
+  `try/catch` pero no reconstruía el grafo; también corregido.
 - **Dependencias:** ninguna.
 - **Archivos previstos:** `packages/server/src/server.ts` (líneas ~836, 2102,
   2490, 2821, 3092, 4098, 4462, 4487 — confirmar con grep antes de tocar, el
@@ -24,6 +28,13 @@ dependencia real, no de número.
 - **Detalle completo:** `fase-1-local-first-sincronizacion.md §1.1`.
 
 ### u1.2 — Test de integración para resolución de conflictos por bloque
+- **Hecho (2026-08-30):** rama `v0.6-resolucion-conflictos`, commit `057e375`.
+  `make check` en verde (1310 tests). Encontró y corrigió una pérdida de datos
+  real: `applyResolutions` soltaba lo pendiente de la bandeja antes de intentar
+  el reemplazo; si el envío era rechazado, ninguna de las dos versiones
+  sobrevivía. Queda documentado y sin resolver, a propósito, un caso distinto:
+  `keep_canonical` no cancela un `remove_block` ya en cola del mismo bloque —
+  es una decisión de producto nueva, no tomada aquí.
 - **Dependencias:** ninguna técnica; se beneficia de u1.1 primero.
 - **Archivos previstos:** `packages/web/src/reconcile.ts`,
   `packages/web/src/main.ts:2072-2101`, `packages/web/test/reconcile.test.ts`
@@ -44,9 +55,18 @@ dependencia real, no de número.
   es prerrequisito declarado de la spec o unidad separada — recomendación de
   esta auditoría: prerrequisito.
 
-### u1.3b — Cifrar o excluir `service_secrets` de cualquier respaldo futuro
-- **Dependencias:** decisión de producto (ver
-  `decisiones-y-preguntas-abiertas.md` E-4).
+### u1.3b-spec — Elicitar cómo se pide, deriva y guarda la clave de una passphrase
+- **Nueva, añadida 2026-08-30** tras la decisión de Herbert en E-4 (cifrado
+  con passphrase de la persona, no clave derivada de la máquina ni exclusión).
+  Precede a u1.3b: el algoritmo de cifrado no es lo que falta decidir, es el
+  recorrido — dónde se pide la passphrase, cómo se deriva la clave, qué pasa
+  si se escribe mal o se olvida, arranque no interactivo.
+- **Dependencias:** ninguna. Es trabajo de `allium:elicit` sobre
+  `service-connections.allium`, no de código.
+- **Archivos previstos:** `specs/service-connections.allium`.
+
+### u1.3b — Cifrar `service_secrets` con la clave derivada de la passphrase
+- **Dependencias:** u1.3b-spec.
 - **Archivos previstos:** `packages/store/src/secrets.ts:52-67`.
 - **Test de verdad:** un respaldo tomado del `.sqlite` no contiene secretos en
   texto plano legible.
@@ -63,8 +83,11 @@ dependencia real, no de número.
 - **Detalle completo:** `fase-1-local-first-sincronizacion.md §1.3`.
 
 ### u1.4a — Resolver E-1: vía de alta humana para el dueño
-- **Dependencias:** decisión de producto (ver `decisiones-y-preguntas-abiertas.md`
-  E-1 — opción (a) construir *bootstrap*, o (b) revisar la spec para retirarlo).
+- **Desbloqueada (2026-08-30):** Herbert decidió construir el *bootstrap* de
+  passkey tal como `shared-space-access.allium` ya lo especifica. Lista para
+  tomarse — no necesita spec nueva.
+- **Dependencias:** ninguna (decisión ya tomada, ver
+  `decisiones-y-preguntas-abiertas.md` E-1).
 - **Archivos previstos:** `packages/server/src/human-auth.ts`,
   `specs/shared-space-access.allium` si se opta por (b).
 - **Test de verdad:** `AuthenticatedOwner` puede registrar su propia passkey
@@ -93,6 +116,13 @@ dependencia real, no de número.
   medida original en `docs/plan-nadie-por-omision.md`.
 
 ### u1.5a — Resolver E-6: costura entre `peer-networking.allium` y `federated-sharing.allium`
+- **Hecho (2026-08-30):** rama `v0.6-costura-federacion`, commit `e209d51`.
+  `federated-sharing.allium` importa `peer-networking.allium` y
+  `SharingDestination` gana un campo opcional `peer_identity`. Dependencia
+  unidireccional a propósito: `peer-networking.allium` trata el contenido
+  intercambiado como opaco y no necesita depender de vuelta. Quedó una
+  pregunta abierta declarada en la spec (no resuelta en silencio): cómo
+  corresponde una `Distribution` a un `SharedScope` de `peer-networking`.
 - **Dependencias:** ninguna técnica; recomendado antes de cualquier código de
   red horizontal.
 - **Archivos previstos:** ambas specs.
