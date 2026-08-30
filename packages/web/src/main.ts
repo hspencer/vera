@@ -46,8 +46,8 @@ import { pageSearchResults } from './search-results.ts';
 import { createPage } from './pages.ts';
 import { changesGraphMeaning } from './invalidation.ts';
 import { sameReadablePage } from './page-validation.ts';
-import { behind, disagreements, said, type Behind, type Disagreement } from './behind.ts';
-import { askAboutDisagreements, type Resolved } from './reconcile.ts';
+import { behind, disagreements, said, type Behind } from './behind.ts';
+import { applyResolutions, askAboutDisagreements } from './reconcile.ts';
 import { forgetPositions, renderGraph, selectNode, type ThreadSettings } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D, forgetCamera, selectNode3D } from './graph/render3d.ts';
 import {
@@ -2029,7 +2029,12 @@ async function bringItOver(taking: Behind): Promise<void> {
       const decided = await askAboutDisagreements(found);
       // Dejarlo no es elegir: lo pendiente sigue pendiente y el aviso encendido.
       if (decided === null) return;
-      if (!(await applyResolutions(found, decided))) return;
+      const applied = await applyResolutions(found, decided, {
+        outbox,
+        submit: (change) => api.submit(change),
+        notice,
+      });
+      if (!applied) return;
     }
   }
 
@@ -2060,44 +2065,6 @@ async function bringItOver(taking: Behind): Promise<void> {
         ? 'Al día. Lo que cambió era de otra página, que se traerá entera al abrirla.'
         : `Al día. Lo que cambió era de otras ${cuantas} páginas, que se traerán al abrirlas.`,
   );
-}
-
-/**
- * Lleva a cabo lo que se decidió en el diálogo.
- *
- * Las tres salidas de `enum ConflictResolution`. La que no hace nada es quedarse
- * con lo de uno: ya está aplicado aquí y ya está en la bandeja, así que saldrá y
- * ganará por ser posterior — que es exactamente lo que significa quedarse con ella.
- */
-async function applyResolutions(
-  found: readonly Disagreement[],
-  decided: Resolved,
-): Promise<boolean> {
-  for (const one of found) {
-    const choice = decided.get(one.block);
-    if (choice === undefined || choice.kind === 'keep_local') continue;
-
-    /*
-     * Tomar la del corpus es retirar la mía de la bandeja.
-     *
-     * Y hay que hacerlo antes de traer la página: si se drenara después, lo que
-     * acabo de descartar volvería a mandarse y pisaría lo que elegí conservar.
-     */
-    for (const pending of outbox?.pending() ?? []) {
-      if (pending.change.kind === 'edit_block' && pending.change.block === one.block) {
-        await outbox?.settle(pending.originId);
-      }
-    }
-
-    if (choice.kind === 'replace') {
-      const said = await api.submit({ kind: 'edit_block', block: one.block, content: choice.content });
-      if (said.status === 'rejected') {
-        notice(`No se pudo escribir la versión nueva: ${said.reason}`);
-        return false;
-      }
-    }
-  }
-  return true;
 }
 
 let graphTurn = 0;

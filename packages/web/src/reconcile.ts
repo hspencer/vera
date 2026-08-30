@@ -18,6 +18,8 @@
 
 import { sideBySide, type Disagreement } from './behind.ts';
 import { icon } from './icons.ts';
+import type { Outbox } from './outbox.ts';
+import type { SubmitResult } from './api.ts';
 
 export type Resolution =
   | { kind: 'keep_local' }
@@ -116,6 +118,62 @@ export function askAboutDisagreements(
     hostDocument.body.append(back);
     return;
   });
+}
+
+/**
+ * Lleva a cabo lo que se decidió en el diálogo.
+ *
+ * Las tres salidas de la spec. La que no hace nada es quedarse con lo de uno: ya
+ * está aplicado en la réplica y ya está en la bandeja, así que saldrá y ganará por
+ * ser posterior — que es exactamente lo que significa quedarse con ella.
+ *
+ * `submit` se intenta antes de soltar lo pendiente, y no al revés. Soltar primero
+ * y mandar después dejaría las dos versiones perdidas si el envío fallara: ni la
+ * mía —ya retirada de la bandeja— ni la reemplazante —rechazada por el corpus—
+ * sobrevivirían. Confirmar antes de soltar es lo único que no puede perder
+ * ninguna de las dos.
+ */
+export async function applyResolutions(
+  found: readonly Disagreement[],
+  decided: Resolved,
+  hooks: {
+    /** Dónde vive lo que este aparato todavía no ha logrado mandar. */
+    outbox: Pick<Outbox, 'pending' | 'settle'> | null;
+    /** Cómo se manda un cambio al corpus. */
+    submit: (change: { kind: 'edit_block'; block: string; content: string }) => Promise<SubmitResult>;
+    /** Cómo se avisa de un rechazo. */
+    notice: (message: string) => void;
+  },
+): Promise<boolean> {
+  const { outbox, submit, notice } = hooks;
+
+  for (const one of found) {
+    const choice = decided.get(one.block);
+    if (choice === undefined || choice.kind === 'keep_local') continue;
+
+    if (choice.kind === 'replace') {
+      const said = await submit({ kind: 'edit_block', block: one.block, content: choice.content });
+      if (said.status === 'rejected') {
+        notice(`No se pudo escribir la versión nueva: ${said.reason}`);
+        // Lo pendiente sigue en la bandeja: nada se ha perdido, sólo no se ha
+        // podido reemplazar todavía. Ver la nota de arriba.
+        return false;
+      }
+    }
+
+    /*
+     * Tomar la del corpus, o haber escrito ya la reemplazante que la sustituye, es
+     * retirar la mía de la bandeja. Y hay que hacerlo antes de traer la página: si
+     * se drenara después, lo que acabo de descartar volvería a mandarse y pisaría
+     * lo que elegí conservar.
+     */
+    for (const pending of outbox?.pending() ?? []) {
+      if (pending.change.kind === 'edit_block' && pending.change.block === one.block) {
+        await outbox?.settle(pending.originId);
+      }
+    }
+  }
+  return true;
 }
 
 /** Un bloque en desacuerdo: las dos versiones y las tres salidas. */
