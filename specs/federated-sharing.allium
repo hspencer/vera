@@ -8,10 +8,14 @@
 -- Excludes:
 --   - Authentication and grant mechanics (identity-access.allium)
 --   - Conflict resolution between divergent copies
---   - Transport and storage implementation
--- Dependencies: Graph, Page and Participant are governed by core.allium
+--   - Storage implementation
+--   - Transport and instance identity between peers (peer-networking.allium)
+-- Dependencies: Graph, Page and Participant are governed by core.allium; a
+--   destination that is itself a sovereign Vera instance is named by its
+--   stable identity from peer-networking.allium
 
 use "./core.allium" as core
+use "./peer-networking.allium" as peer
 
 ------------------------------------------------------------
 -- Contracts
@@ -188,6 +192,10 @@ entity SharedSelection {
 entity SharingDestination {
     kind: DestinationKind
     address: String
+    -- Set only when this destination is itself a sovereign Vera instance
+    -- reached over the horizontal peer network; its stable identity, not a
+    -- mutable address, is what a Distribution actually travels to.
+    peer_identity: peer/PeerIdentity?
     original_owner: core/Participant?
     governors: List<core/Participant>
 }
@@ -327,6 +335,7 @@ open question "How long is withdrawal acknowledgement evidence retained, and wha
 open question "What bounded purge period applies to an acknowledged federated cache after it has stopped serving and indexing withdrawn content?"
 open question "Which authority decides whether a recipient's declared independent basis permits retention after a personal-data erasure request?"
 open question "Can a public destination synchronise canonical page identity, or does it receive only a publication projection?"
+open question "Does a Distribution to a federated peer travel as one peer-networking SharedScope per shared selection, and how does the selection's explicit page list correspond to SharedScope's opaque scope_id?"
 -- Answered: recipients may continue as an editable fork with new identity and
 -- canonical custody, permanently derived from the immutable historical origin.
 -- Answered: a shared graph or site normally continues as one common fork under
