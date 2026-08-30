@@ -90,14 +90,49 @@ async function invitation(id: string, secret: string): Promise<void> {
   } catch (error) { notice(main, error instanceof Error ? error.message : 'La invitación no está disponible.', true); }
 }
 
+/**
+ * rule OwnerAuthorizesOwnAuthenticatorFromMachine (shared-space-access.allium).
+ *
+ * A diferencia de `invitation()`, no hay nombre que pedir ni invitación que
+ * canjear: la matrícula ya existe, la creó `npm run owner:enroll-passkey`
+ * desde la máquina, y esta pantalla sólo lleva a cabo la ceremonia WebAuthn
+ * sobre una identidad que ya es dueña del grafo.
+ */
+async function ownerEnrollment(enrollment: string, secret: string): Promise<void> {
+  const main = shell('Tu passkey');
+  const detail = document.createElement('p'); detail.className = 'invitation-detail';
+  detail.textContent = 'Esta matrícula la autorizaste desde la máquina que sostiene tu corpus. Registra una passkey para entrar como quien eres.';
+  const register = document.createElement('button'); register.textContent = 'crear mi passkey';
+  register.onclick = () => void (async () => {
+    register.disabled = true; notice(main, 'Preparando la passkey…');
+    try {
+      const options = await json('/human-auth/registration/options', 'POST', { enrollment, secret });
+      const response = await startRegistration({ optionsJSON: options });
+      await json('/human-auth/registration/verify', 'POST', { enrollment, secret, response });
+      location.assign('/');
+    } catch (error) {
+      notice(main, error instanceof Error ? error.message : 'No se pudo registrar la passkey.', true);
+      register.textContent = 'volver a intentar';
+      register.disabled = false;
+    }
+  })();
+  main.append(detail, register);
+}
+
 export function handlesSharedAccess(): boolean {
   const invite = /^\/invite\/([^/]+)$/.exec(location.pathname);
   if (invite !== null) {
     void invitation(decodeURIComponent(invite[1] ?? ''), new URL(location.href).searchParams.get('secret') ?? '');
     return true;
   }
+  const enroll = /^\/enroll-owner\/([^/]+)$/.exec(location.pathname);
+  if (enroll !== null) {
+    void ownerEnrollment(decodeURIComponent(enroll[1] ?? ''), new URL(location.href).searchParams.get('secret') ?? '');
+    return true;
+  }
   // Un espacio no es una aplicación aparte. No existe un lector alternativo:
   // toda ruta `/s/<slug>` arranca Vera y el servidor sólo cerca su subgrafo y
-  // su autoridad. Este módulo interviene exclusivamente en `/invite/<id>`.
+  // su autoridad. Este módulo interviene exclusivamente en `/invite/<id>` y
+  // `/enroll-owner/<id>`.
   return false;
 }

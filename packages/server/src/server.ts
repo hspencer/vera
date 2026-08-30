@@ -173,6 +173,7 @@ import {
   registrationOptions,
   revokeSession,
 } from './human-auth.ts';
+import { completeOwnerBootstrapIfDue } from './owner-bootstrap.ts';
 
 const CHANGE_KINDS = new Set<string>(CORE_CHANGE_KINDS);
 
@@ -2204,6 +2205,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, any>;
           const made = await finishRegistration(store, String(body['enrollment'] ?? ''),
             String(body['secret'] ?? ''), body['response']);
+          completeOwnerBootstrapIfDue(store, owner.id, made.participant);
           setHumanSession(made.secret, made.expiresAt);
           send(response, 201, { participant: made.participant, expiresAt: made.expiresAt });
         } catch (error) { send(response, 409, { error: error instanceof Error ? error.message : String(error) }); }
