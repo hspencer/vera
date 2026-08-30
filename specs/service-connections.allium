@@ -199,9 +199,10 @@ surface ServicePage {
 -- Open Questions
 ------------------------------------------------------------
 
--- La credencial se guarda tal cual en la base de datos local. Cifrarla exigiría
--- una llave, y esa llave viviría al lado, que es cifrar mudándose de problema.
-open question "¿Debería una credencial guardada estar cifrada con algo que no viva en la misma máquina —una frase que se escribe al arrancar, la llave del sistema— o el límite honesto es que quien alcanza el disco ya alcanzó el corpus entero?"
+-- Resuelto en corpus-encryption.allium: no se cifra esta tabla sola -eso
+-- habría sido cifrar mudándose de problema, la llave viviría al lado-, se
+-- cifra el corpus entero, con una passphrase que sólo el dueño sabe y que no
+-- vive en la misma máquina más que mientras el proceso corre desbloqueado.
 
 -- Hoy Vera trae material cuando alguien lo pide, uno a uno. Un servicio también
 -- podría hablar solo: refrescar lo que cambió, avisar de lo que desapareció.
