@@ -12,6 +12,13 @@ describe('prioridad móvil', () => {
     assert.match(main, /#search-close'\)\.addEventListener\('click', \(\) => closeSearch\(true\)\)/);
   });
 
+  it('recoge y limpia el buscador al salir de él en un teléfono', () => {
+    assert.match(
+      main,
+      /search\.addEventListener\('blur',[\s\S]+closeSearch\(window\.matchMedia\('\(max-width: 640px\)'\)\.matches\)/,
+    );
+  });
+
   it('Ajustes bloquea el documento y queda contenido por la ventana', () => {
     assert.match(main, /document\.body\.classList\.add\('settings-open'\)/);
     assert.match(main, /document\.body\.classList\.remove\('settings-open'\)/);

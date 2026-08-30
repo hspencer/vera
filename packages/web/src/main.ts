@@ -2995,10 +2995,11 @@ function wireTheme(): void {
   /*
    * El buscador plegado, en un teléfono.
    *
-   * Se despliega al pulsar la lupa y se recoge al terminar. «Terminar» es
-   * cerrarlo con Escape o salir de él sin haber escrito nada: si hay texto
-   * escrito se queda abierto, porque recoger un buscador con una búsqueda dentro
-   * sería esconder lo que alguien acaba de pedir.
+   * Se despliega al pulsar la lupa y se recoge al terminar. En un teléfono,
+   * salir del campo también termina la búsqueda: conservar el texto dentro del
+   * campo ocultaba Atrás, inicio, voz y vistas aunque la persona ya estuviera
+   * actuando en otra parte. En pantalla ancha el campo sigue siendo persistente,
+   * porque allí no reemplaza a la barra.
    *
    * La clase va en la barra y no en el campo: lo que cambia es la barra entera
    * —el campo pasa a ocuparla— y el CSS de una pantalla ancha la ignora, donde
@@ -3026,7 +3027,9 @@ function wireTheme(): void {
     else openSearch();
   });
   $('#search-close').addEventListener('click', () => closeSearch(true));
-  search.addEventListener('blur', () => window.setTimeout(closeSearch, 120));
+  search.addEventListener('blur', () => {
+    window.setTimeout(() => closeSearch(window.matchMedia('(max-width: 640px)').matches), 120);
+  });
   search.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     // El propio buscador ya vacía el campo con Escape; esto recoge lo que queda.
