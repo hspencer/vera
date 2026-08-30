@@ -9,7 +9,8 @@
       ],
       "env": {
         "VERA_URL": "http://127.0.0.1:4173",
-        "VERA_CLIENT": "claude-code"
+        "VERA_CLIENT": "claude-alexei-2",
+        "VERA_TOKEN_FILE": "/home/hspencer/.config/vera/claude-alexei.token"
       }
     }
   }
