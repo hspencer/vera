@@ -51,47 +51,37 @@ dependencia real, no de número.
 - **Archivos previstos:** `specs/` (nuevo archivo o extensión).
 - **Test de verdad:** `allium check specs/` limpio sobre la spec nueva.
 - **Riesgos:** bajo, es trabajo de especificación, no de código.
-- **Nota:** debe resolver primero si el cifrado de `service_secrets` (u1.3b)
-  es prerrequisito declarado de la spec o unidad separada — recomendación de
-  esta auditoría: prerrequisito.
+- **Nota (actualizada 2026-08-30):** el cifrado de `service_secrets` (u1.3b)
+  se exploró y Herbert decidió no seguir por ese camino — ver más abajo. Un
+  respaldo de la base incluirá esos secretos en texto plano; si eso importa,
+  la decisión de excluirlos del respaldo (o tratarlos aparte) se toma al
+  elicitar esta spec, no queda pendiente de u1.3b.
 
 ### u1.3b-spec — Elicitar cómo se pide, deriva y guarda la clave de una passphrase
-- **Hecho (2026-08-30):** rama `v0.6-cifrado-secretos-spec`, commit `c46a008`.
-  `allium check specs/` en 0 errores. La elicitación con Herbert escaló el
-  alcance: no es cifrar `service_secrets`, es que **el corpus entero** quede
-  ilegible sin la passphrase — nueva spec `specs/corpus-encryption.allium`,
-  y `service-connections.allium` queda resuelta por referencia. Quedan
-  cuatro preguntas abiertas nuevas en la propia spec (formato de la clave de
-  recuperación, si un reinicio de proceso necesita su propia regla de
-  re-bloqueo, si el desbloqueo puede esperar a `is_local_to_the_instance`, y
-  qué ve un cliente MCP contra una instancia bloqueada).
-- **Archivos:** `specs/corpus-encryption.allium` (nueva),
-  `specs/service-connections.allium`.
+- **Hecha y luego retirada (2026-08-30).** Se elicitó `specs/corpus-encryption.allium`
+  (rama `v0.6-cifrado-secretos-spec`, commit `c46a008`): cifrar el corpus
+  entero, no sólo `service_secrets`, con passphrase, clave de recuperación y
+  límite de intentos. Al ver el costo real —migrar de motor de base de datos,
+  y que perder passphrase y clave de recuperación a la vez deja el corpus
+  entero irrecuperable— Herbert decidió no seguir por ese camino. La spec se
+  retiró del repositorio; `specs/service-connections.allium` vuelve a su
+  pregunta abierta original, con una nota que registra qué se exploró y por
+  qué se abandonó, para que nadie la reabra sin saberlo.
+- **Estado de E-4 ahora:** sin resolver de nuevo. Los secretos de
+  `service_secrets` siguen en texto plano. La autenticación del dueño queda
+  enteramente resuelta por u1.4a (passkey WebAuthn), sin passphrase adicional.
 
-### u1.3b — Cifrar el corpus entero con la clave derivada de la passphrase
-- **Renombrada y ampliada (2026-08-30):** ya no es cifrar una tabla, es
-  `CorpusLock` y el ciclo de arranque-bloqueado/desbloqueo de
-  `corpus-encryption.allium`. Esto probablemente exige migrar de `node:sqlite`
-  a un motor que soporte cifrado del archivo completo (SQLCipher u otro) —
-  cambio de raíz, no una capa encima. Antes de escribir código, resolver la
-  pregunta abierta sobre `is_local_to_the_instance` (¿espera a u1.4d o usa una
-  comprobación propia mientras tanto?).
-- **Dependencias:** u1.3b-spec (hecha).
-- **Archivos previstos:** `packages/store/src/store.ts` (apertura de la base),
-  nuevo módulo de bloqueo en `packages/server/src/`, `packages/web/src/` para
-  el candado en Ajustes, `packages/store/src/secrets.ts` (deja de necesitar
-  cifrado propio, hereda el del archivo entero).
-- **Test de verdad:** con la instancia bloqueada, ninguna ruta responde nada
-  salvo el desbloqueo; tres passphrases equivocadas seguidas fuerzan un
-  minuto de espera; la clave de recuperación generada al activar el cifrado
-  desbloquea después de "olvidar" la passphrase real.
-- **Riesgos:** alto — ver `informe-final.md`. No se prueba contra la base
-  real de Herbert bajo ninguna circunstancia sin respaldo (`u1.3c`)
-  verificado primero, y sin ensayar antes contra una copia, igual que se hizo
-  con u1.4a.
+### u1.3b — (retirada junto con la spec)
+- No hay unidad de código que ejecutar: no hay spec vigente que implementar.
+  Si en el futuro se retoma el cifrado de secretos, empieza de nuevo por
+  `u1.3b-spec` con un alcance más acotado (ver las tres opciones que se le
+  presentaron a Herbert el 2026-08-30 en el historial de esta conversación:
+  retirar del todo, passphrase como segundo factor sin cifrar nada, o cifrar
+  sólo `service_secrets` como se planteó originalmente en E-4).
 
 ### u1.3c — Construir e implementar el recorrido de respaldo/restauración
-- **Dependencias:** u1.3a, u1.3b.
+- **Dependencias:** u1.3a. (u1.3b queda retirada; el respaldo lleva
+  `service_secrets` en texto plano salvo que u1.3a decida excluirlos.)
 - **Archivos previstos:** `packages/store/src/` (nuevo módulo),
   `scripts/backup.sh`, `scripts/restore.sh` (nuevos).
 - **Test de verdad:** restaurar en una instalación vacía, en una máquina

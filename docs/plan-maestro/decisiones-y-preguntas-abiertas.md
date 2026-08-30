@@ -96,29 +96,27 @@ con `TheMachineIsTheLastResort`); cifrado con passphrase de la persona
 (más seguro, más fricción); o excluir la tabla de cualquier respaldo y
 exigir reconexión manual tras restaurar (más simple, pierde comodidad).
 
-**Decisión (2026-08-30, Herbert):** cifrado con passphrase de la persona
-(opción b). Al elicitar el mecanismo (`u1.3b-spec`, ver
-`specs/corpus-encryption.allium`), Herbert amplió el alcance de fondo: no es
-cifrar `service_secrets`, es que **la base entera no se abra sin la
-passphrase**. Mecanismo acordado: la passphrase llega por variable de
-entorno o por una acción autenticada desde Ajustes, desde cualquier aparato
-con la PWA; mientras la instancia está bloqueada ni siquiera puede verificar
-una sesión (las tablas de autenticación también están cifradas), así que el
-único filtro es la red de confianza más un límite de intentos — tres fallos
-seguidos cuestan un minuto de espera; olvidar la passphrase no pierde el
-corpus porque se genera una clave de recuperación una sola vez al activar el
-cifrado (mostrada una vez, nunca guardada por Vera); cambiar la passphrase
-re-cifra todo y regenera esa clave. Quedan como preguntas abiertas en la
-propia spec: el formato de la clave de recuperación, si un reinicio de
-proceso necesita su propia regla de re-bloqueo, si el desbloqueo puede
-esperar a `is_local_to_the_instance` (sin código todavía, ver E-1 y u1.4d), y
-qué ve un cliente MCP contra una instancia bloqueada.
+**Decisión inicial (2026-08-30, Herbert):** cifrado con passphrase de la
+persona (opción b). Al elicitar el mecanismo (`u1.3b-spec`), el alcance
+creció de fondo: no cifrar `service_secrets`, sino que **la base entera** no
+se abriera sin la passphrase, con clave de recuperación, límite de intentos
+y re-cifrado al cambiarla — todo quedó escrito en
+`specs/corpus-encryption.allium`.
 
-**Consecuencia técnica para quien implemente `u1.3b`:** cifrar el archivo
-`.sqlite` completo probablemente exige migrar de `node:sqlite` a un motor que
-soporte cifrado nativo (SQLCipher u otro) — un cambio de raíz, no una capa
-que se agrega encima. No es una decisión que esta auditoría tome; queda
-señalada para quien tome la unidad.
+**Decisión final (2026-08-30, Herbert, mismo día):** al ver el costo real
+—migrar de `node:sqlite` a un motor con cifrado nativo, y que perder la
+passphrase y la clave de recuperación a la vez volvería el corpus entero
+irrecuperable— Herbert decidió **no seguir por ese camino**.
+`corpus-encryption.allium` se retiró del repositorio;
+`service-connections.allium` vuelve a su pregunta abierta original, con una
+nota que registra la exploración para que no se repita sin saberlo.
+
+**Estado actual de E-4:** sin resolver, otra vez. Los secretos de
+`service_secrets` siguen en texto plano. La autenticación del dueño queda
+enteramente cubierta por u1.4a (passkey WebAuthn); no hay una segunda capa
+de passphrase. Si se retoma este problema más adelante, empieza de nuevo
+por una elicitación acotada — las tres opciones originales de esta entrada
+siguen vigentes, incluida la de cifrar sólo la tabla.
 
 ### E-5. Recuperación raíz acumula credenciales sin revocar las anteriores
 Cada ejecución de `npm run owner:credential` (`issue-owner.ts`) emite un
