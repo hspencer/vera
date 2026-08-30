@@ -1,4 +1,44 @@
 import { startRegistration } from '@simplewebauthn/browser';
+import { DEFAULT_TOKENS, session } from './tokens.ts';
+
+/**
+ * El color y la letra de esta pantalla, antes de que arranque el resto de la
+ * aplicación.
+ *
+ * @guarantee EditableDesignSystem, tokens.ts: el diseño de Vera es uno solo y
+ * se ajusta desde dentro de la aplicación, no dos veces. Esta pantalla llega
+ * antes de que `main.ts` cargue —quien la abre puede no tener nada en
+ * caché— así que no puede depender del arranque para verse como Vera; pero
+ * "no depender del arranque" no es lo mismo que "inventar su propia paleta".
+ * Usa los mismos `DEFAULT_TOKENS` y respeta la preferencia de esquema ya
+ * guardada, igual que `applyTokens` lo haría una vez arrancada.
+ */
+interface CriticalPalette {
+  bg: string;
+  bgRaised: string;
+  text: string;
+  textDim: string;
+  rule: string;
+  accent: string;
+  warm: string;
+  fontUi: string;
+}
+
+function criticalPalette(): CriticalPalette {
+  const scheme = session.scheme();
+  const value = (name: string): string =>
+    DEFAULT_TOKENS.find((token) => token.name === name)?.[scheme] ?? '';
+  return {
+    bg: value('--bg'),
+    bgRaised: value('--bg-raised'),
+    text: value('--text'),
+    textDim: value('--text-dim'),
+    rule: value('--rule'),
+    accent: value('--accent'),
+    warm: value('--warm'),
+    fontUi: value('--font-ui'),
+  };
+}
 
 const json = async (path: string, method = 'GET', body?: unknown): Promise<any> => {
   const response = await fetch(path, { method, credentials: 'same-origin',
@@ -15,21 +55,22 @@ const shell = (title: string): HTMLElement => {
   // conserva. El estilo crítico viaja con el mismo módulo que dibuja la página;
   // la hoja general puede enriquecerlo, pero no es una dependencia para entrar.
   if (document.querySelector('#invitation-critical-style') === null) {
+    const p = criticalPalette();
     const style = document.createElement('style');
     style.id = 'invitation-critical-style';
     style.textContent = `
-      #vera-root[data-layout='invitation']{display:grid;min-height:100dvh;place-items:center;background:#f7f4ef;color:#241b1f;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-      .invitation-access{box-sizing:border-box;width:min(100% - 2rem,36rem);margin:2rem auto;padding:clamp(1.5rem,5vw,3rem);border:1px solid #d8cec8;border-radius:1.25rem;background:#fffdf9;box-shadow:0 1.25rem 4rem rgba(46,0,36,.10)}
-      .invitation-mark{margin:0;color:#765d6d;font-size:.78rem;font-weight:650;letter-spacing:.09em;text-transform:uppercase}
-      .invitation-access h1{margin:.45rem 0 1rem;color:#2e0024;font-family:ui-serif,Georgia,serif;font-size:clamp(2rem,8vw,3.25rem);font-weight:500;line-height:1.05}
-      .invitation-detail{margin:0 0 1.75rem;color:#5f5358;line-height:1.55}
-      .invitation-field{display:grid;gap:.45rem;margin:0 0 1rem;color:#4b3d43;font-size:.88rem;font-weight:650}
-      .invitation-field input{box-sizing:border-box;width:100%;padding:.8rem .9rem;border:1px solid #bcaeb5;border-radius:.55rem;background:white;color:inherit;font:inherit;font-weight:400}
-      .invitation-field input:focus{outline:3px solid rgba(112,29,84,.18);border-color:#701d54}
-      .invitation-access button{width:100%;padding:.85rem 1rem;border:0;border-radius:.55rem;background:#2e0024;color:white;font:inherit;font-weight:650;cursor:pointer}
+      #vera-root[data-layout='invitation']{display:grid;grid-template-columns:1fr;grid-template-areas:none;height:auto;min-height:100dvh;place-items:center;background:${p.bg};color:${p.text};font-family:${p.fontUi}}
+      .invitation-access{box-sizing:border-box;width:min(100% - 2rem,36rem);margin:2rem auto;padding:clamp(1.5rem,5vw,3rem);border:1px solid ${p.rule};border-radius:1.25rem;background:${p.bgRaised}}
+      .invitation-mark{margin:0;color:${p.textDim};font-size:.78rem;font-weight:650;letter-spacing:.09em;text-transform:uppercase}
+      .invitation-access h1{margin:.45rem 0 1rem;color:${p.text};font-family:${p.fontUi};font-size:clamp(1.6rem,6vw,2.4rem);font-weight:600;line-height:1.15}
+      .invitation-detail{margin:0 0 1.75rem;color:${p.textDim};line-height:1.55}
+      .invitation-field{display:grid;gap:.45rem;margin:0 0 1rem;color:${p.text};font-size:.88rem;font-weight:650}
+      .invitation-field input{box-sizing:border-box;width:100%;padding:.8rem .9rem;border:1px solid ${p.rule};border-radius:.55rem;background:${p.bg};color:${p.text};font:inherit;font-weight:400}
+      .invitation-field input:focus{outline:3px solid color-mix(in srgb, ${p.accent} 30%, transparent);border-color:${p.accent}}
+      .invitation-access button{width:100%;padding:.85rem 1rem;border:0;border-radius:.55rem;background:${p.accent};color:${p.bg};font:inherit;font-weight:650;cursor:pointer}
       .invitation-access button:disabled{cursor:wait;opacity:.58}
-      .shared-notice{margin:1rem 0 0;color:#5f5358;line-height:1.45}
-      .shared-notice[data-bad='true']{color:#9b2727}
+      .shared-notice{margin:1rem 0 0;color:${p.textDim};line-height:1.45}
+      .shared-notice[data-bad='true']{color:${p.warm}}
     `;
     document.head.append(style);
   }
@@ -90,14 +131,49 @@ async function invitation(id: string, secret: string): Promise<void> {
   } catch (error) { notice(main, error instanceof Error ? error.message : 'La invitación no está disponible.', true); }
 }
 
+/**
+ * rule OwnerAuthorizesOwnAuthenticatorFromMachine (shared-space-access.allium).
+ *
+ * A diferencia de `invitation()`, no hay nombre que pedir ni invitación que
+ * canjear: la matrícula ya existe, la creó `npm run owner:enroll-passkey`
+ * desde la máquina, y esta pantalla sólo lleva a cabo la ceremonia WebAuthn
+ * sobre una identidad que ya es dueña del grafo.
+ */
+async function ownerEnrollment(enrollment: string, secret: string): Promise<void> {
+  const main = shell('Tu passkey');
+  const detail = document.createElement('p'); detail.className = 'invitation-detail';
+  detail.textContent = 'Esta matrícula la autorizaste desde la máquina que sostiene tu corpus. Registra una passkey para entrar como quien eres.';
+  const register = document.createElement('button'); register.textContent = 'crear mi passkey';
+  register.onclick = () => void (async () => {
+    register.disabled = true; notice(main, 'Preparando la passkey…');
+    try {
+      const options = await json('/human-auth/registration/options', 'POST', { enrollment, secret });
+      const response = await startRegistration({ optionsJSON: options });
+      await json('/human-auth/registration/verify', 'POST', { enrollment, secret, response });
+      location.assign('/');
+    } catch (error) {
+      notice(main, error instanceof Error ? error.message : 'No se pudo registrar la passkey.', true);
+      register.textContent = 'volver a intentar';
+      register.disabled = false;
+    }
+  })();
+  main.append(detail, register);
+}
+
 export function handlesSharedAccess(): boolean {
   const invite = /^\/invite\/([^/]+)$/.exec(location.pathname);
   if (invite !== null) {
     void invitation(decodeURIComponent(invite[1] ?? ''), new URL(location.href).searchParams.get('secret') ?? '');
     return true;
   }
+  const enroll = /^\/enroll-owner\/([^/]+)$/.exec(location.pathname);
+  if (enroll !== null) {
+    void ownerEnrollment(decodeURIComponent(enroll[1] ?? ''), new URL(location.href).searchParams.get('secret') ?? '');
+    return true;
+  }
   // Un espacio no es una aplicación aparte. No existe un lector alternativo:
   // toda ruta `/s/<slug>` arranca Vera y el servidor sólo cerca su subgrafo y
-  // su autoridad. Este módulo interviene exclusivamente en `/invite/<id>`.
+  // su autoridad. Este módulo interviene exclusivamente en `/invite/<id>` y
+  // `/enroll-owner/<id>`.
   return false;
 }
