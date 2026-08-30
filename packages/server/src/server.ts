@@ -466,6 +466,29 @@ export function createVeraServer(options: ServerOptions): VeraServer {
   let graph = loadGraph(store, 'mind');
 
   /*
+   * Persistir puede fallar por algo que el dominio no vio venir. La
+   * transacción revierte sola, pero sin este intento la excepción subía hasta
+   * el proceso, o —peor— dejaba la memoria diciendo un cambio que el disco ya
+   * no tiene.
+   *
+   * @invariant IdempotentOrderedApplication (change-application.allium):
+   * aplicación todo-o-nada. El dominio ya mutó `graph` quando esto se llama;
+   * si `recordOperation` lanza, sólo el disco revierte, así que reconstruir
+   * `graph` del log es la única forma de que memoria y disco vuelvan a decir
+   * lo mismo. Cada llamador decide qué hacer con el mensaje de fallo según su
+   * propio idioma (lanzar, devolver `null`, devolver `{ error }`).
+   */
+  const persist = (operation: Operation): string | null => {
+    try {
+      recordOperation(store, graph, operation);
+      return null;
+    } catch (error) {
+      graph = loadGraph(store, 'mind');
+      return error instanceof Error ? error.message : String(error);
+    }
+  };
+
+  /*
    * De quién es este grafo lo dice el grafo, no la configuración.
    *
    * Un grafo con historia ya tiene dueño: es quien firmó lo que hay dentro, y
@@ -833,7 +856,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         change,
       });
       if (outcome.status !== 'applied') return null;
-      recordOperation(store, graph, outcome.operation);
+      if (persist(outcome.operation) !== null) return null;
       return outcome.operation.subjectId;
     };
 
@@ -1629,7 +1652,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           if (outcome.status !== 'applied') {
             throw new Error(outcome.status === 'rejected' ? outcome.reason : 'operación duplicada');
           }
-          recordOperation(store, graph, outcome.operation);
+          const failure = persist(outcome.operation);
+          if (failure !== null) throw new Error(failure);
         };
 
         try {
@@ -2099,7 +2123,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         const outcome = graph.submitOperation({ originId: `proposal:${proposal.id}`,
           participant: proposal.author as ParticipantId, channel: proposal.channel, change: proposal.change as Change });
         if (outcome.status === 'rejected') { send(response, 422, { error: outcome.reason }); return; }
-        if (outcome.status === 'applied') recordOperation(store, graph, outcome.operation);
+        if (outcome.status === 'applied') {
+          const failure = persist(outcome.operation);
+          if (failure !== null) { send(response, 500, { error: 'no se pudo persistir la operación', detail: failure }); return; }
+        }
       }
       const changed = decideSharedProposal(store, space, proposal.id, graph.owner!, decision);
       send(response, changed ? 200 : 409, changed ? { status: decision } : { error: 'la propuesta ya no está pendiente' });
@@ -2487,7 +2514,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             change,
           });
           if (outcome.status !== 'applied') return null;
-          recordOperation(store, graph, outcome.operation);
+          if (persist(outcome.operation) !== null) return null;
           return outcome.subjectId;
         };
 
@@ -2818,7 +2845,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             change,
           });
           if (outcome.status === 'rejected') throw new Error(outcome.reason);
-          if (outcome.status === 'applied') recordOperation(store, graph, outcome.operation);
+          if (outcome.status === 'applied') {
+            const failure = persist(outcome.operation);
+            if (failure !== null) throw new Error(failure);
+          }
           made += 1;
           return outcome.operation.subjectId;
         };
@@ -3089,7 +3119,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           if (outcome.status === 'rejected') return { error: outcome.reason };
           // Un duplicado no se vuelve a persistir: la operación ya está en el
           // registro y su sujeto es el mismo.
-          if (outcome.status === 'applied') recordOperation(store, graph, outcome.operation);
+          if (outcome.status === 'applied') {
+            const failure = persist(outcome.operation);
+            if (failure !== null) return { error: failure };
+          }
           made += 1;
           return outcome.operation.subjectId;
         };
@@ -3193,7 +3226,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             send(response, 422, { error: `no se pudo escribir la transcripción: ${written.status}` });
             return;
           }
-          recordOperation(store, graph, written.operation);
+          const failure = persist(written.operation);
+          if (failure !== null) throw new Error(failure);
           setSpokenOrigin(store, block, id);
           const kept = setTranscript(store, id, outcome.text);
           send(response, 200, { recording: kept, block, text: outcome.text });
@@ -4095,7 +4129,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             change,
           });
           if (outcome.status !== 'applied') return null;
-          recordOperation(store, graph, outcome.operation);
+          if (persist(outcome.operation) !== null) return null;
           return outcome.operation.subjectId;
         };
 
@@ -4459,7 +4493,8 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         if (outcome.status !== 'applied') {
           return outcome.status === 'rejected' ? outcome.reason : 'repetido';
         }
-        recordOperation(store, graph, outcome.operation);
+        const failure = persist(outcome.operation);
+        if (failure !== null) return failure;
         applied.push(outcome.operation);
         return null;
       };
@@ -4484,7 +4519,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             change,
           });
           if (outcome.status !== 'applied') return;
-          recordOperation(store, graph, outcome.operation);
+          if (persist(outcome.operation) !== null) return;
         }
       };
 
