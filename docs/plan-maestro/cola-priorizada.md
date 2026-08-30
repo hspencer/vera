@@ -83,9 +83,14 @@ dependencia real, no de número.
 - **Detalle completo:** `fase-1-local-first-sincronizacion.md §1.3`.
 
 ### u1.4a — Resolver E-1: vía de alta humana para el dueño
-- **Desbloqueada (2026-08-30):** Herbert decidió construir el *bootstrap* de
-  passkey tal como `shared-space-access.allium` ya lo especifica. Lista para
-  tomarse — no necesita spec nueva.
+- **Hecho (2026-08-30):** rama `v0.6-bootstrap-dueno`, commit `3414a6e`.
+  `npm run owner:enroll-passkey -- <base.sqlite>` crea el bootstrap y una
+  matrícula fuera de HTTP; `/enroll-owner/<id>?secret=…` la completa con la
+  misma ceremonia WebAuthn que ya usan los invitados. `make check` en verde
+  (1307 tests). Encontró un problema de entorno no relacionado con el código:
+  este worktree no tenía `node_modules` propio y `@vera/store`/`@vera/core`
+  resolvían al checkout principal — corregido con `npm install`; ver nota al
+  final de este documento.
 - **Dependencias:** ninguna (decisión ya tomada, ver
   `decisiones-y-preguntas-abiertas.md` E-1).
 - **Archivos previstos:** `packages/server/src/human-auth.ts`,
@@ -218,3 +223,23 @@ dependencia real, no de número.
   corpus de Vera, no en este repositorio.
 - **Nota:** esta unidad no se reclama con una rama de git — se escribe
   directamente en Vera, como toda decisión editorial de ese documento.
+
+## Nota de entorno (2026-08-30): worktrees de tarea sin `node_modules` propio
+
+Al ejecutar u1.4a se encontró que un worktree creado por la herramienta
+`EnterWorktree` del harness (a diferencia de `scripts/worktree.sh`, que instala
+dependencias como parte de crearlo) puede quedar **sin `node_modules`
+propio**. Cuando eso pasa, cualquier import por especificador de paquete
+(`@vera/store`, `@vera/core`, `@vera/mcp`…) resuelve subiendo directorios hasta
+encontrar el `node_modules` del checkout principal — silenciosamente, sin
+error — y entonces el código que se prueba no es el del worktree sino el del
+checkout que se suponía aislado.
+
+No invalida lo verificado en u1.1 y u1.2: en ambas unidades, los archivos
+tocados se importan por ruta relativa dentro de su propio paquete
+(`../src/…`), que resuelve siempre al worktree sin importar `node_modules`.
+Pero cualquier unidad futura que cambie el comportamiento de un paquete y lo
+pruebe *desde otro paquete* debe empezar por confirmar
+`readlink -f node_modules/@vera/<paquete>` apunta al propio worktree — y si no
+hay `node_modules` en absoluto, correr `npm install` ahí antes de fiarse de
+ningún resultado de `make check`.

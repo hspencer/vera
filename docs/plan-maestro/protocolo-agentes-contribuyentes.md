@@ -49,7 +49,14 @@ Antes de escribir código:
 - **Usa un worktree por tarea**, como ya indica `CONTRIBUTING.md §2`
   (`make worktree n=tarea`). Dos tareas en el mismo directorio fallan al
   confirmar, no al trabajar — el worktree es la defensa real, no la
-  declaración.
+  declaración. Si el worktree lo crea una herramienta distinta de
+  `scripts/worktree.sh` (por ejemplo, la de un agente), confirma que instaló
+  sus propias dependencias — `readlink -f node_modules/@vera/core` debe
+  apuntar dentro del propio worktree, no al checkout principal. Si no hay
+  `node_modules`, un import por especificador de paquete resuelve subiendo
+  directorios hasta encontrarlo en otro sitio, silenciosamente, y `make check`
+  puede dar verde probando código que no es el que se editó (ver la nota de
+  entorno al final de `cola-priorizada.md`, encontrada al ejecutar u1.4a).
 - **Nunca levantes un segundo servidor** contra el mismo `data/vera.sqlite`
   desde un worktree distinto — `CONTRIBUTING.md` ya lo prohíbe y esta
   auditoría encontró por qué importa más de lo que parece: el servidor es un
