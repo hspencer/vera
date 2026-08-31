@@ -1353,9 +1353,9 @@ entity Crossing {
     -- Hacia dónde. La página, no un bloque suyo — ver arriba.
     to_page: core/Page
 
-    -- Texto vigente de la relación. Su stable_id y sus revisiones hacen de ella
-    -- una pieza navegable y citable, no una descripción efímera derivada del enlace.
-    content: String
+    -- El contenido vigente es el outline común cuyos bloques pertenecen a esta
+    -- identidad. No es un String enriquecido ni una página escondida.
+    blocks: core/Block with crossing_id = stable_id
 
     sense: CrossingSense
 
@@ -1378,6 +1378,7 @@ entity Crossing {
 -- sin reescribir las páginas que une ni los argumentos que citaron una versión.
 entity CrossingRevision {
     crossing: Crossing
+    -- Instantánea coherente del árbol completo citado por un argumento.
     content: String
     authored_by: core/Participant
     channel: core/ContributionChannel
@@ -1423,9 +1424,16 @@ rule ExplainingARelation {
             graph: graph,
             from_page: from_page,
             to_page: to_page,
-            content: content,
             sense: directed,
             term: term
+        )
+        core/Block.created(
+            stable_id: new_stable_id(),
+            page: null,
+            crossing_id: crossing.stable_id,
+            parent: null,
+            position: 0,
+            content: content
         )
         CrossingRevision.created(
             crossing: crossing,
@@ -1457,7 +1465,7 @@ rule RevisingARelation {
     requires: content != ""
 
     ensures:
-        crossing.content = content
+        crossing.blocks.first.content = content
         CrossingRevision.created(
             crossing: crossing,
             content: content,

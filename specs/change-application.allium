@@ -231,16 +231,20 @@ rule ApplyCreateBlock {
     let change = operation.submission.change
 
     requires: change.kind = create_block
-    requires: change.page != null
+    requires: (change.page != null) != (change.crossing_id != null)
     requires: change.content != null
     requires: change.position != null
-    requires: change.parent = null or change.parent.page = change.page
+    requires: change.parent = null or (
+        change.parent.page = change.page and
+        change.parent.crossing_id = change.crossing_id
+    )
     requires: change.stable_id = null or not exists core/Block{stable_id: change.stable_id}
 
     ensures:
         let block = core/Block.created(
             stable_id: change.stable_id ?? new_stable_id(),
             page: change.page,
+            crossing_id: change.crossing_id,
             parent: change.parent,
             position: change.position,
             content: change.content
@@ -274,20 +278,24 @@ rule ApplyMoveBlock {
 
     requires: change.kind = move_block
     requires: change.block != null
-    requires: change.page != null
+    requires: (change.page != null) != (change.crossing_id != null)
     requires: change.position != null
-    requires: change.page.graph = change.block.page.graph
-    requires: change.parent = null or change.parent.page = change.page
+    requires: change.parent = null or (
+        change.parent.page = change.page and
+        change.parent.crossing_id = change.crossing_id
+    )
     requires: change.parent != change.block
     requires: change.parent not in descendants_of(change.block)
 
     ensures:
         change.block.page = change.page
+        change.block.crossing_id = change.crossing_id
         change.block.parent = change.parent
         change.block.position = change.position
         BlockContentSettled(block: change.block)
         for descendant in descendants_of(change.block):
             descendant.page = change.page
+            descendant.crossing_id = change.crossing_id
             BlockContentSettled(block: descendant)
 
     @guidance

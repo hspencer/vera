@@ -162,7 +162,11 @@ entity PersonalSite {
 -- name is stable_id and the reference's guarantees apply to it unchanged.
 entity Block {
     stable_id: String
-    page: Page
+    -- Un bloque pertenece a un solo outline. Las páginas y las relaciones usan
+    -- el mismo bloque y el mismo editor; estas dos claves son una unión
+    -- exclusiva, no dos copias del contenido.
+    page: Page?
+    crossing_id: String?
     parent: Block?
     position: Integer
     content: String
@@ -370,6 +374,18 @@ invariant PublicationPathIsUniqueWithinSite {
 invariant RevisionParticipantBelongsToGraph {
     for revision in Revisions:
         exists Membership{graph: revision.graph, participant: revision.authored_by}
+}
+
+invariant EveryBlockHasExactlyOneOutlineOwner {
+    for block in Blocks:
+        (block.page != null) != (block.crossing_id != null)
+}
+
+invariant ParentAndChildShareTheirOutlineOwner {
+    for block in Blocks:
+        block.parent != null implies
+            block.parent.page = block.page and
+            block.parent.crossing_id = block.crossing_id
 }
 
 invariant EveryMemoryHasOneHumanOwner {
