@@ -124,6 +124,22 @@ if [ -n "$CORRIENDO" ]; then
   fi
 fi
 
+# La puerta MCP HTTP también carga su catálogo una sola vez. Si cambia el
+# adaptador y sólo renace Vera, los clientes remotos siguen viendo herramientas
+# antiguas aunque la API nueva ya esté activa.
+MCP_CORRIENDO="$(pgrep -f 'node .*packages/mcp/src/http.ts' 2>/dev/null | head -1 || true)"
+if [ -n "$MCP_CORRIENDO" ]; then
+  MCP_EDAD="$(ps -o etimes= -p "$MCP_CORRIENDO" 2>/dev/null | tr -d ' ')"
+  MCP_ARRANQUE=$(( $(date +%s) - ${MCP_EDAD:-0} ))
+  MCP_TOCADO="$(find packages/mcp/src -type f -exec stat -c '%Y' {} + 2>/dev/null | sort -rn | head -1)"
+  if [ -n "$MCP_TOCADO" ] && [ "$MCP_TOCADO" -gt "$MCP_ARRANQUE" ]; then
+    paso 'La puerta MCP cambió: reiniciando el servicio HTTP'
+    systemctl --user restart vera-mcp-http.service >/dev/null 2>&1 \
+      || alto 'no se pudo reiniciar vera-mcp-http.service'
+    bien 'catálogo MCP remoto recargado'
+  fi
+fi
+
 # --- 8. Lo que de verdad importa: ¿lo está sirviendo? -----------------------
 #
 # Se le pregunta al servidor por su index sin pasar por ningún caché —`?fresh`
