@@ -236,13 +236,17 @@ describe('GET /activity', () => {
     await write({ kind: 'remove_page', page });
 
     const view = (await get('/activity')) as {
-      activity: { summary: string }[];
+      activity: { summary: string; excerpt: string | null; page: { id: string; title: string } | null }[];
       deletedPages: { page: string; restorable: boolean; changes: unknown[] }[];
     };
     const tomb = view.deletedPages.find((one) => one.page === page);
     assert.ok(tomb);
     assert.equal(tomb.restorable, true);
-    assert.equal(view.activity[0]?.summary, 'borró «Página que vuelve»');
+    assert.equal(
+      view.activity.some((one) => one.page?.id === page),
+      false,
+      'la página borrada vive sólo en la pestaña de eliminaciones',
+    );
 
     for (const change of tomb.changes) await write(change);
     const restored = (await get(`/pages/${encodeURIComponent(page)}`)) as {
@@ -257,6 +261,13 @@ describe('GET /activity', () => {
       [[root, null, 'raíz'], [child, root, 'hijo']],
     );
     assert.ok(restored.properties.some((one) => one.key === 'estado' && one.value === 'recordada'));
+
+    await write({ kind: 'edit_block', block: child, content: 'contenido renovado para el registro' });
+    const after = (await get('/activity')) as {
+      activity: { excerpt: string | null; page: { id: string; title: string } | null }[];
+    };
+    assert.equal(after.activity[0]?.excerpt, 'contenido renovado para el registro');
+    assert.deepEqual(after.activity[0]?.page, { id: page, title: 'Página que vuelve' });
   });
 });
 

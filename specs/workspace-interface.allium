@@ -1175,7 +1175,11 @@ surface VeraWorkspace {
         -- Vera: Registro de Actividad makes every canonical creation, edition,
         -- movement and deletion readable without copying it into a second log.
         -- Deleted pages remain present there as tombs even though they are no
-        -- longer pages in the corpus.
+        -- longer pages in the corpus. Living-page changes and deleted-page tombs
+        -- are separate readings: a change names and links to its living page and
+        -- shows a short excerpt of what changed; a tomb never offers a dead page
+        -- link and instead exposes restoration when its historical tree can be
+        -- reconstructed.
 
     @guarantee RestorationIsANewAuditedAct
         -- Restoring a deleted page previews and recreates its stable page and

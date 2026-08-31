@@ -16,6 +16,7 @@ export interface ActivityItem {
   subjectId: string;
   page: { id: string; title: string } | null;
   summary: string;
+  excerpt: string | null;
 }
 
 export interface DeletedPageActivity {
@@ -66,6 +67,13 @@ const copyBlock = (block: BlockState): BlockState => ({
   properties: new Map(block.properties),
 });
 
+const excerptOf = (content: string | null): string | null => {
+  if (content === null) return null;
+  const compact = content.replace(/\s+/gu, ' ').trim();
+  if (compact.length === 0) return null;
+  return compact.length <= 180 ? compact : `${compact.slice(0, 177).trimEnd()}…`;
+};
+
 const summaryOf = (change: Change, title: string | null): string => {
   const page = title === null ? 'la página' : `«${title}»`;
   switch (change.kind) {
@@ -102,10 +110,13 @@ export function activityOf(graph: VeraGraph): {
     let pageId: string | null = null;
 
     if (change.kind === 'create_page') pageId = operation.subjectId;
+    else if (change.kind === 'create_crossing') pageId = change.fromPage;
+    else if (change.kind === 'edit_crossing') pageId = graph.crossing(change.crossing)?.fromPage ?? null;
     else if ('page' in change && typeof change.page === 'string') pageId = change.page;
     else if ('block' in change && typeof change.block === 'string') pageId = blocks.get(change.block)?.page ?? null;
 
     const beforeTitle = pageId === null ? null : pages.get(pageId)?.title ?? null;
+    let excerpt: string | null = null;
 
     // `remove_page` cierra la corrida de bloques borrados; no debe borrarla
     // antes de poder convertirla en una tumba restaurable.
@@ -124,21 +135,25 @@ export function activityOf(graph: VeraGraph): {
         };
         pages.set(page.id, page);
         pageId = page.id;
+        excerpt = excerptOf(change.title);
         break;
       }
       case 'rename_page': {
         const page = pages.get(change.page);
         if (page !== undefined) page.title = change.title;
+        excerpt = excerptOf(change.title);
         break;
       }
       case 'set_page_visibility': {
         const page = pages.get(change.page);
         if (page !== undefined) page.visibility = change.visibility;
+        excerpt = change.visibility === 'public' ? 'visibilidad pública' : 'visibilidad privada';
         break;
       }
       case 'recover_page_origin': {
         const page = pages.get(change.page);
         if (page !== undefined) page.originCreatedAt = change.originCreatedAt;
+        excerpt = excerptOf(new Date(change.originCreatedAt).toISOString());
         break;
       }
       case 'create_block': {
@@ -153,16 +168,19 @@ export function activityOf(graph: VeraGraph): {
         };
         blocks.set(block.id, block);
         pages.get(block.page)?.blocks.set(block.id, block);
+        excerpt = excerptOf(change.content);
         break;
       }
       case 'edit_block': {
         const block = blocks.get(change.block);
         if (block !== undefined) block.content = change.content;
+        excerpt = excerptOf(change.content);
         break;
       }
       case 'move_block': {
         const block = blocks.get(change.block);
         if (block !== undefined) {
+          excerpt = excerptOf(block.content);
           pages.get(block.page)?.blocks.delete(block.id);
           block.page = change.page;
           block.parent = change.parent;
@@ -175,9 +193,11 @@ export function activityOf(graph: VeraGraph): {
       case 'set_block_gloss': {
         const block = blocks.get(change.block);
         if (block !== undefined) block.gloss = change.content;
+        excerpt = excerptOf(change.content);
         break;
       }
       case 'set_property': {
+        excerpt = excerptOf(change.propertyValue);
         if (change.block !== undefined) {
           blocks.get(change.block)?.properties.set(change.propertyKey, change.propertyValue);
         } else if (change.page !== undefined) {
@@ -186,13 +206,19 @@ export function activityOf(graph: VeraGraph): {
         break;
       }
       case 'remove_property': {
-        if (change.block !== undefined) blocks.get(change.block)?.properties.delete(change.propertyKey);
-        else if (change.page !== undefined) pages.get(change.page)?.properties.delete(change.propertyKey);
+        if (change.block !== undefined) {
+          excerpt = excerptOf(blocks.get(change.block)?.properties.get(change.propertyKey) ?? null);
+          blocks.get(change.block)?.properties.delete(change.propertyKey);
+        } else if (change.page !== undefined) {
+          excerpt = excerptOf(pages.get(change.page)?.properties.get(change.propertyKey) ?? null);
+          pages.get(change.page)?.properties.delete(change.propertyKey);
+        }
         break;
       }
       case 'remove_block': {
         const block = blocks.get(change.block);
         if (block !== undefined) {
+          excerpt = excerptOf(block.content);
           pageId = block.page;
           removalRun.push({ operation, block: copyBlock(block) });
           blocks.delete(block.id);
@@ -219,6 +245,15 @@ export function activityOf(graph: VeraGraph): {
         removalRun = [];
         break;
       }
+      case 'create_crossing': {
+        pageId = change.fromPage;
+        excerpt = excerptOf(change.content);
+        break;
+      }
+      case 'edit_crossing': {
+        excerpt = excerptOf(change.content);
+        break;
+      }
     }
 
     const title = pageId === null ? null : pages.get(pageId)?.title ?? beforeTitle;
@@ -232,6 +267,7 @@ export function activityOf(graph: VeraGraph): {
       subjectId: operation.subjectId,
       page: pageId === null ? null : { id: pageId, title: title ?? pageId },
       summary: summaryOf(change, title),
+      excerpt,
     });
   }
 
@@ -291,5 +327,8 @@ export function activityOf(graph: VeraGraph): {
     })
     .reverse();
 
-  return { activity: activity.reverse(), deletedPages };
+  const livingActivity = activity
+    .filter((one) => one.kind !== 'remove_page' && one.page !== null && graph.page(one.page.id) !== undefined)
+    .reverse();
+  return { activity: livingActivity, deletedPages };
 }

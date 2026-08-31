@@ -9,6 +9,7 @@ export function isActivityPage(properties: readonly { key: string; value: string
 }
 
 type Restore = (changes: readonly Change[]) => Promise<boolean>;
+type ActivityTab = 'changes' | 'deletions';
 
 function moment(at: number): string {
   return new Intl.DateTimeFormat('es-CL', {
@@ -53,9 +54,42 @@ function deletedRow(one: DeletedPageActivity, restore: Restore, refresh: () => v
   return row;
 }
 
+function linkedSummary(summary: string, page: { id: string; title: string }): HTMLElement {
+  const line = document.createElement('span');
+  const named = `«${page.title}»`;
+  const at = summary.indexOf(named);
+  const link = document.createElement('a');
+  link.href = `/p/${encodeURIComponent(page.title)}`;
+  link.textContent = named;
+  link.title = `Abrir ${page.title}`;
+  if (at < 0) {
+    line.append(summary, ' · ', link);
+  } else {
+    line.append(summary.slice(0, at), link, summary.slice(at + named.length));
+  }
+  return line;
+}
+
+function activityRow(one: Awaited<ReturnType<typeof api.activity>>['activity'][number]): HTMLLIElement {
+  const item = document.createElement('li');
+  if (one.page !== null) item.append(linkedSummary(one.summary, one.page));
+  else item.append(one.summary);
+  if (one.excerpt !== null) {
+    const excerpt = document.createElement('p');
+    excerpt.className = 'activity-excerpt';
+    excerpt.textContent = one.excerpt;
+    item.append(excerpt);
+  }
+  const detail = document.createElement('small');
+  detail.textContent = `${moment(one.at)} · ${one.by} · ${one.channel}`;
+  item.append(detail);
+  return item;
+}
+
 export async function renderActivityPage(
   restore: Restore,
   report: (message: string) => void,
+  initialTab: ActivityTab = 'changes',
 ): Promise<HTMLElement> {
   const root = document.createElement('section');
   root.className = 'activity-register';
@@ -63,46 +97,76 @@ export async function renderActivityPage(
   loading.textContent = 'leyendo el registro…';
   root.append(loading);
 
+  let currentTab = initialTab;
   const refresh = (): void => {
-    void renderActivityPage(restore, report).then((fresh) => root.replaceWith(fresh));
+    void renderActivityPage(restore, report, currentTab).then((fresh) => root.replaceWith(fresh));
   };
 
   try {
     const view = await api.activity();
     root.replaceChildren();
 
-    const deletedTitle = document.createElement('h2');
-    deletedTitle.textContent = 'Páginas borradas';
-    root.append(deletedTitle);
+    const tabs = document.createElement('div');
+    tabs.className = 'activity-tabs';
+    tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-label', 'Secciones del registro de actividad');
+    const changesTab = document.createElement('button');
+    changesTab.type = 'button';
+    changesTab.id = 'activity-tab-changes';
+    changesTab.setAttribute('role', 'tab');
+    changesTab.setAttribute('aria-controls', 'activity-panel-changes');
+    changesTab.textContent = 'Creaciones y ediciones';
+    const deletionsTab = document.createElement('button');
+    deletionsTab.type = 'button';
+    deletionsTab.id = 'activity-tab-deletions';
+    deletionsTab.setAttribute('role', 'tab');
+    deletionsTab.setAttribute('aria-controls', 'activity-panel-deletions');
+    deletionsTab.textContent = `Eliminaciones (${view.deletedPages.length})`;
+    tabs.append(changesTab, deletionsTab);
+
+    const changesPanel = document.createElement('section');
+    changesPanel.id = 'activity-panel-changes';
+    changesPanel.className = 'activity-panel';
+    changesPanel.setAttribute('role', 'tabpanel');
+    changesPanel.setAttribute('aria-labelledby', changesTab.id);
+    const deletionsPanel = document.createElement('section');
+    deletionsPanel.id = 'activity-panel-deletions';
+    deletionsPanel.className = 'activity-panel';
+    deletionsPanel.setAttribute('role', 'tabpanel');
+    deletionsPanel.setAttribute('aria-labelledby', deletionsTab.id);
+
+    const select = (tab: ActivityTab): void => {
+      currentTab = tab;
+      const changesSelected = tab === 'changes';
+      changesTab.setAttribute('aria-selected', String(changesSelected));
+      deletionsTab.setAttribute('aria-selected', String(!changesSelected));
+      changesTab.tabIndex = changesSelected ? 0 : -1;
+      deletionsTab.tabIndex = changesSelected ? -1 : 0;
+      changesPanel.hidden = !changesSelected;
+      deletionsPanel.hidden = changesSelected;
+    };
+    changesTab.onclick = () => select('changes');
+    deletionsTab.onclick = () => select('deletions');
+
     if (view.deletedPages.length === 0) {
       const none = document.createElement('p');
       none.className = 'activity-empty';
       none.textContent = 'No hay páginas borradas en el registro.';
-      root.append(none);
+      deletionsPanel.append(none);
     } else {
       const deleted = document.createElement('div');
       deleted.className = 'activity-deletions';
       for (const one of view.deletedPages) deleted.append(deletedRow(one, restore, refresh));
-      root.append(deleted);
+      deletionsPanel.append(deleted);
     }
 
-    const allTitle = document.createElement('h2');
-    allTitle.textContent = 'Toda la actividad';
     const list = document.createElement('ol');
     list.className = 'activity-list';
     const append = (items: typeof view.activity): void => {
-      for (const one of items) {
-        const item = document.createElement('li');
-        const summary = document.createElement('span');
-        summary.textContent = one.summary;
-        const detail = document.createElement('small');
-        detail.textContent = `${moment(one.at)} · ${one.by} · ${one.channel}`;
-        item.append(summary, detail);
-        list.append(item);
-      }
+      for (const one of items) list.append(activityRow(one));
     };
     append(view.activity);
-    root.append(allTitle, list);
+    changesPanel.append(list);
     if (view.nextBefore !== null) {
       const older = document.createElement('button');
       older.type = 'button';
@@ -126,8 +190,10 @@ export async function renderActivityPage(
           older.textContent = 'volver a intentar';
         }
       };
-      root.append(older);
+      changesPanel.append(older);
     }
+    root.append(tabs, changesPanel, deletionsPanel);
+    select(initialTab);
   } catch {
     loading.textContent = 'No se pudo leer el registro de actividad.';
     report('sin conexión con el registro de actividad');

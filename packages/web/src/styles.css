@@ -7647,6 +7647,31 @@ html[data-working-slow='true']::after {
   font-size: 1rem;
 }
 
+.activity-tabs {
+  display: flex;
+  gap: .25rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--line, #d8d8d8);
+}
+
+.activity-tabs button {
+  margin-bottom: -1px;
+  padding: .65rem .8rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted, #6f6f6f);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.activity-tabs button[aria-selected='true'] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.activity-panel[hidden] { display: none; }
+
 .activity-deletions {
   border-top: 1px solid var(--line, #d8d8d8);
 }
@@ -7665,6 +7690,18 @@ html[data-working-slow='true']::after {
   display: flex;
   flex-direction: column;
   gap: .2rem;
+}
+
+.activity-list a { color: var(--accent); }
+
+.activity-excerpt {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-dim, #555);
+  font-size: .9rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .activity-deletion small,

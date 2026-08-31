@@ -482,6 +482,7 @@ export interface ActivityItem {
   subjectId: string;
   page: { id: string; title: string } | null;
   summary: string;
+  excerpt: string | null;
 }
 
 export interface DeletedPageActivity {
