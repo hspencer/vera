@@ -65,11 +65,9 @@ const count = (value: unknown, fallback: number, most: number): number => {
 const trouble = (what: Failure): string =>
   `No pude leer eso: ${what.error}${what.status > 0 ? ` (${what.status})` : ''}`;
 
-/** Los bloques de una página, con su sangría, en el orden en que se leen. */
-export function outline(
-  blocks: readonly Page['blocks'][number][],
-  options: { identities?: boolean } = {},
-): string {
+function orderedOutline(blocks: readonly Page['blocks'][number][]): {
+  block: Page['blocks'][number]; depth: number;
+}[] {
   const children = new Map<string | null, Page['blocks'][number][]>();
   for (const block of blocks) {
     const kin = children.get(block.parent) ?? [];
@@ -78,22 +76,32 @@ export function outline(
   }
   for (const kin of children.values()) kin.sort((a, b) => a.position - b.position);
 
-  const lines: string[] = [];
+  const ordered: { block: Page['blocks'][number]; depth: number }[] = [];
   const walk = (parent: string | null, depth: number): void => {
     for (const block of children.get(parent) ?? []) {
-      const pad = '  '.repeat(depth);
-      // El texto de un bloque puede tener saltos —un dibujo, un bloque de
-      // código— y todos se sangran igual, o la sangría deja de decir de quién
-      // es hijo qué.
-      const identity = options.identities === true ? `[${block.stableId}] ` : '';
-      lines.push(block.content.split('\n').map((line, index) =>
-        `${pad}- ${index === 0 ? identity : ''}${line}`,
-      ).join('\n'));
+      ordered.push({ block, depth });
       walk(block.stableId, depth + 1);
     }
   };
   walk(null, 0);
-  return lines.join('\n');
+  return ordered;
+}
+
+/** Los bloques de una página, con su sangría, en el orden en que se leen. */
+export function outline(
+  blocks: readonly Page['blocks'][number][],
+  options: { identities?: boolean } = {},
+): string {
+  return orderedOutline(blocks).map(({ block, depth }) => {
+    const pad = '  '.repeat(depth);
+    // El texto de un bloque puede tener saltos —un dibujo, un bloque de
+    // código— y todos se sangran igual, o la sangría deja de decir de quién
+    // es hijo qué.
+    const identity = options.identities === true ? `[${block.stableId}] ` : '';
+    return block.content.split('\n').map((line, index) =>
+      `${pad}- ${index === 0 ? identity : ''}${line}`,
+    ).join('\n');
+  }).join('\n');
 }
 
 const when = (at: number | null | undefined): string =>
@@ -210,8 +218,9 @@ export const TOOLS: readonly VeraTool[] = [
        * inteligencia que resume esta página tiene que poder decir qué parte la
        * escribió otra inteligencia. @invariant GeneratedContentIsAlwaysDistinguishable.
        */
-      const others = Object.entries(page.authorship)
-        .filter(([, hand]) => hand.kind === 'agent')
+      const others = orderedOutline(page.blocks)
+        .map(({ block }) => [block.stableId, page.authorship[block.stableId]] as const)
+        .filter((entry): entry is readonly [string, NonNullable<typeof entry[1]>] => entry[1]?.kind === 'agent')
         .map(([id, hand]) => `${id} · ${hand.participant ?? '?'}`);
 
       const parts = [

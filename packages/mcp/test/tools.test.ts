@@ -268,7 +268,10 @@ describe('leer una página', () => {
     ],
     backlinks: [{ page: 'page:8', block: null, title: 'Otra', excerpt: 'habla de Vera' }],
     references: [{ page: null, title: 'Sin escribir', block: 'b1', excerpt: '' }],
-    authorship: { b3: { participant: 'participant:cotito', kind: 'agent', channel: 'agent_generation' } },
+    authorship: {
+      b3: { participant: 'participant:cotito', kind: 'agent', channel: 'agent_generation' },
+      b1: { participant: 'participant:claude', kind: 'agent', channel: 'agent_generation' },
+    },
   };
 
   it('conserva la sangría, que es lo que dice de quién es hijo qué', async () => {
@@ -291,6 +294,12 @@ describe('leer una página', () => {
     const said = await run('vera_leer_pagina', { pagina: 'Vera' }, ask);
     assert.match(said, /Escrito por agentes/);
     assert.match(said, /b3 · participant:cotito/);
+  });
+
+  it('ordena también el pie de autoría según la lectura y no según la creación', async () => {
+    const { ask } = fakeVera({ '/pages/Vera': page });
+    const said = await run('vera_leer_pagina', { pagina: 'Vera' }, ask);
+    assert.ok(said.lastIndexOf('b1 · participant:claude') < said.lastIndexOf('b3 · participant:cotito'));
   });
 
   it('una página que no existe se contesta con qué hacer en su lugar', async () => {
