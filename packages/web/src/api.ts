@@ -218,6 +218,8 @@ export interface CrossingRow {
   connective: string;
   /** Lo dicho. */
   said: string;
+  /** El outline canónico de la relación. */
+  blocks: BlockView[];
   /** El bloque desde el que se afirma. */
   fromBlock: string | null;
   fromPage: string;
@@ -419,6 +421,7 @@ export type Change =
   | {
       kind: 'create_block';
       page: string;
+      crossing?: string | undefined;
       parent: string | null;
       position: number;
       content: string;
@@ -428,7 +431,7 @@ export type Change =
   | { kind: 'edit_block'; block: string; content: string }
   // Indentar, desindentar y mudar a los hijos de un bloque que se fusiona son
   // todos el mismo cambio: el bloque pasa a colgar de otro padre, en un índice.
-  | { kind: 'move_block'; block: string; page: string; parent: string | null; position: number }
+  | { kind: 'move_block'; block: string; page: string; crossing?: string | undefined; parent: string | null; position: number }
   | { kind: 'remove_block'; block: string }
   | { kind: 'set_block_gloss'; block: string; content: string }
   | {

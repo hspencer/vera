@@ -225,6 +225,28 @@ describe('conectivas persistentes', () => {
     assert.equal(graph.crossing(crossing)?.toPage, b);
     assert.equal(graph.revisions().filter((one) => one.crossing === crossing).length, 2);
   });
+
+  it('crece como outline y sus menciones no se atribuyen a los extremos', () => {
+    const graph = inhabitedGraph();
+    const a = makePage(graph, 'A');
+    const b = makePage(graph, 'B');
+    makePage(graph, 'C');
+    const crossing = applied(submit(graph, {
+      kind: 'create_crossing', fromPage: a, toPage: b, content: 'primer bloque',
+    }));
+    const root = graph.crossing(crossing)?.blocks[0];
+    assert.ok(root);
+    const child = applied(submit(graph, {
+      kind: 'create_block', page: a, crossing, parent: root.stableId,
+      position: 0, content: 'matiza con [[C]]',
+    }));
+
+    assert.equal(graph.crossing(crossing)?.blocks.length, 2);
+    assert.match(graph.crossing(crossing)?.said ?? '', /  matiza con \[\[C\]\]/);
+    assert.equal(graph.block(child)?.crossing, crossing);
+    assert.equal(graph.linksOf(child).length, 0);
+    assert.equal(graph.revisions().at(-1)?.crossing, crossing);
+  });
 });
 
 /*

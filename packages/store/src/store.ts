@@ -80,6 +80,7 @@ export function openStore(options: OpenOptions): Store {
   db.exec(readFileSync(SCHEMA, 'utf8'));
   addMissingColumns(db);
   migrate(db, fresh);
+  db.exec('CREATE INDEX IF NOT EXISTS blocks_by_crossing ON blocks (crossing_id, parent_id, position)');
 
   const graphId = options.graphId ?? 'graph:1';
   db.prepare('INSERT OR IGNORE INTO graphs (id, name) VALUES (?, ?)').run(
@@ -313,13 +314,14 @@ export function materialiseAll(store: Store, graph: VeraGraph): void {
   }
 
   const insertBlock = db.prepare(
-    `INSERT INTO blocks (id, page_id, parent_id, position, content, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO blocks (id, page_id, crossing_id, parent_id, position, content, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const block of graph.allBlocks()) {
     insertBlock.run(
       block.stableId,
-      block.page,
+      block.crossing == null ? block.page : null,
+      block.crossing ?? null,
       block.parent,
       block.position,
       block.content,
@@ -421,8 +423,13 @@ function materialiseAuthorship(
   change: Change,
   subjectId: string,
 ): void {
-  if (change.kind !== 'create_block' && change.kind !== 'edit_block') return;
-  const hand = graph.authorship(subjectId);
+  let block = subjectId;
+  if (change.kind === 'create_crossing' || change.kind === 'edit_crossing') {
+    block = graph.blocksOfCrossing(subjectId)
+      .filter((one) => one.parent === null)
+      .sort((a, b) => a.position - b.position)[0]?.stableId ?? '';
+  } else if (change.kind !== 'create_block' && change.kind !== 'edit_block') return;
+  const hand = graph.authorship(block);
   if (hand === undefined) return;
   store.db
     .prepare(
@@ -488,18 +495,19 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
       // Mover deja un hueco en el grupo de origen, y sin esto ese grupo se
       // quedaría con las posiciones viejas.
       const before = db
-        .prepare('SELECT page_id AS page, parent_id AS parent FROM blocks WHERE id = ?')
-        .get(subjectId) as { page: string; parent: string | null } | undefined;
+        .prepare('SELECT page_id AS page, crossing_id AS crossing, parent_id AS parent FROM blocks WHERE id = ?')
+        .get(subjectId) as { page: string | null; crossing: string | null; parent: string | null } | undefined;
 
       db.prepare(
-        `INSERT INTO blocks (id, page_id, parent_id, position, content, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO blocks (id, page_id, crossing_id, parent_id, position, content, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
-           page_id = excluded.page_id, parent_id = excluded.parent_id,
+           page_id = excluded.page_id, crossing_id = excluded.crossing_id, parent_id = excluded.parent_id,
            position = excluded.position, content = excluded.content`,
       ).run(
         block.stableId,
-        block.page,
+        block.crossing == null ? block.page : null,
+        block.crossing ?? null,
         block.parent,
         block.position,
         block.content,
@@ -512,17 +520,18 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
       // que bajar a disco: si no, la memoria y la base contarían dos órdenes
       // distintos hasta el siguiente arranque.
       if (change.kind !== 'edit_block') {
-        writeSiblingOrder(store, graph, block.page, block.parent);
-        if (before !== undefined && (before.page !== block.page || before.parent !== block.parent)) {
-          writeSiblingOrder(store, graph, before.page, before.parent);
+        writeSiblingOrder(store, graph, block.page, block.crossing ?? null, block.parent);
+        if (before !== undefined && (before.page !== (block.crossing == null ? block.page : null) || before.crossing !== (block.crossing ?? null) || before.parent !== block.parent)) {
+          writeSiblingOrder(store, graph, before.page, before.crossing, before.parent);
         }
       }
 
       // Mover arrastra el subárbol, y con él la página que registran sus enlaces.
       if (change.kind === 'move_block') {
         for (const descendant of graph.descendantsOf(subjectId)) {
-          db.prepare('UPDATE blocks SET page_id = ? WHERE id = ?').run(
-            descendant.page,
+          db.prepare('UPDATE blocks SET page_id = ?, crossing_id = ? WHERE id = ?').run(
+            descendant.crossing == null ? descendant.page : null,
+            descendant.crossing ?? null,
             descendant.stableId,
           );
           syncBlockRelations(store, graph, descendant.stableId);
@@ -534,8 +543,8 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
     case 'remove_block': {
       // Dónde vivía, para poder cerrar el hueco en su grupo después de quitarlo.
       const home = db
-        .prepare('SELECT page_id AS page, parent_id AS parent FROM blocks WHERE id = ?')
-        .get(subjectId) as { page: string; parent: string | null } | undefined;
+        .prepare('SELECT page_id AS page, crossing_id AS crossing, parent_id AS parent FROM blocks WHERE id = ?')
+        .get(subjectId) as { page: string | null; crossing: string | null; parent: string | null } | undefined;
 
       // Las propiedades del bloque van primero. Su clave foránea no declara
       // ON DELETE, así que mientras exista una el borrado del bloque falla; y
@@ -566,7 +575,7 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
       }
 
       db.prepare('DELETE FROM blocks WHERE id = ?').run(subjectId);
-      if (home !== undefined) writeSiblingOrder(store, graph, home.page, home.parent);
+      if (home !== undefined) writeSiblingOrder(store, graph, home.page, home.crossing, home.parent);
       return;
     }
 
@@ -581,6 +590,14 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
           updated_at=excluded.updated_at`)
         .run(crossing.stableId, store.graphId, crossing.fromPage, crossing.toPage,
           crossing.said, crossing.term, crossing.createdAt, crossing.updatedAt);
+      for (const block of crossing.blocks) {
+        db.prepare(
+          `INSERT INTO blocks (id, page_id, crossing_id, parent_id, position, content, created_at)
+           VALUES (?, NULL, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET parent_id=excluded.parent_id,
+             position=excluded.position,content=excluded.content`,
+        ).run(block.stableId, crossing.stableId, block.parent, block.position, block.content, block.createdAt);
+      }
       return;
     }
 
@@ -644,12 +661,14 @@ function materialise(store: Store, graph: VeraGraph, change: Change, subjectId: 
 function writeSiblingOrder(
   store: Store,
   graph: VeraGraph,
-  page: string,
+  page: string | null,
+  crossing: string | null,
   parent: string | null,
 ): void {
   const siblings =
     parent === null
-      ? graph.blocksOf(page).filter((block) => block.parent === null)
+      ? (crossing === null ? graph.blocksOf(page!) : graph.blocksOfCrossing(crossing))
+          .filter((block) => block.parent === null)
       : graph.childrenOf(parent);
 
   const statement = store.db.prepare('UPDATE blocks SET position = ? WHERE id = ?');

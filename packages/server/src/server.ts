@@ -5127,6 +5127,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               stableId: block.stableId,
               connective: block.stableId,
               said: gloss.content,
+              blocks: [block],
               fromBlock: block.stableId,
               fromPage: block.page,
               targetTitle,

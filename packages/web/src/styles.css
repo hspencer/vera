@@ -5212,6 +5212,44 @@ html[data-working-slow='true']::after {
   margin: 0.15rem 0 0;
 }
 
+/* Un recinto continuo: el color pertenece a la arista y contiene el árbol
+   entero, para que sus bloques no parezcan parte de ninguna página extrema. */
+.relation-outline {
+  margin: 0.45rem 0 0.25rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--rule));
+  border-left: 0.28rem solid color-mix(in srgb, var(--accent) 72%, var(--rule));
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+}
+.relation-outline-node { margin-left: calc(var(--relation-depth) * 1.15rem); }
+.relation-outline-line { display: grid; grid-template-columns: 1rem minmax(0, 1fr); align-items: start; }
+.relation-outline-bullet { color: var(--accent); line-height: 1.5; user-select: none; }
+.relation-outline-body { min-width: 0; }
+.relation-outline-preview { min-height: 1.5em; cursor: text; }
+.relation-outline-editor {
+  min-height: 1.5em;
+  padding: 0.05rem 0.2rem;
+  border-radius: 0.25rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.relation-outline-editor:focus {
+  outline: 1px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  background: var(--bg);
+}
+.relation-outline-add {
+  appearance: none;
+  margin: 0.35rem 0 0 1rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  font: 0.72rem var(--font-mono);
+  cursor: pointer;
+}
+.relation-outline-add:hover { color: var(--accent); }
+
 /* Y la frase desde la que se afirma, atenuada: es el sujeto de la afirmación,
    no la afirmación. Sin ella la fila sería una flecha sin sujeto. */
 .relation-from {

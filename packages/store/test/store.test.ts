@@ -123,7 +123,7 @@ describe('persistencia', () => {
     store.close();
   });
 
-  it('materializa, revisa y reproduce una conectiva sin convertirla en bloque', () => {
+  it('materializa, revisa y reproduce una conectiva como outline de bloques', () => {
     const { store, write } = freshStore();
     const from = write({ kind: 'create_page', title: 'Uno', visibility: 'private' });
     const to = write({ kind: 'create_page', title: 'Dos', visibility: 'private' });
@@ -131,13 +131,21 @@ describe('persistencia', () => {
     write({ kind: 'edit_crossing', crossing, content: 'salta y se transforma' });
 
     assert.equal(count(store, 'crossings'), 1);
-    assert.equal(count(store, 'blocks'), 0);
+    assert.equal(count(store, 'blocks'), 1);
+    const root = store.db.prepare(
+      'SELECT page_id AS page, crossing_id AS crossing, parent_id AS parent, content FROM blocks WHERE crossing_id = ?',
+    ).get(crossing) as { page: string | null; crossing: string; parent: string | null; content: string };
+    assert.equal(root.page, null);
+    assert.equal(root.crossing, crossing);
+    assert.equal(root.parent, null);
+    assert.equal(root.content, 'salta y se transforma');
     assert.equal((store.db.prepare('SELECT count(*) n FROM revisions WHERE crossing_id=?')
       .get(crossing) as { n: number }).n, 2);
     const loaded = loadGraph(store);
     assert.equal(loaded.crossing(crossing)?.said, 'salta y se transforma');
     assert.equal(loaded.crossing(crossing)?.fromPage, from);
     assert.equal(loaded.crossing(crossing)?.toPage, to);
+    assert.equal(loaded.crossing(crossing)?.blocks.length, 1);
     store.close();
   });
 

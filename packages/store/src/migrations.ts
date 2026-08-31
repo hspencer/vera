@@ -574,6 +574,55 @@ const addCrossings: Migration = {
   },
 };
 
+/** 16 — los bloques pueden pertenecer al outline de una relación. */
+const addCrossingBlockOwners: Migration = {
+  version: 16,
+  name: 'outlines de relaciones',
+  apply(db) {
+    const table = db.prepare(
+      `SELECT count(*) AS n FROM sqlite_schema WHERE type='table' AND name='blocks'`,
+    ).get() as { n: number };
+    if (table.n === 0) return;
+    const columns = db.prepare('PRAGMA table_info(blocks)').all() as { name: string }[];
+    if (!columns.some((one) => one.name === 'page_id')) return;
+    rebuildTable(
+      db,
+      'blocks',
+      `CREATE TABLE blocks_new (
+          id          TEXT PRIMARY KEY,
+          page_id     TEXT REFERENCES pages (id),
+          crossing_id TEXT REFERENCES crossings (id),
+          parent_id   TEXT REFERENCES blocks (id),
+          position    INTEGER NOT NULL,
+          content     TEXT NOT NULL,
+          created_at  INTEGER NOT NULL,
+          CHECK ((page_id IS NULL) <> (crossing_id IS NULL))
+       ) STRICT`,
+      ['id', 'page_id', 'parent_id', 'position', 'content', 'created_at'],
+      [
+        'CREATE INDEX blocks_by_page ON blocks (page_id, parent_id, position)',
+        'CREATE INDEX blocks_by_crossing ON blocks (crossing_id, parent_id, position)',
+      ],
+    );
+    db.exec(`
+      INSERT INTO blocks (id, page_id, crossing_id, parent_id, position, content, created_at)
+      SELECT 'block:' || replace(id, 'crossing:', 'crossing-') || ':root',
+             NULL, id, NULL, 0, content, created_at
+      FROM crossings
+      WHERE NOT EXISTS (SELECT 1 FROM blocks b WHERE b.crossing_id = crossings.id);
+
+      INSERT OR IGNORE INTO block_authorship (block_id, participant_id, channel, written_at)
+      SELECT 'block:' || replace(c.id, 'crossing:', 'crossing-') || ':root',
+             r.authored_by, r.channel, r.recorded_at
+      FROM crossings c
+      JOIN revisions r ON r.crossing_id = c.id
+      WHERE r.recorded_at = (
+        SELECT max(latest.recorded_at) FROM revisions latest WHERE latest.crossing_id = c.id
+      );
+    `);
+  },
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   addWalkedChannel,
   addPageOriginCreatedAt,
@@ -590,6 +639,7 @@ export const MIGRATIONS: readonly Migration[] = [
   addCrossings,
   composeSharedSpaceMembership,
   addSharedProposals,
+  addCrossingBlockOwners,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

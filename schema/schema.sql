@@ -215,11 +215,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS pages_title_key ON pages (graph_id, title_key)
 -- esa ausencia de UPDATE sobre la clave es la garantía StableBlockAddress.
 CREATE TABLE IF NOT EXISTS blocks (
     id          TEXT PRIMARY KEY,
-    page_id     TEXT NOT NULL REFERENCES pages (id),
+    page_id     TEXT REFERENCES pages (id),
+    crossing_id TEXT REFERENCES crossings (id),
     parent_id   TEXT REFERENCES blocks (id),
     position    INTEGER NOT NULL,
     content     TEXT NOT NULL,
-    created_at  INTEGER NOT NULL
+    created_at  INTEGER NOT NULL,
+    CHECK ((page_id IS NULL) <> (crossing_id IS NULL))
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS blocks_by_page ON blocks (page_id, parent_id, position);

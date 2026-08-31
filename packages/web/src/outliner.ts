@@ -2341,6 +2341,146 @@ export function buildTree(blocks: BlockView[]): Node[] {
   return roots;
 }
 
+/**
+ * El mismo árbol de bloques, contenido por la arista en vez de por una página.
+ * Esta superficie compacta conserva las operaciones fundamentales del outliner:
+ * escribir, partir, anidar, desanidar, añadir y borrar hojas.
+ */
+function renderRelationOutline(
+  host: HTMLElement,
+  relation: CrossingRow,
+  callbacks: OutlinerCallbacks,
+  readOnly: boolean,
+  previewOf: (host: HTMLElement, content: string) => void,
+): void {
+  host.className = 'relation-outline';
+  host.dataset['crossing'] = relation.stableId;
+  const nodes = buildTree(relation.blocks ?? []);
+  const siblingsOf = (block: BlockView): BlockView[] => (block.parent === null
+    ? relation.blocks.filter((one) => one.parent === null)
+    : relation.blocks.filter((one) => one.parent === block.parent)
+  ).sort((a, b) => a.position - b.position);
+
+  const create = async (parent: string | null, position: number, content = ''): Promise<void> => {
+    const born = await api.submit({
+      kind: 'create_block', page: relation.fromPage, crossing: relation.stableId,
+      parent, position, content,
+    });
+    if (born.status === 'applied') callbacks.onReload({ block: born.subjectId, at: 0 });
+  };
+
+  const draw = (node: Node, depth: number): HTMLElement => {
+    const wrap = document.createElement('div');
+    wrap.className = 'relation-outline-node';
+    wrap.style.setProperty('--relation-depth', String(depth));
+    const line = document.createElement('div');
+    line.className = 'relation-outline-line';
+    const bullet = document.createElement('span');
+    bullet.className = 'relation-outline-bullet';
+    bullet.textContent = '•';
+    const editor = document.createElement('div');
+    editor.className = 'relation-outline-editor';
+    editor.contentEditable = readOnly ? 'false' : 'plaintext-only';
+    editor.spellcheck = true;
+    editor.textContent = node.block.content;
+    editor.setAttribute('role', 'textbox');
+    editor.setAttribute('aria-label', 'bloque de la relación');
+    const preview = document.createElement('div');
+    preview.className = 'relation-outline-preview markdown-preview';
+    previewOf(preview, node.block.content);
+    const beginEditing = (): void => {
+      if (readOnly) return;
+      preview.hidden = true;
+      editor.hidden = false;
+      editor.focus();
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    };
+    preview.addEventListener('click', beginEditing);
+    if (node.block.content === '' && !readOnly) {
+      preview.hidden = true;
+    } else {
+      editor.hidden = true;
+    }
+
+    const save = async (): Promise<boolean> => {
+      const content = editor.textContent ?? '';
+      if (content === node.block.content) return true;
+      const result = await api.submit({ kind: 'edit_block', block: node.block.stableId, content });
+      if (result.status === 'applied') {
+        node.block.content = content;
+        callbacks.onChanged();
+        return true;
+      }
+      return false;
+    };
+    editor.addEventListener('blur', () => {
+      void save().then(() => {
+        preview.innerHTML = '';
+        previewOf(preview, node.block.content);
+        editor.hidden = true;
+        preview.hidden = false;
+      });
+    });
+    editor.addEventListener('keydown', (event) => {
+      if (readOnly) return;
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        void save().then((ok) => {
+          if (!ok) return;
+          void create(node.block.parent, node.block.position + 1);
+        });
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        const siblings = siblingsOf(node.block);
+        const at = siblings.findIndex((one) => one.stableId === node.block.stableId);
+        if (!event.shiftKey && at > 0) {
+          const parent = siblings[at - 1]!;
+          void api.submit({
+            kind: 'move_block', block: node.block.stableId, page: relation.fromPage,
+            crossing: relation.stableId, parent: parent.stableId,
+            position: relation.blocks.filter((one) => one.parent === parent.stableId).length,
+          }).then((result) => { if (result.status === 'applied') callbacks.onReload(null); });
+        } else if (event.shiftKey && node.block.parent !== null) {
+          const parent = relation.blocks.find((one) => one.stableId === node.block.parent);
+          if (parent !== undefined) void api.submit({
+            kind: 'move_block', block: node.block.stableId, page: relation.fromPage,
+            crossing: relation.stableId, parent: parent.parent, position: parent.position + 1,
+          }).then((result) => { if (result.status === 'applied') callbacks.onReload(null); });
+        }
+        return;
+      }
+      if (event.key === 'Backspace' && (editor.textContent ?? '') === '' && node.children.length === 0) {
+        event.preventDefault();
+        void api.submit({ kind: 'remove_block', block: node.block.stableId })
+          .then((result) => { if (result.status === 'applied') callbacks.onReload(null); });
+      }
+    });
+    const body = document.createElement('div');
+    body.className = 'relation-outline-body';
+    body.append(preview, editor);
+    line.append(bullet, body);
+    wrap.append(line);
+    for (const child of node.children) wrap.append(draw(child, depth + 1));
+    return wrap;
+  };
+  for (const node of nodes) host.append(draw(node, 0));
+  if (!readOnly) {
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'relation-outline-add';
+    add.textContent = 'Añadir bloque';
+    add.addEventListener('click', () => { void create(null, nodes.length); });
+    host.append(add);
+  }
+}
+
 export const PRESENTATION_KEY = 'presentación';
 export const OUTGOING_REFERENCES_PRESENTATION = 'referencias salientes';
 
@@ -5378,8 +5518,10 @@ export function renderOutliner(
       // Lo dicho, que es la relación misma, y debajo la frase desde la que se
       // afirma: una relación sin su frase es una flecha sin sujeto.
       const said = document.createElement('div');
-      said.className = 'relation-said markdown-preview';
-      renderPreview(said, row.said, outgoing ? 'followed_reference' : 'followed_backlink');
+      renderRelationOutline(
+        said, row, callbacks, readOnly,
+        (host, content) => renderPreview(host, content, outgoing ? 'followed_reference' : 'followed_backlink'),
+      );
       item.append(said);
 
       const from = document.createElement('div');
@@ -5560,7 +5702,7 @@ export function renderOutliner(
           // escribió: sin enseñarlo, guardar y no guardar se ven igual.
           if (held !== undefined) {
             const said = document.createElement('div');
-            said.className = 'relation-said markdown-preview';
+            said.className = 'relation-said';
             if (held.term !== null) {
               const term = document.createElement('span');
               term.className = 'relation-term';
@@ -5568,7 +5710,10 @@ export function renderOutliner(
               said.append(term);
             }
             const explanation = document.createElement('div');
-            renderPreview(explanation, held.said, gesture);
+            renderRelationOutline(
+              explanation, held, callbacks, readOnly,
+              (host, content) => renderPreview(host, content, gesture),
+            );
             said.append(explanation);
             item.append(said);
           }

@@ -105,6 +105,8 @@ export interface Crossing {
   connective: CrossingId;
   /** Lo que se dijo. */
   said: string;
+  /** El outline canónico que expresa la relación. */
+  blocks: readonly import('./types.ts').Block[];
   /** Bloque antiguo del que se migró, si todavía no es entidad nativa. */
   fromBlock: string | null;
   /** Y la página donde vive, que es la que afirma. */

@@ -107,6 +107,7 @@ export type Change =
   | {
       readonly kind: 'create_block';
       readonly page: PageId;
+      readonly crossing?: CrossingId | undefined;
       readonly parent: BlockId | null;
       readonly position: number;
       readonly content: string;
@@ -122,6 +123,7 @@ export type Change =
       readonly kind: 'move_block';
       readonly block: BlockId;
       readonly page: PageId;
+      readonly crossing?: CrossingId | undefined;
       readonly parent: BlockId | null;
       readonly position: number;
     }
@@ -174,7 +176,10 @@ export interface Page {
 export interface Block {
   /** La identidad que sobrevive a editar y mover. Nunca se reasigna. */
   readonly stableId: BlockId;
+  /** Página contextual. En un bloque de relación es su extremo de origen, no su propietario. */
   page: PageId;
+  /** Presente cuando el propietario del outline es una relación y no la página contextual. */
+  crossing?: CrossingId | null;
   parent: BlockId | null;
   position: number;
   content: string;

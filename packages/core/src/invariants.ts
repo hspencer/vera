@@ -42,7 +42,8 @@ const blockStableIdentityIsUnique: Check = (graph, report) => {
 const siblingOrderIsDenseAndUnique: Check = (graph, report) => {
   const groups = new Map<string, number[]>();
   for (const block of graph.allBlocks()) {
-    const key = `${block.page}\u0000${block.parent ?? ''}`;
+    const owner = block.crossing == null ? `page:${block.page}` : `crossing:${block.crossing}`;
+    const key = `${owner}\u0000${block.parent ?? ''}`;
     const positions = groups.get(key);
     if (positions === undefined) groups.set(key, [block.position]);
     else positions.push(block.position);
@@ -69,10 +70,10 @@ const blockParentBelongsToSamePage: Check = (graph, report) => {
     const parent = graph.block(block.parent);
     if (parent === undefined) {
       report('BlockParentBelongsToSamePage', `block ${block.stableId} points at a missing parent`);
-    } else if (parent.page !== block.page) {
+    } else if (parent.page !== block.page || (parent.crossing ?? null) !== (block.crossing ?? null)) {
       report(
         'BlockParentBelongsToSamePage',
-        `block ${block.stableId} sits on ${block.page} but its parent is on ${parent.page}`,
+        `block ${block.stableId} and its parent belong to different outlines`,
       );
     }
   }

@@ -111,6 +111,7 @@ export class VeraGraph {
   // y el corpus de 42.000 bloques tarda segundos en importarse en vez de
   // milisegundos. Los mantiene #setLinkTarget y compañía; nada más los toca.
   #blocksByPage = new Map<PageId, Set<BlockId>>();
+  #blocksByCrossing = new Map<CrossingId, Set<BlockId>>();
   #childrenByParent = new Map<BlockId, Set<BlockId>>();
   #pageByTitleKey = new Map<string, PageId>();
   #propertiesBySubject = new Map<string, PropertyAssignment[]>();
@@ -240,15 +241,34 @@ export class VeraGraph {
   }
 
   crossing(id: CrossingId): Crossing | undefined {
-    return this.#crossings.get(id);
+    const crossing = this.#crossings.get(id);
+    return crossing === undefined ? undefined : this.#withOutline(crossing);
   }
 
   declaredCrossings(): Crossing[] {
-    return [...this.#crossings.values()];
+    return [...this.#crossings.values()].map((crossing) => this.#withOutline(crossing));
   }
 
   blocksOf(page: PageId): Block[] {
     return this.#idsToBlocks(this.#blocksByPage.get(page));
+  }
+
+  blocksOfCrossing(crossing: CrossingId): Block[] {
+    return this.#idsToBlocks(this.#blocksByCrossing.get(crossing));
+  }
+
+  #withOutline(crossing: Crossing): Crossing {
+    const blocks = this.blocksOfCrossing(crossing.stableId);
+    const roots = blocks.filter((block) => block.parent === null).sort((a, b) => a.position - b.position);
+    const lines: string[] = [];
+    const write = (block: Block, depth: number): void => {
+      lines.push(`${'  '.repeat(depth)}${block.content}`);
+      for (const child of this.childrenOf(block.stableId).sort((a, b) => a.position - b.position)) {
+        write(child, depth + 1);
+      }
+    };
+    for (const root of roots) write(root, 0);
+    return { ...crossing, blocks, said: lines.join('\n') };
   }
 
   childrenOf(block: BlockId): Block[] {
@@ -339,14 +359,14 @@ export class VeraGraph {
    * tilde, y con ella una grabación que quizá costó decir.
    */
   crossings(): Crossing[] {
-    const found: Crossing[] = [...this.#crossings.values()];
+    const found: Crossing[] = this.declaredCrossings();
     const seen = new Set(
       found.map((crossing) => `${crossing.fromPage}→${crossing.toPage ?? titleKey(crossing.targetTitle)}`),
     );
 
     for (const [subject, properties] of this.#propertiesBySubject) {
       const block = this.#blocks.get(subject);
-      if (block === undefined) continue;
+      if (block === undefined || block.page === null) continue;
 
       let target: string | null = null;
       let term: string | null = null;
@@ -379,6 +399,7 @@ export class VeraGraph {
         stableId: block.stableId,
         connective: block.stableId,
         said: block.content,
+        blocks: [block],
         fromBlock: from,
         fromPage: block.page,
         targetTitle: title,
@@ -543,9 +564,15 @@ export class VeraGraph {
     channel: ContributionChannel,
     at: number,
   ): void {
-    if (change.kind !== 'create_block' && change.kind !== 'edit_block') return;
-    this.#authorship.set(subjectId, {
-      block: subjectId,
+    let block = subjectId;
+    if (change.kind === 'create_crossing' || change.kind === 'edit_crossing') {
+      block = this.blocksOfCrossing(subjectId)
+        .filter((one) => one.parent === null)
+        .sort((a, b) => a.position - b.position)[0]?.stableId ?? '';
+    } else if (change.kind !== 'create_block' && change.kind !== 'edit_block') return;
+    if (block === '') return;
+    this.#authorship.set(block, {
+      block,
       participant,
       channel,
       writtenAt: at,
@@ -582,6 +609,7 @@ export class VeraGraph {
     if (isBlockChange) {
       block = subjectId;
       page = this.#blocks.get(subjectId)?.page ?? null;
+      crossing = this.#blocks.get(subjectId)?.crossing ?? null;
     } else if (change.kind === 'create_crossing' || change.kind === 'edit_crossing') {
       crossing = subjectId;
       page = this.#crossings.get(subjectId)?.fromPage ?? null;
@@ -668,10 +696,16 @@ export class VeraGraph {
       }
       case 'create_block': {
         if (!this.#pages.has(change.page)) return 'no such page';
+        if (change.crossing !== undefined && !this.#crossings.has(change.crossing)) return 'no such crossing';
+        if (change.crossing !== undefined && this.#crossings.get(change.crossing)?.fromPage !== change.page) {
+          return 'the contextual page is not the crossing origin';
+        }
         if (change.parent !== null) {
           const parent = this.#blocks.get(change.parent);
           if (parent === undefined) return 'no such parent block';
-          if (parent.page !== change.page) return 'the parent lives on another page';
+          if (parent.page !== (change.page ?? null) || parent.crossing !== (change.crossing ?? null)) {
+            return 'the parent lives in another outline';
+          }
         }
         if (change.stableId !== undefined && this.#blocks.has(change.stableId)) {
           return `a block already holds the stable id ${change.stableId}`;
@@ -684,11 +718,17 @@ export class VeraGraph {
         const block = this.#blocks.get(change.block);
         if (block === undefined) return 'no such block';
         if (!this.#pages.has(change.page)) return 'no such page';
+        if (change.crossing !== undefined && !this.#crossings.has(change.crossing)) return 'no such crossing';
+        if (change.crossing !== undefined && this.#crossings.get(change.crossing)?.fromPage !== change.page) {
+          return 'the contextual page is not the crossing origin';
+        }
         if (change.parent === change.block) return 'a block cannot be its own parent';
         if (change.parent !== null) {
           const parent = this.#blocks.get(change.parent);
           if (parent === undefined) return 'no such parent block';
-          if (parent.page !== change.page) return 'the parent lives on another page';
+          if (parent.page !== (change.page ?? null) || parent.crossing !== (change.crossing ?? null)) {
+            return 'the parent lives in another outline';
+          }
           if (this.descendantsOf(change.block).some((d) => d.stableId === change.parent)) {
             return 'a block cannot be moved beneath itself';
           }
@@ -837,6 +877,14 @@ export class VeraGraph {
     if (touched !== null && this.#pages.has(touched)) {
       this.#updatedAt.set(touched, Math.max(at, this.#updatedAt.get(touched) ?? 0));
     }
+    const related = this.#blocks.get(subjectId)?.crossing ??
+      ('block' in change && typeof change.block === 'string'
+        ? this.#blocks.get(change.block)?.crossing
+        : null);
+    if (related != null) {
+      const crossing = this.#crossings.get(related);
+      if (crossing !== undefined) crossing.updatedAt = at;
+    }
     return subjectId;
   }
 
@@ -944,13 +992,14 @@ export class VeraGraph {
         this.#blocks.set(id, {
           stableId: id,
           page: change.page,
+          crossing: change.crossing ?? null,
           parent: change.parent,
           position: change.position,
           content: change.content,
           createdAt: at,
         });
-        this.#indexBlock(id, change.page, change.parent);
-        this.#reseat(change.page, change.parent, id, change.position);
+        this.#indexBlock(id, change.page, change.crossing ?? null, change.parent);
+        this.#reseat(change.page, change.crossing ?? null, change.parent, id, change.position);
         this.#settleBlock(id);
         return id;
       }
@@ -965,22 +1014,25 @@ export class VeraGraph {
         const block = this.#blocks.get(change.block);
         if (block) {
           const fromPage = block.page;
+          const fromCrossing = block.crossing ?? null;
           const fromParent = block.parent;
-          this.#deindexBlock(change.block, fromPage, fromParent);
+          this.#deindexBlock(change.block, fromPage, fromCrossing, fromParent);
           block.page = change.page;
+          block.crossing = change.crossing ?? null;
           block.parent = change.parent;
-          this.#indexBlock(change.block, change.page, change.parent);
+          this.#indexBlock(change.block, block.page, block.crossing, change.parent);
           // El grupo que deja atrás cierra su hueco; el que lo recibe lo sienta
           // en el índice pedido. Las dos renumeraciones son parte de aplicar
           // esta operación, no operaciones aparte.
-          this.#renumber(fromPage, fromParent);
-          this.#reseat(change.page, change.parent, change.block, change.position);
+          this.#renumber(fromPage, fromCrossing, fromParent);
+          this.#reseat(block.page, block.crossing, change.parent, change.block, change.position);
         }
         // El subárbol viaja con su raíz: el padre debe vivir en la misma página.
         for (const descendant of this.descendantsOf(change.block)) {
-          this.#deindexBlock(descendant.stableId, descendant.page, descendant.parent);
-          descendant.page = change.page;
-          this.#indexBlock(descendant.stableId, change.page, descendant.parent);
+          this.#deindexBlock(descendant.stableId, descendant.page, descendant.crossing ?? null, descendant.parent);
+          descendant.page = block!.page;
+          descendant.crossing = change.crossing ?? null;
+          this.#indexBlock(descendant.stableId, descendant.page, descendant.crossing ?? null, descendant.parent);
           this.#settleBlock(descendant.stableId);
         }
         this.#settleBlock(change.block);
@@ -990,7 +1042,8 @@ export class VeraGraph {
         const block = this.#blocks.get(change.block);
         const page = block?.page;
         const parent = block?.parent ?? null;
-        if (block) this.#deindexBlock(change.block, block.page, block.parent);
+        const crossing = block?.crossing;
+        if (block) this.#deindexBlock(change.block, block.page, block.crossing ?? null, block.parent);
         this.#blocks.delete(change.block);
         this.#clearLinksOf(change.block);
         this.#tags.delete(change.block);
@@ -998,7 +1051,7 @@ export class VeraGraph {
         this.#glosses.delete(change.block);
         // El grupo cierra el hueco: las posiciones de un grupo de hermanos son
         // densas, y un hueco haría que el siguiente índice pedido cayera mal.
-        if (page !== undefined) this.#renumber(page, parent);
+        if (page !== undefined || crossing !== undefined) this.#renumber(page ?? null, crossing ?? null, parent);
         return change.block;
       }
       case 'create_crossing': {
@@ -1008,6 +1061,7 @@ export class VeraGraph {
           stableId: id,
           connective: id,
           said: change.content,
+          blocks: [],
           fromBlock: null,
           fromPage: change.fromPage,
           targetTitle: to.title,
@@ -1017,11 +1071,27 @@ export class VeraGraph {
           createdAt: at,
           updatedAt: at,
         });
+        const first = `block:${id.replace(/^crossing:/, 'crossing-')}:root`;
+        this.#observeId(first);
+        this.#blocks.set(first, {
+          stableId: first,
+          page: change.fromPage,
+          crossing: id,
+          parent: null,
+          position: 0,
+          content: change.content,
+          createdAt: at,
+        });
+        this.#indexBlock(first, null, id, null);
         return id;
       }
       case 'edit_crossing': {
         const crossing = this.#crossings.get(change.crossing);
         if (crossing !== undefined) {
+          const root = this.blocksOfCrossing(change.crossing)
+            .filter((block) => block.parent === null)
+            .sort((a, b) => a.position - b.position)[0];
+          if (root !== undefined) root.content = change.content;
           crossing.said = change.content;
           crossing.term = change.term?.trim() || null;
           crossing.updatedAt = at;
@@ -1089,6 +1159,15 @@ export class VeraGraph {
     if (block === undefined) return;
 
     this.#clearLinksOf(id);
+
+    // Las menciones de una conectiva pertenecen al discurso de la relación.
+    // Hasta que exista su índice propio no se atribuyen al extremo de origen.
+    if (block.crossing != null) {
+      this.#linksByBlock.set(id, []);
+      this.#tags.set(id, []);
+      this.#unportedByBlock.delete(id);
+      return;
+    }
 
     /*
      * Un bloque que pregunta no aporta enlaces ni etiquetas.
@@ -1158,10 +1237,11 @@ export class VeraGraph {
   // -------------------------------------------------------------------------
 
   /** Los hermanos de un bloque: los hijos de su padre, o las raíces de la página. */
-  #siblings(page: PageId, parent: BlockId | null): Block[] {
+  #siblings(page: PageId | null, crossing: CrossingId | null, parent: BlockId | null): Block[] {
     const group =
       parent === null
-        ? this.blocksOf(page).filter((block) => block.parent === null)
+        ? (crossing !== null ? this.blocksOfCrossing(crossing) : this.blocksOf(page!))
+            .filter((block) => block.parent === null)
         : this.childrenOf(parent);
     return group.sort((a, b) => a.position - b.position);
   }
@@ -1175,11 +1255,11 @@ export class VeraGraph {
    * treinta bloques se registraría como treinta cambios, y el log dejaría de
    * decir qué hizo alguien para decir cómo lo hizo la interfaz.
    */
-  #reseat(page: PageId, parent: BlockId | null, moved: BlockId, index: number): void {
+  #reseat(page: PageId | null, crossing: CrossingId | null, parent: BlockId | null, moved: BlockId, index: number): void {
     const block = this.#blocks.get(moved);
     if (block === undefined) return;
 
-    const order = this.#siblings(page, parent).filter((sibling) => sibling.stableId !== moved);
+    const order = this.#siblings(page, crossing, parent).filter((sibling) => sibling.stableId !== moved);
     const at = Math.max(0, Math.min(Math.trunc(index), order.length));
     order.splice(at, 0, block);
 
@@ -1187,18 +1267,20 @@ export class VeraGraph {
   }
 
   /** Cierra el hueco que deja un bloque al salir de su grupo de hermanos. */
-  #renumber(page: PageId, parent: BlockId | null): void {
-    const order = this.#siblings(page, parent);
+  #renumber(page: PageId | null, crossing: CrossingId | null, parent: BlockId | null): void {
+    const order = this.#siblings(page, crossing, parent);
     for (const [position, sibling] of order.entries()) sibling.position = position;
   }
 
-  #indexBlock(id: BlockId, page: PageId, parent: BlockId | null): void {
-    let onPage = this.#blocksByPage.get(page);
-    if (onPage === undefined) {
-      onPage = new Set();
-      this.#blocksByPage.set(page, onPage);
+  #indexBlock(id: BlockId, page: PageId | null, crossing: CrossingId | null, parent: BlockId | null): void {
+    const index: Map<string, Set<BlockId>> = crossing !== null ? this.#blocksByCrossing : this.#blocksByPage;
+    const owner = crossing ?? page!;
+    let held = index.get(owner);
+    if (held === undefined) {
+      held = new Set();
+      index.set(owner, held);
     }
-    onPage.add(id);
+    held.add(id);
     if (parent !== null) {
       let siblings = this.#childrenByParent.get(parent);
       if (siblings === undefined) {
@@ -1209,8 +1291,9 @@ export class VeraGraph {
     }
   }
 
-  #deindexBlock(id: BlockId, page: PageId, parent: BlockId | null): void {
-    this.#blocksByPage.get(page)?.delete(id);
+  #deindexBlock(id: BlockId, page: PageId | null, crossing: CrossingId | null, parent: BlockId | null): void {
+    if (crossing !== null) this.#blocksByCrossing.get(crossing)?.delete(id);
+    else this.#blocksByPage.get(page!)?.delete(id);
     if (parent !== null) this.#childrenByParent.get(parent)?.delete(id);
   }
 
