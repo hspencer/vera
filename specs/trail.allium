@@ -86,12 +86,24 @@ enum CrossingKind { by_path | across_open_ground }
 -- identidad, no se persiste, no se referencia desde ningún sitio y no aparece en
 -- el `ensures` de ninguna regla. Se calcula cuando alguien mira. Un cruce no es
 -- algo que Vera guarde: es algo que Vera ve.
-value Crossing {
+value TrailCrossing {
     from: nav/PageLink
     to: nav/PageLink
 
-    -- La cara escrita. Lo que el guía puso entre un nodo y el siguiente, vacío
-    -- mientras no haya puesto nada.
+    -- La relación explicada que este tramo cita. No es otra conectiva del
+    -- argumento: es la misma entidad dirigida que se lee desde las páginas de
+    -- sus extremos. Falta sólo mientras nadie haya dicho todavía qué hay entre
+    -- ellas.
+    relation: Crossing?
+
+    -- La revisión que el argumento escogió. La identidad sigue siendo la de la
+    -- relación y esta referencia permite leer históricamente lo que el argumento
+    -- citó sin convertirlo en una copia independiente.
+    cited_revision: CrossingRevision?
+
+    -- La cara escrita. Es el contenido de cited_revision cuando hay relación y
+    -- queda vacía mientras no la haya. Escribir aquí crea o revisa la relación
+    -- canónica del par ordenado; no crea texto privativo del argumento.
     connective: String
 
     -- El testimonio: cómo se anduvo este cruce, cuando se anduvo. Nulo en un
@@ -157,7 +169,7 @@ value Crossing {
 contract ComposedRoute {
     nodes: (trail: Trail) -> List<nav/PageLink>
     ordinal: (node: nav/PageLink) -> Integer
-    crossings: (trail: Trail) -> List<Crossing>
+    crossings: (trail: Trail) -> List<TrailCrossing>
     connective: (node: nav/PageLink) -> String
     conclusion: (trail: Trail) -> String
     guide: (trail: Trail) -> core/Participant
@@ -172,6 +184,18 @@ contract ComposedRoute {
         -- Es también lo que hace que reordenar cambie el argumento y no sólo la
         -- presentación. Mover el nodo 4 al puesto 2 no mueve un nodo: destruye dos
         -- cruces y crea dos nuevos, y los cruces son donde estaba todo lo dicho.
+
+    @invariant AConnectiveHasOneIdentityAcrossBothSurfaces
+        -- La conectiva que se lee entre A y B en un argumento y la relación
+        -- explicada A → B que se lee desde cualquiera de esas páginas son una
+        -- sola entidad. El argumento ordena y cita relaciones; no mantiene una
+        -- segunda colección de frases parecidas.
+
+    @invariant ATrailCitesTheRevisionItArguedWith
+        -- Compartir identidad no borra la historia. El argumento conserva la
+        -- revisión que eligió al componerse; una revisión posterior de la relación
+        -- se puede comparar con ella, pero no reescribe retroactivamente lo que el
+        -- argumento sostuvo.
 
     @invariant TheDerivedFaceIsBinary
         -- La cara que el mapa aporta contesta si había camino o no lo había, y
@@ -369,15 +393,16 @@ entity Trail {
     -- bloque, por el sitio de la referencia en la frase.
     route: reading_order(nodes)
 
-    -- Las conectivas: el texto que hay entre un nodo y el siguiente. Se derivan
-    -- del mismo sitio y por el mismo procedimiento que los nodos, porque son lo
-    -- que queda de la página cuando se le quitan las referencias.
+    -- Las conectivas: la revisión de la relación dirigida entre un nodo y el
+    -- siguiente que el argumento cita. La página conserva su lugar y orden de
+    -- lectura, pero no una segunda identidad ni una segunda historia para el
+    -- mismo texto.
     --
-    -- No hacen falta bloques de una clase distinta. Una conectiva puede tener su
-    -- propio bloque o compartirlo con el nodo al que lleva —«y siete años después
-    -- ya no se podía deshacer: [[X]]»— y en los dos casos es la misma cosa: lo que
-    -- se lee justo antes de llegar ahí.
-    connectives: connective_texts(page, route)
+    -- Al escribir ese lugar, Vera crea la relación A → B si falta o crea una
+    -- revisión de la existente si ya estaba. Al explicar A → B desde una página,
+    -- el mismo texto queda disponible en cualquier argumento que ponga A y B
+    -- consecutivamente.
+    connectives: cited_relation_texts(page, route)
 
     -- Los cruces: la ruta leída como lo que es, una cadena de pasos de un nodo al
     -- siguiente. No es una segunda estructura y no hay nada que mantener — un
@@ -412,8 +437,10 @@ entity Trail {
 
 -- crossings_of(page, route)                                      -- caja negra
 --     Los pares de nodos consecutivos de la ruta, cada uno con la conectiva que
---     hay entre ellos y el testimonio que lleve, si lleva. Un recorrido de n
---     nodos da n-1 cruces.
+--     cita de la relación dirigida entre ellos y el testimonio que lleve, si
+--     lleva. Si existe A → B, el tramo A → B la ofrece aunque se haya llegado a B
+--     por una referencia común; el gesto de navegación no decide si la relación
+--     existe. Un recorrido de n nodos da n-1 cruces.
 --
 --     La conclusión no es un cruce y ésa es su definición: no tiene segundo
 --     extremo. Ver @invariant TheLastConnectiveLeadsNowhere.
@@ -994,6 +1021,18 @@ surface TrailComposition {
         -- seguidos sin nada entre ellos y eso también es decir algo—, es
         -- simplemente que el hueco se ve porque está vacío.
 
+    @guarantee AnExistingRelationAlreadyFillsTheCrossing
+        -- Si dos paradas consecutivas A y B ya tienen una relación explicada
+        -- A → B, el borrador enseña esa conectiva y cita su revisión vigente sin
+        -- exigir que el guía haya entrado a B pulsándola. La ruta decide el par y
+        -- la dirección; el corpus aporta lo que ya dijo sobre ese par.
+
+    @guarantee WritingACrossingWritesTheRelation
+        -- Escribir en el hueco A → B crea esa relación si no existía. Si existía,
+        -- editar allí crea una revisión de la misma relación. La edición queda
+        -- visible también desde A y desde B; no hay una variante privada que sólo
+        -- pueda encontrarse dentro del argumento.
+
     @guarantee TheGapsAreNotAllTheSameGap
         -- Un hueco sobre un cruce por camino y un hueco sobre un cruce a campo
         -- través son dos silencios distintos, y se distinguen. En el primero el
@@ -1253,12 +1292,11 @@ surface TrailReading {
         -- estaba diciendo.
 
     @guarantee TwoVoicesTwoTypographies
-        -- La conectiva y el nodo se leen como dos textos de dos manos. La conectiva
-        -- va con la voz de quien compuso; el sitio citado se presenta como lo que
-        -- es, una cita de otro sitio del corpus, con su título y su camino de
-        -- vuelta. Quien lee tiene que poder decir en cada línea quién está
-        -- hablando, y sobre todo tiene que poder no creerle al guía sin dejar de
-        -- creerle al corpus.
+        -- La conectiva y el nodo se leen como dos textos con sus manos explícitas.
+        -- El argumento dice quién escogió esa relación y la revisión dice quién la
+        -- escribió; pueden ser la misma persona o no. El sitio citado se presenta
+        -- como una cita de otro sitio del corpus, con su título y su camino de
+        -- vuelta. Seleccionar una voz para un argumento no debe apropiársela.
 
     @guarantee TheMapShowsWhatIsWalkedAndWhatRemains
         -- La ruta entera está encendida desde el principio; lo que la lectura mueve
@@ -1500,8 +1538,10 @@ surface PageRelations {
     @guarantee PromotingACitedTraversalKeepsTheConnective
         -- Si un paso del rastro lleva conectiva y revisión, promoverlo a
         -- argumento escribe su texto entre las dos paradas y conserva ambas
-        -- identidades como cita. Una llegada por mapa, búsqueda o backlink no
-        -- recibe una conectiva inventada aunque exista una entre los extremos.
+        -- identidades como cita. Si el paso llegó por mapa, búsqueda, referencia o
+        -- backlink, Vera consulta además el par ordenado: si ya existe la relación
+        -- entre los extremos, la cita; si no existe, deja el cruce vacío. Reutilizar
+        -- una relación existente no es inventarla a partir de los extremos.
 }
 
 ------------------------------------------------------------
@@ -1572,9 +1612,11 @@ open question "Un recorrido publicado es un texto con sus nodos dentro, o una ca
 
 open question "Una relación llega a una página y no a un bloque suyo, porque las citas `((ref))` no se derivan como aristas en ningún sitio. Es la misma carencia que ya nombra la pregunta sobre el rastro y los nodos afinados. ¿Se deriva la cita de bloque como arista —lo que daría un destino fino a las relaciones y de paso a los recorridos— o hay una razón para que citar un bloque no acerque dos páginas?"
 
-open question "El cruce de un recorrido va de un nodo al siguiente; la relación explicada va de un bloque a una página. Se decidió que la conectiva es la misma cosa liberada, y las dos formas no se han unificado todavía. ¿Es el cruce de un recorrido el caso particular en que el bloque de origen pertenece a la página del propio recorrido, o son dos portadores distintos de una misma clase de pegamento?"
-
-open question "Dos recorridos pasan de A a B y hay además una relación explicada entre ellas. ¿Leen los tres lo mismo —una sola frase para un solo paso, coherente con que un nodo cite y nunca copie— o puede un argumento necesitar un pegamento propio que no vale fuera de él?"
+-- Resueltas el 2026-08-30 las dos preguntas sobre la identidad de la conectiva.
+-- Una relación explicada y la conectiva A → B de cualquier argumento son la
+-- misma entidad; las superficies de página y recorrido son dos lugares para
+-- leerla y editarla. Los argumentos citan una revisión y por eso pueden conservar
+-- históricamente lo que sostuvieron sin duplicar la relación ni su autoría.
 
 open question "El vocabulario de relaciones —contradice, respalda, profundiza, ejemplifica, con sus recíprocos— tiene que nacer en alguna parte. controlled-ontology.allium gobierna hoy tipos, conceptos y propiedades, y esta es una cuarta capa que habla de una página respecto de otra. ¿Crece esa spec para acogerla, o un vocabulario de aristas es cosa distinta de un vocabulario de nodos y merece su propio sitio?"
 
