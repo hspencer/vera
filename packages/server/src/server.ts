@@ -89,10 +89,20 @@ import {
   listCredentials,
   resolveSecret,
   revokeCredential,
+  credentialById,
   scopeRefusal,
   type Credential,
   type Scope,
 } from './credentials.ts';
+import {
+  answerLibrarianRequest,
+  claimLibrarianRequest,
+  createLibrarianRequest,
+  librarianRequest,
+  librarianRequestsFor,
+  markLibrarianDispatched,
+  pendingLibrarianDispatches,
+} from './librarian.ts';
 import type { Reading } from './model.ts';
 import {
   ask,
@@ -253,6 +263,7 @@ export interface ServerOptions {
    * puede adivinar desde dentro de un manejador.
    */
   port?: number;
+  librarianHook?: { url: string; token: string };
   /**
    * Por dónde se alcanza esta Vera desde otro equipo, si alguien lo declaró.
    *
@@ -465,6 +476,31 @@ function readOperation(body: SubmitBody): { error: string } | {
 
 export function createVeraServer(options: ServerOptions): VeraServer {
   const store = openStore({ path: options.databasePath, graphName: 'mind' });
+
+  const dispatchLibrarianRequest = async (id: string): Promise<void> => {
+    if (options.librarianHook === undefined) {
+      markLibrarianDispatched(store, id, false, 'el puente con OpenClaw no está configurado');
+      return;
+    }
+    try {
+      const wake = await fetch(options.librarianHook.url, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${options.librarianHook.token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ requestId: id }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      markLibrarianDispatched(store, id, wake.ok, wake.ok ? undefined : `OpenClaw respondió ${wake.status}`);
+    } catch (error) {
+      markLibrarianDispatched(store, id, false, error instanceof Error ? error.message : 'OpenClaw no respondió');
+    }
+  };
+  const retryLibrarianDispatches = setInterval(() => {
+    for (const id of pendingLibrarianDispatches(store)) void dispatchLibrarianRequest(id);
+  }, 30_000);
+  retryLibrarianDispatches.unref();
 
   /*
    * El grafo en memoria se reconstruye del log al arrancar y responde las
@@ -1369,6 +1405,113 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       });
       response.end(body);
     };
+
+    const librarianAgent = 'participant:cotito' as ParticipantId;
+    const canAnswerAsLibrarian = (): boolean => {
+      if (who.participant !== librarianAgent || who.credential === null) return false;
+      return credentialById(store, who.credential)?.scopes.includes('write') ?? false;
+    };
+    const readSmallJson = async (): Promise<Record<string, unknown>> => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of request) {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        size += bytes.length;
+        if (size > 64 * 1024) throw new Error('el cuerpo excede 64 KiB');
+        chunks.push(bytes);
+      }
+      return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+    };
+
+    if (request.method === 'POST' && path === '/librarian/requests') {
+      if (graph.participant(who.participant)?.kind !== 'human') {
+        send(response, 403, { error: 'sólo una persona puede solicitar al bibliotecario' });
+        return;
+      }
+      let body: Record<string, unknown>;
+      try { body = await readSmallJson(); }
+      catch (error) { send(response, 400, { error: error instanceof Error ? error.message : 'JSON inválido' }); return; }
+      const text = typeof body.text === 'string' ? body.text.trim() : '';
+      const pageId = typeof body.pageId === 'string' ? body.pageId : '';
+      const blockId = typeof body.blockId === 'string' ? body.blockId : null;
+      const page = graph.page(pageId);
+      const block = blockId === null ? undefined : graph.block(blockId);
+      if (text === '') { send(response, 400, { error: 'el pedido no puede estar vacío' }); return; }
+      if (page === undefined || (blockId !== null && (block === undefined || block.page !== page.id))) {
+        send(response, 404, { error: 'la página o el bloque ya no existe' });
+        return;
+      }
+      const blocks = graph.blocksOf(page.id);
+      const snapshot = JSON.stringify({
+        page: {
+          id: page.id,
+          title: page.title,
+          revision: graph.revisions().filter((one) => one.page === page.id).at(-1)?.operation ?? null,
+        },
+        focus: block === undefined ? null : { id: block.stableId, content: block.content, parent: block.parent },
+        blocks: blocks.map((one) => ({ id: one.stableId, parent: one.parent, position: one.position, content: one.content })),
+      });
+      const created = createLibrarianRequest(store, {
+        askedBy: who.participant,
+        agent: librarianAgent,
+        modality: block === undefined ? 'page' : 'block',
+        text,
+        sourcePageId: page.id,
+        sourceBlockId: block?.stableId ?? null,
+        contextSnapshot: snapshot,
+      });
+      await dispatchLibrarianRequest(created.id);
+      send(response, 201, librarianRequest(store, created.id));
+      return;
+    }
+
+    if (request.method === 'GET' && path === '/librarian/requests') {
+      const pageId = url.searchParams.get('page');
+      const block = url.searchParams.has('block') ? url.searchParams.get('block') : undefined;
+      if (pageId === null || graph.page(pageId) === undefined) {
+        send(response, 400, { error: 'falta una página válida' });
+        return;
+      }
+      deliver(librarianRequestsFor(store, pageId, block), {
+        surface: 'GET /librarian/requests', subject: pageId, delivered: [pageId, ...(block ? [block] : [])],
+      });
+      return;
+    }
+
+    const librarianMatch = /^\/librarian\/requests\/([^/]+)(?:\/(claim|reply))?$/.exec(path);
+    if (librarianMatch !== null) {
+      const id = decodeURIComponent(librarianMatch[1] ?? '');
+      const action = librarianMatch[2] ?? null;
+      const current = librarianRequest(store, id);
+      if (current === undefined) { send(response, 404, { error: 'la solicitud no existe' }); return; }
+      if (request.method === 'GET' && action === null) {
+        if (who.participant !== current.askedBy && who.participant !== librarianAgent) {
+          send(response, 403, { error: 'la solicitud pertenece a otra conversación' }); return;
+        }
+        deliver(current, { surface: 'GET /librarian/requests/:id', subject: id, delivered: [id] });
+        return;
+      }
+      if (request.method === 'POST' && action === 'claim') {
+        if (!canAnswerAsLibrarian()) { send(response, 403, { error: 'se necesita la credencial de Cotito con escritura' }); return; }
+        const claimed = claimLibrarianRequest(store, id);
+        if (claimed?.status !== 'working') { send(response, 409, { error: 'la solicitud ya no está en cola' }); return; }
+        send(response, 200, claimed);
+        return;
+      }
+      if (request.method === 'POST' && action === 'reply') {
+        if (!canAnswerAsLibrarian()) { send(response, 403, { error: 'se necesita la credencial de Cotito con escritura' }); return; }
+        let body: Record<string, unknown>;
+        try { body = await readSmallJson(); }
+        catch (error) { send(response, 400, { error: error instanceof Error ? error.message : 'JSON inválido' }); return; }
+        const text = typeof body.text === 'string' ? body.text.trim() : '';
+        const changes = Array.isArray(body.changes) ? body.changes as Change[] : [];
+        if (text === '') { send(response, 400, { error: 'la respuesta no puede estar vacía' }); return; }
+        const answered = answerLibrarianRequest(store, { id, answeredBy: who.participant, text, changes });
+        if (answered === undefined) { send(response, 409, { error: 'la solicitud no está esperando respuesta' }); return; }
+        send(response, 201, answered);
+        return;
+      }
+    }
 
     if (request.method === 'POST' && path === '/operations/batch') {
       const chunks: Buffer[] = [];
@@ -5905,7 +6048,10 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       return graph;
     },
     store,
-    close: () => store.close(),
+    close: () => {
+      clearInterval(retryLibrarianDispatches);
+      store.close();
+    },
   };
 }
 

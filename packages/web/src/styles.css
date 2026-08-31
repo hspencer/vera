@@ -29,6 +29,27 @@
   font-display: swap;
 }
 
+.librarian-turn {
+  margin: 0.45rem 0 0.65rem 2.1rem;
+  padding: 0.7rem 0.85rem;
+  border-left: 3px solid color-mix(in srgb, var(--accent, #6d5f92) 55%, transparent);
+  border-radius: 0 0.45rem 0.45rem 0;
+  background: color-mix(in srgb, var(--surface, #fff) 88%, var(--accent, #6d5f92));
+  font-size: 0.92rem;
+}
+
+.page-header + .librarian-turn { margin-left: 0; }
+.librarian-request { font-style: italic; }
+.librarian-state,
+.librarian-proposal {
+  margin-top: 0.3rem;
+  color: var(--muted, #666);
+  font-size: 0.8rem;
+}
+.librarian-reply { margin-top: 0.55rem; }
+.librarian-reply > :first-child { margin-top: 0; }
+.librarian-reply > :last-child { margin-bottom: 0; }
+
 @font-face {
   font-family: 'IBM Plex Sans';
   src: url('/fonts/plex-sans-variable-italic.woff2') format('woff2-variations');

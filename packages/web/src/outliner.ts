@@ -30,6 +30,7 @@ import {
   type CatalogAsset,
   type Change,
   type CrossingRow,
+  type LibrarianRequestView,
   type PageSummary,
   type PageView,
   type SubmitResult,
@@ -662,6 +663,81 @@ function toast(message: string): void {
   toastTimer = window.setTimeout(() => {
     if (element !== null) element.hidden = true;
   }, 3000);
+}
+
+async function askLibrarian(
+  page: PageView,
+  block: BlockView | null,
+  callbacks: OutlinerCallbacks,
+): Promise<void> {
+  const instruction = window.prompt(
+    block === null ? `¿Qué quieres pedirle al bibliotecario sobre «${page.title}»?` : '¿Qué quieres pedirle al bibliotecario sobre este bloque?',
+  )?.trim();
+  if (!instruction) return;
+  try {
+    const request = await api.askLibrarian({
+      pageId: page.id,
+      ...(block === null ? {} : { blockId: block.stableId }),
+      text: instruction,
+    });
+    toast(request.dispatchStatus === 'failed'
+      ? 'pedido guardado; el bibliotecario está desconectado y podrá retomarlo'
+      : 'pedido enviado al bibliotecario');
+    callbacks.onReload(null);
+  } catch {
+    toast('no se pudo guardar la solicitud');
+  }
+}
+
+function librarianTurn(request: LibrarianRequestView): HTMLElement {
+  const turn = document.createElement('aside');
+  turn.className = `librarian-turn librarian-${request.status}`;
+  turn.dataset['request'] = request.id;
+  const asked = document.createElement('div');
+  asked.className = 'librarian-request';
+  asked.textContent = request.text;
+  const state = document.createElement('div');
+  state.className = 'librarian-state';
+  state.textContent = request.status === 'answered'
+    ? 'Cotito respondió'
+    : request.status === 'working'
+      ? 'Cotito está trabajando'
+      : request.dispatchStatus === 'failed'
+        ? 'guardado; esperando reconexión'
+        : 'en cola para Cotito';
+  turn.append(asked, state);
+  if (request.reply !== null) {
+    const reply = document.createElement('div');
+    reply.className = 'librarian-reply';
+    reply.innerHTML = renderMarkdown(request.reply.text);
+    turn.append(reply);
+    if (request.reply.proposal !== null) {
+      const count = request.reply.proposal.changes.length;
+      const proposal = document.createElement('div');
+      proposal.className = 'librarian-proposal';
+      proposal.textContent = `${count} cambio${count === 1 ? '' : 's'} propuesto${count === 1 ? '' : 's'} · todavía no aplicado`;
+      turn.append(proposal);
+    }
+  }
+  return turn;
+}
+
+async function showLibrarianTurns(
+  container: HTMLElement,
+  page: PageView,
+  callbacks: OutlinerCallbacks,
+): Promise<void> {
+  let requests: LibrarianRequestView[];
+  try { requests = await api.librarianRequests(page.id); }
+  catch { return; }
+  for (const request of [...requests].reverse()) {
+    const turn = librarianTurn(request);
+    if (request.sourceBlockId === null) container.querySelector('.page-header')?.after(turn);
+    else container.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(request.sourceBlockId)}"]`)?.append(turn);
+  }
+  if (requests.some((request) => request.status === 'queued' || request.status === 'working')) {
+    window.setTimeout(() => callbacks.onReload(null), 3_000);
+  }
 }
 
 /**
@@ -3891,6 +3967,11 @@ export function renderOutliner(
         }),
       },
       {
+        label: 'Solicitar al bibliotecario',
+        icon: 'message-square',
+        run: () => void askLibrarian(page, null, callbacks),
+      },
+      {
         // Deliberado y sobre esta página, nunca de oficio: resolver un enlace es
         // preguntarle al servidor que lo tiene, y eso le dice que aquí alguien
         // está leyendo sobre esto.
@@ -4486,6 +4567,11 @@ export function renderOutliner(
            * lo que pidió. Lo que sale queda firmado por el modelo y se dibuja como
            * lo que es: no lo escribió quien escribió el pedido.
            */
+          {
+            label: 'Solicitar al bibliotecario',
+            icon: 'message-square',
+            run: () => void askLibrarian(page, node.block, callbacks),
+          },
           {
             label: 'Procesar el bloque',
             icon: 'cpu',
@@ -5761,6 +5847,7 @@ export function renderOutliner(
   // una imagen no tiene otra acción primaria y la catalogación debe descubrirse.
   wireCataloguedMedia(container, page);
   wireExternalLinks(container);
+  void showLibrarianTurns(container, page, callbacks);
 }
 
 /*

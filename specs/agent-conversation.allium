@@ -4,7 +4,8 @@
 -- Scope: Conversation with a named agent from inside Vera
 -- Includes: One conversation reached by voice, command, block or conversation
 --   page; explicit graph context; request lifecycle; attributed replies;
---   truthful waiting, cancellation, retry and separately reviewable proposals
+--   authenticated dispatch to the named agent; truthful waiting, cancellation,
+--   retry and separately reviewable proposals
 -- Excludes:
 --   - Mirroring Telegram or another external channel automatically
 --   - Model choice, prompts, token budgets and OpenClaw's internal session format
@@ -55,6 +56,22 @@ contract ConversationWithAgent {
         -- A Telegram thread and a Vera conversation may be handed to one another
         -- explicitly. They are not copied in both directions merely because the
         -- same human and agent participate in both.
+
+    @invariant DispatchDoesNotAuthenticateTheReply
+        -- The credential that lets Vera wake OpenClaw is not the credential that
+        -- lets Cotito speak inside Vera. Dispatch proves that the request reached
+        -- the configured worker; the reply is attributed only when Cotito returns
+        -- through Vera's ordinary agent boundary with Cotito's own credential.
+
+    @invariant ARequestExistsBeforeItTravels
+        -- Vera makes the request durable before attempting delivery. The hook
+        -- carries an identifier, not the only surviving copy of the instruction
+        -- or its context. If OpenClaw is absent, the request remains queued.
+
+    @invariant RepeatedDeliveryIsOneRequest
+        -- Dispatch may retry after a timeout or restart. The durable request id is
+        -- the idempotency key: receiving it twice cannot create two conversations,
+        -- two replies or two proposals.
 }
 
 ------------------------------------------------------------
@@ -65,6 +82,7 @@ enum ConversationStatus { active | closed }
 enum RequestModality { audio | command | block | conversation_page }
 enum RequestStatus { queued | working | answered | failed | cancelled }
 enum ProposalStatus { proposed | accepted | rejected }
+enum DispatchStatus { pending | delivered | failed }
 
 ------------------------------------------------------------
 -- Entities and Variants
@@ -101,6 +119,9 @@ entity ConversationRequest {
     started_at: Timestamp?
     finished_at: Timestamp?
     failure_reason: String?
+    dispatch_status: DispatchStatus
+    dispatch_attempts: Integer
+    last_dispatch_at: Timestamp?
     reply: AgentReply with request = this
 
     transitions status {
@@ -217,7 +238,10 @@ rule HumanAsksCotitoByAudio {
         created_at: now,
         started_at: null,
         finished_at: null,
-        failure_reason: null
+        failure_reason: null,
+        dispatch_status: pending,
+        dispatch_attempts: 0,
+        last_dispatch_at: null
     )
 }
 
@@ -245,7 +269,10 @@ rule HumanAsksCotitoByCommand {
         created_at: now,
         started_at: null,
         finished_at: null,
-        failure_reason: null
+        failure_reason: null,
+        dispatch_status: pending,
+        dispatch_attempts: 0,
+        last_dispatch_at: null
     )
 }
 
@@ -273,7 +300,10 @@ rule HumanAsksCotitoFromBlock {
         created_at: now,
         started_at: null,
         finished_at: null,
-        failure_reason: null
+        failure_reason: null,
+        dispatch_status: pending,
+        dispatch_attempts: 0,
+        last_dispatch_at: null
     )
 
     @guidance
@@ -305,7 +335,10 @@ rule HumanAsksCotitoFromConversationPage {
         created_at: now,
         started_at: null,
         finished_at: null,
-        failure_reason: null
+        failure_reason: null,
+        dispatch_status: pending,
+        dispatch_attempts: 0,
+        last_dispatch_at: null
     )
 }
 
@@ -318,6 +351,41 @@ rule CotitoBeginsARequest {
     ensures:
         request.status = working
         request.started_at = now
+}
+
+rule VeraDispatchesAQueuedRequest {
+    when: DispatchAgentRequest(request)
+
+    requires: request.status = queued
+    requires: request.dispatch_status in {pending, failed}
+
+    ensures:
+        request.dispatch_status = delivered
+        request.dispatch_attempts = request.dispatch_attempts + 1
+        request.last_dispatch_at = now
+
+    @guidance
+        -- Delivery authenticates Vera to the configured OpenClaw hook with a
+        -- credential dedicated to this boundary. The payload names only the
+        -- durable request. Cotito reads its instruction and snapshot back from
+        -- Vera, so a hook body cannot replace the canonical context.
+}
+
+rule VeraRecordsDispatchFailure {
+    when: FailAgentDispatch(request, reason)
+
+    requires: request.status = queued
+    requires: request.dispatch_status in {pending, failed}
+
+    ensures:
+        request.dispatch_status = failed
+        request.dispatch_attempts = request.dispatch_attempts + 1
+        request.last_dispatch_at = now
+        request.failure_reason = reason
+
+    @guidance
+        -- A failed delivery is not a failed request. It remains queued and can
+        -- be sent again with the same identity after OpenClaw recovers.
 }
 
 rule CotitoAnswersARequest {
@@ -394,7 +462,10 @@ rule HumanRetriesARequest {
         created_at: now,
         started_at: null,
         finished_at: null,
-        failure_reason: null
+        failure_reason: null,
+        dispatch_status: pending,
+        dispatch_attempts: 0,
+        last_dispatch_at: null
     )
 }
 
@@ -552,6 +623,10 @@ surface CotitoConversationWorker {
         ConversationRequest.status
 
     provides:
+        DispatchAgentRequest(request)
+            when request.status = queued and request.dispatch_status in {pending, failed}
+        FailAgentDispatch(request, reason)
+            when request.status = queued and request.dispatch_status in {pending, failed}
         BeginAgentRequest(agent, request) when request.status = queued
         AnswerAgentRequest(agent, request, text, changes) when request.status = working
         FailAgentRequest(agent, request, reason)

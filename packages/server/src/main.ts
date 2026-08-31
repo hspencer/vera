@@ -6,7 +6,7 @@
 // defecto— porque quien escribe un argumento lo escribió para esta corrida, y
 // una configuración de archivo no puede pisarlo.
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -86,6 +86,17 @@ const publicOutput = setting('VERA_PUBLIC_OUTPUT');
 const publicPreviewPort = setting('VERA_PUBLIC_PREVIEW_PORT');
 const publicPreviewUrl = setting('VERA_PUBLIC_PREVIEW_URL');
 const publicMcpOrigin = setting('VERA_PUBLIC_MCP_ORIGIN');
+const librarianHookUrl = setting('VERA_LIBRARIAN_HOOK_URL');
+const librarianCredentialDirectory = setting('CREDENTIALS_DIRECTORY');
+const librarianHookToken = librarianCredentialDirectory === undefined
+  ? undefined
+  : (() => {
+      const path = join(librarianCredentialDirectory, 'vera-librarian-hook');
+      return existsSync(path) ? readFileSync(path, 'utf8').trim() : undefined;
+    })();
+const librarianHook = librarianHookUrl !== undefined && librarianHookToken !== undefined
+  ? { url: librarianHookUrl, token: librarianHookToken }
+  : undefined;
 
 const { vera } = listen({
   port,
@@ -107,6 +118,7 @@ const { vera } = listen({
   ...(publicPreviewPort === undefined ? {} : { publicPreviewPort: Number(publicPreviewPort) }),
   ...(publicPreviewUrl === undefined ? {} : { publicPreviewUrl }),
   ...(publicMcpOrigin === undefined ? {} : { publicMcpOrigin }),
+  ...(librarianHook === undefined ? {} : { librarianHook }),
   ...(declaredOwner === undefined ? {} : { owner: declaredOwner }),
 });
 

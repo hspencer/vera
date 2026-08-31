@@ -762,3 +762,66 @@ CREATE TABLE IF NOT EXISTS exposed_subjects (
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS exposed_by_subject ON exposed_subjects (subject_id);
+
+
+-- ---------------------------------------------------------------------------
+-- Conversaciones con agentes: solicitudes durables, respuestas y propuestas
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS agent_conversations (
+    id              TEXT PRIMARY KEY,
+    graph_id        TEXT NOT NULL REFERENCES graphs (id),
+    human_id        TEXT NOT NULL REFERENCES participants (id),
+    agent_id        TEXT NOT NULL REFERENCES participants (id),
+    title           TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('active', 'closed')),
+    created_at      INTEGER NOT NULL
+) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS agent_conversation_pair
+    ON agent_conversations (graph_id, human_id, agent_id) WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS agent_requests (
+    id                 TEXT PRIMARY KEY,
+    conversation_id    TEXT NOT NULL REFERENCES agent_conversations (id),
+    graph_id            TEXT NOT NULL REFERENCES graphs (id),
+    asked_by            TEXT NOT NULL REFERENCES participants (id),
+    modality            TEXT NOT NULL CHECK (modality IN ('audio', 'command', 'block', 'conversation_page', 'page')),
+    text                TEXT NOT NULL,
+    source_page_id      TEXT REFERENCES pages (id) ON DELETE SET NULL,
+    source_block_id     TEXT REFERENCES blocks (id) ON DELETE SET NULL,
+    context_snapshot    TEXT NOT NULL,
+    retry_of            TEXT REFERENCES agent_requests (id),
+    status              TEXT NOT NULL CHECK (status IN ('queued', 'working', 'answered', 'failed', 'cancelled')),
+    dispatch_status     TEXT NOT NULL CHECK (dispatch_status IN ('pending', 'delivered', 'failed')),
+    dispatch_attempts   INTEGER NOT NULL DEFAULT 0,
+    created_at          INTEGER NOT NULL,
+    started_at          INTEGER,
+    finished_at         INTEGER,
+    last_dispatch_at    INTEGER,
+    failure_reason      TEXT
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS agent_requests_by_source
+    ON agent_requests (source_page_id, source_block_id, created_at);
+CREATE INDEX IF NOT EXISTS agent_requests_pending
+    ON agent_requests (status, dispatch_status, created_at);
+
+CREATE TABLE IF NOT EXISTS agent_replies (
+    id              TEXT PRIMARY KEY,
+    request_id      TEXT NOT NULL UNIQUE REFERENCES agent_requests (id) ON DELETE CASCADE,
+    answered_by     TEXT NOT NULL REFERENCES participants (id),
+    text            TEXT NOT NULL,
+    created_at      INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS agent_operation_proposals (
+    id              TEXT PRIMARY KEY,
+    reply_id        TEXT NOT NULL UNIQUE REFERENCES agent_replies (id) ON DELETE CASCADE,
+    proposed_by     TEXT NOT NULL REFERENCES participants (id),
+    changes_json    TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('proposed', 'accepted', 'rejected')),
+    proposed_at     INTEGER NOT NULL,
+    decided_by      TEXT REFERENCES participants (id),
+    decided_at      INTEGER
+) STRICT;

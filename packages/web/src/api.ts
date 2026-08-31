@@ -190,6 +190,32 @@ export interface PageView {
   crossingsIn: CrossingRow[];
 }
 
+export interface LibrarianRequestView {
+  id: string;
+  conversationId: string;
+  askedBy: string;
+  modality: 'block' | 'page';
+  text: string;
+  sourcePageId: string | null;
+  sourceBlockId: string | null;
+  status: 'queued' | 'working' | 'answered' | 'failed' | 'cancelled';
+  dispatchStatus: 'pending' | 'delivered' | 'failed';
+  dispatchAttempts: number;
+  createdAt: number;
+  failureReason: string | null;
+  reply: null | {
+    id: string;
+    answeredBy: string;
+    text: string;
+    createdAt: number;
+    proposal: null | {
+      id: string;
+      changes: Change[];
+      status: 'proposed' | 'accepted' | 'rejected';
+    };
+  };
+}
+
 export type PageEnrichment = Pick<
   PageView,
   | 'id'
@@ -799,6 +825,18 @@ export const api = {
   },
 
   pages: () => json<PageSummary[]>('/pages'),
+
+  askLibrarian: (said: { pageId: string; blockId?: string; text: string }) =>
+    json<LibrarianRequestView>('/librarian/requests', {
+      method: 'POST',
+      body: JSON.stringify(said),
+    }),
+
+  librarianRequests: (pageId: string, blockId?: string | null) => {
+    const query = new URLSearchParams({ page: pageId });
+    if (blockId !== undefined) query.set('block', blockId ?? '');
+    return json<LibrarianRequestView[]>(`/librarian/requests?${query.toString()}`);
+  },
 
   /*
    * Las conexiones con servicios de fuera.
