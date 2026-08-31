@@ -1530,6 +1530,37 @@ surface PageRelations {
         -- ningún otro sitio. El momento en que alguien sabe por qué dos páginas se
         -- tocan es el momento en que las está mirando juntas.
 
+    @guarantee TheQuickExplanationStartsTheSameOutline
+        -- El gesto breve al pie de una página no crea una conectiva menor ni una
+        -- versión de texto plano. Lo que se escribe ahí es el primer bloque del
+        -- mismo árbol A → B que después puede crecer dentro de un argumento. La
+        -- superficie ofrece menos espacio, no menos expresividad al contenido.
+
+    @guarantee OneColouredOutlineIsOneRelation
+        -- Todos los bloques de una relación se presentan dentro de un solo
+        -- recinto continuo y distinguible del cuerpo de las páginas. El contorno
+        -- hace legible la pertenencia: hijos, medios y propiedades pueden crecer
+        -- cuanto necesiten sin que parezcan afirmaciones sueltas de A, de B o del
+        -- argumento que la está citando.
+
+    @guarantee TheFooterCanOpenWithoutFlattening
+        -- En el pie de página cabe empezar, leer plegado y abrir para editar. No
+        -- hace falta enseñar allí permanentemente todo un árbol profundo, pero
+        -- plegarlo o llevarlo a una superficie más amplia conserva bloques,
+        -- jerarquía, foco y revisión; nunca lo resume convirtiéndolo en un campo.
+
+    @guarantee ARelationUsesTheOrdinaryOutliner
+        -- Crear, partir, anidar, mover, plegar, dictar, dibujar, adjuntar y
+        -- enlazar funciona como en cualquier árbol de bloques. La relación no
+        -- recibe un editor especial empobrecido: sólo un contenedor que dice a
+        -- qué arista pertenecen esos bloques.
+
+    @guarantee ReferencesInsideARelationBelongToTheRelation
+        -- Si A → B nombra C dentro de su explicación, la mención es parte del
+        -- discurso de la relación. No se atribuye retrospectivamente a A ni a B
+        -- y no finge que alguna de esas páginas enlazó C. Se puede seguir y citar
+        -- desde la conectiva sin contaminar la topología de sus extremos.
+
     @guarantee TraversalNamesTheCrossingAndItsRevision
         -- Pulsar el destino desde una conectiva registra `página → conectiva →
         -- página`. El rastro y el argumento citan su identidad y la revisión que
@@ -1617,6 +1648,12 @@ open question "Una relación llega a una página y no a un bloque suyo, porque l
 -- misma entidad; las superficies de página y recorrido son dos lugares para
 -- leerla y editarla. Los argumentos citan una revisión y por eso pueden conservar
 -- históricamente lo que sostuvieron sin duplicar la relación ni su autoría.
+
+-- Resuelta también el 2026-08-30 la capacidad del contenido. Una conectiva no
+-- es un campo sino un outline con las mismas capacidades que el cuerpo de una
+-- página. El pie ofrece una entrada breve y plegable; el argumento ofrece el
+-- espacio amplio. Ambos editan el mismo árbol, que se presenta dentro de un
+-- recinto propio para que su jerarquía se lea como una sola relación.
 
 open question "El vocabulario de relaciones —contradice, respalda, profundiza, ejemplifica, con sus recíprocos— tiene que nacer en alguna parte. controlled-ontology.allium gobierna hoy tipos, conceptos y propiedades, y esta es una cuarta capa que habla de una página respecto de otra. ¿Crece esa spec para acogerla, o un vocabulario de aristas es cosa distinta de un vocabulario de nodos y merece su propio sitio?"
 
