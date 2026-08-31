@@ -83,6 +83,27 @@ export interface Seeded {
 }
 
 /**
+ * Completa cada par consecutivo con la relación dirigida que el corpus ya tiene.
+ *
+ * El gesto recuerda qué se pulsó; no gobierna qué relaciones existen. Por eso
+ * una llegada por búsqueda o por un enlace corriente cita igualmente A → B si
+ * el corpus ya la explicó. Una conectiva efectivamente recorrida conserva la
+ * revisión que se leyó y tiene prioridad sobre la consulta posterior.
+ */
+export function fillTraceCrossings(
+  trace: readonly TraceStep[],
+  relation: (from: string, to: string) => NonNullable<TraceStep['crossing']> | null,
+): TraceStep[] {
+  return trace.map((step, at) => {
+    if (at === 0 || step.crossing != null) return step;
+    const from = trace[at - 1]?.page;
+    if (from === undefined) return step;
+    const held = relation(from, step.page);
+    return held === null ? step : { ...step, crossing: held };
+  });
+}
+
+/**
  * Los cambios que hacen nacer un recorrido a partir de un tramo del rastro.
  *
  * Devuelve la lista y no la manda: quién la manda sabe de páginas nuevas y de

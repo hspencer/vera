@@ -31,7 +31,12 @@ const block = (
 /** Un corpus de mentira: qué títulos existen y qué páginas ya se tocaban. */
 const reading = (
   blocks: readonly TrailBlock[],
-  said: { pages?: Record<string, string>; edges?: [string, string][]; intent?: string } = {},
+  said: {
+    pages?: Record<string, string>;
+    edges?: [string, string][];
+    relations?: Record<string, { id: string; revision: string; content: string }>;
+    intent?: string;
+  } = {},
 ) => ({
   page: 'page:trail',
   intent: said.intent ?? null,
@@ -39,6 +44,7 @@ const reading = (
   resolve: (title: string) => said.pages?.[title] ?? null,
   linked: (a: string, b: string) =>
     (said.edges ?? []).some(([x, y]) => (x === a && y === b) || (x === b && y === a)),
+  relation: (from: string, to: string) => said.relations?.[`${from}->${to}`] ?? null,
 });
 
 const PAGES = { Uno: 'page:1', Dos: 'page:2', Tres: 'page:3' };
@@ -95,6 +101,40 @@ describe('leer una página como ruta', () => {
     );
     assert.equal(trail.crossings.length, 1);
     assert.equal(trail.crossings[0]?.connective, 'no se sostiene sin');
+  });
+
+  it('un hueco reutiliza la relación dirigida que ya existe entre las paradas', () => {
+    const trail = readTrail(reading([block('[[Uno]]'), block('[[Dos]]')], {
+      pages: PAGES,
+      relations: {
+        'page:1->page:2': {
+          id: 'crossing:12',
+          revision: 'operation:7',
+          content: 'la luz aprende a contar',
+        },
+      },
+    }));
+    assert.equal(trail.crossings[0]?.connective, 'la luz aprende a contar');
+    assert.deepEqual(trail.crossings[0]?.citation, {
+      crossing: 'crossing:12',
+      revision: 'operation:7',
+    });
+    assert.equal(trail.argues, true);
+  });
+
+  it('no reutiliza la relación del sentido inverso', () => {
+    const trail = readTrail(reading([block('[[Uno]]'), block('[[Dos]]')], {
+      pages: PAGES,
+      relations: {
+        'page:2->page:1': {
+          id: 'crossing:21',
+          revision: 'operation:8',
+          content: 'la vuelta dice otra cosa',
+        },
+      },
+    }));
+    assert.equal(trail.crossings[0]?.connective, '');
+    assert.equal(trail.crossings[0]?.citation, null);
   });
 
   it('da igual si la conectiva va en el bloque de la parada o en el de al lado', () => {

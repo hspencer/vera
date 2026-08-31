@@ -969,6 +969,15 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         graph
           .backlinks(a)
           .some((link) => link.sourcePage === b && link.sourcePage !== pageId),
+      relation: (from, to) => {
+        const crossing = graph.crossingsOut(from).find((one) => one.toPage === to);
+        if (crossing === undefined) return null;
+        const revision = graph.revisions()
+          .filter((one) => one.crossing === crossing.stableId)
+          .at(-1)?.operation;
+        if (revision === undefined) return null;
+        return { id: crossing.stableId, revision, content: crossing.said };
+      },
     });
   };
 

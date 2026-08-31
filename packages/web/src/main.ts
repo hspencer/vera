@@ -74,6 +74,7 @@ import {
 import {
   TESTIMONY_KEY,
   blocksFor,
+  fillTraceCrossings,
   provisionalTitle,
   seedTrail,
 } from './promote.ts';
@@ -2349,7 +2350,26 @@ function drawTrail(): void {
  * @invariant TheTraceItselfIsNotConsumed.
  */
 async function promoteTrace(from: number | null): Promise<void> {
-  const trace = workspace.trace.slice(from === null ? 0 : Math.max(0, from));
+  const walkedTrace = workspace.trace.slice(from === null ? 0 : Math.max(0, from));
+  const sourcePages = await Promise.all(
+    [...new Set(walkedTrace.slice(0, -1).map((step) => step.page))]
+      .map((id) => api.page(id)),
+  );
+  const relations = new Map<string, { id: string; revision: string; content: string }>();
+  for (const source of sourcePages) {
+    for (const crossing of source.crossingsOut) {
+      if (crossing.toPage === null || crossing.revision === null) continue;
+      relations.set(`${source.id}->${crossing.toPage}`, {
+        id: crossing.stableId,
+        revision: crossing.revision,
+        content: crossing.said,
+      });
+    }
+  }
+  const trace = fillTraceCrossings(
+    walkedTrace,
+    (source, target) => relations.get(`${source}->${target}`) ?? null,
+  );
   if (trace.length === 0) {
     notice('No hay nada andado que guardar.');
     return;

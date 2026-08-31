@@ -225,6 +225,11 @@ export interface TrailReading {
    * distinción no distinguiría nada.
    */
   linked: (a: string, b: string) => boolean;
+  /** La relación dirigida que el corpus ya explicó para este par, si existe. */
+  relation: (
+    from: string,
+    to: string,
+  ) => { id: string; revision: string; content: string } | null;
 }
 
 /**
@@ -284,7 +289,7 @@ export function readTrail(said: TrailReading): Trail {
     const from = route[at]!;
     const to = route[at + 1]!;
     const gap = between[at] ?? { text: [], blocks: [] };
-    const connective = joined(gap.text);
+    const written = joined(gap.text);
     const testimony =
       [...gap.blocks, to.block]
         .map((block) => testimonies.get(block) ?? null)
@@ -292,6 +297,21 @@ export function readTrail(said: TrailReading): Trail {
     const cited = [...gap.blocks, to.block]
       .map((id) => said.blocks.find((block) => block.stableId === id))
       .find((block) => block?.citedCrossing != null && block.citedRevision != null);
+    /*
+     * La ruta decide el par y la dirección; el corpus aporta lo que ya dijo.
+     * Haber llegado por una referencia ordinaria no vuelve inexistente una
+     * relación A → B. El texto propio del argumento se conserva por compatibilidad
+     * mientras se materializa como revisión, pero un hueco no oculta la relación.
+     */
+    const held = from.page !== null && to.page !== null
+      ? said.relation(from.page, to.page)
+      : null;
+    const connective = written === '' ? (held?.content ?? '') : written;
+    const citation = cited?.citedCrossing != null && cited.citedRevision != null
+      ? { crossing: cited.citedCrossing, revision: cited.citedRevision }
+      : held === null
+        ? null
+        : { crossing: held.id, revision: held.revision };
     const kind: CrossingKind =
       from.page !== null && to.page !== null && said.linked(from.page, to.page)
         ? 'by_path'
@@ -301,9 +321,7 @@ export function readTrail(said: TrailReading): Trail {
       to,
       connective,
       testimony,
-      citation: cited?.citedCrossing != null && cited.citedRevision != null
-        ? { crossing: cited.citedCrossing, revision: cited.citedRevision }
-        : null,
+      citation,
       kind,
       spokenFor: connective !== '' || testimony !== null,
       blocks: [...new Set(gap.blocks)].filter((one) => one !== from.block && one !== to.block),

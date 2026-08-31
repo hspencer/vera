@@ -11,7 +11,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { blocksFor, provisionalTitle, seedTrail, testimonyFor } from '../src/promote.ts';
+import {
+  blocksFor,
+  fillTraceCrossings,
+  provisionalTitle,
+  seedTrail,
+  testimonyFor,
+} from '../src/promote.ts';
 import type { TraceStep } from '../src/trace.ts';
 
 const titles: Record<string, string> = {
@@ -123,6 +129,24 @@ describe('lo que nace', () => {
       revision: 'operation:7',
       content: 'La luz aprende a contar.',
     });
+  });
+
+  it('una relación existente entra aunque se haya llegado por otro gesto', () => {
+    const held = { id: 'crossing:12', revision: 'operation:7', content: 'La luz aprende a contar.' };
+    const filled = fillTraceCrossings(trace, (from, to) =>
+      from === 'page:1' && to === 'page:2' ? held : null,
+    );
+    assert.deepEqual(filled[1]?.crossing, held);
+    assert.equal(filled[2]?.crossing, undefined);
+  });
+
+  it('la revisión realmente recorrida no se reemplaza por la vigente', () => {
+    const cited = { id: 'crossing:12', revision: 'operation:6', content: 'antes' };
+    const walked = [trace[0]!, { ...trace[1]!, crossing: cited }];
+    const filled = fillTraceCrossings(walked, () => ({
+      id: 'crossing:12', revision: 'operation:7', content: 'ahora',
+    }));
+    assert.deepEqual(filled[1]?.crossing, cited);
   });
 
   it('las paradas no llevan testimonio: el testimonio es del tramo', () => {
