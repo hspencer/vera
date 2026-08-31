@@ -72,4 +72,20 @@ describe('la puerta MCP pública', () => {
     assert.equal((await client.listTools()).tools.length, 9);
     await client.close();
   });
+
+  it('tolera clientes JSON que omiten text/event-stream en Accept', async () => {
+    const response = await fetch(door, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        authorization: 'Bearer bueno',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(initialize),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'application/json');
+    const payload = await response.json() as { result?: { serverInfo?: { name?: string } } };
+    assert.equal(payload.result?.serverInfo?.name, 'vera');
+  });
 });

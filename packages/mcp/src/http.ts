@@ -91,6 +91,19 @@ export async function handlePublicMCP(request: IncomingMessage, response: Server
     return;
   }
 
+  // Algunos conectores remotos (entre ellos el verificador web de Claude)
+  // anuncian sólo application/json aunque esta puerta responda en JSON y no
+  // necesite abrir un stream SSE. El transporte del SDK exige que Accept
+  // enumere también text/event-stream antes de atender siquiera initialize.
+  // Normalizamos esa variante interoperable sin aceptar tipos arbitrarios.
+  const accept = request.headers.accept ?? '';
+  if (accept.includes('application/json') && !accept.includes('text/event-stream')) {
+    const compatibleAccept = `${accept}, text/event-stream`;
+    request.headers.accept = compatibleAccept;
+    const rawAccept = request.rawHeaders.findIndex((header) => header.toLowerCase() === 'accept');
+    if (rawAccept >= 0) request.rawHeaders[rawAccept + 1] = compatibleAccept;
+  }
+
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
