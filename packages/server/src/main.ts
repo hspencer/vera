@@ -88,12 +88,14 @@ const publicPreviewUrl = setting('VERA_PUBLIC_PREVIEW_URL');
 const publicMcpOrigin = setting('VERA_PUBLIC_MCP_ORIGIN');
 const librarianHookUrl = setting('VERA_LIBRARIAN_HOOK_URL');
 const librarianCredentialDirectory = setting('CREDENTIALS_DIRECTORY');
-const librarianHookToken = librarianCredentialDirectory === undefined
-  ? undefined
-  : (() => {
-      const path = join(librarianCredentialDirectory, 'vera-librarian-hook');
-      return existsSync(path) ? readFileSync(path, 'utf8').trim() : undefined;
-    })();
+const librarianHookToken = setting('VERA_LIBRARIAN_HOOK_TOKEN') ?? (
+  librarianCredentialDirectory === undefined
+    ? undefined
+    : (() => {
+        const path = join(librarianCredentialDirectory, 'vera-librarian-hook');
+        return existsSync(path) ? readFileSync(path, 'utf8').trim() : undefined;
+      })()
+);
 const librarianHook = librarianHookUrl !== undefined && librarianHookToken !== undefined
   ? { url: librarianHookUrl, token: librarianHookToken }
   : undefined;
