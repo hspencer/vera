@@ -274,7 +274,14 @@ describe('leer una página', () => {
   it('conserva la sangría, que es lo que dice de quién es hijo qué', async () => {
     const { ask } = fakeVera({ '/pages/Vera': page });
     const said = await run('vera_leer_pagina', { pagina: 'Vera' }, ask);
-    assert.match(said, /- Primero\n {2}- Dentro del primero\n- Segundo/);
+    assert.match(said, /- \[b1\] Primero\n {2}- \[b2\] Dentro del primero\n- \[b3\] Segundo/);
+  });
+
+  it('pone cada identidad junto al bloque en orden de lectura', async () => {
+    const { ask } = fakeVera({ '/pages/Vera': page });
+    const said = await run('vera_leer_pagina', { pagina: 'Vera' }, ask);
+    assert.ok(said.indexOf('[b1]') < said.indexOf('[b2]'));
+    assert.ok(said.indexOf('[b2]') < said.indexOf('[b3]'));
   });
 
   it('dice qué bloques escribió una máquina', async () => {

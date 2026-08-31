@@ -141,7 +141,7 @@ describe('vera-mcp por stdio', () => {
   it('lee una página con su sangría', async () => {
     const answer = await call('vera_leer_pagina', { pagina: 'La bitácora' });
     assert.match(answer, /# La bitácora/);
-    assert.match(answer, /- Un pensamiento\n {2}- Y su matiz/);
+    assert.match(answer, /- \[block:\d+\] Un pensamiento\n {2}- \[block:\d+\] Y su matiz/);
   });
 
   it('escribe por la API y el cambio queda inmediatamente legible', async () => {

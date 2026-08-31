@@ -66,7 +66,10 @@ const trouble = (what: Failure): string =>
   `No pude leer eso: ${what.error}${what.status > 0 ? ` (${what.status})` : ''}`;
 
 /** Los bloques de una página, con su sangría, en el orden en que se leen. */
-export function outline(blocks: readonly Page['blocks'][number][]): string {
+export function outline(
+  blocks: readonly Page['blocks'][number][],
+  options: { identities?: boolean } = {},
+): string {
   const children = new Map<string | null, Page['blocks'][number][]>();
   for (const block of blocks) {
     const kin = children.get(block.parent) ?? [];
@@ -82,7 +85,10 @@ export function outline(blocks: readonly Page['blocks'][number][]): string {
       // El texto de un bloque puede tener saltos —un dibujo, un bloque de
       // código— y todos se sangran igual, o la sangría deja de decir de quién
       // es hijo qué.
-      lines.push(block.content.split('\n').map((line) => `${pad}- ${line}`).join('\n'));
+      const identity = options.identities === true ? `[${block.stableId}] ` : '';
+      lines.push(block.content.split('\n').map((line, index) =>
+        `${pad}- ${index === 0 ? identity : ''}${line}`,
+      ).join('\n'));
       walk(block.stableId, depth + 1);
     }
   };
@@ -166,7 +172,8 @@ export const TOOLS: readonly VeraTool[] = [
     title: 'Leer una página entera',
     description:
       'Devuelve una página completa: sus propiedades, todos sus bloques con la sangría que ' +
-      'tienen, quién escribió cada uno cuando no fue el dueño, y a qué páginas apunta y qué ' +
+      'tienen y su identidad estable en el mismo orden de lectura, quién escribió cada uno ' +
+      'cuando no fue el dueño, y a qué páginas apunta y qué ' +
       'páginas apuntan a ella. Acepta el título o el identificador. Una página larga puede ' +
       'venir cortada, y lo dice cuando pasa.',
     inputSchema: {
@@ -211,7 +218,7 @@ export const TOOLS: readonly VeraTool[] = [
         `# ${page.title}`,
         `(${page.id} · ${page.visibility} · última edición ${when(page.lastEditedAt)})`,
         properties === '' ? '' : `\n${properties}`,
-        `\n${outline(page.blocks)}`,
+        `\n${outline(page.blocks, { identities: true })}`,
       ];
 
       if (others.length > 0) {
