@@ -14,11 +14,10 @@
 -- Dependencies: Participant, Graph, Page, Block, Change, Submission, Revision and
 --   PropertyAssignment are governed by core.allium
 
--- DEUDA DE IMPLEMENTACIÓN — 2026-08-19
--- El núcleo aplica hoy una operación atómica por vez. Falta admitir una tanda
--- como un solo gesto atómico, reservar su intervalo de secuencias, resolver las
--- identidades creadas dentro de ella y devolver sus operaciones individuales.
--- Esta deuda no autoriza a MCP a simular atomicidad encadenando solicitudes.
+-- IMPLEMENTADO — 2026-08-31
+-- La puerta canónica admite tandas atómicas, conserva una operación por cambio
+-- y permite que los cambios posteriores nombren las identidades estables que
+-- los cambios anteriores crean dentro de la misma tanda.
 
 use "./core.allium" as core
 
@@ -67,9 +66,9 @@ contract IdempotentOrderedApplication {
         -- no una petición para completar un prefijo.
 
     @invariant InBatchReferencesResolveBeforeAdmission
-        -- Las referencias locales a páginas y bloques creados por la propia
-        -- tanda se resuelven antes de aceptar cualquier Submission. Una
-        -- referencia que no resuelve rechaza la tanda completa.
+        -- Las páginas y bloques pueden traer identidades estables elegidas por
+        -- quien envía. Un cambio posterior de la tanda puede nombrarlas; una
+        -- identidad ausente, duplicada o todavía no creada rechaza todo el lote.
 }
 
 ------------------------------------------------------------

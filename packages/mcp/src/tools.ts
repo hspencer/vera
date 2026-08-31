@@ -21,6 +21,14 @@ export type Write = (
   change: Record<string, unknown>,
 ) => Promise<{ status: 'applied' | 'duplicate'; sequence: number; subjectId: string } | Failure>;
 
+export type WriteBatch = (
+  origin: string,
+  changes: readonly Record<string, unknown>[],
+) => Promise<{
+  status: 'applied' | 'duplicate';
+  operations: { sequence: number; subjectId: string }[];
+} | Failure>;
+
 export interface VeraTool {
   name: string;
   title: string;
@@ -28,7 +36,7 @@ export interface VeraTool {
   /** JSON Schema en crudo: la forma que el protocolo pide, sin traductor. */
   inputSchema: Record<string, unknown>;
   readOnly?: boolean;
-  run(args: Record<string, unknown>, ask: Ask, write?: Write): Promise<string>;
+  run(args: Record<string, unknown>, ask: Ask, write?: Write, writeBatch?: WriteBatch): Promise<string>;
 }
 
 /**
@@ -435,6 +443,70 @@ export const TOOLS: readonly VeraTool[] = [
         `${result.status === 'duplicate' ? 'Ese cambio ya estaba aplicado' : 'Cambio aplicado'}: ` +
         `${result.subjectId}, operación ${result.sequence}.`
       );
+    },
+  },
+
+  {
+    name: 'vera_escribir_lote',
+    title: 'Escribir muchos cambios de una vez',
+    readOnly: false,
+    description:
+      'Aplica entre 1 y 1000 cambios no destructivos en una sola llamada y una sola transacción: ' +
+      'o se aceptan todos o no se aplica ninguno. Cada cambio conserva su operación, secuencia, ' +
+      'autoría y procedencia. Para crear una página con su outline sin esperar respuestas intermedias, ' +
+      'asigna stableId a create_page y create_block y usa esas mismas identidades en page y parent. ' +
+      'Reutilizar origen reintenta el lote entero sin duplicarlo. No edita, mueve ni borra contenido.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        origen: {
+          type: 'string',
+          minLength: 1,
+          description: 'Clave estable de idempotencia para el lote completo.',
+        },
+        cambios: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 1000,
+          items: {
+            type: 'object',
+            properties: {
+              kind: { type: 'string', enum: ['create_page', 'create_block', 'set_property', 'remove_property'] },
+              title: { type: 'string' },
+              visibility: { type: 'string', enum: ['private', 'public'] },
+              stableId: { type: 'string', description: 'Identidad nueva elegida por el cliente; page:… o block:…' },
+              page: { type: 'string' },
+              block: { type: 'string' },
+              parent: { type: ['string', 'null'] },
+              position: { type: 'integer', minimum: 0 },
+              content: { type: 'string' },
+              propertyKey: { type: 'string' },
+              propertyValue: { type: 'string' },
+            },
+            required: ['kind'],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ['origen', 'cambios'],
+      additionalProperties: false,
+    },
+    async run(args, _ask, _write, writeBatch) {
+      const origin = say(args.origen).trim();
+      if (origin === '') return 'Falta `origen`: una clave estable para reintentar el lote sin duplicarlo.';
+      if (!Array.isArray(args.cambios) || args.cambios.length === 0) return 'Falta `cambios`: debe ser una lista no vacía.';
+      if (writeBatch === undefined) return 'Esta conexión MCP no habilitó la escritura por lotes.';
+      const changes = args.cambios as Record<string, unknown>[];
+      const allowed = new Set(['create_page', 'create_block', 'set_property', 'remove_property']);
+      if (changes.some((change) => !allowed.has(String(change.kind)))) {
+        return 'El lote sólo admite crear páginas y bloques o escribir y retirar propiedades.';
+      }
+      const result = await writeBatch(origin, changes);
+      if (failed(result)) return `No pude escribir el lote: ${result.error}${result.status > 0 ? ` (${result.status})` : ''}`;
+      const first = result.operations[0]?.sequence;
+      const last = result.operations.at(-1)?.sequence;
+      return `${result.status === 'duplicate' ? 'Ese lote ya estaba aplicado' : 'Lote aplicado'}: ` +
+        `${result.operations.length} cambios${first === undefined ? '' : `, operaciones ${first}–${last}`}.`;
     },
   },
 

@@ -22,13 +22,11 @@
 -- Dependencies: Participant, Operation y ContributionChannel los gobierna
 --   core.allium; la credencial y su alcance, agent-participation.allium
 
--- DEUDA DE IMPLEMENTACIÓN — 2026-08-19
--- El comportamiento de escritura por lotes especificado aquí todavía no existe.
--- La puerta MCP vigente admite un solo cambio por llamada; la API no admite un
--- lote atómico, no resuelve referencias temporales entre cambios y no ofrece la
--- precondición de revisión necesaria para editar sin pisar. La deuda termina
--- cuando el mismo contrato esté disponible en la puerta MCP y en la única puerta
--- canónica de escritura, sin un camino privilegiado para ningún agente.
+-- LOTE IMPLEMENTADO — 2026-08-31
+-- La puerta MCP y la API canónica admiten un lote atómico con identidades
+-- estables internas, una operación por cambio e idempotencia del gesto entero.
+-- Sigue pendiente la precondición de revisión necesaria para editar sin pisar;
+-- por eso el lote de agentes aún no edita, mueve ni elimina contenido.
 
 use "./core.allium" as core
 
@@ -261,11 +259,10 @@ contract AWriteCanBeRepeatedWithoutRepeating {
         -- secuencia, sujeto, autoría y canal; las secuencias del lote son
         -- contiguas y el lote común permite reconocerlas como un solo gesto.
 
-    @invariant TemporaryReferencesLiveOnlyInsideTheirBatch
-        -- Un cambio puede nombrar con una referencia temporal una página o un
-        -- bloque creado antes dentro del mismo lote. Toda referencia se resuelve
-        -- antes de aplicar; una referencia ausente, duplicada, futura o que
-        -- escape del lote rechaza el lote completo.
+    @invariant StableReferencesCanBeBornInsideTheirBatch
+        -- Crear una página o un bloque puede declarar su identidad estable. Un
+        -- cambio posterior del mismo lote puede usarla; una referencia ausente,
+        -- duplicada o futura rechaza el lote completo.
 
     @invariant TheBatchAndEveryChangeAreIdempotent
         -- El lote tiene un origen estable y cada cambio conserva el suyo.
@@ -383,8 +380,8 @@ value Session {
 ------------------------------------------------------------
 
 config {
-    max_batch_changes: Integer
-    max_batch_bytes: Integer
+    max_batch_changes: Integer = 1_000
+    max_batch_bytes: Integer = 2_097_152
 }
 
 ------------------------------------------------------------
@@ -521,8 +518,6 @@ open question "¿Cuál es la unidad de concesión: página, proyecto, espacio de
 open question "¿Cómo se representa una propuesta dentro del grafo, si una propuesta no es todavía contenido y tampoco es una operación aplicada?"
 
 open question "¿Qué precondición de revisión expone el núcleo para editar: la secuencia, una revisión propia del bloque, o el hash de lo que se leyó?"
-
-open question "¿Cuáles son los valores iniciales de max_batch_changes y max_batch_bytes, y se ajustan por concesión o son iguales para toda conexión?"
 
 open question "¿Qué lecturas se conservan con detalle, cuáles sólo como huella, y durante cuánto tiempo?"
 

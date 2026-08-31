@@ -27,8 +27,14 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import { ask as askVera, connectionFrom, submit as submitVera, type Connection } from './client.ts';
-import { TOOLS, toolNamed, type Ask, type Write } from './tools.ts';
+import {
+  ask as askVera,
+  connectionFrom,
+  submit as submitVera,
+  submitBatch as submitBatchVera,
+  type Connection,
+} from './client.ts';
+import { TOOLS, toolNamed, type Ask, type Write, type WriteBatch } from './tools.ts';
 
 const VERSION = '0.5.0';
 
@@ -79,6 +85,7 @@ Al escribir:
 export function mcpServer(connection: Connection): Server {
   const ask: Ask = (path, parameters) => askVera(connection, path, parameters);
   const write: Write = (origin, change) => submitVera(connection, origin, change);
+  const writeBatch: WriteBatch = (origin, changes) => submitBatchVera(connection, origin, changes);
 
   const server = new Server(
     { name: 'vera', version: VERSION },
@@ -115,7 +122,7 @@ export function mcpServer(connection: Connection): Server {
      * primero—. Vera apagada es una circunstancia, no una violación.
      */
     try {
-      const text = await tool.run(request.params.arguments ?? {}, ask, write);
+      const text = await tool.run(request.params.arguments ?? {}, ask, write, writeBatch);
       return { content: [{ type: 'text' as const, text }] };
     } catch (trouble) {
       return {

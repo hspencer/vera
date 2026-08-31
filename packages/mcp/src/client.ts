@@ -89,6 +89,11 @@ export interface WriteResult {
   subjectId: string;
 }
 
+export interface BatchWriteResult {
+  status: 'applied' | 'duplicate';
+  operations: { sequence: number; subjectId: string }[];
+}
+
 /**
  * Escribe por la única puerta canónica. La identidad y el canal no viajan en el
  * cuerpo: Vera los deriva de la credencial.
@@ -128,6 +133,39 @@ export async function submit(
     };
   }
   return body as WriteResult;
+}
+
+/** Envía muchos cambios en una sola transacción canónica. */
+export async function submitBatch(
+  connection: Connection,
+  originId: string,
+  changes: readonly Record<string, unknown>[],
+): Promise<BatchWriteResult | Failure> {
+  if (connection.token === null) {
+    return { status: 403, error: 'MCP sólo escribe con una credencial explícita de agente' };
+  }
+  const headers: Record<string, string> = {
+    accept: 'application/json',
+    'content-type': 'application/json',
+    'x-vera-client': connection.client,
+    authorization: `Bearer ${connection.token}`,
+  };
+  let response: Response;
+  try {
+    response = await fetch(new URL('/operations/batch', connection.url), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ originId, changes }),
+    });
+  } catch (trouble) {
+    return { status: 0, error: `no hay nadie escuchando en ${connection.url} (${String(trouble)})` };
+  }
+  const body = await response.json().catch(async () => ({ error: await response.text().catch(() => '') }));
+  if (!response.ok) {
+    const said = body as { error?: unknown; reason?: unknown };
+    return { status: response.status, error: String(said.reason ?? said.error ?? response.statusText) };
+  }
+  return body as BatchWriteResult;
 }
 
 export const failed = (value: unknown): value is Failure =>

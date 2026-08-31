@@ -118,10 +118,10 @@ after(async () => {
 describe('vera-mcp por stdio', () => {
   it('arranca y ofrece su catálogo', async () => {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 9);
+    assert.equal(tools.length, 10);
     assert.ok(tools.some((tool) => tool.name === 'vera_preparar_escritura'));
     assert.equal(tools.find((tool) => tool.name === 'vera_escribir')?.annotations?.readOnlyHint, false);
-    assert.ok(tools.filter((tool) => tool.name !== 'vera_escribir').every((tool) => tool.annotations?.readOnlyHint === true));
+    assert.ok(tools.filter((tool) => !tool.name.startsWith('vera_escribir')).every((tool) => tool.annotations?.readOnlyHint === true));
   });
 
   it('lo primero que contesta es quién eres y qué tamaño tiene esto', async () => {

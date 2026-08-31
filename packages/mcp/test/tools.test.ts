@@ -11,7 +11,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { connectionFrom } from '../src/client.ts';
-import { TOOLS, outline, toolNamed, type Ask, type Write } from '../src/tools.ts';
+import { TOOLS, outline, toolNamed, type Ask, type Write, type WriteBatch } from '../src/tools.ts';
 
 /** Una Vera de mentira que anota lo que le preguntan. */
 function fakeVera(answers: Record<string, unknown>) {
@@ -32,14 +32,18 @@ const run = (name: string, args: Record<string, unknown>, ask: Ask, write?: Writ
 };
 
 describe('el catálogo', () => {
-  it('ofrece una sola herramienta de escritura y ninguna de borrado', () => {
-    assert.deepEqual(TOOLS.filter((tool) => tool.readOnly === false).map((tool) => tool.name), ['vera_escribir']);
+  it('ofrece escritura individual y por lote, y ninguna de borrado', () => {
+    assert.deepEqual(TOOLS.filter((tool) => tool.readOnly === false).map((tool) => tool.name), [
+      'vera_escribir',
+      'vera_escribir_lote',
+    ]);
     assert.ok(TOOLS.every((tool) => !/borrar|eliminar|descartar/.test(tool.name)));
     assert.deepEqual(
       TOOLS.map((tool) => tool.name).sort(),
       [
         'vera_buscar',
         'vera_escribir',
+        'vera_escribir_lote',
         'vera_historia_bloque',
         'vera_indice',
         'vera_leer_pagina',
@@ -157,6 +161,33 @@ describe('escribir', () => {
     }, ask, write);
     assert.equal(called, false);
     assert.match(said, /sólo crea páginas y bloques o corrige propiedades/);
+  });
+});
+
+describe('escribir por lote', () => {
+  it('envía muchos cambios como un solo gesto idempotente', async () => {
+    const { ask } = fakeVera({});
+    const calls: { origin: string; changes: readonly Record<string, unknown>[] }[] = [];
+    const batch: WriteBatch = async (origin, changes) => {
+      calls.push({ origin, changes });
+      return {
+        status: 'applied',
+        operations: [
+          { sequence: 80, subjectId: 'page:lote' },
+          { sequence: 81, subjectId: 'block:lote' },
+        ],
+      };
+    };
+    const changes = [
+      { kind: 'create_page', stableId: 'page:lote', title: 'Lote', visibility: 'private' },
+      { kind: 'create_block', stableId: 'block:lote', page: 'page:lote', parent: null, position: 0, content: 'Texto' },
+    ];
+    const tool = toolNamed('vera_escribir_lote');
+    assert.ok(tool !== undefined);
+    const said = await tool.run({ origen: 'claude:lote:1', cambios: changes }, ask, undefined, batch);
+    assert.deepEqual(calls, [{ origin: 'claude:lote:1', changes }]);
+    assert.match(said, /2 cambios/);
+    assert.match(said, /80–81/);
   });
 });
 

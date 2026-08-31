@@ -30,6 +30,15 @@ async function post(body: unknown): Promise<{ status: number; json: Record<strin
   return { status: response.status, json: (await response.json()) as Record<string, unknown> };
 }
 
+async function postBatch(body: unknown): Promise<{ status: number; json: Record<string, unknown> }> {
+  const response = await fetch(`${base}/operations/batch`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, json: (await response.json()) as Record<string, unknown> };
+}
+
 async function write(change: unknown, origin?: string): Promise<string> {
   counter += 1;
   const { status, json } = await post({
@@ -165,6 +174,47 @@ describe('POST /operations', () => {
     });
     assert.equal(status, 403, JSON.stringify(json));
     assert.match(json['reason'] as string, /credencial/);
+  });
+});
+
+describe('POST /operations/batch', () => {
+  it('crea una página estructurada en una sola transacción y se reintenta entera', async () => {
+    const body = {
+      originId: 'batch:structured',
+      participant: OWNER,
+      changes: [
+        { kind: 'create_page', stableId: 'page:batch-structured', title: 'Página por lote', visibility: 'private' },
+        { kind: 'set_property', page: 'page:batch-structured', propertyKey: 'tipo', propertyValue: 'Nota' },
+        { kind: 'create_block', stableId: 'block:batch-root', page: 'page:batch-structured', parent: null, position: 0, content: 'Raíz' },
+        { kind: 'create_block', stableId: 'block:batch-child', page: 'page:batch-structured', parent: 'block:batch-root', position: 0, content: 'Hijo' },
+      ],
+    };
+    const first = await postBatch(body);
+    const second = await postBatch(body);
+    assert.equal(first.status, 201, JSON.stringify(first.json));
+    assert.equal(second.status, 200, JSON.stringify(second.json));
+    assert.equal(first.json['status'], 'applied');
+    assert.equal(second.json['status'], 'duplicate');
+    assert.equal((first.json['operations'] as unknown[]).length, 4);
+    const page = (await get('/pages/page%3Abatch-structured')) as { blocks: { stableId: string; parent: string | null }[] };
+    assert.deepEqual(page.blocks.map((block) => [block.stableId, block.parent]), [
+      ['block:batch-root', null],
+      ['block:batch-child', 'block:batch-root'],
+    ]);
+  });
+
+  it('no aplica el prefijo cuando un cambio posterior falla', async () => {
+    const result = await postBatch({
+      originId: 'batch:rejected',
+      participant: OWNER,
+      changes: [
+        { kind: 'create_page', stableId: 'page:batch-never', title: 'No debe quedar', visibility: 'private' },
+        { kind: 'create_page', stableId: 'page:batch-duplicate', title: 'Amereida', visibility: 'private' },
+      ],
+    });
+    assert.equal(result.status, 422);
+    const pages = (await get('/pages')) as { title: string }[];
+    assert.equal(pages.some((page) => page.title === 'No debe quedar'), false);
   });
 });
 

@@ -293,6 +293,15 @@ interface SubmitBody {
   change?: unknown;
 }
 
+interface SubmitBatchBody {
+  originId?: unknown;
+  participant?: unknown;
+  changes?: unknown;
+}
+
+const MAX_BATCH_CHANGES = 1_000;
+const MAX_BATCH_BYTES = 2 * 1024 * 1024;
+
 /** Quién resultó ser quien escribe, y por qué canal se registra lo que escriba. */
 interface Submitter {
   participant: ParticipantId;
@@ -1360,6 +1369,133 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       });
       response.end(body);
     };
+
+    if (request.method === 'POST' && path === '/operations/batch') {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      request.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size <= MAX_BATCH_BYTES) chunks.push(chunk);
+      });
+      request.on('end', () => {
+        if (size > MAX_BATCH_BYTES) {
+          send(response, 413, { status: 'rejected', reason: `el lote excede ${MAX_BATCH_BYTES} bytes` });
+          return;
+        }
+        let body: SubmitBatchBody;
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as SubmitBatchBody;
+        } catch {
+          send(response, 400, { error: 'the body must be JSON' });
+          return;
+        }
+        if (typeof body.originId !== 'string' || body.originId.trim() === '') {
+          send(response, 400, { error: 'originId must be a non-empty string' });
+          return;
+        }
+        if (!Array.isArray(body.changes) || body.changes.length === 0) {
+          send(response, 400, { error: 'changes must be a non-empty array' });
+          return;
+        }
+        if (body.changes.length > MAX_BATCH_CHANGES) {
+          send(response, 413, {
+            status: 'rejected',
+            reason: `el lote contiene ${body.changes.length} cambios; el máximo es ${MAX_BATCH_CHANGES}`,
+          });
+          return;
+        }
+
+        const inputs = body.changes.map((change, at) =>
+          readOperation({ originId: `${body.originId}:${at}`, participant: body.participant, change }));
+        const malformed = inputs.find((input) => 'error' in input);
+        if (malformed !== undefined && 'error' in malformed) {
+          send(response, 400, malformed);
+          return;
+        }
+        const submissions = inputs as Exclude<(typeof inputs)[number], { error: string }>[];
+        const existing = submissions.map((input) =>
+          graph.operations().find((operation) => operation.originId === input.originId));
+        if (existing.every((operation) => operation !== undefined)) {
+          const same = existing.every((operation, at) =>
+            JSON.stringify(operation?.submission.change) === JSON.stringify(submissions[at]?.change));
+          if (!same) {
+            send(response, 409, { status: 'rejected', reason: 'ese origen de lote ya nombra otros cambios' });
+            return;
+          }
+          send(response, 200, {
+            status: 'duplicate',
+            operations: existing.map((operation) => ({
+              sequence: operation?.sequence,
+              subjectId: operation?.subjectId,
+            })),
+          });
+          return;
+        }
+        if (existing.some((operation) => operation !== undefined)) {
+          send(response, 409, { status: 'rejected', reason: 'el origen del lote coincide con un prefijo incompleto' });
+          return;
+        }
+
+        const trial = graph.replayFromLog();
+        const applied: Operation[] = [];
+        let submitter: Submitter | null = null;
+        for (const input of submissions) {
+          const who = authorise(store, trial, request.headers.authorization, body.participant, input.change.kind);
+          if ('error' in who) {
+            send(response, who.status, { status: 'rejected', reason: who.error });
+            return;
+          }
+          submitter ??= who;
+          const fence = who.credential === null ? null : confinementOf(store, who.credential.id);
+          if (fence !== null) {
+            const refusal = fenceRefusal(
+              store, fence, who.participant, input.change,
+              (block) => trial.block(block)?.page ?? null,
+            );
+            if (refusal !== null) {
+              send(response, refusal.status, { status: 'rejected', reason: refusal.error });
+              return;
+            }
+          }
+          const outcome = trial.submitOperation({
+            ...input,
+            participant: who.participant,
+            ...(who.channel === null ? {} : { channel: who.channel }),
+          });
+          if (outcome.status !== 'applied') {
+            send(response, outcome.status === 'duplicate' ? 409 : 422, {
+              status: 'rejected',
+              reason: outcome.status === 'duplicate' ? 'un cambio del lote ya existe' : outcome.reason,
+            });
+            return;
+          }
+          applied.push(outcome.operation);
+        }
+
+        store.db.exec('BEGIN');
+        try {
+          for (const operation of applied) recordOperation(store, trial, operation);
+          store.db.exec('COMMIT');
+          graph = trial;
+        } catch (error) {
+          store.db.exec('ROLLBACK');
+          send(response, 500, {
+            status: 'rejected',
+            reason: 'no se pudo persistir el lote; no se aplicó ningún cambio',
+            detail: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+        send(response, 201, {
+          status: 'applied',
+          operations: applied.map((operation) => ({
+            sequence: operation.sequence,
+            subjectId: operation.subjectId,
+          })),
+        });
+      });
+      return;
+    }
 
     if (request.method === 'POST' && path === '/operations') {
       const chunks: Buffer[] = [];
