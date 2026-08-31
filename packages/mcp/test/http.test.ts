@@ -88,4 +88,17 @@ describe('la puerta MCP pública', () => {
     const payload = await response.json() as { result?: { serverInfo?: { name?: string } } };
     assert.equal(payload.result?.serverInfo?.name, 'vera');
   });
+
+  it('acepta el esquema bearer sin distinguir mayúsculas', async () => {
+    const response = await fetch(door, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        authorization: 'bearer bueno',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(initialize),
+    });
+    assert.equal(response.status, 200);
+  });
 });

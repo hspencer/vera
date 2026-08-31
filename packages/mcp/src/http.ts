@@ -14,8 +14,10 @@ const MAX_BODY = Number(process.env.VERA_MCP_HTTP_MAX_BODY ?? String(1024 * 1024
 
 function bearer(request: IncomingMessage): string | null {
   const authorization = request.headers.authorization;
-  if (authorization === undefined || !authorization.startsWith('Bearer ')) return null;
-  const token = authorization.slice('Bearer '.length).trim();
+  if (authorization === undefined) return null;
+  const match = /^Bearer\s+(.+)$/i.exec(authorization);
+  if (match === null) return null;
+  const token = match[1].trim();
   return token === '' ? null : token;
 }
 
