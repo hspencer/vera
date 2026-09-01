@@ -1,4 +1,5 @@
 import * as d3 from 'd3';
+import { renderMarkdown } from '@vera/core';
 import type { GraphData, GraphLink, GraphNode } from './types.ts';
 
 type Side = -1 | 0 | 1;
@@ -19,12 +20,7 @@ function sentences(node: GraphNode): { block: string; text: string; gloss: boole
   return result.length > 0 ? result : [{ block: '', text: node.name, gloss: false }];
 }
 
-function lineHeight(text: string): number {
-  // Una caja ancha conserva la frase completa. La interlínea crece en unidades
-  // discretas según los tokens aproximados que realmente necesita el texto.
-  const tokens = Math.max(1, text.trim().split(/\s+/u).length);
-  return 25 + Math.floor((tokens - 1) / 48) * 17;
-}
+const foldedLineHeight = 11;
 
 function sides(data: GraphData, focus: string): Map<string, Side> {
   const side = new Map<string, Side>([[focus, 0]]);
@@ -65,7 +61,7 @@ export function renderGraphD4(
   const dims = new Map<string, { w: number; h: number }>();
   for (const node of data.nodes) {
     const rows = sentences(node);
-    dims.set(node.id, { w: boxWidth, h: 54 + rows.reduce((sum, row) => sum + lineHeight(row.text), 0) });
+    dims.set(node.id, { w: boxWidth, h: 48 + rows.length * foldedLineHeight });
   }
 
   const columns = new Map<number, GraphNode[]>();
@@ -106,8 +102,7 @@ export function renderGraphD4(
       (link.targetTitle === undefined || line.text.toLocaleLowerCase().includes(link.targetTitle.toLocaleLowerCase())),
     );
     if (index < 0) index = Math.max(0, lines.findIndex((line) => line.block === link.block));
-    const before = lines.slice(0, index).reduce((sum, line) => sum + lineHeight(line.text), 0);
-    return pos.y - dim.h / 2 + 54 + before + lineHeight(lines[index]?.text ?? '') / 2;
+    return pos.y - dim.h / 2 + 48 + index * foldedLineHeight + foldedLineHeight / 2;
   };
   for (const link of data.links) {
     const source = data.nodes.find((node) => node.id === endpoint(link.source));
@@ -143,18 +138,39 @@ export function renderGraphD4(
     const foreign = world.append('foreignObject')
       .attr('x', pos.x - dim.w / 2).attr('y', pos.y - dim.h / 2)
       .attr('width', dim.w).attr('height', dim.h);
+    foreign.style('overflow', 'visible');
     const card = foreign.append('xhtml:article')
       .attr('class', `d4-page${node.central ? ' focus' : ''}`)
-      .style('font-family', options.fontFamily ?? 'system-ui, sans-serif')
-      .on('click', () => onClickPage(node.id));
-    card.append('h2').text(node.name);
+      .style('font-family', options.fontFamily ?? 'system-ui, sans-serif');
+    card.append('h2')
+      .attr('role', 'button')
+      .attr('tabindex', 0)
+      .on('click', () => onClickPage(node.id))
+      .on('keydown', (event: KeyboardEvent) => {
+        if (event.key === 'Enter' || event.key === ' ') onClickPage(node.id);
+      })
+      .text(node.name);
     const body = card.append('div').attr('class', 'd4-lines');
     for (const line of sentences(node)) {
-      body.append('p')
+      const leaf = body.append('div')
         .attr('class', line.gloss ? 'd4-line gloss' : 'd4-line')
         .attr('data-block', line.block)
-        .style('min-height', `${lineHeight(line.text)}px`)
-        .text(line.text);
+        .attr('tabindex', 0)
+        .attr('aria-label', line.text)
+        .html(renderMarkdown(line.text));
+      leaf.on('pointerup', (event: PointerEvent) => {
+        if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
+        event.stopPropagation();
+        const element = event.currentTarget as HTMLElement;
+        const open = element.classList.toggle('expanded');
+        if (open) {
+          for (const sibling of element.parentElement?.querySelectorAll('.d4-line.expanded') ?? []) {
+            if (sibling !== element) sibling.classList.remove('expanded');
+          }
+        } else {
+          element.blur();
+        }
+      });
     }
   }
 }

@@ -1310,8 +1310,15 @@ surface VeraWorkspace {
         -- Pages in D4 are wide readable text boxes. Each sentence occupies a
         -- line and every reference leaves from the baseline of the sentence or
         -- gloss that wrote it, with predominantly horizontal Bézier tangents.
-        -- Text boxes never shrink to solve collisions; routing and vertical
-        -- spacing make room around them.
+        -- Markdown remains rendered rather than becoming source notation.
+
+    @guarantee D4CompactsWithoutDiscarding
+        -- At rest, the sentences of a page fold into shallow horizontal leaves
+        -- so a column remains surveyable. Bringing a pointer, keyboard focus or
+        -- a finger to one leaf unfolds its complete formatted sentence with a
+        -- continuous genie-like transition. The expansion overlays the local
+        -- map: it neither moves sibling pages nor changes the relationship's
+        -- anchor, and every sentence remains reachable without truncation.
 
     @guarantee D4DistinguishesWaysOfRelating
         -- References, block glosses and explained page relations remain visibly

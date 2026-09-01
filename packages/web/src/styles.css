@@ -1068,7 +1068,7 @@ button { touch-action: manipulation; }
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow: visible;
   color: var(--text);
   background: color-mix(in srgb, var(--bg-raised) 94%, transparent);
   border: 1px solid var(--rule);
@@ -1096,22 +1096,70 @@ button { touch-action: manipulation; }
   font-size: 0.82rem;
   font-weight: 620;
   line-height: 1.25;
+  cursor: pointer;
 }
 
 .d4-lines { padding: 0.18rem 0 0.5rem; }
 .d4-line {
-  min-height: 25px;
+  position: relative;
+  z-index: 0;
+  height: 11px;
+  min-height: 11px;
+  max-height: 11px;
   box-sizing: border-box;
   margin: 0;
-  padding: 0.28rem 0.75rem;
+  padding: 0 0.75rem;
   overflow: hidden;
   color: var(--text);
   border-bottom: 1px solid color-mix(in srgb, var(--rule) 56%, transparent);
   font-family: var(--font-body);
   font-size: 0.71rem;
-  line-height: 1.38;
+  line-height: 1.42;
   white-space: normal;
   overflow-wrap: anywhere;
+  transform-origin: 50% 0;
+  transition:
+    max-height 320ms cubic-bezier(.18,.89,.32,1.18),
+    padding 320ms cubic-bezier(.18,.89,.32,1.18),
+    transform 320ms cubic-bezier(.18,.89,.32,1.18),
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+.d4-line::before {
+  content: '';
+  position: absolute;
+  inset: 4px 0.75rem auto;
+  height: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-dim) 44%, transparent);
+  transition: opacity 120ms ease;
+}
+.d4-line > * { margin-block: 0.12rem; }
+.d4-line img,
+.d4-line video,
+.d4-line svg { max-width: 100%; height: auto; }
+.d4-line:hover,
+.d4-line:focus,
+.d4-line:focus-within,
+.d4-line.expanded {
+  z-index: 8;
+  height: auto;
+  min-height: 2rem;
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0.42rem 0.75rem 0.52rem;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-raised) 97%, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--rule));
+  border-radius: 0.42rem;
+  box-shadow: 0 0.7rem 1.6rem rgb(0 0 0 / 20%);
+  transform: scale(1.015);
+}
+.d4-line:hover::before,
+.d4-line:focus::before,
+.d4-line:focus-within::before,
+.d4-line.expanded::before {
+  opacity: 0;
 }
 .d4-line.gloss {
   color: var(--text-dim);
@@ -1144,6 +1192,7 @@ button { touch-action: manipulation; }
 
 @media (prefers-reduced-motion: reduce) {
   .d4-map { animation: none; }
+  .d4-line { transition: none; }
 }
 
 /*
