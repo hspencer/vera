@@ -120,9 +120,21 @@ export function renderGraphD4(
     .attr('role', 'img')
     .attr('aria-label', 'D4: mapa dendrítico por grados');
   const world = svg.append('g');
-  svg.call(d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.25, 2.5]).on('zoom', (event) => {
+  const touchStarts = new Map<number, { x: number; y: number }>();
+  const movedSince = (event: PointerEvent): boolean => {
+    const start = touchStarts.get(event.pointerId);
+    touchStarts.delete(event.pointerId);
+    return start !== undefined && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8;
+  };
+  svg.call(d3.zoom<SVGSVGElement, unknown>()
+    .scaleExtent([0.25, 2.5])
+    // Safari sintetiza un click al terminar un paneo táctil. Por debajo de este
+    // umbral es un toque; por encima, D4 lo conserva exclusivamente como gesto
+    // espacial y no deja que navegue al elemento que quedó bajo el dedo.
+    .clickDistance(8)
+    .on('zoom', (event) => {
     world.attr('transform', event.transform.toString());
-  }));
+    }));
 
   const lineY = (node: GraphNode, link: GraphLink): number => {
     const pos = held.get(node.id)!;
@@ -176,7 +188,9 @@ export function renderGraphD4(
     card.append('h2')
       .attr('role', 'button')
       .attr('tabindex', 0)
-      .on('click', () => onClickPage(node.id))
+      .on('click', (event: MouseEvent) => {
+        if (!event.defaultPrevented) onClickPage(node.id);
+      })
       .on('keydown', (event: KeyboardEvent) => {
         if (event.key === 'Enter' || event.key === ' ') onClickPage(node.id);
       })
@@ -192,9 +206,14 @@ export function renderGraphD4(
       leaf.append('div')
         .attr('class', 'd4-line-content')
         .html(renderMarkdown(line.text));
+      leaf.on('pointerdown', (event: PointerEvent) => {
+        if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
+        touchStarts.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      });
       leaf.on('pointerup', (event: PointerEvent) => {
         if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
-        event.stopPropagation();
+        if (movedSince(event)) return;
+        event.preventDefault();
         const element = event.currentTarget as HTMLElement;
         const open = element.classList.toggle('expanded');
         if (open) {
@@ -205,13 +224,18 @@ export function renderGraphD4(
           element.blur();
         }
       });
+      leaf.on('pointercancel', (event: PointerEvent) => {
+        touchStarts.delete(event.pointerId);
+      });
     }
     if (projection.hidden > 0) {
       body.append('button')
         .attr('class', 'd4-hidden-count')
         .attr('type', 'button')
         .attr('aria-label', `Abrir ${node.name}; ${projection.hidden} frases no participan en este grado`)
-        .on('click', () => onClickPage(node.id))
+        .on('click', (event: MouseEvent) => {
+          if (!event.defaultPrevented) onClickPage(node.id);
+        })
         .text(`${projection.hidden} frase${projection.hidden === 1 ? '' : 's'} fuera de este grado`);
     }
   }
