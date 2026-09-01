@@ -20,6 +20,33 @@ function sentences(node: GraphNode): { block: string; text: string; gloss: boole
   return result.length > 0 ? result : [{ block: '', text: node.name, gloss: false }];
 }
 
+function projectedSentences(
+  node: GraphNode,
+  data: GraphData,
+): { shown: { block: string; text: string; gloss: boolean }[]; hidden: number } {
+  const all = sentences(node);
+  const relevant: typeof all = [];
+  const seen = new Set<string>();
+  for (const link of data.links) {
+    if (endpoint(link.source) !== node.id || link.block == null || link.kind === 'crossing') continue;
+    const candidates = all.filter((line) =>
+      line.block === link.block &&
+      (link.kind !== 'gloss' || line.gloss) &&
+      (link.targetTitle === undefined || line.text.toLocaleLowerCase().includes(link.targetTitle.toLocaleLowerCase())),
+    );
+    const chosen = candidates.length > 0
+      ? candidates
+      : all.filter((line) => line.block === link.block && (link.kind !== 'gloss' || line.gloss));
+    for (const line of chosen) {
+      const key = `${line.block}\u0000${line.gloss ? 'g' : 'b'}\u0000${line.text}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      relevant.push(line);
+    }
+  }
+  return { shown: relevant, hidden: Math.max(0, all.length - relevant.length) };
+}
+
 const foldedLineHeight = 11;
 
 function sides(data: GraphData, focus: string): Map<string, Side> {
@@ -58,10 +85,14 @@ export function renderGraphD4(
   const columnGap = Math.max(360, Math.min(560, width * 0.34));
   const boxWidth = Math.max(300, Math.min(460, columnGap - 70));
   const side = sides(data, focus);
+  const projections = new Map(data.nodes.map((node) => [node.id, projectedSentences(node, data)]));
   const dims = new Map<string, { w: number; h: number }>();
   for (const node of data.nodes) {
-    const rows = sentences(node);
-    dims.set(node.id, { w: boxWidth, h: 48 + rows.length * foldedLineHeight });
+    const projection = projections.get(node.id)!;
+    dims.set(node.id, {
+      w: boxWidth,
+      h: 48 + projection.shown.length * foldedLineHeight + (projection.hidden > 0 ? 18 : 0),
+    });
   }
 
   const columns = new Map<number, GraphNode[]>();
@@ -96,7 +127,7 @@ export function renderGraphD4(
   const lineY = (node: GraphNode, link: GraphLink): number => {
     const pos = held.get(node.id)!;
     const dim = dims.get(node.id)!;
-    const lines = sentences(node);
+    const lines = projections.get(node.id)!.shown;
     let index = lines.findIndex((line) =>
       line.block === link.block &&
       (link.targetTitle === undefined || line.text.toLocaleLowerCase().includes(link.targetTitle.toLocaleLowerCase())),
@@ -151,7 +182,8 @@ export function renderGraphD4(
       })
       .text(node.name);
     const body = card.append('div').attr('class', 'd4-lines');
-    for (const line of sentences(node)) {
+    const projection = projections.get(node.id)!;
+    for (const line of projection.shown) {
       const leaf = body.append('div')
         .attr('class', line.gloss ? 'd4-line gloss' : 'd4-line')
         .attr('data-block', line.block)
@@ -171,6 +203,14 @@ export function renderGraphD4(
           element.blur();
         }
       });
+    }
+    if (projection.hidden > 0) {
+      body.append('button')
+        .attr('class', 'd4-hidden-count')
+        .attr('type', 'button')
+        .attr('aria-label', `Abrir ${node.name}; ${projection.hidden} frases no participan en este grado`)
+        .on('click', () => onClickPage(node.id))
+        .text(`${projection.hidden} frase${projection.hidden === 1 ? '' : 's'} fuera de este grado`);
     }
   }
 }
