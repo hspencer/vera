@@ -1136,6 +1136,8 @@ button { touch-action: manipulation; }
   width: 100%;
   max-height: min(32rem, 70vh);
   overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 0.72rem 0.85rem 0.82rem;
   color: var(--text);
   background: color-mix(in srgb, var(--bg-raised) 97%, var(--accent));

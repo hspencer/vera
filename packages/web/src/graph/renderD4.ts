@@ -203,9 +203,38 @@ export function renderGraphD4(
         .attr('data-block', line.block)
         .attr('tabindex', 0)
         .attr('aria-label', `Ampliar: ${line.text}`);
-      leaf.append('div')
+      const content = leaf.append('div')
         .attr('class', 'd4-line-content')
         .html(renderMarkdown(line.text));
+      let readingGesture: { pointer: number; y: number; scrollTop: number } | undefined;
+      content.on('pointerdown', (event: PointerEvent) => {
+        if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
+        event.stopPropagation();
+        const element = event.currentTarget as HTMLElement;
+        readingGesture = { pointer: event.pointerId, y: event.clientY, scrollTop: element.scrollTop };
+        element.setPointerCapture(event.pointerId);
+      });
+      content.on('pointermove', (event: PointerEvent) => {
+        if (readingGesture?.pointer !== event.pointerId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const element = event.currentTarget as HTMLElement;
+        // El SVG debe conservar `touch-action: none` para que D4 pueda
+        // desplazarse libremente. Dentro de una lectura abierta, por tanto,
+        // reproducimos el scroll de manera explícita: un píxel del dedo es un
+        // píxel de texto, en ambas direcciones, sin el salto del zoom al soltar.
+        element.scrollTop = readingGesture.scrollTop + readingGesture.y - event.clientY;
+      });
+      const finishReadingGesture = (event: PointerEvent): void => {
+        if (readingGesture?.pointer !== event.pointerId) return;
+        event.stopPropagation();
+        const element = event.currentTarget as HTMLElement;
+        if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+        readingGesture = undefined;
+      };
+      content.on('pointerup', finishReadingGesture);
+      content.on('pointercancel', finishReadingGesture);
+      content.on('wheel', (event: WheelEvent) => event.stopPropagation());
       leaf.on('pointerdown', (event: PointerEvent) => {
         if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
         touchStarts.set(event.pointerId, { x: event.clientX, y: event.clientY });
