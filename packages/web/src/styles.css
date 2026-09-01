@@ -1109,21 +1109,15 @@ button { touch-action: manipulation; }
   box-sizing: border-box;
   margin: 0;
   padding: 0 0.75rem;
-  overflow: hidden;
-  color: var(--text);
+  overflow: visible;
+  color: transparent;
   border-bottom: 1px solid color-mix(in srgb, var(--rule) 56%, transparent);
   font-family: var(--font-body);
   font-size: 0.71rem;
   line-height: 1.42;
   white-space: normal;
   overflow-wrap: anywhere;
-  transform-origin: 50% 0;
-  transition:
-    max-height 320ms cubic-bezier(.18,.89,.32,1.18),
-    padding 320ms cubic-bezier(.18,.89,.32,1.18),
-    transform 320ms cubic-bezier(.18,.89,.32,1.18),
-    background-color 180ms ease,
-    box-shadow 180ms ease;
+  cursor: grab;
 }
 .d4-line::before {
   content: '';
@@ -1134,26 +1128,49 @@ button { touch-action: manipulation; }
   background: color-mix(in srgb, var(--text-dim) 44%, transparent);
   transition: opacity 120ms ease;
 }
-.d4-line > * { margin-block: 0.12rem; }
-.d4-line img,
-.d4-line video,
-.d4-line svg { max-width: 100%; height: auto; }
+.d4-line-content {
+  position: absolute;
+  inset: 0 auto auto 0;
+  display: none;
+  box-sizing: border-box;
+  width: 100%;
+  max-height: min(32rem, 70vh);
+  overflow: auto;
+  padding: 0.72rem 0.85rem 0.82rem;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-raised) 97%, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--rule));
+  border-radius: 0.48rem;
+  box-shadow: 0 0.8rem 2rem rgb(0 0 0 / 24%);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.55;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.d4-line-content > * { margin-block: 0.2rem; }
+.d4-line-content img,
+.d4-line-content video,
+.d4-line-content svg { max-width: 100%; height: auto; }
 .d4-line:hover,
 .d4-line:focus,
 .d4-line:focus-within,
 .d4-line.expanded {
   z-index: 8;
-  height: auto;
-  min-height: 2rem;
-  max-height: min(18rem, 70vh);
-  overflow: auto;
-  padding: 0.42rem 0.75rem 0.52rem;
-  color: var(--text);
-  background: color-mix(in srgb, var(--bg-raised) 97%, var(--accent));
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--rule));
-  border-radius: 0.42rem;
-  box-shadow: 0 0.7rem 1.6rem rgb(0 0 0 / 20%);
-  transform: scale(1.015);
+  height: 11px;
+  min-height: 11px;
+  max-height: 11px;
+  padding: 0 0.75rem;
+  border-bottom-color: transparent;
+  cursor: grab;
+}
+.d4-line:hover .d4-line-content,
+.d4-line:focus .d4-line-content,
+.d4-line:focus-within .d4-line-content,
+.d4-line.expanded .d4-line-content {
+  display: block;
+  animation: d4-genie-open 180ms cubic-bezier(.2,.8,.2,1) both;
 }
 .d4-line:hover::before,
 .d4-line:focus::before,
@@ -1162,10 +1179,10 @@ button { touch-action: manipulation; }
   opacity: 0;
 }
 .d4-line.gloss {
-  color: var(--text-dim);
   font-style: italic;
   background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
+.d4-line.gloss .d4-line-content { color: var(--text-dim); }
 .d4-hidden-count {
   display: block;
   width: 100%;
@@ -1204,6 +1221,11 @@ button { touch-action: manipulation; }
 @keyframes d4-arrive {
   from { opacity: 0; transform: translateX(-0.45rem); }
   to { opacity: 1; transform: none; }
+}
+
+@keyframes d4-genie-open {
+  from { opacity: 0; transform: translateY(-0.25rem) scaleY(0.82); }
+  to { opacity: 1; transform: translateY(0) scaleY(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {

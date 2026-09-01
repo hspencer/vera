@@ -188,7 +188,9 @@ export function renderGraphD4(
         .attr('class', line.gloss ? 'd4-line gloss' : 'd4-line')
         .attr('data-block', line.block)
         .attr('tabindex', 0)
-        .attr('aria-label', line.text)
+        .attr('aria-label', `Ampliar: ${line.text}`);
+      leaf.append('div')
+        .attr('class', 'd4-line-content')
         .html(renderMarkdown(line.text));
       leaf.on('pointerup', (event: PointerEvent) => {
         if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
