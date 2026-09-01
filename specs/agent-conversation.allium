@@ -307,9 +307,9 @@ rule HumanAsksCotitoFromBlock {
     )
 
     @guidance
-        -- Asking from a block attaches it; it does not replace or rewrite it.
-        -- This is conversation with Cotito, distinct from block-as-request.allium,
-        -- where a local model deliberately replaces the request block.
+        -- Asking from a block delegates a transformation of that block.
+        -- Cotito's answer replaces it through the ordinary operation log; the
+        -- prior text survives in history, not beside the transformed block.
 }
 
 rule HumanAsksCotitoFromConversationPage {
@@ -393,6 +393,7 @@ rule CotitoAnswersARequest {
 
     requires: request.conversation.agent = agent
     requires: request.status = working
+    requires: request.modality != block
     requires: text != ""
 
     ensures:
@@ -414,6 +415,28 @@ rule CotitoAnswersARequest {
                 decided_by: null,
                 decided_at: null
             )
+}
+
+rule CotitoAnswersFromABlock {
+    when: AnswerAgentRequest(agent, request, text, changes)
+
+    requires: request.conversation.agent = agent
+    requires: request.status = working
+    requires: request.modality = block
+    requires: request.source_block != null
+    requires: request.source_block.content = request.context_snapshot.focus.content
+    requires: changes.count = 1
+    requires: changes.first.kind = edit_block
+    requires: changes.first.block = request.source_block
+
+    ensures:
+        changes.first is applied as agent_generation by agent
+        request.status = answered
+        request.finished_at = now
+
+    @guidance
+        -- The visible result is the rewritten block. The request, the original
+        -- content and Cotito's authorship remain inspectable in the record.
 }
 
 rule CotitoReportsARequestFailure {
@@ -562,9 +585,9 @@ surface CotitoFromBlock {
     contracts:
         fulfils ConversationWithAgent
 
-    @guarantee AskingDoesNotConsumeTheBlock
-        -- The source block stays where it is and keeps its content and author.
-        -- The conversation points back to it and snapshots what Cotito received.
+    @guarantee AskingTransformsTheBlockInPlace
+        -- Cotito must answer with one edit of the source block. The old content
+        -- remains in its revisions; no reply panel is appended beside it.
 }
 
 surface CotitoConversationPage {

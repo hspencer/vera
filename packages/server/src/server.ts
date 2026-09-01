@@ -102,6 +102,7 @@ import {
   librarianRequestsFor,
   markLibrarianDispatched,
   pendingLibrarianDispatches,
+  removeLibrarianRequest,
 } from './librarian.ts';
 import type { Reading } from './model.ts';
 import {
@@ -1491,6 +1492,14 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         deliver(current, { surface: 'GET /librarian/requests/:id', subject: id, delivered: [id] });
         return;
       }
+      if (request.method === 'DELETE' && action === null) {
+        if (who.participant !== current.askedBy) {
+          send(response, 403, { error: 'sólo quien hizo la solicitud puede eliminarla' }); return;
+        }
+        removeLibrarianRequest(store, id);
+        send(response, 200, { status: 'removed', id });
+        return;
+      }
       if (request.method === 'POST' && action === 'claim') {
         if (!canAnswerAsLibrarian()) { send(response, 403, { error: 'se necesita la credencial de Cotito con escritura' }); return; }
         const claimed = claimLibrarianRequest(store, id);
@@ -1506,6 +1515,50 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         const text = typeof body.text === 'string' ? body.text.trim() : '';
         const changes = Array.isArray(body.changes) ? body.changes as Change[] : [];
         if (text === '') { send(response, 400, { error: 'la respuesta no puede estar vacía' }); return; }
+        if (current.modality === 'block') {
+          const replacement = changes.length === 1 ? changes[0] : undefined;
+          if (
+            replacement?.kind !== 'edit_block' ||
+            replacement.block !== current.sourceBlockId
+          ) {
+            send(response, 400, {
+              error: 'un pedido sobre un bloque debe reemplazar ese mismo bloque con una única operación edit_block',
+            });
+            return;
+          }
+          let focus: { id?: string; content?: string } | null;
+          try {
+            focus = (JSON.parse(current.contextSnapshot) as {
+              focus?: { id?: string; content?: string } | null;
+            }).focus ?? null;
+          } catch {
+            send(response, 409, { error: 'el contexto original del bloque no se puede comprobar' }); return;
+          }
+          const source = current.sourceBlockId === null ? undefined : graph.block(current.sourceBlockId);
+          if (source === undefined || focus?.id !== source.stableId || focus.content !== source.content) {
+            send(response, 409, {
+              error: 'el bloque cambió después del pedido; Cotito no puede reemplazar una versión antigua',
+            });
+            return;
+          }
+          const outcome = graph.submitOperation({
+            originId: `librarian:${current.id}:replacement`,
+            participant: who.participant,
+            channel: 'agent_generation',
+            change: replacement,
+          });
+          if (outcome.status === 'rejected') {
+            send(response, 422, { error: outcome.reason }); return;
+          }
+          if (outcome.status === 'applied') {
+            const failure = persist(outcome.operation);
+            if (failure !== null) { send(response, 500, { error: failure }); return; }
+          }
+          const answered = answerLibrarianRequest(store, { id, answeredBy: who.participant, text, changes: [] });
+          if (answered === undefined) { send(response, 409, { error: 'la solicitud no está esperando respuesta' }); return; }
+          send(response, 201, answered);
+          return;
+        }
         const answered = answerLibrarianRequest(store, { id, answeredBy: who.participant, text, changes });
         if (answered === undefined) { send(response, 409, { error: 'la solicitud no está esperando respuesta' }); return; }
         send(response, 201, answered);

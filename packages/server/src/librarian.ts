@@ -208,3 +208,10 @@ export function answerLibrarianRequest(store: Store, input: {
   }
   return librarianRequest(store, input.id);
 }
+
+export function removeLibrarianRequest(store: Store, id: string): boolean {
+  const removed = store.db.prepare(`DELETE FROM agent_requests WHERE graph_id=? AND id=?`).run(
+    store.graphId, id,
+  );
+  return removed.changes === 1;
+}

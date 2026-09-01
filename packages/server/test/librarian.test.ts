@@ -70,12 +70,21 @@ describe('solicitudes al bibliotecario', () => {
     const claimed = await call(`/librarian/requests/${encodeURIComponent(requestId)}/claim`, { method: 'POST', secret });
     assert.equal(claimed.status, 200, JSON.stringify(claimed.json));
     assert.equal(claimed.json['status'], 'working');
-    const answered = await call(`/librarian/requests/${encodeURIComponent(requestId)}/reply`, {
+    const commentary = await call(`/librarian/requests/${encodeURIComponent(requestId)}/reply`, {
       method: 'POST', secret, body: { text: 'Propongo separar evidencia e interpretación.', changes: [] },
+    });
+    assert.equal(commentary.status, 400);
+    const answered = await call(`/librarian/requests/${encodeURIComponent(requestId)}/reply`, {
+      method: 'POST', secret, body: {
+        text: 'Separé evidencia e interpretación.',
+        changes: [{ kind: 'edit_block', block, content: 'Evidencia. Interpretación.' }],
+      },
     });
     assert.equal(answered.status, 201, JSON.stringify(answered.json));
     assert.equal(answered.json['status'], 'answered');
     assert.equal((answered.json['reply'] as Record<string, unknown>)['answeredBy'], COTITO);
+    const pageView = await call(`/pages/${encodeURIComponent(page)}`);
+    assert.match(JSON.stringify(pageView.json), /Evidencia\. Interpretación\./);
   });
 
   it('la respuesta vuelve a la página y al bloque de origen', async () => {
@@ -85,5 +94,15 @@ describe('solicitudes al bibliotecario', () => {
     assert.equal(requests.length, 1);
     assert.equal(requests[0]?.['id'], requestId);
     assert.equal(requests[0]?.['sourceBlockId'], block);
+  });
+
+  it('quien hizo el pedido puede eliminar la conversación auxiliar', async () => {
+    assert.equal((await call(`/librarian/requests/${encodeURIComponent(requestId)}`, {
+      method: 'DELETE', secret,
+    })).status, 403);
+    assert.equal((await call(`/librarian/requests/${encodeURIComponent(requestId)}`, {
+      method: 'DELETE',
+    })).status, 200);
+    assert.equal((await call(`/librarian/requests/${encodeURIComponent(requestId)}`)).status, 404);
   });
 });

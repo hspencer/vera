@@ -801,10 +801,13 @@ async function showLibrarianTurns(
   const unique = [...new Map(requests.map((request) => [request.id, request])).values()];
   const active = unique.filter((request) => request.status === 'queued' || request.status === 'working');
   showLibrarianOverlay(active);
-  for (const request of unique.filter((request) => request.status !== 'queued' && request.status !== 'working').reverse()) {
+  // Un pedido sobre un bloque es una transformación delegada: Cotito reemplaza
+  // el bloque y la versión anterior queda en el historial. Nunca se monta una
+  // conversación al costado del texto que acaba de transformar.
+  for (const request of unique.filter((request) =>
+    request.sourceBlockId === null && request.status !== 'queued' && request.status !== 'working').reverse()) {
     const turn = librarianTurn(request);
-    if (request.sourceBlockId === null) container.querySelector('.page-header')?.after(turn);
-    else container.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(request.sourceBlockId)}"]`)?.append(turn);
+    container.querySelector('.page-header')?.after(turn);
   }
   if (active.length > 0) {
     window.setTimeout(() => callbacks.onReload(null), 3_000);
