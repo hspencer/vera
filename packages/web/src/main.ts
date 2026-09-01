@@ -1122,7 +1122,17 @@ async function openPage(
     text.scrollTop = keptScroll;
   }
 
-  if (!isPhone() && workspace.layout !== 'text_only') void drawGraph();
+  /*
+   * Si el mapa está visible, sigue a la página abierta cualquiera sea el ancho.
+   *
+   * Antes se usaba `!isPhone()`: en un iPad con PWA, Split View o una ventana
+   * estrecha Vera podía clasificar el viewport como teléfono aunque el mapa
+   * siguiera siendo la superficie visible. La página cambiaba, pero D4 retenía
+   * el `central` anterior —borde naranja y vecindario de otra página— hasta el
+   * siguiente redibujado manual. La geometría efectiva ya está escrita en el
+   * DOM por `applyLayout`; ésa es la verdad que importa aquí.
+   */
+  if ($('#vera-root').dataset['layout'] !== 'text_only') void drawGraph();
 
   // Y detrás, la pregunta barata. rule PullOperationsAfterCursor: no pide la
   // página otra vez, pregunta qué pasó desde el cursor.
