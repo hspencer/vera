@@ -722,6 +722,69 @@ function librarianTurn(request: LibrarianRequestView): HTMLElement {
   return turn;
 }
 
+const librarianOverlayCorners = ['bottom-right', 'bottom-left', 'top-left', 'top-right'] as const;
+type LibrarianOverlayCorner = typeof librarianOverlayCorners[number];
+
+function rememberedLibrarianCorner(): LibrarianOverlayCorner {
+  const remembered = window.localStorage.getItem('vera:librarian-overlay-corner');
+  return librarianOverlayCorners.includes(remembered as LibrarianOverlayCorner)
+    ? remembered as LibrarianOverlayCorner
+    : 'bottom-right';
+}
+
+/**
+ * Una solicitud en curso es estado de la interfaz, no contenido de la página.
+ * Vive una sola vez sobre el documento y puede apartarse si tapa justo lo que
+ * se está leyendo. Las respuestas terminadas sí vuelven a su lugar de origen.
+ */
+function showLibrarianOverlay(requests: LibrarianRequestView[]): void {
+  document.querySelector('.librarian-active-overlay')?.remove();
+  if (requests.length === 0) return;
+
+  const latest = [...requests].sort((a, b) => b.createdAt - a.createdAt)[0]!;
+  const overlay = document.createElement('aside');
+  overlay.className = 'librarian-active-overlay';
+  overlay.dataset['corner'] = rememberedLibrarianCorner();
+  overlay.dataset['request'] = latest.id;
+  overlay.setAttribute('role', 'status');
+  overlay.setAttribute('aria-live', 'polite');
+
+  const heading = document.createElement('div');
+  heading.className = 'librarian-overlay-heading';
+  const title = document.createElement('strong');
+  title.textContent = latest.status === 'working'
+    ? 'Cotito está trabajando'
+    : latest.dispatchStatus === 'failed'
+      ? 'Solicitud guardada'
+      : 'Cotito está recibiendo la solicitud';
+  const move = document.createElement('button');
+  move.type = 'button';
+  move.className = 'librarian-overlay-move';
+  move.textContent = 'Reubicar';
+  move.title = 'Mover el aviso a otra esquina';
+  move.setAttribute('aria-label', 'Mover el aviso de Cotito a otra esquina');
+  move.addEventListener('click', () => {
+    const at = librarianOverlayCorners.indexOf(overlay.dataset['corner'] as LibrarianOverlayCorner);
+    const corner = librarianOverlayCorners[(at + 1) % librarianOverlayCorners.length]!;
+    overlay.dataset['corner'] = corner;
+    window.localStorage.setItem('vera:librarian-overlay-corner', corner);
+  });
+  heading.append(title, move);
+
+  const asked = document.createElement('div');
+  asked.className = 'librarian-overlay-request';
+  asked.textContent = latest.text;
+  overlay.append(heading, asked);
+
+  if (requests.length > 1) {
+    const count = document.createElement('div');
+    count.className = 'librarian-overlay-count';
+    count.textContent = `${requests.length - 1} solicitud${requests.length === 2 ? '' : 'es'} más en curso`;
+    overlay.append(count);
+  }
+  document.body.append(overlay);
+}
+
 async function showLibrarianTurns(
   container: HTMLElement,
   page: PageView,
@@ -730,12 +793,20 @@ async function showLibrarianTurns(
   let requests: LibrarianRequestView[];
   try { requests = await api.librarianRequests(page.id); }
   catch { return; }
-  for (const request of [...requests].reverse()) {
+  // Una lectura iniciada por la página anterior no debe dejar su aviso sobre
+  // la página que la reemplazó mientras esperaba la red.
+  if (container.dataset['page'] !== page.id) return;
+  // El servidor no debiera repetir identidades, pero esta superficie tampoco
+  // debe convertir una repetición de transporte en dos avisos iguales.
+  const unique = [...new Map(requests.map((request) => [request.id, request])).values()];
+  const active = unique.filter((request) => request.status === 'queued' || request.status === 'working');
+  showLibrarianOverlay(active);
+  for (const request of unique.filter((request) => request.status !== 'queued' && request.status !== 'working').reverse()) {
     const turn = librarianTurn(request);
     if (request.sourceBlockId === null) container.querySelector('.page-header')?.after(turn);
     else container.querySelector<HTMLElement>(`.block[data-id="${CSS.escape(request.sourceBlockId)}"]`)?.append(turn);
   }
-  if (requests.some((request) => request.status === 'queued' || request.status === 'working')) {
+  if (active.length > 0) {
     window.setTimeout(() => callbacks.onReload(null), 3_000);
   }
 }
@@ -2676,7 +2747,9 @@ export function renderOutliner(
   focusRoot: string | null = null,
   readOnly = false,
 ): void {
+  document.querySelector('.librarian-active-overlay')?.remove();
   container.innerHTML = '';
+  container.dataset['page'] = page.id;
   container.classList.toggle('read-only', readOnly);
   if (container.dataset['readOnlyGuard'] !== 'true') {
     container.dataset['readOnlyGuard'] = 'true';
