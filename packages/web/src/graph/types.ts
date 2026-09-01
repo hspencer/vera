@@ -13,12 +13,24 @@ export interface GraphNode extends SimulationNodeDatum {
   degree: number;
   properties?: Record<string, unknown>;
   blockCount?: number;
+  /** Saltos desde la página foco; D4 lo convierte en columnas. */
+  distance?: number;
+  /** Líneas legibles de la página para el recinto dendrítico. */
+  lines?: { block: string; content: string; gloss?: string | null }[];
   matched?: boolean;
 }
 
 export interface GraphLink {
   source: string | GraphNode;
   target: string | GraphNode;
+  /** Bloque/frase que origina la referencia cuando se conoce. */
+  block?: string | null;
+  kind?: 'reference' | 'gloss' | 'crossing';
+  /** Título mencionado: permite anclar en la frase exacta y no sólo en el bloque. */
+  targetTitle?: string;
+  /** Las relaciones explicadas conservan su término y su outline legible. */
+  label?: string | null;
+  explanation?: string;
 }
 
 export interface GraphData {

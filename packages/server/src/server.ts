@@ -4312,7 +4312,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           if (typeof body['dividerPosition'] === 'number' && Number.isFinite(body['dividerPosition'])) {
             patch.dividerPosition = Math.min(0.95, Math.max(0.05, body['dividerPosition']));
           }
-          if (body['graphView'] === 'graph_2d' || body['graphView'] === 'graph_3d') {
+          if (body['graphView'] === 'graph_2d' || body['graphView'] === 'graph_3d' || body['graphView'] === 'graph_d4') {
             patch.graphView = body['graphView'];
           }
           if (body['colourScheme'] === 'light' || body['colourScheme'] === 'dark') {
@@ -5880,9 +5880,15 @@ export function createVeraServer(options: ServerOptions): VeraServer {
               id,
               name: graph.page(id)?.title ?? id,
               central: id === centred.id,
+              distance: id === centred.id ? 0 : 1,
               trail: trailOf(id) !== null,
               degree: neighbours.get(id)?.size ?? 0,
               blockCount: graph.blocksOf(id).length,
+              lines: graph.blocksOf(id).map((block) => ({
+                block: block.stableId,
+                content: block.content,
+                gloss: graph.gloss(block.stableId)?.content ?? null,
+              })),
             })),
             links,
           });
@@ -5903,11 +5909,51 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             id: node.page,
             name: graph.page(node.page)?.title ?? node.page,
             central: node.distance === 0,
+            distance: node.distance,
             trail: trailOf(node.page) !== null,
             degree: node.degree,
             blockCount: node.blockCount,
+            lines: graph.blocksOf(node.page).map((block) => ({
+              block: block.stableId,
+              content: block.content,
+              gloss: graph.gloss(block.stableId)?.content ?? null,
+            })),
           })),
-          links: hood.edges.map((edge) => ({ source: edge.source, target: edge.target })),
+          links: [
+            ...hood.edges.map((edge) => {
+            const written = graph.links().find((link) =>
+              link.target !== null && link.sourcePage === edge.source && link.target === edge.target,
+            ) ?? graph.links().find((link) =>
+              link.target !== null && link.sourcePage === edge.target && link.target === edge.source,
+            );
+              return {
+              source: written?.sourcePage ?? edge.source,
+              target: written?.target ?? edge.target,
+              block: written?.sourceBlock ?? null,
+              targetTitle: written?.target === null || written === undefined
+                ? graph.page(edge.target)?.title ?? edge.target
+                : graph.page(written.target)?.title ?? written.target,
+              kind: written !== undefined && graph.gloss(written.sourceBlock) !== undefined
+                ? 'gloss'
+                : 'reference',
+              };
+            }),
+            ...graph.crossings()
+              .filter((crossing) =>
+                crossing.toPage !== null &&
+                hood.nodes.some((node) => node.page === crossing.fromPage) &&
+                hood.nodes.some((node) => node.page === crossing.toPage),
+              )
+              .map((crossing) => ({
+                source: crossing.fromPage,
+                target: crossing.toPage!,
+                block: crossing.blocks[0]?.stableId ?? null,
+                kind: 'crossing' as const,
+                targetTitle: graph.page(crossing.toPage!)?.title ?? crossing.toPage!,
+                label: crossing.term,
+                explanation: crossing.blocks.map((block) => block.content).join('\n'),
+              })),
+          ],
         });
         return;
       }

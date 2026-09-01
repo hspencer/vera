@@ -684,6 +684,41 @@ const addAgentConversations: Migration = {
   },
 };
 
+const addDendriticGraphView: Migration = {
+  version: 18,
+  name: 'vista dendrítica D4',
+  apply(db) {
+    const workspaceTable = db.prepare(
+      "SELECT 1 AS present FROM sqlite_schema WHERE type = 'table' AND name = 'workspaces'",
+    ).get() as { present: number } | undefined;
+    // Los corpus anteriores a la introducción de espacios no tienen nada que
+    // reconstruir. schema.sql creará directamente la versión vigente.
+    if (workspaceTable === undefined) return;
+    rebuildTable(
+      db,
+      'workspaces',
+      `CREATE TABLE workspaces_new (
+        participant_id TEXT NOT NULL REFERENCES participants (id),
+        graph_id TEXT NOT NULL REFERENCES graphs (id),
+        active_page TEXT REFERENCES pages (id),
+        layout TEXT NOT NULL DEFAULT 'split' CHECK (layout IN ('text_only', 'graph_only', 'split')),
+        split_divider_position REAL NOT NULL DEFAULT 0.5,
+        graph_view TEXT NOT NULL DEFAULT 'graph_2d' CHECK (graph_view IN ('graph_2d', 'graph_3d', 'graph_d4')),
+        colour_scheme TEXT NOT NULL DEFAULT 'light' CHECK (colour_scheme IN ('light', 'dark')),
+        design_tokens TEXT,
+        graph_reach INTEGER,
+        PRIMARY KEY (participant_id, graph_id)
+      ) STRICT`,
+      [
+        'participant_id', 'graph_id', 'active_page', 'layout',
+        'split_divider_position', 'graph_view', 'colour_scheme',
+        'design_tokens', 'graph_reach',
+      ],
+      [],
+    );
+  },
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   addWalkedChannel,
   addPageOriginCreatedAt,
@@ -702,6 +737,7 @@ export const MIGRATIONS: readonly Migration[] = [
   addSharedProposals,
   addCrossingBlockOwners,
   addAgentConversations,
+  addDendriticGraphView,
 ];
 
 /** La versión a la que llega una base nueva sin correr una sola migración. */

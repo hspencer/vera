@@ -50,6 +50,7 @@ import { behind, disagreements, said, type Behind } from './behind.ts';
 import { applyResolutions, askAboutDisagreements } from './reconcile.ts';
 import { forgetPositions, renderGraph, selectNode, type ThreadSettings } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D, forgetCamera, selectNode3D } from './graph/render3d.ts';
+import { renderGraphD4 } from './graph/renderD4.ts';
 import {
   applyTokens,
   loadTokens,
@@ -281,17 +282,6 @@ let corpus: CorpusHealth | null = null;
 
 const isAnybody = (): boolean => corpus?.access === 'anybody';
 const isReadOnly = (): boolean => isAnybody() && corpus?.canEdit !== true && corpus?.canContribute !== true;
-
-function drawAudienceControl(): void {
-  const control = document.querySelector<HTMLElement>('#map-audience');
-  if (control === null || corpus === null) return;
-  // Anybody ya está dentro del subgrafo público y no puede pedir el espacio del dueño.
-  control.hidden = isAnybody();
-  for (const button of control.querySelectorAll<HTMLButtonElement>('[data-map-scope]')) {
-    const active = button.dataset['mapScope'] === workspace.mapScope;
-    button.setAttribute('aria-pressed', String(active));
-  }
-}
 
 async function openHome(): Promise<void> {
   if (isAnybody() && corpus?.entryPoint != null) {
@@ -2083,7 +2073,6 @@ async function drawGraph(): Promise<void> {
     openView?.publication?.publishedAt == null
   ) {
     workspace.mapScope = 'own_space';
-    drawAudienceControl();
     notice('Esta página no está publicada; el mapa vuelve a mostrar tu espacio.');
   }
   let data;
@@ -2189,6 +2178,9 @@ async function drawGraph(): Promise<void> {
   try {
     if (workspace.graphView === 'graph_3d') {
       renderGraph3D(container, data, onClick, settings);
+    } else if (workspace.graphView === 'graph_d4') {
+      cleanupGraph3D();
+      renderGraphD4(container, data, onClick, settings);
     } else {
       cleanupGraph3D();
       renderGraph(container, data, onClick, settings);
@@ -2818,23 +2810,6 @@ function wireTheme(): void {
     drawPanel();
   };
 
-  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-map-scope]')) {
-    button.addEventListener('click', () => {
-      const scope = button.dataset['mapScope'];
-      if (scope !== 'own_space' && scope !== 'published') return;
-      if (scope === 'published' && openView?.publication?.publishedAt == null) {
-        notice('Publica esta página para verla como centro del mapa publicado.');
-        return;
-      }
-      if (scope === workspace.mapScope) return;
-      workspace.mapScope = scope;
-      drawAudienceControl();
-      forgetPositions();
-      forgetCamera();
-      void refreshGraph();
-    });
-  }
-
   panelToggle.addEventListener('click', (event) => {
     // Sin esto, el mismo clic que lo abre llega al documento y lo cierra.
     event.stopPropagation();
@@ -3298,7 +3273,6 @@ async function start(): Promise<void> {
       workspace.graphView = session.publicGraphView();
       applyTokens(tokens, workspace.scheme);
     }
-    drawAudienceControl();
     if (isAnybody()) {
       $('#brand').title = 'Portada publicada';
       $('#brand').setAttribute('aria-label', 'Ir a la portada publicada');

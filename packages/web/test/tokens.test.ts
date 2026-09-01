@@ -23,6 +23,14 @@ describe('vista del mapa publicado', () => {
     assert.equal(session.graphView(), 'graph_2d');
     assert.equal(storage.getItem('vera.graphView'), null);
   });
+
+  it('recuerda D4 como una dimensión del mismo mapa', () => {
+    const storage = new MemoryStorage();
+    globalThis.localStorage = storage as unknown as Storage;
+
+    session.setPublicGraphView('graph_d4');
+    assert.equal(session.publicGraphView(), 'graph_d4');
+  });
 });
 
 describe('despliegue del front matter', () => {

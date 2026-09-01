@@ -145,7 +145,7 @@ const REACH_KEY = 'vera.graphReach';
 
 export type ColourScheme = 'light' | 'dark';
 export type WorkspaceLayout = 'text_only' | 'graph_only' | 'split';
-export type GraphViewMode = 'graph_2d' | 'graph_3d';
+export type GraphViewMode = 'graph_2d' | 'graph_3d' | 'graph_d4';
 
 /**
  * Los tokens de este participante.

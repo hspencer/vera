@@ -1634,7 +1634,7 @@ export function spokenOriginsOnPage(
 export interface Workspace {
   layout: 'text_only' | 'graph_only' | 'split';
   dividerPosition: number;
-  graphView: 'graph_2d' | 'graph_3d';
+  graphView: 'graph_2d' | 'graph_3d' | 'graph_d4';
   colourScheme: 'light' | 'dark';
   /** Los tokens de diseño tal como se guardaron, o null si nunca se tocaron. */
   designTokens: string | null;

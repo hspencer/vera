@@ -534,7 +534,7 @@ contract InstallableWebApplication {
 ------------------------------------------------------------
 
 enum WorkspaceLayout { text_only | graph_only | split }
-enum GraphViewMode { graph_2d | graph_3d }
+enum GraphViewMode { graph_2d | graph_3d | graph_d4 }
 enum ColourScheme { light | dark }
 enum MapContentScope { own_space | published }
 enum BlockBehaviour { markdown | html | audio | video | drawing | p5js | svg | query | mermaid | table }
@@ -1267,27 +1267,20 @@ surface VeraWorkspace {
         -- the layout could have told them.
 
     @guarantee PublishedIsAMapFilterNotAnIdentity
-        -- In the authenticated PWA, the eye/map panel offers `Mi espacio` and
-        -- `Publicado`. Changing that choice filters the owner's map and workspace
-        -- context locally; the participant, credential and authority do not
-        -- change, and no `anybody` session is created.
+        -- A public reading projects its bounded public graph; the authenticated
+        -- workspace reads the owner's graph. The map does not ask the reader to
+        -- toggle public/private: publication is governed where pages and sites
+        -- are shared, not as visual clutter over the map.
 
-    @guarantee PublishedStartsFromAPublishedCentre
-        -- `Publicado` is available only while the central page is an explicit
-        -- Publication of a site owned by the participant. Its map is the induced
-        -- subgraph of that site's Publications reachable from the central page
-        -- within the map's current reach; private and unassigned pages are absent.
+    @guarantee PublicReadingStartsFromAPublishedCentre
+        -- A public reading begins at an explicit Publication. Its map is the
+        -- induced subgraph of that site's Publications reachable from the
+        -- central page within the map's current reach; private and unassigned
+        -- pages are absent without asking the reader to choose a scope.
 
-    @guarantee PublishedKeepsTheOwnersTools
-        -- Filtering to `Publicado` removes nodes from the map, not capabilities
-        -- from the owner. Every published page shown there remains readable and
-        -- editable through the same authenticated workspace, with ordinary
-        -- attributed operations.
-
-    @guarantee MapScopeIsLocalWorkspaceState
-        -- `Mi espacio` or `Publicado` changes no Page, Publication, Membership,
-        -- credential, revision or operation. Returning to `Mi espacio` restores
-        -- the owner's ordinary reachable graph without authentication.
+    @guarantee PublicationDoesNotChangeIdentity
+        -- Entering a published surface projects pages; it never swaps the
+        -- participant, credential, membership, revision or operation history.
 
     @guarantee TheMapCanStepAside
         -- The map can be collapsed and brought back without losing where one is.
@@ -1305,6 +1298,27 @@ surface VeraWorkspace {
         -- looks at it cannot be remembered, and a map one cannot remember is a
         -- picture rather than a place. Recognising a region by its shape is the
         -- whole reason for drawing it.
+
+    @guarantee D4IsADendriticArgument
+        -- D4 places the page in focus at degree zero, pages that mention it to
+        -- the left and pages it mentions to the right. Further degrees open
+        -- outward without moving positions already acquired. A return to an
+        -- earlier degree remains visible as a ring rather than being forced
+        -- into a false acyclic tree.
+
+    @guarantee D4LetsTextRouteTheGraph
+        -- Pages in D4 are wide readable text boxes. Each sentence occupies a
+        -- line and every reference leaves from the baseline of the sentence or
+        -- gloss that wrote it, with predominantly horizontal Bézier tangents.
+        -- Text boxes never shrink to solve collisions; routing and vertical
+        -- spacing make room around them.
+
+    @guarantee D4DistinguishesWaysOfRelating
+        -- References, block glosses and explained page relations remain visibly
+        -- distinct. A trail introduces no duplicate edge: it reveals an ordered
+        -- sequence through relations that already exist. Expanding an explained
+        -- relation reveals its canonical outline without pretending the outline
+        -- belongs to either endpoint page.
 
     @guarantee TheTraceIsWhereOneIsLocated
         -- Where a participant has been accumulates visibly, and any step of it

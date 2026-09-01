@@ -1054,6 +1054,98 @@ button { touch-action: manipulation; }
   text-align: center;
 }
 
+/* D4: texto primero, geometría después. Las cajas nunca compiten por ancho con
+   la columna de lectura: viven únicamente dentro del lienzo del mapa. */
+.d4-map {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  animation: d4-arrive 280ms ease-out both;
+}
+
+.d4-page {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-raised) 94%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 13%);
+  cursor: pointer;
+}
+
+.d4-page.focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 10px 30px rgb(0 0 0 / 17%);
+}
+
+.d4-page h2 {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0.62rem 0.75rem 0.48rem;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-raised) 96%, transparent);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  font-weight: 620;
+  line-height: 1.25;
+}
+
+.d4-lines { padding: 0.18rem 0 0.5rem; }
+.d4-line {
+  min-height: 25px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.28rem 0.75rem;
+  overflow: hidden;
+  color: var(--text);
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 56%, transparent);
+  font-family: var(--font-body);
+  font-size: 0.71rem;
+  line-height: 1.38;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.d4-line.gloss {
+  color: var(--text-dim);
+  font-style: italic;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.d4-branch {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text-dim) 68%, transparent);
+  stroke-width: 1.1;
+  vector-effect: non-scaling-stroke;
+}
+.d4-branch.gloss { stroke: var(--accent); stroke-dasharray: 3 3; }
+.d4-branch.crossing { stroke: var(--accent); stroke-width: 3; opacity: 0.62; }
+.d4-relation-label {
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 4px;
+  fill: var(--accent);
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+@keyframes d4-arrive {
+  from { opacity: 0; transform: translateX(-0.45rem); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .d4-map { animation: none; }
+}
+
 /*
  * El rastro: por dónde se ha pasado, acumulándose.
  *

@@ -557,7 +557,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
                                 CHECK (layout IN ('text_only', 'graph_only', 'split')),
     split_divider_position  REAL NOT NULL DEFAULT 0.5,
     graph_view              TEXT NOT NULL DEFAULT 'graph_2d'
-                                CHECK (graph_view IN ('graph_2d', 'graph_3d')),
+                                CHECK (graph_view IN ('graph_2d', 'graph_3d', 'graph_d4')),
     colour_scheme           TEXT NOT NULL DEFAULT 'light'
                                 CHECK (colour_scheme IN ('light', 'dark')),
     -- Los tokens de diseño, como JSON. Van con el participante y no con el
