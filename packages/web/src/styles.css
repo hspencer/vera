@@ -3055,6 +3055,19 @@ code {
   margin: 0.5em 0;
 }
 
+/*
+ * El poema es una voz tipográfica, no HTML libre. El renderizador sólo emite
+ * esta clase para un bloque envuelto por `<poem>…</poem>` sin atributos.
+ * `em` hace que el 2,3× siga la talla de lectura elegida por la persona.
+ */
+.body .poem {
+  font-family: Georgia, "Times New Roman", ui-serif, serif;
+  font-size: 2.3em;
+  line-height: 1.18;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 /* Encabezados. El renderizador baja un nivel —el título de la página ya
    es el h1— así que h2 es el mayor que aparece aquí. La escala es corta
    a propósito: seis tamaños distintos dentro de un esquema compiten con

@@ -468,6 +468,23 @@ describe('renderMarkdown', () => {
     it('devuelve vacío para una fuente vacía', () => {
       assert.equal(renderMarkdown(''), '');
     });
+
+    it('presenta un poema completo como prosa poética con Markdown seguro', () => {
+      assert.equal(
+        renderMarkdown('<poem>\nY se detuvo en la **sustancia**\ncuando el aire despertó\n</poem>'),
+        '<div class="poem"><p>Y se detuvo en la <strong>sustancia</strong><br>cuando el aire despertó</p></div>',
+      );
+    });
+
+    it('no acepta atributos ni un poem incrustado como HTML activo', () => {
+      const attributed = renderMarkdown('<poem onclick="alert(1)">texto</poem>');
+      assert.ok(!attributed.includes('<poem'));
+      assert.match(attributed, /&lt;poem/);
+
+      const embedded = renderMarkdown('antes <poem>texto</poem> después');
+      assert.ok(!embedded.includes('<poem'));
+      assert.match(embedded, /&lt;poem&gt;/);
+    });
   });
 
   describe('la fuente manda', () => {

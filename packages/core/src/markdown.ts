@@ -593,6 +593,20 @@ function cells(row: string): string[] {
  * escaparlos.
  */
 export function renderMarkdown(source: string, options: RenderOptions = {}): string {
+  /*
+   * Un poema no es HTML arbitrario: es una marca editorial estrecha y segura.
+   *
+   * Sólo se reconoce cuando envuelve el bloque entero y no lleva atributos.
+   * El interior vuelve a pasar por este mismo renderizador, por lo que conserva
+   * Markdown y las mismas fronteras de seguridad del resto del corpus. Cualquier
+   * variante como `<poem class=...>` sigue viéndose como fuente, en vez de abrir
+   * una puerta lateral al HTML activo.
+   */
+  const poem = /^\s*<poem>\s*\n?([\s\S]*?)\n?\s*<\/poem>\s*$/i.exec(source);
+  if (poem !== null) {
+    return `<div class="poem">${renderMarkdown(poem[1] ?? '', options)}</div>`;
+  }
+
   // Un bloque que es una incrustación entera se presenta como tal y no como su
   // marcado. Ver `embedIn` y specs/executable-content-sandbox.allium.
   const embed = embedIn(source, options.embedHosts ?? []);

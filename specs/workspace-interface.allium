@@ -108,8 +108,10 @@ contract NativeMarkdownEditing {
 
     @invariant EmbeddedMarkupIsInert
         -- Markup written inside ordinary Markdown content is presented as text,
-        -- not as active markup. Only a whole block deliberately created as
-        -- executable HTML may cross that boundary, under
+        -- not as active markup. The sole editorial exception is an attribute-free
+        -- `<poem>…</poem>` surrounding the whole block: it remains safe Markdown
+        -- but receives a larger serif presentation. Only a whole block deliberately
+        -- created as executable HTML may cross into active markup, under
         -- executable-content-sandbox.allium. Media that Vera presents natively
         -- is governed by content-media.allium and never reaches the page by way
         -- of the Markdown renderer.
