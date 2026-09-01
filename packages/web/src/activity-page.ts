@@ -69,7 +69,9 @@ function linkedSummary(
   const named = `«${page.title}»`;
   const at = summary.indexOf(named);
   const link = document.createElement('a');
-  link.href = `/p/${encodeURIComponent(page.title)}${block === null ? '' : `#${encodeURIComponent(block)}`}`;
+  // La identidad evita que una copia local con un título antiguo o ambiguo
+  // intercepte el enlace. El título sigue siendo lo que se lee.
+  link.href = `/p/${encodeURIComponent(page.id)}${block === null ? '' : `#${encodeURIComponent(block)}`}`;
   link.textContent = named;
   link.title = `Abrir ${page.title}`;
   if (at < 0) {

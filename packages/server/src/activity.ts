@@ -338,6 +338,25 @@ export function activityOf(graph: VeraGraph): {
 
   const livingActivity = activity
     .filter((one) => one.kind !== 'remove_page' && one.page !== null && graph.page(one.page.id) !== undefined)
+    .map((one): ActivityItem => {
+      /*
+       * El registro cuenta dónde ocurrió una operación, pero su enlace debe
+       * llevar a donde vive el bloque ahora. Un bloque puede haberse movido
+       * después de crearse; conservar aquí la página histórica producía un
+       * enlace perfectamente válido a una página que no contenía el bloque.
+       */
+      if (one.block !== null) {
+        const currentBlock = graph.block(one.block);
+        const currentPage = currentBlock === undefined ? undefined : graph.page(currentBlock.page);
+        if (currentPage !== undefined) {
+          return { ...one, page: { id: currentPage.id, title: currentPage.title } };
+        }
+      }
+      const currentPage = one.page === null ? undefined : graph.page(one.page.id);
+      return currentPage === undefined
+        ? one
+        : { ...one, page: { id: currentPage.id, title: currentPage.title } };
+    })
     .reverse();
   return { activity: livingActivity, deletedPages };
 }

@@ -13,6 +13,7 @@ describe('Vera: Registro de Actividad', () => {
   });
 
   it('enlaza las páginas vivas y presenta el extracto recibido del registro', () => {
+    assert.match(activity, /encodeURIComponent\(page\.id\)/);
     assert.match(activity, /block === null \? '' : `#\$\{encodeURIComponent\(block\)\}`/);
     assert.match(activity, /excerpt\.className = 'activity-excerpt'/);
     assert.match(activity, /excerpt\.textContent = one\.excerpt/);
