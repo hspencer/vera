@@ -185,14 +185,28 @@ export function renderGraphD4(
     const card = foreign.append('xhtml:article')
       .attr('class', `d4-page${node.central ? ' focus' : ''}`)
       .style('font-family', options.fontFamily ?? 'system-ui, sans-serif');
+    const focusNow = (): void => {
+      // La navegación trae después el nuevo vecindario, pero el gesto no debe
+      // esperar dos lecturas de red para acusar recibo. Marcamos el nuevo foco
+      // sobre el mapa que ya está en la mano; drawGraph lo sustituirá por el
+      // vecindario canónico cuando llegue.
+      world.selectAll<HTMLElement, unknown>('.d4-page').classed('focus', false);
+      card.classed('focus', true);
+    };
     card.append('h2')
       .attr('role', 'button')
       .attr('tabindex', 0)
       .on('click', (event: MouseEvent) => {
-        if (!event.defaultPrevented) onClickPage(node.id);
+        if (!event.defaultPrevented) {
+          focusNow();
+          onClickPage(node.id);
+        }
       })
       .on('keydown', (event: KeyboardEvent) => {
-        if (event.key === 'Enter' || event.key === ' ') onClickPage(node.id);
+        if (event.key === 'Enter' || event.key === ' ') {
+          focusNow();
+          onClickPage(node.id);
+        }
       })
       .text(node.name);
     const body = card.append('div').attr('class', 'd4-lines');
@@ -263,7 +277,10 @@ export function renderGraphD4(
         .attr('type', 'button')
         .attr('aria-label', `Abrir ${node.name}; ${projection.hidden} frases no participan en este grado`)
         .on('click', (event: MouseEvent) => {
-          if (!event.defaultPrevented) onClickPage(node.id);
+          if (!event.defaultPrevented) {
+            focusNow();
+            onClickPage(node.id);
+          }
         })
         .text(`${projection.hidden} frase${projection.hidden === 1 ? '' : 's'} fuera de este grado`);
     }
