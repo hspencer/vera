@@ -1318,7 +1318,9 @@ surface VeraWorkspace {
         -- a finger to one leaf unfolds its complete formatted sentence with a
         -- continuous genie-like transition. The expansion overlays the local
         -- map: it neither moves sibling pages nor changes the relationship's
-        -- anchor, and every sentence remains reachable without truncation.
+        -- anchor. It never exceeds seventy percent of the viewport height; any
+        -- remaining content scrolls inside it, so every sentence remains
+        -- reachable without extending beyond the reading surface.
 
     @guarantee D4DistinguishesWaysOfRelating
         -- References, block glosses and explained page relations remain visibly

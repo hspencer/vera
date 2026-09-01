@@ -1145,7 +1145,7 @@ button { touch-action: manipulation; }
   z-index: 8;
   height: auto;
   min-height: 2rem;
-  max-height: 18rem;
+  max-height: min(18rem, 70vh);
   overflow: auto;
   padding: 0.42rem 0.75rem 0.52rem;
   color: var(--text);
