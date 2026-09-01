@@ -1000,6 +1000,11 @@ button { touch-action: manipulation; }
   border-color: var(--accent);
 }
 
+#map-panel button[role='switch'][aria-checked='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* Lo que el mapa dice cuando no puede dibujarse. Centrado en su sitio, porque
    ocupa el lugar del mapa y no es una nota al margen. */
 .map-aviso {

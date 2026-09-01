@@ -51,6 +51,7 @@ import { applyResolutions, askAboutDisagreements } from './reconcile.ts';
 import { forgetPositions, renderGraph, selectNode, type ThreadSettings } from './graph/render.ts';
 import { renderGraph3D, cleanupGraph3D, forgetCamera, selectNode3D } from './graph/render3d.ts';
 import { renderGraphD4 } from './graph/renderD4.ts';
+import { journalsInMap } from './graph/journals.ts';
 import {
   applyTokens,
   loadTokens,
@@ -100,6 +101,8 @@ interface Workspace {
    */
   trace: TraceStep[];
   depth: number;
+  /** Si el diario que ocupa el foco puede aparecer en el mapa. */
+  graphJournals: boolean;
 }
 
 const workspace: Workspace = {
@@ -112,6 +115,7 @@ const workspace: Workspace = {
   divider: session.divider(),
   trace: loadTrace(),
   depth: session.reach(),
+  graphJournals: session.graphJournals(),
 };
 
 /**
@@ -2093,6 +2097,7 @@ async function drawGraph(): Promise<void> {
       workspace.mapScope === 'published',
       delivery.signal,
     );
+    data = journalsInMap(data, workspace.activePage, workspace.graphJournals);
   } catch {
     if (delivery.signal.aborted) return;
     /*
@@ -2186,7 +2191,10 @@ async function drawGraph(): Promise<void> {
    * romperse: la que se lleva por delante el remedio.
    */
   try {
-    if (workspace.graphView === 'graph_3d') {
+    if (data.nodes.length === 0) {
+      cleanupGraph3D();
+      container.innerHTML = '<p class="map-aviso">Los diarios están apagados.</p>';
+    } else if (workspace.graphView === 'graph_3d') {
       renderGraph3D(container, data, onClick, settings);
     } else if (workspace.graphView === 'graph_d4') {
       cleanupGraph3D();
@@ -2885,6 +2893,26 @@ function wireTheme(): void {
   reachLess.addEventListener('click', () => stepReach(-1));
   reachMore.addEventListener('click', () => stepReach(+1));
   showReach();
+
+  /*
+   * Los diarios no son ruido opcional dentro de una vecindad. El interruptor
+   * sólo autoriza a dibujar el día que ya está seleccionado y ocupa el foco;
+   * ningún otro día aparece jamás como vecino.
+   */
+  const journalSwitch = $<HTMLButtonElement>('#map-journals');
+  const showJournals = (): void => {
+    journalSwitch.setAttribute('aria-checked', String(workspace.graphJournals));
+    journalSwitch.textContent = workspace.graphJournals ? 'encendido' : 'apagado';
+  };
+  journalSwitch.addEventListener('click', () => {
+    workspace.graphJournals = !workspace.graphJournals;
+    session.setGraphJournals(workspace.graphJournals);
+    showJournals();
+    forgetPositions();
+    forgetCamera();
+    void refreshGraph();
+  });
+  showJournals();
 
   // El switch de la vista, en el orden del espacio que gobierna.
   const SWITCH: Record<string, IconName> = {

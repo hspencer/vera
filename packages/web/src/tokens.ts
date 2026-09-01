@@ -142,6 +142,7 @@ const DIVIDER_KEY = 'vera.divider';
 const LAYOUT_KEY = 'vera.layout';
 const VIEW_KEY = 'vera.graphView';
 const REACH_KEY = 'vera.graphReach';
+const JOURNALS_KEY = 'vera.graphJournals';
 
 export type ColourScheme = 'light' | 'dark';
 export type WorkspaceLayout = 'text_only' | 'graph_only' | 'split';
@@ -319,6 +320,10 @@ export const session = {
     localStorage.setItem(REACH_KEY, String(hops));
     void push({ graphReach: hops });
   },
+
+  /** Los días no pueblan la vecindad; el interruptor sólo permite ver el día en foco. */
+  graphJournals: (): boolean => localStorage.getItem(JOURNALS_KEY) === 'true',
+  setGraphJournals: (shown: boolean) => localStorage.setItem(JOURNALS_KEY, String(shown)),
 
   graphView: (): GraphViewMode =>
     (localStorage.getItem(VIEW_KEY) as GraphViewMode | null) ?? 'graph_2d',

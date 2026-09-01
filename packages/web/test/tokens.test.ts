@@ -48,3 +48,16 @@ describe('despliegue del front matter', () => {
     assert.equal(storage.getItem('vera.frontMatterOpen'), 'false');
   });
 });
+
+describe('diarios en el mapa', () => {
+  it('nacen apagados y el interruptor recuerda exactamente su estado', () => {
+    const storage = new MemoryStorage();
+    globalThis.localStorage = storage as unknown as Storage;
+
+    assert.equal(session.graphJournals(), false);
+    session.setGraphJournals(true);
+    assert.equal(session.graphJournals(), true);
+    session.setGraphJournals(false);
+    assert.equal(session.graphJournals(), false);
+  });
+});

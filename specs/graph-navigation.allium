@@ -395,6 +395,11 @@ surface GraphNavigation {
         -- A reference to a page that does not exist stays legible on its block. Vera
         -- neither discards it nor silently creates the page it names.
 
+    @guarantee AJournalAppearsOnlyAsTheChosenFocus
+        -- The journal switch never admits days as neighbours. With the switch
+        -- on, a day appears only when that same day is selected as the centre;
+        -- with it off, even the selected day is absent from the map.
+
     @guarantee NamingAPageAndWritingItAreOneGesture
         -- Following a reference to a page that does not exist creates it and
         -- leaves the participant in its first empty block, ready to type. The
