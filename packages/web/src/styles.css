@@ -29,6 +29,30 @@
   font-display: swap;
 }
 
+/*
+ * La misma Roboto Serif variable de Stella Nova, autoalojada. Sus cuatro ejes
+ * son wght 100–900, wdth 62.5–100, opsz 8–60 y GRAD −50–100. Los poemas usan
+ * peso 300 y tamaño óptico automático; la cursiva sigue siendo una cursiva
+ * dibujada, no la inclinación sintética del navegador.
+ */
+@font-face {
+  font-family: 'Roboto Serif';
+  src: url('/fonts/robotoserif-latin-wghtwdthgrad-normal.woff2') format('woff2');
+  font-weight: 100 900;
+  font-stretch: 62.5% 100%;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roboto Serif';
+  src: url('/fonts/robotoserif-latin-wghtwdthgrad-italic.woff2') format('woff2');
+  font-weight: 100 900;
+  font-stretch: 62.5% 100%;
+  font-style: italic;
+  font-display: swap;
+}
+
 .librarian-turn {
   margin: 0.45rem 0 0.65rem 2.1rem;
   padding: 0.7rem 0.85rem;
@@ -3061,9 +3085,11 @@ code {
  * `em` hace que el 2,3× siga la talla de lectura elegida por la persona.
  */
 .body .poem {
-  font-family: Georgia, "Times New Roman", ui-serif, serif;
-  font-size: 2.3em;
+  font-family: 'Roboto Serif', Georgia, "Times New Roman", ui-serif, serif;
+  font-size: 1.6em;
   line-height: 1.18;
+  font-weight: 300;
+  font-optical-sizing: auto;
   white-space: pre-wrap;
   overflow-wrap: normal;
   word-break: normal;
