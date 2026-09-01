@@ -4474,17 +4474,41 @@ export function renderOutliner(
         box.title = `${task.state} · pulsar para pasar a ${nextState(task.state)}`;
         box.setAttribute('aria-label', box.title);
         box.setAttribute('role', 'checkbox');
-        box.setAttribute('aria-checked', task.state === 'hecho' ? 'true' : 'mixed');
+        box.setAttribute('aria-checked', task.state === 'hecho' ? 'true' : task.state === 'por hacer' ? 'false' : 'mixed');
+        let state = task.state;
         box.addEventListener('click', (event) => {
           event.stopPropagation();
           // Pulsar es editar el bloque: una sola clase de operación, con su
           // historia y su deshacer. @invariant PressingIsEditing.
+          const next = nextState(state);
+          box.disabled = true;
           void submitQuietly({
             kind: 'edit_block',
             block: node.block.stableId,
-            content: writeTask(nextState(task.state), task.said),
+            content: writeTask(next, task.said),
           }).then((applied) => {
-            if (applied) callbacks.onReload(null);
+            box.disabled = false;
+            if (!applied) return;
+
+            /*
+             * Una casilla no cambia la estructura ni las palabras de la tarea.
+             * Redibujar toda la página por ella desmontaba el botón enfocado y,
+             * en páginas largas compuestas por tandas, restauraba el scroll
+             * antes de que este bloque volviera a existir. WebKit limitaba
+             * entonces la posición al breve contenido inicial y dejaba a la
+             * persona arriba de la página.
+             *
+             * El modelo ya fue editado por `api.submit`; aquí sólo se pone al
+             * día su representación presente. El mismo botón conserva así el
+             * foco y el lugar de lectura. @invariant PressingKeepsItsPlace.
+             */
+            state = next;
+            node.block.content = writeTask(state, task.said);
+            row.classList.remove('task-todo', 'task-doing', 'task-done');
+            row.classList.add(`task-${TASK_CLASS[state]}`);
+            box.title = `${state} · pulsar para pasar a ${nextState(state)}`;
+            box.setAttribute('aria-label', box.title);
+            box.setAttribute('aria-checked', state === 'hecho' ? 'true' : state === 'por hacer' ? 'false' : 'mixed');
           });
         });
         body.append(box);

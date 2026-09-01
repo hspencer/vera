@@ -269,6 +269,11 @@ surface WritingATask {
         -- pliega solo y no se borra: la lista de la semana pasada tiene que
         -- poder leerse entera, y lo hecho es la mitad de lo que cuenta.
 
+    @guarantee PressingKeepsItsPlace
+        -- Marcar una tarea actualiza esa casilla sin rehacer la página, conserva
+        -- el foco en ella y no mueve el lugar de lectura. Dar algo por hecho en
+        -- una lista larga no manda a buscar de nuevo el renglón siguiente.
+
     @guarantee TheCalendarWritesTheDay
         -- El plazo se pone eligiendo un día en el calendario que Vera ya tiene, y
         -- lo que queda escrito es el mismo día que la bitácora usa. Teclear la
