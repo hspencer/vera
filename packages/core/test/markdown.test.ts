@@ -472,7 +472,14 @@ describe('renderMarkdown', () => {
     it('presenta un poema completo como prosa poética con Markdown seguro', () => {
       assert.equal(
         renderMarkdown('<poem>\nY se detuvo en la **sustancia**\ncuando el aire despertó\n</poem>'),
-        '<div class="poem"><p>Y se detuvo en la <strong>sustancia</strong><br>cuando el aire despertó</p></div>',
+        '<div class="poem">Y se detuvo en la <strong>sustancia</strong><br>cuando el aire despertó</div>',
+      );
+    });
+
+    it('conserva blancos, sangrías y renglones como un pre', () => {
+      assert.equal(
+        renderMarkdown('<poem>\n  primero\n\n    segundo\n</poem>'),
+        '<div class="poem">  primero<br><br>    segundo</div>',
       );
     });
 

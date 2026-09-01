@@ -183,7 +183,7 @@ function document(input: {
     'h2,h3{font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.15;letter-spacing:-.025em;margin:3rem 0 1rem}',
     'h3{font-size:clamp(1.35rem,3vw,1.75rem)}',
     'p{font-size:clamp(1.08rem,2vw,1.28rem);margin:0 0 1.35rem}',
-    '.poem{font-family:Georgia,"Times New Roman",ui-serif,serif;font-size:2.3em;line-height:1.18;overflow-wrap:normal;word-break:normal}.poem p{font-size:inherit}',
+    '.poem{font-family:Georgia,"Times New Roman",ui-serif,serif;font-size:2.3em;line-height:1.18;white-space:pre-wrap;overflow-wrap:normal;word-break:normal}',
     'strong{font-weight:700}',
     'ul{list-style:none;margin:0;padding:0}',
     'li>ul{border-left:1px solid color-mix(in srgb,currentColor 20%,transparent);padding-left:1.25rem}',

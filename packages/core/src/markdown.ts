@@ -602,9 +602,12 @@ export function renderMarkdown(source: string, options: RenderOptions = {}): str
    * variante como `<poem class=...>` sigue viéndose como fuente, en vez de abrir
    * una puerta lateral al HTML activo.
    */
-  const poem = /^\s*<poem>\s*\n?([\s\S]*?)\n?\s*<\/poem>\s*$/i.exec(source);
+  const poem = /^\s*<poem>([\s\S]*?)<\/poem>\s*$/i.exec(source);
   if (poem !== null) {
-    return `<div class="poem">${renderMarkdown(poem[1] ?? '', options)}</div>`;
+    // Como en `<pre>`, el primer salto que sólo separa la etiqueta del texto no
+    // forma parte de éste. Todo lo demás —espacios, blancos y sangrías— sí.
+    const text = (poem[1] ?? '').replace(/^\r?\n/, '').replace(/\r?\n$/, '');
+    return `<div class="poem">${inlineMarkdown(text, options)}</div>`;
   }
 
   // Un bloque que es una incrustación entera se presenta como tal y no como su
