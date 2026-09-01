@@ -4211,6 +4211,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           sequence: number;
           at: number;
           by: string;
+          participant: string;
           channel: string;
           what: string;
           content: string | null;
@@ -4228,6 +4229,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
             sequence: one.sequence,
             at: one.appliedAt,
             by: graph.participant(one.submission.submittedBy)?.name ?? one.submission.submittedBy,
+            participant: one.submission.submittedBy,
             channel: one.submission.channel,
             what:
               change.kind === 'create_block'
@@ -6013,13 +6015,24 @@ export function createVeraServer(options: ServerOptions): VeraServer {
 
       if (path === '/activity') {
         const folded = activityOf(graph);
+        const participant = url.searchParams.get('participant');
+        const person = participant === null ? null : graph.participant(participant);
+        if (participant !== null && person === undefined) {
+          send(response, 404, { error: `no existe el participante ${participant}` });
+          return;
+        }
         const before = Number(url.searchParams.get('before') ?? Number.POSITIVE_INFINITY);
         const limit = 200;
-        const activity = folded.activity.filter((one) => one.sequence < before).slice(0, limit);
+        const activity = folded.activity
+          .filter((one) => one.sequence < before && (participant === null || one.participant === participant))
+          .slice(0, limit);
         const more = activity.length === limit;
         send(response, 200, {
           activity,
-          deletedPages: folded.deletedPages,
+          deletedPages: folded.deletedPages.filter(
+            (one) => participant === null || one.participant === participant,
+          ),
+          participant: person == null ? null : { id: participant!, name: person.name, kind: person.kind },
           nextBefore: more ? activity[activity.length - 1]?.sequence ?? null : null,
         });
         return;

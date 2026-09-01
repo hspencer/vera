@@ -292,6 +292,7 @@ export interface BlockState {
   sequence: number;
   at: number;
   by: string;
+  participant: string;
   channel: string;
   what: string;
   content: string | null;
@@ -507,6 +508,7 @@ export interface ActivityItem {
   kind: Change['kind'];
   subjectId: string;
   page: { id: string; title: string } | null;
+  block: string | null;
   summary: string;
   excerpt: string | null;
 }
@@ -517,6 +519,7 @@ export interface DeletedPageActivity {
   deletedAt: number;
   sequence: number;
   by: string;
+  participant: string;
   blocks: number;
   restorable: boolean;
   refusal: string | null;
@@ -526,6 +529,7 @@ export interface DeletedPageActivity {
 export interface ActivityView {
   activity: ActivityItem[];
   deletedPages: DeletedPageActivity[];
+  participant: { id: string; name: string; kind: 'human' | 'agent' } | null;
   nextBefore: number | null;
 }
 
@@ -1237,8 +1241,13 @@ export const api = {
     json<CanonicalOp[]>(`/ops?since=${since}`, { signal: AbortSignal.timeout(8_000) }),
 
   /** El log canónico plegado como registro humano, incluidas sus tumbas. */
-  activity: (before?: number) =>
-    json<ActivityView>(before === undefined ? '/activity' : `/activity?before=${before}`),
+  activity: (before?: number, participant?: string | null) => {
+    const query = new URLSearchParams();
+    if (before !== undefined) query.set('before', String(before));
+    if (participant != null && participant !== '') query.set('participant', participant);
+    const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+    return json<ActivityView>(`/activity${suffix}`);
+  },
 
   /**
    * Escritura destructiva o restauradora confirmada por el corpus.

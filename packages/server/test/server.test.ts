@@ -268,6 +268,17 @@ describe('GET /activity', () => {
     };
     assert.equal(after.activity[0]?.excerpt, 'contenido renovado para el registro');
     assert.deepEqual(after.activity[0]?.page, { id: page, title: 'Página que vuelve' });
+
+    const mine = (await get(`/activity?participant=${encodeURIComponent(OWNER)}`)) as {
+      participant: { id: string; name: string; kind: string } | null;
+      activity: { participant: string; block: string | null }[];
+      deletedPages: { participant: string }[];
+    };
+    assert.deepEqual(mine.participant, { id: OWNER, name: 'Dueña', kind: 'human' });
+    assert.ok(mine.activity.length > 0);
+    assert.ok(mine.activity.every((one) => one.participant === OWNER));
+    assert.equal(mine.activity[0]?.block, child);
+    assert.ok(mine.deletedPages.every((one) => one.participant === OWNER));
   });
 });
 

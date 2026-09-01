@@ -50,7 +50,7 @@ import { is, isTextComposing } from './bindings.ts';
 import { icon, type IconName } from './icons.ts';
 import { when } from './dates.ts';
 import { isMCPPage, renderMCP } from './mcp-page.ts';
-import { isActivityPage, renderActivityPage } from './activity-page.ts';
+import { isActivityPage, participantActivityPath, renderActivityPage } from './activity-page.ts';
 import { isServicePage, pickBibliography, renderService } from './service-page.ts';
 import { isPublicationPage, renderPageSharing, renderPublicationPage } from './publication-page.ts';
 import {
@@ -2237,7 +2237,12 @@ async function showHistory(
     line.className = state.content === said.now ? 'history-state now' : 'history-state';
     const when = document.createElement('span');
     when.className = 'history-when';
-    when.textContent = `${new Date(state.at).toISOString().slice(0, 16).replace('T', ' ')} · ${state.what} · ${state.by}`;
+    when.append(`${new Date(state.at).toISOString().slice(0, 16).replace('T', ' ')} · ${state.what} · `);
+    const author = document.createElement('a');
+    author.href = participantActivityPath(state.participant);
+    author.textContent = state.by;
+    author.title = `Ver las contribuciones de ${state.by}`;
+    when.append(author);
     line.append(when);
     if (state.content !== null) {
       const text = document.createElement('div');

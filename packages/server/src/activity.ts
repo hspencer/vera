@@ -15,6 +15,7 @@ export interface ActivityItem {
   kind: Change['kind'];
   subjectId: string;
   page: { id: string; title: string } | null;
+  block: string | null;
   summary: string;
   excerpt: string | null;
 }
@@ -25,6 +26,7 @@ export interface DeletedPageActivity {
   deletedAt: number;
   sequence: number;
   by: string;
+  participant: string;
   blocks: number;
   restorable: boolean;
   refusal: string | null;
@@ -266,6 +268,12 @@ export function activityOf(graph: VeraGraph): {
       kind: change.kind,
       subjectId: operation.subjectId,
       page: pageId === null ? null : { id: pageId, title: title ?? pageId },
+      block:
+        change.kind === 'create_block'
+          ? operation.subjectId
+          : 'block' in change && typeof change.block === 'string'
+            ? change.block
+            : null,
       summary: summaryOf(change, title),
       excerpt,
     });
@@ -319,6 +327,7 @@ export function activityOf(graph: VeraGraph): {
         deletedAt: operation.appliedAt,
         sequence: operation.sequence,
         by: graph.participant(operation.submission.submittedBy)?.name ?? operation.submission.submittedBy,
+        participant: operation.submission.submittedBy,
         blocks: removed.length,
         restorable: refusal === null && pending.size === 0,
         refusal: pending.size > 0 ? 'el árbol histórico no se pudo ordenar entero' : refusal,

@@ -11,6 +11,12 @@ export function isActivityPage(properties: readonly { key: string; value: string
 type Restore = (changes: readonly Change[]) => Promise<boolean>;
 type ActivityTab = 'changes' | 'deletions';
 
+const ACTIVITY_PAGE = 'Vera: Registro de Actividad';
+
+export function participantActivityPath(participant: string): string {
+  return `/p/${encodeURIComponent(ACTIVITY_PAGE)}?participant=${encodeURIComponent(participant)}`;
+}
+
 function moment(at: number): string {
   return new Intl.DateTimeFormat('es-CL', {
     dateStyle: 'medium',
@@ -54,12 +60,16 @@ function deletedRow(one: DeletedPageActivity, restore: Restore, refresh: () => v
   return row;
 }
 
-function linkedSummary(summary: string, page: { id: string; title: string }): HTMLElement {
+function linkedSummary(
+  summary: string,
+  page: { id: string; title: string },
+  block: string | null,
+): HTMLElement {
   const line = document.createElement('span');
   const named = `«${page.title}»`;
   const at = summary.indexOf(named);
   const link = document.createElement('a');
-  link.href = `/p/${encodeURIComponent(page.title)}`;
+  link.href = `/p/${encodeURIComponent(page.title)}${block === null ? '' : `#${encodeURIComponent(block)}`}`;
   link.textContent = named;
   link.title = `Abrir ${page.title}`;
   if (at < 0) {
@@ -72,7 +82,7 @@ function linkedSummary(summary: string, page: { id: string; title: string }): HT
 
 function activityRow(one: Awaited<ReturnType<typeof api.activity>>['activity'][number]): HTMLLIElement {
   const item = document.createElement('li');
-  if (one.page !== null) item.append(linkedSummary(one.summary, one.page));
+  if (one.page !== null) item.append(linkedSummary(one.summary, one.page, one.block));
   else item.append(one.summary);
   if (one.excerpt !== null) {
     const excerpt = document.createElement('p');
@@ -98,13 +108,24 @@ export async function renderActivityPage(
   root.append(loading);
 
   let currentTab = initialTab;
+  const participant = new URL(window.location.href).searchParams.get('participant');
   const refresh = (): void => {
     void renderActivityPage(restore, report, currentTab).then((fresh) => root.replaceWith(fresh));
   };
 
   try {
-    const view = await api.activity();
+    const view = await api.activity(undefined, participant);
     root.replaceChildren();
+
+    if (view.participant !== null) {
+      const heading = document.createElement('h2');
+      heading.className = 'activity-participant';
+      heading.textContent = `Contribuciones de ${view.participant.name}`;
+      const identity = document.createElement('small');
+      identity.textContent = `${view.participant.kind === 'agent' ? 'agente' : 'persona'} · ${view.participant.id}`;
+      heading.append(identity);
+      root.append(heading);
+    }
 
     const tabs = document.createElement('div');
     tabs.className = 'activity-tabs';
@@ -177,7 +198,7 @@ export async function renderActivityPage(
         older.disabled = true;
         older.textContent = 'leyendo…';
         try {
-          const next = await api.activity(cursor);
+          const next = await api.activity(cursor, participant);
           append(next.activity);
           if (next.nextBefore === null) older.remove();
           else {

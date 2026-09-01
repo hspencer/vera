@@ -13,9 +13,17 @@ describe('Vera: Registro de Actividad', () => {
   });
 
   it('enlaza las páginas vivas y presenta el extracto recibido del registro', () => {
-    assert.match(activity, /link\.href = `\/p\/\$\{encodeURIComponent\(page\.title\)\}`/);
+    assert.match(activity, /block === null \? '' : `#\$\{encodeURIComponent\(block\)\}`/);
     assert.match(activity, /excerpt\.className = 'activity-excerpt'/);
     assert.match(activity, /excerpt\.textContent = one\.excerpt/);
+  });
+
+  it('da a cada participante una dirección durable y filtra toda la paginación', () => {
+    assert.match(activity, /participantActivityPath\(participant: string\)/);
+    assert.match(activity, /searchParams\.get\('participant'\)/);
+    assert.match(activity, /api\.activity\(undefined, participant\)/);
+    assert.match(activity, /api\.activity\(cursor, participant\)/);
+    assert.match(activity, /Contribuciones de \$\{view\.participant\.name\}/);
   });
 
   it('reserva la restauración para las tumbas sin fabricarles enlace', () => {
