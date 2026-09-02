@@ -119,11 +119,29 @@ export function renderGraphD4(
     .attr('viewBox', `0 0 ${width} ${height}`)
     .attr('role', 'img')
     .attr('aria-label', 'D4: mapa dendrítico por grados');
-  // Safari/iOS no repinta de manera fiable el HTML de un foreignObject cuando
-  // éste hereda una transformación desde un <g>. La geometría puede vivir en
-  // un mundo común; cada tarjeta recibe la misma matriz directamente.
+  // Safari/iOS no compone de manera fiable un transform SVG aplicado a un
+  // foreignObject. La geometría conserva la matriz SVG; las tarjetas mueven su
+  // viewport con coordenadas y escalan el HTML interior mediante CSS.
   const world = svg.append('g').attr('class', 'd4-geometry');
   let viewport = d3.zoomIdentity;
+  const viewportCards: Array<{
+    foreign: d3.Selection<SVGForeignObjectElement, unknown, null, undefined>;
+    card: d3.Selection<HTMLElement, unknown, null, undefined>;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  }> = [];
+  const positionViewportCards = (): void => {
+    for (const entry of viewportCards) {
+      entry.foreign
+        .attr('x', viewport.applyX(entry.x))
+        .attr('y', viewport.applyY(entry.y))
+        .attr('width', entry.w * viewport.k)
+        .attr('height', entry.h * viewport.k);
+      entry.card.style('transform', `scale(${viewport.k})`);
+    }
+  };
   const touchStarts = new Map<number, { x: number; y: number }>();
   const movedSince = (event: PointerEvent): boolean => {
     const start = touchStarts.get(event.pointerId);
@@ -139,8 +157,7 @@ export function renderGraphD4(
     .on('zoom', (event) => {
       viewport = event.transform;
       world.attr('transform', viewport.toString());
-      svg.selectAll<SVGForeignObjectElement, unknown>('.d4-card')
-        .attr('transform', viewport.toString());
+      positionViewportCards();
     }));
 
   const foldedLines: HTMLElement[] = [];
@@ -224,18 +241,28 @@ export function renderGraphD4(
     const foreign = svg.append('foreignObject')
       .attr('class', 'd4-card')
       .attr('x', pos.x - dim.w / 2).attr('y', pos.y - dim.h / 2)
-      .attr('width', dim.w).attr('height', dim.h)
-      .attr('transform', viewport.toString());
+      .attr('width', dim.w).attr('height', dim.h);
     foreign.style('overflow', 'visible');
-    const card = foreign.append('xhtml:article')
+    const card = foreign.append<HTMLElement>('xhtml:article')
       .attr('class', `d4-page${node.central ? ' focus' : ''}`)
+      .style('width', `${dim.w}px`)
+      .style('transform-origin', '0 0')
       .style('font-family', options.fontFamily ?? 'system-ui, sans-serif');
+    viewportCards.push({
+      foreign,
+      card,
+      x: pos.x - dim.w / 2,
+      y: pos.y - dim.h / 2,
+      w: dim.w,
+      h: dim.h,
+    });
+    positionViewportCards();
     const focusNow = (): void => {
       // La navegación trae después el nuevo vecindario, pero el gesto no debe
       // esperar dos lecturas de red para acusar recibo. Marcamos el nuevo foco
       // sobre el mapa que ya está en la mano; drawGraph lo sustituirá por el
       // vecindario canónico cuando llegue.
-      world.selectAll<HTMLElement, unknown>('.d4-page').classed('focus', false);
+      svg.selectAll<HTMLElement, unknown>('.d4-page').classed('focus', false);
       card.classed('focus', true);
     };
     card.append('h2')

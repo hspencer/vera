@@ -17,11 +17,15 @@ describe('interacción de D4', () => {
     assert.doesNotMatch(styles, /@keyframes\s+d4-arrive/);
   });
 
-  it('da a geometría y tarjetas la misma transformación, directamente en iOS', () => {
+  it('sincroniza geometría y tarjetas sin transformar foreignObject en iOS', () => {
     assert.match(renderer, /world\.attr\('transform', viewport\.toString\(\)\)/);
-    assert.match(renderer, /selectAll<SVGForeignObjectElement, unknown>\('\.d4-card'\)[\s\S]*?\.attr\('transform', viewport\.toString\(\)\)/);
+    assert.match(renderer, /viewport\.applyX\(entry\.x\)/);
+    assert.match(renderer, /viewport\.applyY\(entry\.y\)/);
+    assert.match(renderer, /entry\.w \* viewport\.k/);
+    assert.match(renderer, /style\('transform', `scale\(\$\{viewport\.k\}\)`\)/);
     assert.match(renderer, /svg\.append\('foreignObject'\)[\s\S]*?\.attr\('class', 'd4-card'\)/);
     assert.doesNotMatch(renderer, /world\.append\('foreignObject'\)/);
+    assert.doesNotMatch(renderer, /\.attr\('transform', viewport\.toString\(\)\)[\s;]*\n\s*foreign/);
   });
 
   it('elige el hover por la franja colapsada e ignora la proyección desplegada', () => {
