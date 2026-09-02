@@ -95,7 +95,7 @@ explícitas. El entorno conserva únicamente el último kilómetro:
 VERA_PUBLIC_PREVIEW_PORT=4174
 VERA_PUBLIC_PREVIEW_URL=https://vera-preview.tu-tailnet.ts.net
 # Opcional: adaptador de exportación estática, no la interfaz canónica.
-VERA_PUBLIC_OUTPUT=/home/hspencer/Sites/vera-public-export
+VERA_PUBLIC_OUTPUT=/home/hspencer/Sites/vera/dist/public-preview
 ```
 
 `VERA_PUBLIC_DOMAIN` y `VERA_PUBLIC_TITLE` siguen aceptándose únicamente como
@@ -104,7 +104,7 @@ valores de arranque para instalaciones que todavía no hayan creado su sitio.
 También se puede reconstruir a mano desde los hechos ya guardados:
 
 ```sh
-npm run project:public -- data/vera.sqlite ../vera-public-preview https://vera.mediafranca.net
+npm run project:public -- data/vera.sqlite dist/public-preview https://vera.mediafranca.net
 ```
 
 La salida estática sigue existiendo como adaptador portable para alojamientos
