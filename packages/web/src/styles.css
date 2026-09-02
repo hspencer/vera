@@ -7537,6 +7537,22 @@ html[data-working-slow='true']::after {
   border-left-color: var(--voice);
 }
 
+.page-kept-recover {
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.page-kept-recover:hover,
+.page-kept-recover:focus-visible {
+  border-bottom-width: 2px;
+}
+
 /* La escritura ya está: esto califica solamente lo que Vera sigue derivando. */
 .page-enrichment {
   font-family: var(--font-ui);

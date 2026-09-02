@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { PageView } from '../src/api.ts';
 import { sameReadablePage } from '../src/page-validation.ts';
+import { readFileSync } from 'node:fs';
+
+const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 
 const page = (content: string, lastEditedAt = 10): PageView => ({
   id: 'page:hypomnemata',
@@ -34,5 +37,11 @@ describe('retained page validation', () => {
 
   it('detects a changed canonical revision even when prose looks equal', () => {
     assert.equal(sameReadablePage(page('cuaderno'), page('cuaderno', 11)), false);
+  });
+
+  it('conserva una copia incompleta hasta recuperar la canónica y permite reintentar', () => {
+    assert.doesNotMatch(main, /summary\.blockCount !== kept\.blocks\.length[\s\S]{0,120}forgetPage/);
+    assert.match(main, /Recuperar desde el corpus/);
+    assert.match(main, /readablePage\(page\.id\)\.then\(acceptCanonical\)/);
   });
 });

@@ -705,6 +705,7 @@ function markShowing(
   text: HTMLElement,
   kept: boolean,
   validation: 'checking' | 'current' | 'divergent' | 'unreachable' = 'checking',
+  recover?: () => void,
 ): void {
   text.querySelector('.page-kept')?.remove();
   if (!kept) return;
@@ -714,6 +715,14 @@ function markShowing(
   if (offline || validation === 'unreachable') {
     said.textContent = 'copia de este aparato · no se pudo verificar con el corpus';
     said.title = 'Se puede seguir leyendo. Antes de escribir, conviene recuperar la conexión para comprobar que esta copia sigue vigente.';
+    if (recover !== undefined) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'page-kept-recover';
+      button.textContent = 'Recuperar desde el corpus';
+      button.addEventListener('click', recover);
+      said.append(' · ', button);
+    }
   } else if (validation === 'divergent') {
     said.textContent = 'atención · esta copia difiere del corpus';
     said.title = 'Vera conservó lo que está en el editor y no lo sustituyó. Hay otra versión canónica que debe reconciliarse.';
@@ -837,19 +846,13 @@ async function openPage(
    */
   let kept = options.delivered !== undefined || here || isAnybody() ? null : await held.page(id);
   /*
-   * Una copia anterior al arreglo puede haber sobrevivido con el cursor ya
-   * avanzado. El índice trae el número canónico de bloques y permite reconocer
-   * esa mentira sin descargar la página completa. Se suelta una vez y la ruta
-   * normal trae el documento vigente.
+   * Incluso una copia incompleta se conserva hasta que la canónica haya llegado.
+   * Antes se soltaba apenas el índice anunciaba otra cantidad de bloques. Si la
+   * lectura del corpus fallaba después, Vera había destruido su única vía de
+   * degradación y dejaba una página vacía. La discrepancia sirve para exigir la
+   * validación, nunca para borrar antes de recuperar.
    */
   const retained = kept;
-  const summary = retained === null
-    ? undefined
-    : pages.find((one) => one.id === retained.id || one.title.toLowerCase() === retained.title.toLowerCase());
-  if (kept !== null && summary !== undefined && summary.blockCount !== kept.blocks.length) {
-    await held.forgetPage(kept.id);
-    kept = null;
-  }
   if (kept !== null) {
     if (slow !== null) clearTimeout(slow);
     fromKept = true;
@@ -1032,7 +1035,7 @@ async function openPage(
    * forma. Ver ConfirmRetainedPageIsCurrent y las dos reglas de divergencia.
    */
   if (validation !== null) {
-    void validation.then((canonical) => {
+    const acceptCanonical = (canonical: PageView): void => {
       if (opening !== thisOpening || workspace.activePage !== canonical.id || openView === null) return;
       if (sameReadablePage(retained as PageView, canonical)) {
         showingKept = false;
@@ -1068,9 +1071,18 @@ async function openPage(
         replaceRoute: true,
         delivered: canonical,
       }).then(() => notice('La copia local estaba desactualizada; Vera trajo la versión canónica.'));
-    }).catch(() => {
+    };
+    const retryValidation = (): void => {
       if (opening !== thisOpening || workspace.activePage !== page.id) return;
-      markShowing(text, true, 'unreachable');
+      markShowing(text, true, 'checking');
+      void api.readablePage(page.id).then(acceptCanonical).catch(() => {
+        if (opening !== thisOpening || workspace.activePage !== page.id) return;
+        markShowing(text, true, 'unreachable', retryValidation);
+      });
+    };
+    void validation.then(acceptCanonical).catch(() => {
+      if (opening !== thisOpening || workspace.activePage !== page.id) return;
+      markShowing(text, true, 'unreachable', retryValidation);
     });
   }
   if (needsEnrichment) {
