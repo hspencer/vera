@@ -119,7 +119,11 @@ export function renderGraphD4(
     .attr('viewBox', `0 0 ${width} ${height}`)
     .attr('role', 'img')
     .attr('aria-label', 'D4: mapa dendrítico por grados');
-  const world = svg.append('g');
+  // Safari/iOS no repinta de manera fiable el HTML de un foreignObject cuando
+  // éste hereda una transformación desde un <g>. La geometría puede vivir en
+  // un mundo común; cada tarjeta recibe la misma matriz directamente.
+  const world = svg.append('g').attr('class', 'd4-geometry');
+  let viewport = d3.zoomIdentity;
   const touchStarts = new Map<number, { x: number; y: number }>();
   const movedSince = (event: PointerEvent): boolean => {
     const start = touchStarts.get(event.pointerId);
@@ -133,8 +137,47 @@ export function renderGraphD4(
     // espacial y no deja que navegue al elemento que quedó bajo el dedo.
     .clickDistance(8)
     .on('zoom', (event) => {
-    world.attr('transform', event.transform.toString());
+      viewport = event.transform;
+      world.attr('transform', viewport.toString());
+      svg.selectAll<SVGForeignObjectElement, unknown>('.d4-card')
+        .attr('transform', viewport.toString());
     }));
+
+  const foldedLines: HTMLElement[] = [];
+  const raiseReadingCards = (last?: SVGForeignObjectElement | null): void => {
+    const reading = new Set<SVGForeignObjectElement>();
+    for (const line of foldedLines) {
+      if (!line.classList.contains('hovered') && !line.classList.contains('expanded') &&
+          !line.matches(':focus-within')) continue;
+      const foreign = line.closest('.d4-card') as SVGForeignObjectElement | null;
+      if (foreign !== null && foreign !== last) reading.add(foreign);
+    }
+    // Primero toda página que esté proyectando texto; al final, la activa. Así
+    // ninguna página corriente puede pintar encima de un bloque desplegado.
+    for (const foreign of reading) d3.select(foreign).raise();
+    if (last !== undefined && last !== null) d3.select(last).raise();
+  };
+  const clearHoveredLine = (): void => {
+    for (const line of foldedLines) line.classList.remove('hovered');
+    raiseReadingCards();
+  };
+  // La caja desplegada es sólo una proyección para leer. El bloque señalado se
+  // decide siempre contra las franjas de 11 px que constituyen el mapa, de modo
+  // que leer de arriba abajo no queda detenido por la proyección anterior.
+  svg.on('pointermove.d4-reading', (event: PointerEvent) => {
+    if (event.pointerType !== 'mouse') return;
+    let pointed: HTMLElement | undefined;
+    for (const line of foldedLines) {
+      const box = line.getBoundingClientRect();
+      if (event.clientX >= box.left && event.clientX <= box.right &&
+          event.clientY >= box.top && event.clientY <= box.bottom) pointed = line;
+    }
+    clearHoveredLine();
+    if (pointed === undefined) return;
+    pointed.classList.add('hovered');
+    const foreign = pointed.closest('.d4-card') as SVGForeignObjectElement | null;
+    raiseReadingCards(foreign);
+  }).on('pointerleave.d4-reading', clearHoveredLine);
 
   const lineY = (node: GraphNode, link: GraphLink): number => {
     const pos = held.get(node.id)!;
@@ -178,9 +221,11 @@ export function renderGraphD4(
   for (const node of data.nodes) {
     const pos = held.get(node.id)!;
     const dim = dims.get(node.id)!;
-    const foreign = world.append('foreignObject')
+    const foreign = svg.append('foreignObject')
+      .attr('class', 'd4-card')
       .attr('x', pos.x - dim.w / 2).attr('y', pos.y - dim.h / 2)
-      .attr('width', dim.w).attr('height', dim.h);
+      .attr('width', dim.w).attr('height', dim.h)
+      .attr('transform', viewport.toString());
     foreign.style('overflow', 'visible');
     const card = foreign.append('xhtml:article')
       .attr('class', `d4-page${node.central ? ' focus' : ''}`)
@@ -217,6 +262,8 @@ export function renderGraphD4(
         .attr('data-block', line.block)
         .attr('tabindex', 0)
         .attr('aria-label', `Ampliar: ${line.text}`);
+      foldedLines.push(leaf.node()!);
+      leaf.on('focusin', () => raiseReadingCards(foreign.node()));
       const content = leaf.append('div')
         .attr('class', 'd4-line-content')
         .html(renderMarkdown(line.text));
@@ -260,11 +307,13 @@ export function renderGraphD4(
         const element = event.currentTarget as HTMLElement;
         const open = element.classList.toggle('expanded');
         if (open) {
-          for (const sibling of element.parentElement?.querySelectorAll('.d4-line.expanded') ?? []) {
+          for (const sibling of foldedLines) {
             if (sibling !== element) sibling.classList.remove('expanded');
           }
+          raiseReadingCards(foreign.node());
         } else {
           element.blur();
+          raiseReadingCards();
         }
       });
       leaf.on('pointercancel', (event: PointerEvent) => {

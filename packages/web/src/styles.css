@@ -1183,7 +1183,7 @@ button { touch-action: manipulation; }
 .d4-line-content img,
 .d4-line-content video,
 .d4-line-content svg { max-width: 100%; height: auto; }
-.d4-line:hover,
+.d4-line.hovered,
 .d4-line:focus,
 .d4-line:focus-within,
 .d4-line.expanded {
@@ -1195,14 +1195,14 @@ button { touch-action: manipulation; }
   border-bottom-color: transparent;
   cursor: grab;
 }
-.d4-line:hover .d4-line-content,
+.d4-line.hovered .d4-line-content,
 .d4-line:focus .d4-line-content,
 .d4-line:focus-within .d4-line-content,
 .d4-line.expanded .d4-line-content {
   display: block;
   animation: d4-genie-open 180ms cubic-bezier(.2,.8,.2,1) both;
 }
-.d4-line:hover::before,
+.d4-line.hovered::before,
 .d4-line:focus::before,
 .d4-line:focus-within::before,
 .d4-line.expanded::before {
@@ -1213,6 +1213,12 @@ button { touch-action: manipulation; }
   background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 .d4-line.gloss .d4-line-content { color: var(--text-dim); }
+/* En escritorio la proyección no participa del hit-testing: el puntero lee las
+   franjas colapsadas que siguen debajo. En touch conserva eventos para poder
+   desplazar internamente textos largos. */
+@media (hover: hover) and (pointer: fine) {
+  .d4-line-content { pointer-events: none; }
+}
 .d4-hidden-count {
   display: block;
   width: 100%;
