@@ -51,6 +51,9 @@ Antes de escribir en una instancia propia, sigue la guía de
 las operaciones del grafo. Para desarrollar también hacen falta el validador de
 Allium y los pasos de [CONTRIBUTING.md](CONTRIBUTING.md).
 
+El primer prototipo de instalador Windows, edición portable y memoria inicial
+se describe en [Instalación de Vera en Windows](docs/instalacion-windows.md).
+
 ```sh
 npm run spec
 npm run typecheck

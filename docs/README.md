@@ -26,6 +26,7 @@ desplegar y contribuir al programa.
 - [Anatomía de la interfaz](interfaz.md)
 - [Conectar una IA](conectar-una-ia.md)
 - [Portabilidad](portabilidad.md)
+- [Instalación en Windows](instalacion-windows.md)
 - [Exponer Vera](exponer-vera.md)
 - [Cobertura y obligaciones de prueba](test-obligations.md)
 - [Benchmark de diseño](benchmark.md)

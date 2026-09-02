@@ -44,7 +44,8 @@ function escapeHtml(text: string): string {
 export const publicPathFor = suggestedPathFor;
 
 /** Únicos dos artefactos que necesita un sketch; ambos viajan con Vera. */
-export const p5RuntimePath = fileURLToPath(new URL('../lib/p5.min.js', import.meta.resolve('p5')));
+export const p5RuntimePath = process.env['VERA_P5_RUNTIME'] ??
+  fileURLToPath(new URL('../lib/p5.min.js', import.meta.resolve('p5')));
 export const p5FrameDocument = `<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

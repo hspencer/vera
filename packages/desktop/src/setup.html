@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Habitar Vera</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f1efe9; color: #24231f; }
+    main { width: min(34rem, calc(100vw - 3rem)); }
+    h1 { font: 400 3rem/1.05 Georgia, serif; margin: 0 0 1rem; }
+    p { line-height: 1.55; }
+    label { display: block; font-weight: 650; margin-top: 2rem; }
+    input { box-sizing: border-box; width: 100%; margin: .5rem 0 1rem; padding: .8rem; font: inherit; border: 1px solid #858177; border-radius: .35rem; background: #fff; color: #24231f; }
+    button { padding: .8rem 1.1rem; font: inherit; font-weight: 650; border: 0; border-radius: .35rem; background: #24231f; color: #fff; cursor: pointer; }
+    button[disabled] { opacity: .55; cursor: wait; }
+    #error { min-height: 1.5rem; color: #a1261f; }
+    small { display: block; margin-top: 2rem; line-height: 1.45; color: #615e56; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #20201d; color: #efede7; }
+      input { background: #292925; color: #efede7; border-color: #77736a; }
+      button { background: #efede7; color: #20201d; }
+      small { color: #aaa69d; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Esta memoria necesita una persona.</h1>
+    <p>Vera conservará este nombre como la persona propietaria y autora humana de la memoria. Los agentes que conectes tendrán identidades distintas.</p>
+    <form id="setup">
+      <label for="name">¿Cómo quieres aparecer?</label>
+      <input id="name" name="name" autocomplete="name" required minlength="2" autofocus>
+      <button id="submit" type="submit">Crear mi memoria</button>
+      <p id="error" role="alert"></p>
+    </form>
+    <small>El programa y la memoria se guardan por separado. Actualizar o desinstalar Vera no debe borrar tu corpus.</small>
+  </main>
+  <script>
+    const form = document.querySelector('#setup');
+    const name = document.querySelector('#name');
+    const submit = document.querySelector('#submit');
+    const error = document.querySelector('#error');
+    window.veraSetup.systemName().then((value) => { if (!name.value) name.placeholder = value; });
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      error.textContent = '';
+      submit.disabled = true;
+      try { await window.veraSetup.initialize(name.value); }
+      catch (cause) {
+        error.textContent = cause && cause.message ? cause.message : 'No fue posible crear la memoria.';
+        submit.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

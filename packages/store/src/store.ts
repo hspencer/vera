@@ -26,7 +26,7 @@ import type {
 
 import { isFreshDatabase, migrate } from './migrations.ts';
 
-const SCHEMA = join(dirname(fileURLToPath(import.meta.url)), '../../../schema/schema.sql');
+const DEFAULT_SCHEMA = join(dirname(fileURLToPath(import.meta.url)), '../../../schema/schema.sql');
 
 export interface Store {
   readonly db: DatabaseSync;
@@ -77,7 +77,7 @@ export function openStore(options: OpenOptions): Store {
   // Antes de aplicar el esquema, porque después una base nueva y una vieja sin
   // migrar son indistinguibles. Ver isFreshDatabase().
   const fresh = isFreshDatabase(db);
-  db.exec(readFileSync(SCHEMA, 'utf8'));
+  db.exec(readFileSync(process.env['VERA_SCHEMA'] ?? DEFAULT_SCHEMA, 'utf8'));
   addMissingColumns(db);
   migrate(db, fresh);
   db.exec('CREATE INDEX IF NOT EXISTS blocks_by_crossing ON blocks (crossing_id, parent_id, position)');

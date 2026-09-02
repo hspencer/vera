@@ -1,5 +1,7 @@
 node_modules/
 packages/web/dist/
+dist/
+release/
 *.tsbuildinfo
 
 # La base canónica y sus archivos WAL nunca se versionan: git recibe la
