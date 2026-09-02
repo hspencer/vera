@@ -21,6 +21,7 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm run build
       # Algunas suites levantan servidores y sesiones con identidades fijas;
       # en CI deben ejecutarse por archivo para no compartir estado efímero.
       - run: npm test -- --test-concurrency=1
