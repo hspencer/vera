@@ -42,6 +42,7 @@ describe('retained page validation', () => {
   it('conserva una copia incompleta hasta recuperar la canónica y permite reintentar', () => {
     assert.doesNotMatch(main, /summary\.blockCount !== kept\.blocks\.length[\s\S]{0,120}forgetPage/);
     assert.match(main, /Recuperar desde el corpus/);
-    assert.match(main, /readablePage\(page\.id\)\.then\(acceptCanonical\)/);
+    assert.match(main, /readablePage\(page\.id\)\.then\(\(canonical\) => acceptCanonical\(canonical, true\)\)/);
+    assert.match(main, /event\.stopPropagation\(\)/);
   });
 });

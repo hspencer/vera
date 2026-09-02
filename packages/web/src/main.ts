@@ -720,7 +720,15 @@ function markShowing(
       button.type = 'button';
       button.className = 'page-kept-recover';
       button.textContent = 'Recuperar desde el corpus';
-      button.addEventListener('click', recover);
+      button.addEventListener('click', (event) => {
+        // La cabecera y el outliner tienen gestos propios. Recuperar pertenece a
+        // este control y no debe convertirse además en edición o navegación.
+        event.preventDefault();
+        event.stopPropagation();
+        button.disabled = true;
+        button.textContent = 'Recuperando…';
+        recover();
+      });
       said.append(' · ', button);
     }
   } else if (validation === 'divergent') {
@@ -1035,9 +1043,9 @@ async function openPage(
    * forma. Ver ConfirmRetainedPageIsCurrent y las dos reglas de divergencia.
    */
   if (validation !== null) {
-    const acceptCanonical = (canonical: PageView): void => {
+    const acceptCanonical = (canonical: PageView, force = false): void => {
       if (opening !== thisOpening || workspace.activePage !== canonical.id || openView === null) return;
-      if (sameReadablePage(retained as PageView, canonical)) {
+      if (!force && sameReadablePage(retained as PageView, canonical)) {
         showingKept = false;
         markShowing(text, true, 'current');
         return;
@@ -1075,9 +1083,13 @@ async function openPage(
     const retryValidation = (): void => {
       if (opening !== thisOpening || workspace.activePage !== page.id) return;
       markShowing(text, true, 'checking');
-      void api.readablePage(page.id).then(acceptCanonical).catch(() => {
+      // Un gesto explícito de recuperación siempre recompone la página desde la
+      // respuesta canónica. Comparar y limitarse a cambiar el rótulo podía dejar
+      // en pantalla una composición local rota aunque sus datos comparasen igual.
+      void api.readablePage(page.id).then((canonical) => acceptCanonical(canonical, true)).catch((error) => {
         if (opening !== thisOpening || workspace.activePage !== page.id) return;
         markShowing(text, true, 'unreachable', retryValidation);
+        notice(`No se pudo recuperar desde el corpus: ${error instanceof Error ? error.message : 'error'}.`);
       });
     };
     void validation.then(acceptCanonical).catch(() => {
