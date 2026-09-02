@@ -18,7 +18,8 @@ describe('interacción de D4', () => {
   });
 
   it('sincroniza geometría y tarjetas sin transformar foreignObject en iOS', () => {
-    assert.match(renderer, /world\.attr\('transform', viewport\.toString\(\)\)/);
+    assert.match(renderer, /world\.selectAll<SVGGraphicsElement, unknown>\('\.d4-branch, \.d4-relation-label'\)[\s\S]*?\.attr\('transform', viewport\.toString\(\)\)/);
+    assert.doesNotMatch(renderer, /world\.attr\('transform'/);
     assert.match(renderer, /viewport\.applyX\(entry\.x\)/);
     assert.match(renderer, /viewport\.applyY\(entry\.y\)/);
     assert.match(renderer, /entry\.w \* viewport\.k/);

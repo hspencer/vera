@@ -142,6 +142,12 @@ export function renderGraphD4(
       entry.card.style('transform', `scale(${viewport.k})`);
     }
   };
+  const positionViewportGeometry = (): void => {
+    // No confiar tampoco en el repintado de un transform heredado por el <g>:
+    // Safari móvil puede conservar sus hijos en la posición anterior.
+    world.selectAll<SVGGraphicsElement, unknown>('.d4-branch, .d4-relation-label')
+      .attr('transform', viewport.toString());
+  };
   const touchStarts = new Map<number, { x: number; y: number }>();
   const movedSince = (event: PointerEvent): boolean => {
     const start = touchStarts.get(event.pointerId);
@@ -156,7 +162,7 @@ export function renderGraphD4(
     .clickDistance(8)
     .on('zoom', (event) => {
       viewport = event.transform;
-      world.attr('transform', viewport.toString());
+      positionViewportGeometry();
       positionViewportCards();
     }));
 
