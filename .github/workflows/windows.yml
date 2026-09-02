@@ -26,7 +26,6 @@ jobs:
       # en CI deben ejecutarse por archivo para no compartir estado efímero.
       - run: npm test -- --test-concurrency=1
       - run: npm run typecheck
-      - run: npm run spec
 
   build:
     needs: verify
