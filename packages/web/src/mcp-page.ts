@@ -133,6 +133,25 @@ export function remoteLaunch(connect: MCPConnect, client: string): string {
   return JSON.stringify({ mcpServers: { vera: { command: '/usr/bin/ssh', args } } }, null, 2);
 }
 
+/** Configuración JSON para un cliente MCP que entra por HTTPS. */
+export function publicLaunch(url: string, client: string, token: string): string {
+  return JSON.stringify(
+    {
+      mcpServers: {
+        vera: {
+          url,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Vera-Client': client,
+          },
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
+
 /**
  * Los datos con que se enchufa una IA, listos para pegar en su formulario.
  *
@@ -418,14 +437,11 @@ function connectPanel(
   const http = document.createElement('p');
   http.className = 'governing-note';
   http.textContent = connect.publicMcp === null
-    ? 'Este despliegue no ha publicado una puerta Streamable HTTP.'
-    : `Puerta pública para Codex, Claude Code y clientes MCP configurables: ${connect.publicMcp}. ` +
-      'Se alcanza desde cualquier red y exige una credencial bearer válida antes de iniciar ' +
-      'el protocolo. Para Codex: `codex mcp add vera --url URL ' +
-      '--bearer-token-env-var VERA_CODEX_TOKEN`. Para Claude Code se declara un servidor HTTP ' +
-      'con `Authorization: Bearer ${VERA_CLAUDE_TOKEN}`. Los clientes que viven junto a Vera ' +
-      'conservan stdio: la URL pública compra alcance, no menor latencia. ChatGPT web no lee la ' +
-      'configuración local; los servicios alojados que exijan OAuth siguen siendo M6.';
+    ? 'Esta Vera todavía no tiene una puerta HTTPS pública.'
+    : `La puerta HTTPS de este despliegue es ${connect.publicMcp}. Al crear una conexión abajo, ` +
+      'Vera genera el JSON completo con esa dirección, la identidad del cliente y su credencial. ' +
+      'Cuando Vera Conecta reemplace la dirección directa, este mismo generador entregará la nueva ' +
+      'URL: no habrá una segunda receta que actualizar.';
   host.append(http);
 
   settleWhere();
@@ -587,10 +603,9 @@ export async function renderMCP(
  * deja a alguien a medias sin manera de saber por dónde iba. El servidor los
  * hace juntos; esto pregunta lo único que hay que decidir.
  *
- * Y lo que devuelve es lo que se pega: el secreto una sola vez, dentro del
- * bloque de variables de entorno que el panel de arriba ya sabe dictar. Hasta
- * ahora ese panel daba el comando sin credencial, así que lo que se conectara
- * entraba como el dueño — el agujero que esta misma página denuncia al final.
+ * Y lo que devuelve es lo que se pega: la configuración HTTPS completa, con el
+ * secreto visible una sola vez. La URL viene del despliegue y no de una receta
+ * duplicada, de modo que Vera Conecta podrá sustituirla en un solo lugar.
  */
 function connectForm(
   host: HTMLElement,
@@ -721,18 +736,21 @@ function connectForm(
         warn.textContent =
           `«${made.label}» conectada, y escribe como ${made.participant}. Copia esto ahora: ` +
           'el secreto no se puede volver a leer.';
-        const value = document.createElement('code');
-        value.className = 'connect-value';
-        value.textContent =
-          `VERA_URL=${connect?.url ?? 'http://127.0.0.1:4173'}\n` +
-          `VERA_CLIENT=${made.client}\n` +
-          `VERA_TOKEN=${made.secret}`;
+        const value = document.createElement('pre');
+        value.className = 'connect-json';
+        const code = document.createElement('code');
+        code.textContent = connect?.publicMcp === null || connect?.publicMcp === undefined
+          ? `VERA_URL=${connect?.url ?? 'http://127.0.0.1:4173'}\n` +
+            `VERA_CLIENT=${made.client}\n` +
+            `VERA_TOKEN=${made.secret}`
+          : publicLaunch(connect.publicMcp, made.client, made.secret);
+        value.append(code);
         const copy = document.createElement('button');
         copy.type = 'button';
         copy.className = 'connect-copy';
         copy.textContent = 'copiar';
         copy.addEventListener('click', () => {
-          void navigator.clipboard?.writeText(value.textContent ?? '').then(() => {
+          void navigator.clipboard?.writeText(code.textContent ?? '').then(() => {
             copy.textContent = 'copiado';
           });
         });

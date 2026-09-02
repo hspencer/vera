@@ -7,7 +7,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { remoteLaunch } from '../src/mcp-page.ts';
+import { publicLaunch, remoteLaunch } from '../src/mcp-page.ts';
 import type { MCPConnect } from '../src/api.ts';
 
 const connect = (overrides: Partial<MCPConnect> = {}): MCPConnect => ({
@@ -92,5 +92,17 @@ describe('la configuración para otro equipo', () => {
     // queda colgado y el cliente informa de un servidor que no arrancó.
     const args = JSON.parse(remoteLaunch(connect(), 'x')).mcpServers.vera.args;
     assert.ok(args.includes('BatchMode=yes'));
+  });
+});
+
+describe('la configuración HTTPS pública', () => {
+  it('entrega un JSON MCP completo y autenticado para Hermes', () => {
+    const said = JSON.parse(
+      publicLaunch('https://vera.mediafranca.net/mcp', 'hermes-andrei', 'secreto'),
+    );
+    assert.equal(said.mcpServers.vera.url, 'https://vera.mediafranca.net/mcp');
+    assert.equal(said.mcpServers.vera.headers.Authorization, 'Bearer secreto');
+    assert.equal(said.mcpServers.vera.headers['X-Vera-Client'], 'hermes-andrei');
+    assert.equal(said.mcpServers.vera.command, undefined);
   });
 });
