@@ -49,6 +49,15 @@ describe('interacción de D4', () => {
     assert.match(renderer, /openRelations\.add\(link\.crossing!\)/);
   });
 
+  it('separa páginas y puertos según la geometría interactiva, no la altura del viewport', () => {
+    assert.match(renderer, /const branchHitWidth = 44/);
+    assert.match(renderer, /const nodeGap = branchHitWidth \+ 12/);
+    assert.match(renderer, /y \+= dim\.h \+ nodeGap/);
+    assert.match(renderer, /const targetY = \(node: GraphNode, link: GraphLink\): number =>/);
+    assert.match(renderer, /const y2 = targetY\(target, link\)/);
+    assert.doesNotMatch(renderer, /const y2 = b\.y/);
+  });
+
   it('proyecta el árbol canónico de bloques sin aplanarlo en una etiqueta', () => {
     assert.match(renderer, /const byParent = new Map<string \| null, typeof blocks>/);
     assert.match(renderer, /drawBlocks\(block\.stableId, depth \+ 1\)/);

@@ -54,6 +54,8 @@ function projectedSentences(
 }
 
 const foldedLineHeight = 11;
+const branchHitWidth = 44;
+const nodeGap = branchHitWidth + 12;
 
 function sides(data: GraphData, focus: string): Map<string, Side> {
   const side = new Map<string, Side>([[focus, 0]]);
@@ -112,12 +114,16 @@ export function renderGraphD4(
   }
   for (const [column, nodes] of columns) {
     nodes.sort((a, b) => (held.get(a.id)?.y ?? 0) - (held.get(b.id)?.y ?? 0) || a.name.localeCompare(b.name));
-    const total = nodes.reduce((sum, node) => sum + dims.get(node.id)!.h, 0) + Math.max(0, nodes.length - 1) * 34;
+    // El blanco táctil del cable mide 44 px. Dejar menos aire entre páginas
+    // produce zonas interactivas superpuestas aunque los trazos aún parezcan
+    // distintos; el layout debe responder a la interacción, no a una altura
+    // incidental del viewport.
+    const total = nodes.reduce((sum, node) => sum + dims.get(node.id)!.h, 0) + Math.max(0, nodes.length - 1) * nodeGap;
     let y = Math.max(30, (height - total) / 2);
     for (const node of nodes) {
       const dim = dims.get(node.id)!;
       held.set(node.id, { x: centreX + column * columnGap, y: y + dim.h / 2 });
-      y += dim.h + 34;
+      y += dim.h + nodeGap;
     }
   }
 
@@ -220,6 +226,29 @@ export function renderGraphD4(
     if (index < 0) index = Math.max(0, lines.findIndex((line) => line.block === link.block));
     return pos.y - dim.h / 2 + 48 + index * foldedLineHeight + foldedLineHeight / 2;
   };
+  const incoming = new Map<string, GraphLink[]>();
+  for (const link of data.links) {
+    const target = endpoint(link.target);
+    const links = incoming.get(target) ?? [];
+    links.push(link);
+    incoming.set(target, links);
+  }
+  // Varias ramas ya no desembocan en el mismo píxel. Los puertos se reparten
+  // en una franja estable de la tarjeta de destino y conservan su orden por la
+  // altura de las fuentes, de modo que el abanico reduce cruces al hacer zoom.
+  const targetY = (node: GraphNode, link: GraphLink): number => {
+    const links = incoming.get(node.id) ?? [link];
+    links.sort((a, b) => {
+      const ay = held.get(endpoint(a.source))?.y ?? 0;
+      const by = held.get(endpoint(b.source))?.y ?? 0;
+      return ay - by || endpoint(a.source).localeCompare(endpoint(b.source));
+    });
+    const index = Math.max(0, links.indexOf(link));
+    const pos = held.get(node.id)!;
+    const dim = dims.get(node.id)!;
+    const span = Math.max(0, Math.min(dim.h - 24, (links.length - 1) * 18));
+    return links.length < 2 ? pos.y : pos.y - span / 2 + span * index / (links.length - 1);
+  };
   const relationCards: Array<{
     link: GraphLink;
     source: GraphNode;
@@ -238,7 +267,7 @@ export function renderGraphD4(
     const x1 = a.x + (forward ? ad.w / 2 : -ad.w / 2);
     const x2 = b.x + (forward ? -bd.w / 2 : bd.w / 2);
     const y1 = lineY(source, link);
-    const y2 = b.y;
+    const y2 = targetY(target, link);
     const tension = Math.max(90, Math.abs(x2 - x1) * 0.46);
     const route = `M${x1},${y1} C${x1 + (forward ? tension : -tension)},${y1} ${x2 - (forward ? tension : -tension)},${y2} ${x2},${y2}`;
     const path = world.append('path')
