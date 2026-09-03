@@ -143,3 +143,36 @@ vivo. Ábrele una rama de documentación (`docs: actualizar cola priorizada tras
 u1.1`) que la corrija, con el mismo criterio de PR que cualquier otro cambio —
 esto mantiene la cola confiable sin convertirla en el tablero de estado que
 `docs/README.md` explícitamente evita.
+
+## 8. Coordinación entre varios repositorios y muchos agentes en paralelo
+
+Añadido el 2026-09-03, tras un episodio real: una sesión construyó
+`client-grants.allium` sobre un modelo de credencial que otra sesión ya había
+cambiado en `origin/main` — sólo lo notó porque otra sesión (esta) mencionó
+de pasada un commit reciente, no porque el proceso lo obligara. El fondo del
+problema no era falta de mensajes: era que nada obligaba a mirar
+`origin/main` antes de seguir trabajando.
+
+- **Antes de empezar o retomar cualquier tarea, haz `git fetch` y revisa qué
+  cambió** en la rama de la que partes, en este repositorio y en cualquier
+  otro repositorio relacionado que tu tarea toque. Esto ya es una regla
+  global en `~/.claude/CLAUDE.md` («Antes de empezar: leer origin/main»), no
+  sólo una costumbre de este repositorio.
+- **Cuando resuelvas una pregunta abierta de una spec Allium, anúncialo
+  activamente** a las sesiones que puedan depender de ella (`ListAgents` +
+  `SendMessage`), en el momento de decidirlo — no basta con que quede en el
+  commit. Un cambio de contrato silencioso es exactamente lo que invalida
+  trabajo ajeno en curso.
+- **Cuando tu tarea cruza repositorios** (por ejemplo `vera` y
+  `vera-conecta`, que comparten un contrato pero viven en repos separados),
+  identifica primero quién más está trabajando en el otro repositorio antes
+  de tocar una interfaz compartida — el nombre de la sesión en `ListAgents`
+  suele bastar para ubicarla. Pregunta alcance antes de asumir que un archivo
+  está libre, y confirma antes de mergear a la rama principal de cada
+  repositorio, no sólo en el propio.
+- **Un worktree que ya se mezcló a la rama principal es redundante, no
+  huérfano.** Antes de borrarlo, confirma con quien lo creó (si sigue vivo en
+  `ListAgents`) o verifica que su contenido esté completo en la rama
+  principal del repositorio correspondiente. Un worktree marcado como
+  `locked` en `git worktree list` normalmente significa que una sesión viva
+  lo tiene abierto — no se retira sin preguntar.
