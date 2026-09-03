@@ -22,7 +22,20 @@ jobs:
       - run: npm ci
       - name: Instalar el verificador Allium
         run: cargo install allium-cli --version 3.5.0 --locked
-      - run: npm run spec
+      - name: Verificar especificaciones Allium
+        shell: bash
+        run: |
+          set +e
+          allium check specs/ | tee "$RUNNER_TEMP/allium-check.json"
+          allium_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$allium_status" -eq 2 ]; then
+            exit 2
+          fi
+          jq -s -e 'all(.[];
+            ((.findings // []) | length == 0) and
+            ((.diagnostics // []) | all(.severity != "error")))' \
+            "$RUNNER_TEMP/allium-check.json"
       - run: npm run build
       # Algunas suites levantan servidores y sesiones con identidades fijas;
       # en CI deben ejecutarse por archivo para no compartir estado efímero.
