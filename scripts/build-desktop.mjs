@@ -12,7 +12,7 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node24',
-  external: ['electron'],
+  external: ['electron', 'electron-updater'],
   sourcemap: true,
 });
 

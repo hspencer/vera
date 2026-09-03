@@ -21,6 +21,8 @@
     "build": "npm run build --workspace @vera/web",
     "build:desktop": "npm run build && node scripts/build-desktop.mjs",
     "pack:windows": "npm run build:desktop && electron-builder --win nsis portable --x64",
+    "pack:mac": "npm run build:desktop && electron-builder --mac dmg zip --universal",
+    "release:verify-tag": "node scripts/verify-release-tag.mjs",
     "import": "node packages/importer/src/persist.ts",
     "serve": "node packages/server/src/main.ts",
     "initialize": "node packages/server/src/initialize.ts",
@@ -79,6 +81,18 @@
         "portable"
       ]
     },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "minimumSystemVersion": "12.0",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
@@ -88,5 +102,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

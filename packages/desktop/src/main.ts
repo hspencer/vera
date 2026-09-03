@@ -1,9 +1,10 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { supportsAutomaticUpdates, UPDATE_CHECK_INTERVAL_MS } from './update-policy.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '../..');
@@ -34,6 +35,11 @@ if (app.isPackaged) {
 
 let running: { close(): Promise<void> } | null = null;
 let window: BrowserWindow | null = null;
+let updateTimer: NodeJS.Timeout | null = null;
+let installDownloadedUpdate: (() => void) | null = null;
+let installOnQuit = false;
+let preparingQuit = false;
+let downloadingUpdate = false;
 
 const databaseExists = (): boolean => existsSync(databasePath) && statSync(databasePath).size > 0;
 
@@ -51,6 +57,91 @@ async function startVera(): Promise<void> {
     });
   }
   await window?.loadURL(`http://127.0.0.1:${PORT}`);
+}
+
+async function closeVera(): Promise<void> {
+  const server = running;
+  running = null;
+  await server?.close();
+}
+
+async function enableAutomaticUpdates(): Promise<void> {
+  if (!supportsAutomaticUpdates({
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    portableRoot,
+  })) return;
+
+  const { autoUpdater } = await import('electron-updater');
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.allowPrerelease = false;
+
+  autoUpdater.on('error', (error) => {
+    window?.setProgressBar(-1);
+    console.error('No se pudo actualizar Vera:', error);
+    if (downloadingUpdate) {
+      downloadingUpdate = false;
+      void dialog.showMessageBox(window ?? undefined, {
+        type: 'warning',
+        title: 'La actualización no se descargó',
+        message: 'Vera sigue funcionando con la versión instalada.',
+        detail: 'Comprueba la conexión y vuelve a intentarlo en la próxima comprobación.',
+        buttons: ['Entendido'],
+        noLink: true,
+      });
+    }
+  });
+  autoUpdater.on('download-progress', ({ percent }) => {
+    window?.setProgressBar(Math.max(0, Math.min(1, percent / 100)));
+  });
+  autoUpdater.on('update-available', async ({ version }) => {
+    const choice = await dialog.showMessageBox(window ?? undefined, {
+      type: 'info',
+      title: 'Actualización disponible',
+      message: `Vera ${version} está disponible`,
+      detail: 'Puedes descargarla ahora y seguir usando Vera mientras termina.',
+      buttons: ['Descargar', 'Más tarde'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (choice.response === 0) {
+      downloadingUpdate = true;
+      try {
+        await autoUpdater.downloadUpdate();
+      } catch (error) {
+        downloadingUpdate = false;
+        console.error('No se pudo iniciar la descarga de Vera:', error);
+      }
+    }
+  });
+  autoUpdater.on('update-downloaded', async ({ version }) => {
+    downloadingUpdate = false;
+    window?.setProgressBar(-1);
+    installDownloadedUpdate = () => autoUpdater.quitAndInstall(false, true);
+    const choice = await dialog.showMessageBox(window ?? undefined, {
+      type: 'info',
+      title: 'Actualización preparada',
+      message: `Vera ${version} está lista para instalarse`,
+      detail: 'La memoria está separada del programa y no será reemplazada.',
+      buttons: ['Reiniciar e instalar', 'Instalar al cerrar'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    installOnQuit = true;
+    if (choice.response === 0) app.quit();
+  });
+
+  const check = (): void => {
+    void autoUpdater.checkForUpdates().catch((error: unknown) => {
+      console.error('No se pudo comprobar si hay una actualización:', error);
+    });
+  };
+  setTimeout(check, 10_000).unref();
+  updateTimer = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+  updateTimer.unref();
 }
 
 function createWindow(): void {
@@ -96,6 +187,7 @@ ipcMain.handle('vera:system-name', () => userInfo().username);
 
 app.whenReady().then(() => {
   createWindow();
+  void enableAutomaticUpdates();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -105,7 +197,15 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
-  void running?.close();
-  running = null;
+app.on('before-quit', (event) => {
+  if (preparingQuit) return;
+  if (running === null && !(installOnQuit && installDownloadedUpdate !== null)) return;
+
+  event.preventDefault();
+  preparingQuit = true;
+  if (updateTimer !== null) clearInterval(updateTimer);
+  void closeVera().finally(() => {
+    if (installOnQuit && installDownloadedUpdate !== null) installDownloadedUpdate();
+    else app.quit();
+  });
 });

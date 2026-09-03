@@ -382,6 +382,12 @@ porque varias dependen de decisiones que la fase 1 todavía no cierra.
   plataformas, onboarding y piloto con personas distintas del creador.
 - **Depende de:** 1.3 (respaldo/restauración) es prerrequisito explícito según
   el propio roadmap y según el diagnóstico TRL de [[Vera — FONDEF IDeA I+D 2027]].
+- **Estado verificado (2026-09-02):** implementados el empaquetado Windows
+  NSIS/portable, el empaquetado macOS universal DMG/ZIP, el workflow único por
+  push/tag y el cliente de actualización estable con descarga consentida y
+  aplazamiento. Pendientes: incorporar las identidades de firma, ejecutar la
+  prueba A → B en máquinas limpias, diagnóstico y piloto externo. Véase
+  [`docs/distribucion-escritorio.md`](../distribucion-escritorio.md).
 
 ### Fase 8 — Repositorio preparado para contribución simultánea de muchos agentes
 - **Objetivo:** ver [protocolo-agentes-contribuyentes.md](protocolo-agentes-contribuyentes.md)

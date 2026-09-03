@@ -1,0 +1,179 @@
+-- allium: 3
+-- Scope: distribución estable y actualización de Vera Desktop.
+
+------------------------------------------------------------
+-- External Entities
+------------------------------------------------------------
+
+external entity DesktopUser {}
+external entity ReleaseProvider {}
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+contract DesktopUpdateSafety {
+    @invariant MemorySurvivesProgramReplacement
+        -- Instalar, actualizar o desinstalar el programa no elimina ni reemplaza
+        -- la memoria personal ubicada fuera de los archivos de la aplicación.
+
+    @invariant PortableEditionsNeverSelfReplace
+        -- Una edición portable puede avisar, pero nunca reemplaza su ejecutable.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum DesktopPlatform { windows | macos }
+enum InstallationKind { installed | portable }
+enum UpdateState { current | offered | downloading | ready | failed }
+
+------------------------------------------------------------
+-- Entities and Variants
+------------------------------------------------------------
+
+entity DesktopInstallation {
+    owner: DesktopUser
+    platform: DesktopPlatform
+    kind: InstallationKind
+    installed_version: String
+    available_version: String?
+    update_state: UpdateState
+    memory_path: String
+}
+
+entity StableRelease {
+    version: String
+    published: Boolean
+    windows_installer_available: Boolean
+    mac_installer_available: Boolean
+    update_metadata_available: Boolean
+    signed_for_windows: Boolean
+    signed_for_macos: Boolean
+    notarized_for_macos: Boolean
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+config {
+    check_interval: Duration = 6.hours
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+rule OfferStableUpdate {
+    when: StableUpdateFound(installation, release)
+    requires: installation.kind = installed
+    requires: release.published
+    requires: release.update_metadata_available
+    requires: release.version != installation.installed_version
+    requires:
+        installation.platform = windows and release.signed_for_windows
+        or installation.platform = macos and release.signed_for_macos and release.notarized_for_macos
+    ensures:
+        installation.available_version = release.version
+        installation.update_state = offered
+}
+
+rule UserAcceptsDownload {
+    when: DownloadUpdate(user, installation)
+    requires: installation.owner = user
+    requires: installation.update_state = offered
+    ensures: installation.update_state = downloading
+}
+
+rule DownloadBecomesReady {
+    when: UpdateVerified(installation)
+    requires: installation.update_state = downloading
+    ensures: installation.update_state = ready
+}
+
+rule DownloadFailsSafely {
+    when: UpdateDownloadFailed(installation)
+    requires: installation.update_state = downloading
+    ensures: installation.update_state = failed
+}
+
+rule UserAppliesPreparedUpdate {
+    when: ApplyPreparedUpdate(user, installation)
+    requires: installation.owner = user
+    requires: installation.update_state = ready
+    ensures:
+        installation.installed_version = installation.available_version
+        installation.available_version = null
+        installation.update_state = current
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant StableReleasesAreCompleteAndTrusted {
+    for release in StableReleases:
+        release.published implies
+            release.windows_installer_available and
+            release.mac_installer_available and
+            release.update_metadata_available and
+            release.signed_for_windows and
+            release.signed_for_macos and
+            release.notarized_for_macos
+}
+
+------------------------------------------------------------
+-- Actor Declarations
+------------------------------------------------------------
+
+actor DesktopOwner {
+    within: DesktopInstallation
+    identified_by: DesktopUser where this = within.owner
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface DesktopUpdateExperience {
+    facing user: DesktopOwner
+    context installation: DesktopInstallation where owner = user
+
+    exposes:
+        installation.installed_version
+        installation.available_version
+        installation.update_state
+
+    provides:
+        DownloadUpdate(user, installation) when installation.update_state = offered
+        ApplyPreparedUpdate(user, installation) when installation.update_state = ready
+
+    contracts:
+        fulfils DesktopUpdateSafety
+
+    @guarantee ExplicitDownload
+        -- Vera no descarga una versión nueva antes de que la persona acepte.
+
+    @guarantee DeferrableInstallation
+        -- Una actualización preparada puede instalarse ahora o al cerrar Vera.
+}
+
+surface StableReleaseFeed {
+    facing provider: ReleaseProvider
+
+    provides:
+        StableUpdateFound(installation, release)
+        UpdateVerified(installation)
+        UpdateDownloadFailed(installation)
+
+    contracts:
+        demands DesktopUpdateSafety
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "¿Cuándo se abrirá un canal beta separado del canal estable?"

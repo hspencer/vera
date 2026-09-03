@@ -1,7 +1,8 @@
 # Instalación de Vera en Windows
 
-Estado: primer prototipo empaquetable. Todavía no es una versión alfa para
-personas externas.
+Estado: instalador empaquetable y cliente de actualización implementados. Una
+release para personas externas todavía requiere firma Authenticode y una prueba
+completa de actualización entre dos versiones instaladas.
 
 ## Artefactos
 
@@ -50,17 +51,31 @@ npm run pack:windows
 
 Alexei puede compilar el payload y producir el portable x64 directamente desde
 Debian. NSIS necesita Wine cuando se construye localmente en Linux. La vía
-reproducible principal es `.github/workflows/windows.yml`, sobre un runner
-Windows de GitHub Actions; un tag `v*` construye, calcula checksums y crea el
-GitHub Release.
+reproducible principal es `.github/workflows/desktop.yml`. Cada push verifica el
+repositorio; un tag `v<versión>` coherente con `package.json` construye los
+artefactos firmados y crea el GitHub Release multiplataforma.
+
+## Actualización
+
+La instalación NSIS consulta el canal estable de GitHub Releases diez segundos
+después de abrir y luego cada seis horas. Si encuentra una versión mayor:
+
+1. pregunta antes de descargar;
+2. muestra el progreso en la aplicación;
+3. verifica el manifiesto y la firma mediante `electron-updater`;
+4. permite reiniciar inmediatamente o instalar al cerrar;
+5. cierra el servidor SQLite antes de reemplazar el programa.
+
+La edición portable no se reemplaza sola. Los pushes corrientes nunca actualizan
+aplicaciones: sólo las releases estables creadas por tag alimentan `latest.yml`.
 
 ## Pendiente antes del alfa
 
 - probar instalación, primera apertura, reinicio y desinstalación en Windows 11
   limpio;
 - diseñar icono y metadatos finales;
-- firma Authenticode y secretos protegidos del workflow;
+- incorporar la identidad Authenticode a los secretos protegidos del workflow;
 - respaldo previo y prueba de migración entre dos versiones;
-- implementar el cliente de actualización y su experiencia de aplazamiento;
+- probar el ciclo completo versión A → versión B en Windows 11 limpio;
 - diagnóstico exportable sin secretos;
 - medir arranque, RAM y corpus grandes en el hardware mínimo declarado.
