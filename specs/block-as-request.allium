@@ -42,7 +42,7 @@ contract ABlockCanBeAsked {
 
     @invariant TheAnswerIsSignedByTheMachineThatGaveIt
         -- Lo que sale queda firmado por el modelo local, que no es el
-        -- bibliotecario. Cotito tiene criterio sobre el corpus —propone
+        -- bibliotecario. El bibliotecario tiene criterio sobre el corpus —propone
         -- vocabulario, migraciones, y lo que dice se lee como suyo—; esto es una
         -- máquina contestando una pregunta, y mañana será otra máquina. Sin la
         -- distinción, dentro de un año no habría forma de saber qué escribió una

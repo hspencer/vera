@@ -161,14 +161,14 @@ contract AGrantIsNarrowerThanAScope {
         -- ni por comodidad ni por parecerse.
 
     @invariant TheHouseAgentIsAnExceptionAndItIsWritten
-        -- Cotito, el bibliotecario, tiene hoy permiso para todo, incluido
+        -- El bibliotecario tiene hoy permiso para todo, incluido
         -- descartar. Es una decisión del dueño y no un descuido: escribe en el
         -- corpus a diario y la salvaguarda que se eligió es la autoría por
         -- bloque, no la restricción del alcance.
         --
         -- Queda escrita aquí porque una excepción que la especificación no
         -- nombra es una excepción que nadie recuerda haber tomado, y porque el
-        -- riesgo real no es Cotito: es que «Cotito» nombra una plaza y no una
+        -- riesgo real no es el bibliotecario: es que ese rótulo nombra una plaza y no una
         -- entidad conocida —OpenClaw puede cambiar de modelo o de proveedor sin
         -- que Vera se entere—. Se revisa cuando exista el registro de
         -- exposición con historia suficiente para ver qué se lleva.

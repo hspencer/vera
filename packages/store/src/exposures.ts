@@ -4,12 +4,12 @@
 // El log de operaciones cuenta lo que se escribió, y eso bastaba mientras todo
 // el que entraba escribía. Una inteligencia artificial hace algo que el log no
 // ve: recibe. Se lleva páginas, extractos y contexto sin modificar una coma, y
-// de eso no quedaba rastro. Cotito lleva 6.844 operaciones escritas y cero
+// de eso no quedaba rastro. El bibliotecario lleva 6.844 operaciones escritas y cero
 // lecturas registradas, y no porque no haya leído.
 //
 // Vive en la API y no en el adaptador MCP, y la diferencia es la que decide si
 // esto sirve para algo: puesto en MCP, el mayor lector del corpus —un agente
-// que entra por HTTP directo, como Cotito hoy— quedaría fuera del registro, y
+// que entra por HTTP directo, como el bibliotecario hoy— quedaría fuera del registro, y
 // un registro con un agujero del tamaño de su lector principal es decorativo.
 // Aquí lo hereda toda puerta: la web, MCP, curl y lo que venga después.
 //

@@ -248,8 +248,8 @@ es el único acto que el grafo no puede enseñarte después.
 v0 no autentica al dueño. Quien llega sin credencial se toma por él, que es
 como Vera ha funcionado desde el principio: corre en `localhost` con un único
 participante propietario sembrado por el importador. Lo que cambió es que esa
-vía ya no puede escribir como otro — para firmar como Cotito hace falta la
-credencial de Cotito. Sigue siendo aceptable mientras la instancia no escuche
+vía ya no puede escribir como otro — para firmar como el bibliotecario hace falta su
+credencial. Sigue siendo aceptable mientras la instancia no escuche
 fuera de la máquina, y deja de serlo el día que lo haga.
 
 ## Publicación — construida en su recorrido básico

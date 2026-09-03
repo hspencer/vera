@@ -122,8 +122,9 @@ export function said(state: Behind): { message: string; title: string } | null {
   };
 }
 
-/** `participant:cotito` se lee «cotito». El prefijo es de la máquina. */
+/** Los identificadores de participante se presentan como rótulos legibles. */
 function nameOf(participant: string): string {
+  if (participant === 'participant:cotito') return 'el bibliotecario';
   const cut = participant.indexOf(':');
   return cut === -1 ? participant : participant.slice(cut + 1);
 }

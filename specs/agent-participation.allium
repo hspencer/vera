@@ -38,7 +38,7 @@ given {
 --
 -- What protects the corpus is therefore not a shorter leash. It is that the graph
 -- can always answer, of any passage, whose hand produced these words. Herbert
--- writes and Cotito writes; the corpus stays trustworthy because the two are
+-- writes and the librarian writes; the corpus stays trustworthy because the two are
 -- distinguishable at every block, not because one of them was fenced in.
 contract AttributedGeneration {
     hand: (block: core/Block) -> Authorship
@@ -61,8 +61,8 @@ contract AttributedGeneration {
 
     @invariant AuthorshipFollowsTheLastWord
         -- Rewriting a block transfers its authorship to whoever rewrote it. A
-        -- paragraph Herbert wrote and Cotito rewrote reads as Cotito's, because
-        -- those are Cotito's words now. Authorship describes the text that is
+        -- paragraph Herbert wrote and the librarian rewrote reads as the librarian's,
+        -- because those are the librarian's words now. Authorship describes the text that is
         -- there, not the text that used to be.
 
     @invariant OriginAndHandAreDifferentQuestions

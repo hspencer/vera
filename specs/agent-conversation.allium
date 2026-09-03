@@ -59,9 +59,9 @@ contract ConversationWithAgent {
 
     @invariant DispatchDoesNotAuthenticateTheReply
         -- The credential that lets Vera wake OpenClaw is not the credential that
-        -- lets Cotito speak inside Vera. Dispatch proves that the request reached
-        -- the configured worker; the reply is attributed only when Cotito returns
-        -- through Vera's ordinary agent boundary with Cotito's own credential.
+        -- lets the librarian speak inside Vera. Dispatch proves that the request reached
+        -- the configured worker; the reply is attributed only when the librarian returns
+        -- through Vera's ordinary agent boundary with the librarian's own credential.
 
     @invariant ARequestExistsBeforeItTravels
         -- Vera makes the request durable before attempting delivery. The hook
@@ -213,8 +213,8 @@ rule HumanReopensConversation {
     ensures: conversation.status = active
 }
 
-rule HumanAsksCotitoByAudio {
-    when: AskCotitoByAudio(human, conversation, recording, transcript, context_pages, context_blocks)
+rule HumanAsksLibrarianByAudio {
+    when: AskLibrarianByAudio(human, conversation, recording, transcript, context_pages, context_blocks)
 
     requires: conversation.human = human
     requires: conversation.status = active
@@ -245,8 +245,8 @@ rule HumanAsksCotitoByAudio {
     )
 }
 
-rule HumanAsksCotitoByCommand {
-    when: AskCotitoByCommand(human, conversation, text, source_page, context_pages, context_blocks)
+rule HumanAsksLibrarianByCommand {
+    when: AskLibrarianByCommand(human, conversation, text, source_page, context_pages, context_blocks)
 
     requires: conversation.human = human
     requires: conversation.status = active
@@ -276,8 +276,8 @@ rule HumanAsksCotitoByCommand {
     )
 }
 
-rule HumanAsksCotitoFromBlock {
-    when: AskCotitoFromBlock(human, conversation, block, instruction, context_pages, context_blocks)
+rule HumanAsksLibrarianFromBlock {
+    when: AskLibrarianFromBlock(human, conversation, block, instruction, context_pages, context_blocks)
 
     requires: conversation.human = human
     requires: conversation.status = active
@@ -308,12 +308,12 @@ rule HumanAsksCotitoFromBlock {
 
     @guidance
         -- Asking from a block delegates a transformation of that block.
-        -- Cotito's answer replaces it through the ordinary operation log; the
+        -- The librarian's answer replaces it through the ordinary operation log; the
         -- prior text survives in history, not beside the transformed block.
 }
 
-rule HumanAsksCotitoFromConversationPage {
-    when: AskCotitoFromConversationPage(human, conversation, text, context_pages, context_blocks)
+rule HumanAsksLibrarianFromConversationPage {
+    when: AskLibrarianFromConversationPage(human, conversation, text, context_pages, context_blocks)
 
     requires: conversation.human = human
     requires: conversation.status = active
@@ -342,7 +342,7 @@ rule HumanAsksCotitoFromConversationPage {
     )
 }
 
-rule CotitoBeginsARequest {
+rule LibrarianBeginsARequest {
     when: BeginAgentRequest(agent, request)
 
     requires: request.conversation.agent = agent
@@ -367,7 +367,7 @@ rule VeraDispatchesAQueuedRequest {
     @guidance
         -- Delivery authenticates Vera to the configured OpenClaw hook with a
         -- credential dedicated to this boundary. The payload names only the
-        -- durable request. Cotito reads its instruction and snapshot back from
+        -- durable request. The librarian reads its instruction and snapshot back from
         -- Vera, so a hook body cannot replace the canonical context.
 }
 
@@ -388,7 +388,7 @@ rule VeraRecordsDispatchFailure {
         -- be sent again with the same identity after OpenClaw recovers.
 }
 
-rule CotitoAnswersARequest {
+rule LibrarianAnswersARequest {
     when: AnswerAgentRequest(agent, request, text, changes)
 
     requires: request.conversation.agent = agent
@@ -417,7 +417,7 @@ rule CotitoAnswersARequest {
             )
 }
 
-rule CotitoAnswersFromABlock {
+rule LibrarianAnswersFromABlock {
     when: AnswerAgentRequest(agent, request, text, changes)
 
     requires: request.conversation.agent = agent
@@ -436,10 +436,10 @@ rule CotitoAnswersFromABlock {
 
     @guidance
         -- The visible result is the rewritten block. The request, the original
-        -- content and Cotito's authorship remain inspectable in the record.
+        -- content and the librarian's authorship remain inspectable in the record.
 }
 
-rule CotitoReportsARequestFailure {
+rule LibrarianReportsARequestFailure {
     when: FailAgentRequest(agent, request, reason)
 
     requires: request.conversation.agent = agent
@@ -533,7 +533,7 @@ actor ConversationalAgent {
 -- Surfaces
 ------------------------------------------------------------
 
-surface CotitoByAudio {
+surface LibrarianByAudio {
     facing human: HumanConversant
     context conversation: Conversation where human = human and status = active
 
@@ -542,7 +542,7 @@ surface CotitoByAudio {
         conversation.requests
 
     provides:
-        AskCotitoByAudio(human, conversation, recording, transcript, context_pages, context_blocks)
+        AskLibrarianByAudio(human, conversation, recording, transcript, context_pages, context_blocks)
 
     contracts:
         fulfils ConversationWithAgent
@@ -552,7 +552,7 @@ surface CotitoByAudio {
         -- transcript is editable context, not a replacement for the audio.
 }
 
-surface CotitoByCommand {
+surface LibrarianByCommand {
     facing human: HumanConversant
     context conversation: Conversation where human = human and status = active
 
@@ -561,17 +561,17 @@ surface CotitoByCommand {
         conversation.requests
 
     provides:
-        AskCotitoByCommand(human, conversation, text, source_page, context_pages, context_blocks)
+        AskLibrarianByCommand(human, conversation, text, source_page, context_pages, context_blocks)
 
     contracts:
         fulfils ConversationWithAgent
 
     @guarantee CommandIsAnEntranceNotASeparateHistory
-        -- Invoking Cotito quickly from elsewhere appends to the chosen
+        -- Invoking the librarian quickly from elsewhere appends to the chosen
         -- conversation and remains readable from its conversation page.
 }
 
-surface CotitoFromBlock {
+surface LibrarianFromBlock {
     facing human: HumanConversant
     context conversation: Conversation where human = human and status = active
 
@@ -580,17 +580,17 @@ surface CotitoFromBlock {
         conversation.requests
 
     provides:
-        AskCotitoFromBlock(human, conversation, block, instruction, context_pages, context_blocks)
+        AskLibrarianFromBlock(human, conversation, block, instruction, context_pages, context_blocks)
 
     contracts:
         fulfils ConversationWithAgent
 
     @guarantee AskingTransformsTheBlockInPlace
-        -- Cotito must answer with one edit of the source block. The old content
+        -- The librarian must answer with one edit of the source block. The old content
         -- remains in its revisions; no reply panel is appended beside it.
 }
 
-surface CotitoConversationPage {
+surface LibrarianConversationPage {
     facing human: HumanConversant
     context conversation: Conversation where human = human
 
@@ -612,7 +612,7 @@ surface CotitoConversationPage {
 
     provides:
         StartConversation(human, agent, graph, title)
-        AskCotitoFromConversationPage(human, conversation, text, context_pages, context_blocks)
+        AskLibrarianFromConversationPage(human, conversation, text, context_pages, context_blocks)
             when conversation.status = active
         CloseConversation(human, conversation) when conversation.status = active
         ReopenConversation(human, conversation) when conversation.status = closed
@@ -631,11 +631,11 @@ surface CotitoConversationPage {
         -- context, state, reply and proposal without requiring OpenClaw's logs.
 
     @guarantee WaitingIsCountedWhereTheReplyWillAppear
-        -- While Cotito works, the request names the work and counts elapsed time.
+        -- While the librarian works, the request names the work and counts elapsed time.
         -- A spinner or typing theatre is not evidence that work continues.
 }
 
-surface CotitoConversationWorker {
+surface LibrarianConversationWorker {
     facing agent: ConversationalAgent
     context conversation: Conversation where agent = agent and status = active
 
@@ -674,7 +674,7 @@ deferred TruthfulConversationWaiting.present -- see: waiting.allium
 -- Open Questions
 ------------------------------------------------------------
 
-open question "Cuando Herbert dice 'hazlo' dentro de una conversación, ¿Cotito puede aplicar operaciones autorizadas directamente y dejar un recibo, o el primer corte debe exigir siempre aceptar una propuesta separada?"
+open question "Cuando Herbert dice 'hazlo' dentro de una conversación, ¿el bibliotecario puede aplicar operaciones autorizadas directamente y dejar un recibo, o el primer corte debe exigir siempre aceptar una propuesta separada?"
 
 open question "¿El traspaso explícito entre Telegram y Vera mueve la continuidad al nuevo canal, o permite que ambos sigan enviando turnos al mismo hilo después del traspaso?"
 

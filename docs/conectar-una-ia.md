@@ -341,7 +341,7 @@ de Codex. ChatGPT web usa plugins alojados y no lee esa configuración local.
 La puerta pública compra portabilidad, no velocidad local. Desde Alexei, treinta
 llamadas consecutivas a `vera_quien_soy` dieron 12,3 ms de mediana y 14,8 ms de
 p95 por `stdio`; por HTTPS pública dieron 293,2 ms y 487,6 ms. El costo está en
-la vuelta TLS/Cloudflare. Por eso Cotito y los clientes que viven junto a Vera
+la vuelta TLS/Cloudflare. Por eso el bibliotecario y los clientes que viven junto a Vera
 conservan el camino local; los clientes remotos usan HTTPS cuando evitar SSH,
 Tailscale y una copia del repositorio compensa esa vuelta.
 

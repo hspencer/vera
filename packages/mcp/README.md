@@ -191,7 +191,7 @@ Medición real desde Alexei, 2026-08-26, treinta llamadas consecutivas a
 | HTTPS pública | 1.171 ms | 293,2 ms | 487,6 ms |
 
 La diferencia está en el recorrido TLS/Cloudflare, no en el corpus ni en MCP.
-Por eso Cotito y los clientes que corren en Alexei conservan el camino local.
+Por eso el bibliotecario y los clientes que corren en Alexei conservan el camino local.
 La puerta pública se usa donde compra algo concreto: acceso desde otra red sin
 SSH, tailnet ni copia del código. En otro equipo hay que medir allí antes de
 retirar el transporte anterior.

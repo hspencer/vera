@@ -82,7 +82,7 @@ typecheck`: limpio.
 | Espacios compartidos y subgrafos | implementación parcial | **VERIFICADO** para lo declarado hecho | `server/src/shared-spaces.ts`, 18/18 tests; falta agrupar operaciones estructurales, ya declarado por la propia spec |
 | Red horizontal entre instancias | pendiente | **NO ENCONTRADO — confirmado** | Cero ocurrencias de `peer`/`federat` en el código |
 | Identidad y sincronización federada | pendiente | **NO ENCONTRADO — confirmado** | Igual que arriba |
-| Conversación con Cotito | pendiente (spec recién escrita) | **NO ENCONTRADO — confirmado** | Cero entidades `Conversation`/`AgentReply`/`OperationProposal` en el repo |
+| Conversación con el bibliotecario | pendiente (spec recién escrita) | **NO ENCONTRADO — confirmado** | Cero entidades `Conversation`/`AgentReply`/`OperationProposal` en el repo |
 | VeraAgentManifest | pendiente | **NO ENCONTRADO — confirmado** | Cero ocurrencias relevantes de `manifest`/`Manifest` fuera de PWA/proyección Markdown |
 | Fluidez de edición estructural | hecho | **VERIFICADO en lógica, sin prueba de integración DOM** | Cada invariante de la spec tiene contraparte citada en código; pero no existe jsdom/happy-dom en el repo y varios archivos "de interfaz" (`gui-priorities.test.ts`, `mobile-priority.test.ts`) son aserciones de regex sobre el código fuente, no ejecución de comportamiento |
 | Arrastre de subárbol desde la viñeta | hecho | **IMPLEMENTADO SIN TEST SUFICIENTE, con hueco de accesibilidad** | Solo eventos HTML5 nativos (`outliner.ts:4062-4133`); sin `touchstart`/`pointerdown`; sin equivalente por teclado para reparentar a posición arbitraria |

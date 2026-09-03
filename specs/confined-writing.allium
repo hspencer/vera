@@ -83,7 +83,7 @@ contract ConfinedWriting {
     @invariant AnUnfencedCredentialIsUnchanged
         -- Una credencial sin cerco escribe como hasta ahora. El cerco es algo
         -- que se concede, no un régimen nuevo que caiga sobre lo que ya existe:
-        -- Cotito escribe a diario en todo el corpus por decisión del dueño, y
+        -- El bibliotecario escribe a diario en todo el corpus por decisión del dueño, y
         -- esta spec no se la revoca de refilón.
 
     @invariant WhatIsOutsideIsRefusedAndSaidWhy

@@ -89,7 +89,7 @@ enum MatterKind {
     -- Algo sobre las instrucciones bajo las que él mismo trabaja.
     --
     -- Se trae igual que todo lo demás y se decide igual. Es coherente con
-    -- special-pages/SelfDescription: si lo que gobierna a Cotito son páginas del
+    -- special-pages/SelfDescription: si lo que gobierna al bibliotecario son páginas del
     -- corpus, son parte del vocabulario que cuida, y excluirlas sería decir que
     -- hay un trozo de Vera del que su bibliotecario no puede hablar aunque sea
     -- quien mejor sabe dónde le aprieta.
@@ -234,7 +234,7 @@ rule LibrarianOpensTheRoundOfTheDay {
 --
 -- Se dice escribiendo en el día, con la mano del bibliotecario, que
 -- agent-participation.allium ya obliga a marcar. No hay bandeja: lo que propone
--- Cotito está donde está lo demás que pasó hoy, y se contesta ahí mismo.
+-- El bibliotecario está donde está lo demás que pasó hoy, y se contesta ahí mismo.
 rule LibrarianRaisesAMatter {
     when: RaiseMatter(
         librarian, round, kind, subject, observation, evidence, proposal, cost_if_wrong
@@ -279,7 +279,7 @@ rule LibrarianRaisesAMatter {
 -- Es la regla que decide si esto se puede tener encendido durante años. Un
 -- agente que sigue escribiendo en un diario que nadie lee no está siendo
 -- diligente: está convirtiendo la bitácora en un sitio donde hay que saltarse
--- cosas, y una vez que se aprende a saltarse a Cotito ya no se le vuelve a leer.
+-- cosas, y una vez que se aprende a saltarse al bibliotecario ya no se le vuelve a leer.
 rule LibrarianFallsSilent {
     when: round: LibrarianRound.status transitions_to presented
 

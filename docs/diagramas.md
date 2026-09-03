@@ -1871,7 +1871,7 @@ fuera de la máquina, y deja de serlo el día que lo haga. Ver
 [`plan-nadie-por-omision.md`](plan-nadie-por-omision.md).
 
 Lo que sí cambió ya: esa vía no puede escribir *como otro*. Para firmar como
-Cotito hace falta la credencial de Cotito.
+el bibliotecario hace falta la credencial del bibliotecario.
 
 ---
 

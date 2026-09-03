@@ -349,7 +349,7 @@ porque varias dependen de decisiones que la fase 1 todavía no cierra.
 
 ### Fase 4 — Escribir, pensar y recorrer (cerrar lo parcial)
 - **Objetivo:** cerrar las brechas de prueba de fluidez de edición estructural
-  (integración DOM, touch, teclado); construir conversación con Cotito
+  (integración DOM, touch, teclado); construir conversación con el bibliotecario
   (`agent-conversation.allium`, hoy 100% spec); completar integración
   bibliográfica con re-sincronización real.
 - **Depende de:** nada técnico de las fases 1-3; puede avanzar en paralelo.
@@ -361,15 +361,15 @@ porque varias dependen de decisiones que la fase 1 todavía no cierra.
   página/bloque (`processing-forms.allium`, hoy huérfana), gestión interna de
   procesadores.
 - **Depende de:** nada técnico duro; se beneficia de que la conversación con
-  Cotito (fase 4) ya exista, porque comparten el concepto de propuesta
+  el bibliotecario (fase 4) ya exista, porque comparten el concepto de propuesta
   revisable antes de aplicar.
 
-### Fase 6 — VeraAgentManifest (Cotito → OpenClaw)
+### Fase 6 — VeraAgentManifest (bibliotecario → OpenClaw)
 - **Objetivo:** proyección versionada, revisable y sanitizada de la
-  configuración humana de Cotito hacia archivos operativos de OpenClaw, con
+  configuración humana del bibliotecario hacia archivos operativos de OpenClaw, con
   diff, activación y rollback; secretos sólo por referencia, nunca copiados al
   grafo.
-- **Depende de:** fase 4 (conversación con Cotito) comparte el adaptador
+- **Depende de:** fase 4 (conversación con el bibliotecario) comparte el adaptador
   Vera-OpenClaw; conviene diseñarlos juntos aunque se entreguen por separado.
 - **Estado verificado:** cero código, cero spec. Esta auditoría no encontró
   ni siquiera un archivo `.allium` para VeraAgentManifest — es la única

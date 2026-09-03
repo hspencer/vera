@@ -29,7 +29,7 @@ explícitamente.
 6. No existe, en ningún archivo del repositorio, código de restauración
    integral, respaldo, formato portable entre versiones, red horizontal entre
    instancias, identidad federada, sincronización federada, conversación con
-   Cotito (`agent-conversation.allium`), ni VeraAgentManifest.
+   el bibliotecario (`agent-conversation.allium`), ni VeraAgentManifest.
 7. Los secretos de conexiones de servicio (por ejemplo, Zotero) se guardan en
    texto plano en SQLite (`packages/store/src/secrets.ts:52-67`).
 8. Nueve de diez sitios de escritura en `packages/server/src/server.ts` no

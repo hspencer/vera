@@ -71,7 +71,7 @@ function conversation(store: Store, human: ParticipantId, agent: ParticipantId, 
   store.db.prepare(`INSERT INTO agent_conversations
     (id, graph_id, human_id, agent_id, title, status, created_at)
     VALUES (?, ?, ?, ?, ?, 'active', ?)`).run(
-    id, store.graphId, human, agent, 'Herbert y Cotito', now,
+    id, store.graphId, human, agent, 'Herbert y el bibliotecario', now,
   );
   return id;
 }

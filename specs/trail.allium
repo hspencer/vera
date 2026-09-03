@@ -1590,8 +1590,8 @@ surface PageRelations {
 -- Contestadas cuatro, y las cuatro por la misma razón: un recorrido es una página
 -- del corpus. La procedencia de la narración es la de cualquier bloque, con su
 -- mano y su origen hablado. La composición es edición. La publicación es la de
--- core. Y el estado `proposed` desaparece: un recorrido que escribe Cotito es una
--- página privada que escribió Cotito, y la decisión del dueño es publicarla o no,
+-- core. Y el estado `proposed` desaparece: un recorrido que escribe el bibliotecario es una
+-- página privada que escribió el bibliotecario, y la decisión del dueño es publicarla o no,
 -- que es la que ya tenía.
 
 -- Contestada la que más apretaba, y no eliminando la ambigüedad sino dibujándola.
@@ -1645,7 +1645,7 @@ open question "El gesto de Bush es darle un recorrido a un amigo. Al llegar a ot
 
 open question "Un recorrido andado al revés es otra experiencia y quizá otro argumento. ¿Es la vuelta una vista derivada del mismo recorrido, o hay que componerla, con lo que eso implica: que decir lo mismo en sentido contrario es escribir otro texto?"
 
-open question "Cotito puede escribir un recorrido, y nada en el corpus lo anuncia. ¿Lo trae a la ronda del día como un asunto más —lo que obligaría a que MatterKind, que hoy es corto y sobre el vocabulario, crezca hacia el contenido— o lo dice en el día sin ser un asunto, y entonces qué distingue lo que se contesta de lo que sólo se cuenta?"
+open question "El bibliotecario puede escribir un recorrido, y nada en el corpus lo anuncia. ¿Lo trae a la ronda del día como un asunto más —lo que obligaría a que MatterKind, que hoy es corto y sobre el vocabulario, crezca hacia el contenido— o lo dice en el día sin ser un asunto, y entonces qué distingue lo que se contesta de lo que sólo se cuenta?"
 
 open question "Un recorrido publicado es un texto con sus nodos dentro, o una capa guiada sobre páginas que ya tienen su URL. Afecta a personal-site-projection.allium y decide si un lector que llega a un nodo desde fuera sabe que forma parte de un argumento."
 

@@ -700,12 +700,12 @@ function librarianTurn(request: LibrarianRequestView): HTMLElement {
   const state = document.createElement('div');
   state.className = 'librarian-state';
   state.textContent = request.status === 'answered'
-    ? 'Cotito respondió'
+    ? 'El bibliotecario respondió'
     : request.status === 'working'
-      ? 'Cotito está trabajando'
+      ? 'El bibliotecario está trabajando'
       : request.dispatchStatus === 'failed'
         ? 'guardado; esperando reconexión'
-        : 'en cola para Cotito';
+        : 'en cola para el bibliotecario';
   turn.append(asked, state);
   if (request.reply !== null) {
     const reply = document.createElement('div');
@@ -755,16 +755,16 @@ function showLibrarianOverlay(requests: LibrarianRequestView[]): void {
   heading.className = 'librarian-overlay-heading';
   const title = document.createElement('strong');
   title.textContent = latest.status === 'working'
-    ? 'Cotito está trabajando'
+    ? 'El bibliotecario está trabajando'
     : latest.dispatchStatus === 'failed'
       ? 'Solicitud guardada'
-      : 'Cotito está recibiendo la solicitud';
+      : 'El bibliotecario está recibiendo la solicitud';
   const move = document.createElement('button');
   move.type = 'button';
   move.className = 'librarian-overlay-move';
   move.textContent = 'Reubicar';
   move.title = 'Mover el aviso a otra esquina';
-  move.setAttribute('aria-label', 'Mover el aviso de Cotito a otra esquina');
+  move.setAttribute('aria-label', 'Mover el aviso del bibliotecario a otra esquina');
   move.addEventListener('click', () => {
     const at = librarianOverlayCorners.indexOf(overlay.dataset['corner'] as LibrarianOverlayCorner);
     const corner = librarianOverlayCorners[(at + 1) % librarianOverlayCorners.length]!;
@@ -803,7 +803,7 @@ async function showLibrarianTurns(
   const unique = [...new Map(requests.map((request) => [request.id, request])).values()];
   const active = unique.filter((request) => request.status === 'queued' || request.status === 'working');
   showLibrarianOverlay(active);
-  // Un pedido sobre un bloque es una transformación delegada: Cotito reemplaza
+  // Un pedido sobre un bloque es una transformación delegada: el bibliotecario reemplaza
   // el bloque y la versión anterior queda en el historial. Nunca se monta una
   // conversación al costado del texto que acaba de transformar.
   for (const request of unique.filter((request) =>

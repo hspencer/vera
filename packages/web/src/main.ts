@@ -160,7 +160,7 @@ function wireSubmissionState(): void {
    * Lo que este aparato está mandando es efímero y se apaga solo; lo que espera a
    * ser traído no se apaga hasta que alguien lo trae. Mandar manda mientras dura, y
    * al terminar no se esconde la barra: se deja ver lo que esperaba debajo. Sin
-   * esto, guardar una letra borraba el aviso de que Cotito había reescrito la
+   * esto, guardar una letra borraba el aviso de que el bibliotecario había reescrito la
    * página. @invariant WaitingWorkIsNeverReportedAsSynchronised.
    */
   paintSync = (): void => {

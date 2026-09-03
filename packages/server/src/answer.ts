@@ -8,7 +8,7 @@
 // y en el log, como cualquier edición— pero deja de estar a la vista, porque lo
 // que uno quiere leer después es la lista y no lo que pidió.
 //
-// Quién firma eso no es Cotito. Cotito es el bibliotecario: tiene criterio sobre
+// Quien firma eso no es el bibliotecario. El bibliotecario tiene criterio sobre
 // el corpus, propone vocabulario y migraciones, y lo que dice se lee como suyo.
 // Esto otro es un modelo que contesta lo que se le pregunta y que mañana será un
 // modelo distinto: firma como `participant:local-model`, y por eso la autoría del

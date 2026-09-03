@@ -332,7 +332,7 @@ interface Submitter {
  * principio y lo que docs/architecture.md declara: la aplicación corre en
  * localhost con un único participante propietario y su identidad todavía no se
  * demuestra. Lo que cambia hoy es que esa vía ya no puede escribir como otro:
- * para firmar como Cotito hace falta la credencial de Cotito.
+ * para firmar como el bibliotecario hace falta su credencial.
  */
 function authorise(
   store: Store,
@@ -1501,14 +1501,14 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         return;
       }
       if (request.method === 'POST' && action === 'claim') {
-        if (!canAnswerAsLibrarian()) { send(response, 403, { error: 'se necesita la credencial de Cotito con escritura' }); return; }
+        if (!canAnswerAsLibrarian()) { send(response, 403, { error: 'se necesita la credencial del bibliotecario con escritura' }); return; }
         const claimed = claimLibrarianRequest(store, id);
         if (claimed?.status !== 'working') { send(response, 409, { error: 'la solicitud ya no está en cola' }); return; }
         send(response, 200, claimed);
         return;
       }
       if (request.method === 'POST' && action === 'reply') {
-        if (!canAnswerAsLibrarian()) { send(response, 403, { error: 'se necesita la credencial de Cotito con escritura' }); return; }
+        if (!canAnswerAsLibrarian()) { send(response, 403, { error: 'se necesita la credencial del bibliotecario con escritura' }); return; }
         let body: Record<string, unknown>;
         try { body = await readSmallJson(); }
         catch (error) { send(response, 400, { error: error instanceof Error ? error.message : 'JSON inválido' }); return; }
@@ -1537,7 +1537,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           const source = current.sourceBlockId === null ? undefined : graph.block(current.sourceBlockId);
           if (source === undefined || focus?.id !== source.stableId || focus.content !== source.content) {
             send(response, 409, {
-              error: 'el bloque cambió después del pedido; Cotito no puede reemplazar una versión antigua',
+              error: 'el bloque cambió después del pedido; el bibliotecario no puede reemplazar una versión antigua',
             });
             return;
           }
@@ -1713,7 +1713,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
 
         // Quién escribe se decide aquí y no se lee del cuerpo. Antes de esto, el
         // cuerpo declaraba su propio participante: cualquiera que alcanzara el
-        // puerto podía firmar como Herbert o como Cotito.
+        // puerto podía firmar como Herbert o como el bibliotecario.
         const who = publicSharedEdit && scopedParticipant !== null
           ? { participant: scopedParticipant, channel: null, credential: null } satisfies Submitter
           : authorise(
@@ -4415,7 +4415,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
      * deja de estar a la vista, que es lo que se quiere: después uno vuelve a
      * leer la lista, no lo que pidió.
      *
-     * Firma el modelo local y no Cotito, y no es una formalidad: Cotito tiene
+     * Firma el modelo local y no el bibliotecario, y no es una formalidad: el bibliotecario tiene
      * criterio sobre el corpus y lo que dice se lee como suyo; esto es una
      * máquina contestando una pregunta, y mañana será otra máquina. Ver
      * answer.ts. La autoría del bloque cambia de mano al procesarlo, que es
@@ -5658,7 +5658,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
           //
           // Es cosa distinta de spokenOrigins: uno dice de dónde vinieron las
           // palabras y el otro quién las escribió por última vez. Un bloque
-          // dictado por Herbert y reescrito por Cotito aparece en los dos, y
+          // dictado por Herbert y reescrito por el bibliotecario aparece en los dos, y
           // nombrando participantes distintos.
           authorship: Object.fromEntries(
             graph

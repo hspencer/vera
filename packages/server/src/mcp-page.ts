@@ -4,7 +4,7 @@
 // sale a buscar, con su secreto, su biblioteca y sus colecciones— y cada
 // servicio saliente es distinto del siguiente: ahí una página por servicio es lo
 // correcto. MCP es la dirección contraria: una puerta y muchos que entran por
-// ella. Claude Code, Codex, Gemini y Cotito no son cuatro servicios sino cuatro
+// ella. Claude Code, Codex, Gemini y el bibliotecario no son cuatro servicios sino cuatro
 // visitantes de la misma puerta, y lo único que los distingue es quién son, qué
 // se les permite y qué se llevaron. Cuatro páginas serían cuatro copias de los
 // mismos tres campos.

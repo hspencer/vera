@@ -412,7 +412,7 @@ export function materialiseAll(store: Store, graph: VeraGraph): void {
  *
  * @invariant GeneratedContentIsAlwaysDistinguishable. El grafo en memoria ya lo
  * sabe; se materializa para que una consulta SQL pueda preguntar «qué escribió
- * Cotito» sin recorrer el registro, y para que la copia del cliente lo tenga.
+ * el bibliotecario» sin recorrer el registro, y para que la copia del cliente lo tenga.
  *
  * Sólo escribir cambia la mano: `move_block` no está y es rule
  * MovingLeavesTheHandAlone. Un bibliotecario que archiva no firma.

@@ -136,7 +136,7 @@ rule PressingATaskAdvancesIt {
     @guidance
         -- Sólo una persona. Un agente que quiera dar algo por hecho llega por
         -- donde llega todo lo suyo, y hoy eso es escribir el bloque con su mano
-        -- marcada. Que Cotito pueda tachar la lista de la compra de alguien sin
+        -- marcada. Que el bibliotecario pueda tachar la lista de la compra de alguien sin
         -- que se note es exactamente lo que la autoría por bloque existe para
         -- impedir.
 }

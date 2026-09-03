@@ -177,12 +177,12 @@ importador. Lo que queda son **comentarios y prosa**, y está a propósito.
 Búscalo así, para verlo tú mismo:
 
 ```sh
-git grep -InE 'herbert|hspencer|Cotito'
+git grep -InE 'herbert|hspencer|bibliotecario'
 ```
 
 | Dónde | Qué es | Qué hacer |
 | --- | --- | --- |
-| `specs/*.allium` | «Herbert» y «Cotito» como personas del dominio | dejarlo, ver abajo |
+| `specs/*.allium` | «Herbert» y «el bibliotecario» como personas del dominio | dejarlo, ver abajo |
 | comentarios en `packages/**` | ejemplos que nombran a esas mismas personas | dejarlo o reescribir al pasar |
 | `README.md` línea del manifiesto | cita a un texto publicado del autor | dejarlo: es una referencia, no configuración |
 | `docs/architecture.md` | URLs históricas del sitio personal que se proyecta | reemplazar por el tuyo si vas a publicar |
@@ -195,7 +195,7 @@ razonamiento que contienen. Déjalas mientras estudias el sistema, y usa tus
 propias personas cuando escribas specs nuevas. Si mandas un pull request tocando
 specs, no las renombres: sería un diff ilegible que esconde el cambio real.
 
-**Sobre el agente:** «Cotito» es el bibliotecario de esta instancia, no una parte
+**Sobre el agente:** «el bibliotecario» es un rol de esta instancia, no una parte
 fija de Vera. El tuyo tendrá otro nombre y otras instrucciones — son páginas del
 corpus, no código.
 

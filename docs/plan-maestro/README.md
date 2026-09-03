@@ -17,7 +17,7 @@ Separarlas es lo que permite corregir una sin reescribir las demás.
 
 **Esto no es el roadmap de producto.** El roadmap vive en el propio corpus de
 VERA —[VERA — Roadmap de producto y desarrollo](https://vera.mediafranca.net/vera-roadmap-de-producto-y-desarrollo/),
-mantenido por Cotito con fecha de revisión y checkboxes verificables— y
+mantenido por el bibliotecario con fecha de revisión y checkboxes verificables— y
 `docs/README.md` ya fija el criterio: la explicación de producto se corrige en
 Vera y se publica una sola vez. Repetirla aquí produciría exactamente la
 divergencia que este documento denuncia en otras partes (ver
@@ -46,7 +46,7 @@ código en el momento de tocarlo. Este plan los cita y no los repite.
 | Deuda técnica puntual ya medida | [`docs/plan-local-first.md`](../plan-local-first.md), [`plan-recorridos.md`](../plan-recorridos.md), [`plan-nadie-por-omision.md`](../plan-nadie-por-omision.md) | Repositorio, snapshots fechados |
 | Proceso de contribución, ramas, PR, seguridad | [`CONTRIBUTING.md`](../../CONTRIBUTING.md), [`SECURITY.md`](../../SECURITY.md) | Repositorio |
 | Autoría y licencia | [`AUTHORS.md`](../../AUTHORS.md), [`LICENCIA.md`](../../LICENCIA.md) | Repositorio |
-| Configuración humana de Cotito | [[Cotito]], [[Cotito - SOUL]], [[Cotito - IDENTITY]], [[Cotito - USER]], [[Cotito - TOOLS]], [[Cotito - LOOP]] | Corpus de VERA — fuente canónica; OpenClaw aún no la deriva (ver fase 6) |
+| Configuración humana del bibliotecario | páginas privadas de identidad y operación | Corpus de VERA — fuente canónica; OpenClaw aún no la deriva (ver fase 6) |
 | Postulación FONDEF | [[VERA — FONDEF IDeA I+D 2027]] | Corpus de Vera, perfil en formulación — cifras técnicas desactualizadas, ver E-7 |
 
 ## Piezas de este plan maestro
