@@ -33,7 +33,18 @@ servicio multiusuario listo para producción.
 > [Seguridad](SECURITY.md) y [Exponer Vera](docs/exponer-vera.md) antes de cambiar
 > la frontera de red.
 
-## Levantar el repositorio
+## Instalación
+
+Hay dos caminos, según qué se necesite.
+
+### Aplicación de escritorio (Windows y macOS)
+
+La vía más simple para probar Vera sin tocar código: instaladores firmados,
+memoria inicial ya cargada y actualización automática por canal estable. Ver
+[Distribución de Vera Desktop](docs/distribucion-escritorio.md) y, para
+Windows en particular, [Instalación en Windows](docs/instalacion-windows.md).
+
+### Desde el código fuente
 
 Requiere Node.js 24 o posterior.
 
@@ -48,18 +59,24 @@ npm run serve                 # http://127.0.0.1:4173
 
 Antes de escribir en una instancia propia, sigue la guía de
 [portabilidad](docs/portabilidad.md): la identidad inicial determina quién firma
-las operaciones del grafo. Para desarrollar también hacen falta el validador de
-Allium y los pasos de [CONTRIBUTING.md](CONTRIBUTING.md).
-
-La distribución de escritorio, la memoria inicial y el circuito de releases
-para Windows y macOS se describen en
-[Distribución de Vera Desktop](docs/distribucion-escritorio.md).
+las operaciones del grafo, y explica por qué conviene **hacer un fork** antes de
+clonar. Para desarrollar también hacen falta el validador de Allium y los pasos
+de [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```sh
 npm run spec
 npm run typecheck
 npm test
 ```
+
+## Conectar una IA a tu Vera
+
+Vera no se usa sólo desde su interfaz: cualquier cliente que hable
+[MCP](https://modelcontextprotocol.io/) —Claude Code, Claude Desktop, Codex,
+Gemini CLI, LM Studio y otros— se conecta a la misma puerta y opera el corpus
+con su propia identidad y credencial. La guía completa, con los cinco valores
+de conexión y un caso por cada forma de desplegar el cliente, está en
+[Conectar una IA](docs/conectar-una-ia.md).
 
 ## Documentación del código
 

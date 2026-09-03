@@ -9,3 +9,8 @@ Este archivo queda como dirección estable para enlaces del repositorio. Las
 [especificaciones Allium](specs/) gobiernan el comportamiento; los planes de
 [docs/](docs/README.md#planes-y-registro-de-decisiones) conservan el contexto
 técnico e histórico de implementaciones concretas.
+
+Una meta deseable sin spec ni implementación todavía —que proponer un cambio a
+Vera se pueda pedir en diálogo con tu propio agente, y llegue como pull
+request— está anotada en
+[CONTRIBUTING.md §10](CONTRIBUTING.md#10-meta-deseable-proponer-un-cambio-en-diálogo-con-tu-agente).
