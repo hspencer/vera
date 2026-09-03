@@ -141,9 +141,38 @@ jobs:
             release/*.blockmap
             release/SHA256SUMS-macos.txt
 
+  linux:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      - name: Construir AppImage, paquete deb y manifiesto
+        run: npm run pack:linux -- --publish never
+
+      - name: Checksums
+        run: |
+          cd release
+          shasum -a 256 *.AppImage *.deb *.yml > SHA256SUMS-linux.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vera-Linux-x64
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.yml
+            release/SHA256SUMS-linux.txt
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, macos]
+    needs: [windows, macos, linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
