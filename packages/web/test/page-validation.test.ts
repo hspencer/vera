@@ -42,7 +42,16 @@ describe('retained page validation', () => {
   it('conserva una copia incompleta hasta recuperar la canónica y permite reintentar', () => {
     assert.doesNotMatch(main, /summary\.blockCount !== kept\.blocks\.length[\s\S]{0,120}forgetPage/);
     assert.match(main, /Recuperar desde el corpus/);
-    assert.match(main, /readablePage\(page\.id\)\.then\(\(canonical\) => acceptCanonical\(canonical, true\)\)/);
+    assert.match(main, /canonicalPage\(page\)\.then\(\(canonical\) => acceptCanonical\(canonical, true\)\)/);
     assert.match(main, /event\.stopPropagation\(\)/);
+  });
+
+  it('resuelve por título cuando la identidad de la copia no existe en el corpus', () => {
+    assert.match(main, /readablePage\(kept\.id, signal\)/);
+    assert.match(main, /no such page/);
+    assert.match(main, /readablePage\(kept\.title, signal\)/);
+    assert.match(main, /validation = canonicalPage\(kept, delivery\.signal\)/);
+    assert.match(main, /workspace\.activePage !== page\.id/);
+    assert.match(main, /forgetPage\(page\.id\)/);
   });
 });

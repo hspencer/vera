@@ -7627,10 +7627,16 @@ html[data-working-slow='true']::after {
   border-left: 2px solid var(--text-dim);
 }
 
-.page-kept.divergent,
-.page-kept.unreachable {
+.page-kept.divergent {
   color: var(--voice);
   border-left-color: var(--voice);
+}
+
+/* Es el mismo fallo que anuncia `.notice`, no una segunda categoría cromática. */
+.page-kept.unreachable,
+.page-enrichment.failed {
+  color: var(--warm);
+  border-left-color: var(--warm);
 }
 
 .page-kept-recover {
@@ -7659,12 +7665,6 @@ html[data-working-slow='true']::after {
   padding-left: 0.6rem;
   border-left: 2px solid var(--text-dim);
 }
-
-.page-enrichment.failed {
-  color: var(--voice);
-  border-left-color: var(--voice);
-}
-
 
 /* ---------------------------------------------------------------------------
  * Las cosas por hacer

@@ -745,6 +745,28 @@ function markShowing(
 }
 
 /**
+ * Encontrar en el corpus la página de la que nació una copia retenida.
+ *
+ * La identidad local no siempre sobrevive a la escritura canónica: una página
+ * puede quedar retenida mientras la operación que la crea recibe otra identidad
+ * en el corpus. Repetir indefinidamente la consulta por el id viejo hacía que
+ * «Recuperar» no recuperara nada. El título es la segunda identidad que la ruta
+ * de páginas admite expresamente; se usa sólo cuando el id ya no existe, para no
+ * convertir un renombrado en una resolución ambigua.
+ */
+async function canonicalPage(
+  kept: Pick<PageView, 'id' | 'title'>,
+  signal?: AbortSignal,
+): Promise<PageView> {
+  try {
+    return await api.readablePage(kept.id, signal);
+  } catch (error) {
+    if (!(error instanceof Error) || !/no such page/i.test(error.message) || kept.title === kept.id) throw error;
+    return api.readablePage(kept.title, signal);
+  }
+}
+
+/**
  * Cuenta con palabras qué sigue haciendo Vera después de entregar la escritura.
  * Es estado de esta lectura, no del corpus, y vive junto al título que califica.
  */
@@ -865,7 +887,7 @@ async function openPage(
     if (slow !== null) clearTimeout(slow);
     fromKept = true;
     page = kept;
-    if (navigator.onLine) validation = api.readablePage(kept.id, delivery.signal);
+    if (navigator.onLine) validation = canonicalPage(kept, delivery.signal);
   }
 
   try {
@@ -1044,14 +1066,17 @@ async function openPage(
    */
   if (validation !== null) {
     const acceptCanonical = (canonical: PageView, force = false): void => {
-      if (opening !== thisOpening || workspace.activePage !== canonical.id || openView === null) return;
+      // La página activa todavía lleva la identidad de la copia. Exigir aquí la
+      // identidad canónica anulaba precisamente la recuperación por título.
+      if (opening !== thisOpening || workspace.activePage !== page.id || openView === null) return;
       if (!force && sameReadablePage(retained as PageView, canonical)) {
         showingKept = false;
         markShowing(text, true, 'current');
         return;
       }
 
-      void held.forgetPage(canonical.id);
+      // Se descarta la llave vieja; la canónica se retendrá al abrirla.
+      void held.forgetPage(page.id);
       const active = document.activeElement;
       const writing = active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement ||
         (active instanceof HTMLElement && active.isContentEditable);
@@ -1086,7 +1111,7 @@ async function openPage(
       // Un gesto explícito de recuperación siempre recompone la página desde la
       // respuesta canónica. Comparar y limitarse a cambiar el rótulo podía dejar
       // en pantalla una composición local rota aunque sus datos comparasen igual.
-      void api.readablePage(page.id).then((canonical) => acceptCanonical(canonical, true)).catch((error) => {
+      void canonicalPage(page).then((canonical) => acceptCanonical(canonical, true)).catch((error) => {
         if (opening !== thisOpening || workspace.activePage !== page.id) return;
         markShowing(text, true, 'unreachable', retryValidation);
         notice(`No se pudo recuperar desde el corpus: ${error instanceof Error ? error.message : 'error'}.`);
