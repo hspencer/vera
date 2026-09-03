@@ -25,7 +25,7 @@ contract DesktopUpdateSafety {
 -- Enumerations
 ------------------------------------------------------------
 
-enum DesktopPlatform { windows | macos }
+enum DesktopPlatform { windows | macos | linux }
 enum InstallationKind { installed | portable }
 enum UpdateState { current | offered | downloading | ready | failed }
 
@@ -48,10 +48,25 @@ entity StableRelease {
     published: Boolean
     windows_installer_available: Boolean
     mac_installer_available: Boolean
+    linux_installer_available: Boolean
     update_metadata_available: Boolean
     signed_for_windows: Boolean
     signed_for_macos: Boolean
     notarized_for_macos: Boolean
+}
+
+-- Distribución temprana, sin firma comercial, mientras la firma de Windows y
+-- la notarización de Apple no son alcanzables para quien mantiene Vera. No
+-- reemplaza a StableRelease ni relaja sus garantías: es una categoría propia
+-- que nunca pretende la confianza de una release firmada, y nunca participa
+-- de la actualización automática (ver AlphaReleasesDiscloseUnsignedRisk).
+entity AlphaRelease {
+    version: String
+    published: Boolean
+    windows_installer_available: Boolean
+    mac_installer_available: Boolean
+    checksum_available: Boolean
+    unsigned_warning_disclosed: Boolean
 }
 
 ------------------------------------------------------------
@@ -73,8 +88,9 @@ rule OfferStableUpdate {
     requires: release.update_metadata_available
     requires: release.version != installation.installed_version
     requires:
-        installation.platform = windows and release.signed_for_windows
-        or installation.platform = macos and release.signed_for_macos and release.notarized_for_macos
+        installation.platform = windows and release.windows_installer_available and release.signed_for_windows
+        or installation.platform = macos and release.mac_installer_available and release.signed_for_macos and release.notarized_for_macos
+        or installation.platform = linux and release.linux_installer_available
     ensures:
         installation.available_version = release.version
         installation.update_state = offered
@@ -113,15 +129,29 @@ rule UserAppliesPreparedUpdate {
 -- Invariants
 ------------------------------------------------------------
 
-invariant StableReleasesAreCompleteAndTrusted {
+-- Cada plataforma es confiable por sí sola: no exige que las tres estén
+-- listas a la vez. Linux no requiere firma ni notarización porque no existe
+-- un bloqueo equivalente a SmartScreen o Gatekeeper para AppImage/deb; ya
+-- puede publicarse como StableRelease sin esperar a Windows o macOS.
+invariant StableReleasePlatformsAreTrusted {
     for release in StableReleases:
-        release.published implies
-            release.windows_installer_available and
-            release.mac_installer_available and
+        (release.published implies
             release.update_metadata_available and
-            release.signed_for_windows and
-            release.signed_for_macos and
-            release.notarized_for_macos
+            (release.windows_installer_available or release.mac_installer_available or release.linux_installer_available))
+        and (release.windows_installer_available implies release.signed_for_windows)
+        and (release.mac_installer_available implies release.signed_for_macos and release.notarized_for_macos)
+}
+
+-- Lo que SÍ garantiza una AlphaRelease: identidad verificable del build
+-- (checksum) y que quien la publicó divulgó expresamente, en las notas o la
+-- documentación de esa release, que no está firmada y cómo sortear el aviso
+-- del sistema operativo. No finge la confianza de StableRelease.
+invariant AlphaReleasesDiscloseUnsignedRisk {
+    for release in AlphaReleases:
+        release.published implies
+            release.checksum_available and
+            release.unsigned_warning_disclosed and
+            (release.windows_installer_available or release.mac_installer_available)
 }
 
 ------------------------------------------------------------
