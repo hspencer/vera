@@ -20,6 +20,8 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Instalar el verificador Allium
+        run: cargo install allium-cli --version 3.5.0 --locked
       - run: npm run spec
       - run: npm run build
       # Algunas suites levantan servidores y sesiones con identidades fijas;
