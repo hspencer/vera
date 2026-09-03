@@ -1,8 +1,36 @@
 # Instalación de Vera en Windows
 
-Estado: instalador empaquetable y cliente de actualización implementados. Una
-release para personas externas todavía requiere firma Authenticode y una prueba
-completa de actualización entre dos versiones instaladas.
+Estado: instalador empaquetable y cliente de actualización implementados.
+Conseguir una identidad Authenticode no es viable ahora mismo para quien
+mantiene Vera (ver [Distribución de Vera Desktop](distribucion-escritorio.md)),
+así que las releases actuales para Windows se publican **sin firmar**, como
+`AlphaRelease` en `specs/desktop-distribution.allium`. El archivo es exactamente
+el mismo código que tendría una versión firmada; lo único que falta es la
+identidad comercial que Windows verifica.
+
+## Instalar sin firma
+
+Al ejecutar `Vera Setup <versión> (sin firmar).exe` vas a ver una pantalla azul
+de **Windows SmartScreen**: "Windows protegió su PC". Esto es exactamente lo
+que se espera de un instalador sin Authenticode, no un indicio de que el
+archivo esté dañado o alterado. Para continuar:
+
+1. Clic en **"Más información"** (aparece dentro del mismo aviso).
+2. Clic en **"Ejecutar de todas formas"**.
+
+Antes de instalar, podés verificar que el archivo no fue alterado comparándolo
+con el `SHA256SUMS-windows.txt` que acompaña esa misma release en GitHub:
+
+```sh
+certutil -hashfile "Vera Setup <versión> (sin firmar).exe" SHA256
+```
+
+El resultado debe coincidir con la línea correspondiente en `SHA256SUMS-windows.txt`.
+
+Una release sin firmar **no ofrece actualización automática** (no se genera
+`latest.yml`): actualizar de una versión sin firmar a la siguiente significa
+volver a descargar el instalador desde
+[GitHub Releases](https://github.com/mediafranca/vera/releases/latest).
 
 ## Artefactos
 
@@ -75,7 +103,8 @@ aplicaciones: sólo las releases estables creadas por tag alimentan `latest.yml`
 - probar instalación, primera apertura, reinicio y desinstalación en Windows 11
   limpio;
 - diseñar icono y metadatos finales;
-- incorporar la identidad Authenticode a los secretos protegidos del workflow;
+- conseguir una identidad Authenticode viable (hoy bloqueada por costo/trámite
+  para quien mantiene Vera) y cargarla a los secretos protegidos del workflow;
 - respaldo previo y prueba de migración entre dos versiones;
 - probar el ciclo completo versión A → versión B en Windows 11 limpio;
 - diagnóstico exportable sin secretos;

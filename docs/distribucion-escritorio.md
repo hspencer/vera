@@ -1,20 +1,74 @@
 # Distribución de Vera Desktop
 
-Vera se distribuye como una aplicación instalable para Windows y macOS. El
-programa y la memoria son piezas distintas: actualizar o desinstalar el primero
-no borra la segunda.
+Vera se distribuye como una aplicación instalable para Windows, macOS y Linux.
+El programa y la memoria son piezas distintas: actualizar o desinstalar el
+primero no borra la segunda.
 
-## Artefactos de una release estable
+## Dos niveles de confianza, formalizados en la spec
+
+`specs/desktop-distribution.allium` distingue dos categorías de release, cada
+una con sus propias garantías — ninguna finge tener las garantías de la otra:
+
+- **`StableRelease`** — cada plataforma es confiable por sí sola. Windows exige
+  firma Authenticode; macOS exige firma con Developer ID y notarización; Linux
+  no exige ninguna de las dos porque no existe un bloqueo de sistema operativo
+  equivalente a SmartScreen o Gatekeeper para AppImage/deb. Solo estas
+  releases participan de la actualización automática.
+- **`AlphaRelease`** — Windows y/o macOS sin firma comercial, mientras esa
+  firma no sea alcanzable para quien mantiene Vera. Exige checksum verificable
+  y divulgación explícita del riesgo en las notas de la release. Nunca ofrece
+  actualización automática: pasar de una versión sin firmar a la siguiente es
+  una descarga manual.
+
+Cuál de las dos aplica a cada plataforma, en cada release, se decide sin
+intervención humana: el workflow firma si encuentra los secretos de Windows o
+de Apple, y publica sin firmar si no los encuentra — nunca falla en silencio
+ni dejan de existir instaladores por eso.
+
+## Artefactos de una release
 
 | Plataforma | Primera instalación | Actualización | Arquitectura |
 | --- | --- | --- | --- |
-| Windows | `Vera Setup <versión>.exe` | NSIS + `latest.yml` | x64 |
+| Windows (firmado) | `Vera Setup <versión>.exe` | NSIS + `latest.yml` | x64 |
+| Windows (sin firmar) | `Vera Setup <versión> (sin firmar).exe` | descarga manual, sin `latest.yml` | x64 |
 | Windows portable | `Vera <versión>.exe` | sustitución manual | x64 |
-| macOS | `Vera-<versión>-universal.dmg` | ZIP + `latest-mac.yml` | Intel + Apple Silicon |
+| macOS (firmado) | `Vera-<versión>-universal.dmg` | ZIP + `latest-mac.yml` | Intel + Apple Silicon |
+| macOS (sin firmar) | `Vera-<versión>-universal (sin firmar).dmg` | descarga manual, sin ZIP ni `latest-mac.yml` | Intel + Apple Silicon |
+| Linux | `Vera-<versión>.AppImage`, `.deb` | descarga manual | x64 |
 
-El ZIP de macOS no es otro instalador para la persona: es necesario para que el
-actualizador genere `latest-mac.yml`. El DMG sigue siendo la descarga humana de
-primera instalación.
+El ZIP de macOS no es otro instalador para la persona: solo existe para que el
+actualizador genere `latest-mac.yml`, así que un build sin firmar (que nunca
+ofrece auto-actualización) no lo incluye. El DMG sigue siendo la descarga
+humana de primera instalación en ambos casos.
+
+## Instalar sin firma
+
+**Windows:** ver [Instalación en Windows](instalacion-windows.md#instalar-sin-firma).
+
+**macOS:** al abrir `Vera-<versión>-universal (sin firmar).dmg` y arrastrar la
+app a Aplicaciones, Gatekeeper va a bloquear la primera apertura directa
+("Vera no se puede abrir porque su desarrollador no se puede verificar", o
+directamente sin ofrecer un botón para abrirla igual). Para continuar:
+
+1. Clic derecho (o Control+clic) sobre `Vera.app` → **"Abrir"**.
+2. Confirmar **"Abrir"** en el diálogo que aparece (distinto del de doble clic:
+   este sí ofrece la opción).
+3. Si macOS igual la bloquea: Ajustes del Sistema → Privacidad y Seguridad →
+   bajar hasta el aviso sobre Vera → **"Abrir de todas formas"**.
+
+Alternativa por Terminal, quitando el atributo de cuarentena que macOS agrega
+a todo lo descargado del navegador:
+
+```sh
+xattr -cr /Applications/Vera.app
+```
+
+Antes de instalar, podés verificar el archivo contra el `SHA256SUMS-macos.txt`
+de esa misma release:
+
+```sh
+shasum -a 256 "Vera-<versión>-universal (sin firmar).dmg"
+```
 
 ## Qué ocurre en cada push
 
@@ -26,13 +80,23 @@ convertir cada commit en software instalado automáticamente.
 Sólo un tag que coincide exactamente con la versión de `package.json` abre el
 circuito de distribución:
 
-1. Windows construye NSIS y portable x64 con firma Authenticode.
-2. macOS construye DMG y ZIP universales, firma con Developer ID y notariza.
-3. ambos runners generan manifiestos y checksums.
-4. un trabajo final reúne todo en una única GitHub Release.
+1. Windows construye NSIS y portable x64; firma con Authenticode si encuentra
+   `WINDOWS_CERTIFICATE`/`WINDOWS_CERTIFICATE_PASSWORD`, o construye sin firmar
+   si no los encuentra.
+2. macOS construye DMG y ZIP universales; firma con Developer ID y notariza si
+   encuentra las cinco credenciales de Apple, o construye solo el DMG sin
+   firmar si no las encuentra.
+3. Linux construye AppImage y deb x64 — nunca requiere firma.
+4. cada runner genera checksums; los builds sin firmar además pierden su
+   manifiesto de actualización (`latest.yml`/`latest-mac.yml`) para que
+   `electron-updater` nunca los ofrezca como actualización automática.
+5. un trabajo final reúne todo en una única GitHub Release, con notas que
+   dejan explícito qué plataformas están firmadas y cuáles no.
 
-Si falta cualquier credencial de firma, la release falla antes de publicar. No
-se degrada silenciosamente a un instalador de «editor desconocido».
+Nada se degrada en silencio: si falta una credencial, el instalador de esa
+plataforma sale marcado "(sin firmar)" y la release lo dice en sus notas, en
+vez de fallar sin publicar nada (que era el comportamiento anterior) o de
+pretender la confianza de un instalador firmado.
 
 ## Secretos requeridos en GitHub Actions
 
@@ -84,8 +148,8 @@ npm run spec
 npm test -- --test-concurrency=1
 npm run typecheck
 npm run build:desktop
-npm version 0.6.3 --no-git-tag-version
-npm run release:verify-tag -- v0.6.3
+npm version <versión> --no-git-tag-version
+npm run release:verify-tag -- v<versión>
 ```
 
 Después se revisa y compromete el cambio de versión. Crear y empujar el tag es

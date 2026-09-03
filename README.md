@@ -37,14 +37,21 @@ servicio multiusuario listo para producción.
 
 Hay dos caminos, según qué se necesite.
 
-### Aplicación de escritorio (Windows y macOS)
+### Aplicación de escritorio (Windows, macOS y Linux)
 
-La vía más simple para probar Vera sin tocar código: instaladores firmados,
-memoria inicial ya cargada y actualización automática por canal estable.
+La vía más simple para probar Vera sin tocar código: memoria inicial ya
+cargada y, donde hay firma comercial, actualización automática por canal
+estable.
 
 **[Descargar la última versión](https://github.com/mediafranca/vera/releases/latest)**
-desde GitHub Releases. Ver [Distribución de Vera Desktop](docs/distribucion-escritorio.md)
-y, para Windows en particular, [Instalación en Windows](docs/instalacion-windows.md).
+desde GitHub Releases. El instalador de **Linux** (AppImage o deb) es siempre
+confiable — no requiere firma de código. Los de **Windows y macOS** hoy se
+publican **sin firmar**, marcados "(sin firmar)": conseguir una identidad
+Authenticode o notarización de Apple no es viable ahora mismo para quien
+mantiene Vera. El sistema operativo va a advertirlo (SmartScreen o Gatekeeper)
+antes de dejarte abrirlo; las instrucciones para instalar de todas formas
+están en [Instalación en Windows](docs/instalacion-windows.md#instalar-sin-firma)
+y en [Distribución de Vera Desktop](docs/distribucion-escritorio.md#instalar-sin-firma).
 
 ### Desde el código fuente
 
