@@ -303,6 +303,50 @@ como la persona propietaria, y la procedencia es de lo que Vera trata.
 
 El instructivo completo está en [`docs/portabilidad.md`](docs/portabilidad.md).
 
+## 10. Meta deseable: proponer un cambio en diálogo con tu agente
+
+Esto no existe todavía. Se anota aquí porque es una dirección, no una tarea:
+**que quien conversa con su propia IA sobre su propia Vera pueda, en esa misma
+conversación, terminar proponiendo una mejora a Vera** —sin salir del diálogo a
+manejar git a mano— y que ese cambio llegue como un pull request normal,
+revisado por la custodia igual que cualquier otro.
+
+Parte del camino ya está construido, y no por este objetivo sino porque ya hacía
+falta:
+
+- [`docs/portabilidad.md`](docs/portabilidad.md) empieza por hacer un fork antes
+  de clonar, exactamente para que cualquier arreglo vuelva como pull request en
+  vez de perderse en una conversación, y está escrito **para que un agente lo
+  pueda seguir paso a paso**.
+- El método de este archivo —spec antes que código, una rama por asunto, la
+  forma del commit, la plantilla del punto 5— ya es tan legible para un agente
+  como para una persona: son reglas escritas, no criterio tácito.
+- Las skills de Allium (`elicit`, `tend`, `weed`, ver [§1](#1-el-método-allium-antes-que-código))
+  son en sí mismas agentes que ya recorren la mitad del ciclo: convierten una
+  conversación en una spec.
+
+Lo que falta no es el método — es la distancia entre **usar Vera** (hablarle a
+través de la puerta MCP, con la identidad y el alcance de quien pregunta) y
+**proponer un cambio a Vera** (que vive en GitHub, con la identidad de esa misma
+persona ahí, no en el corpus). Cerrar esa distancia implica, sin resolverlo
+todavía:
+
+- **De qué identidad sale el commit.** No la credencial MCP de Vera —esa firma
+  el corpus, no el código— sino la cuenta de GitHub de quien lo pide, sobre su
+  propio fork. El [cerco de escritura confinada](specs/confined-writing.allium)
+  es la referencia de diseño más cercana, aplicada a un sistema distinto.
+- **Qué se automatiza y qué sigue exigiendo a alguien mirar.** `make check` antes
+  de proponer, sí; saltarse la spec porque el agente escribe rápido, no. La
+  plantilla del punto 5 —qué spec gobierna, qué se comprobó a mano, qué quedó
+  fuera— tendría que llenarla el agente, no omitirla.
+- **Que la procedencia quede tan clara como en el corpus.** El punto 6 ya dice
+  que lo escrito con asistencia de un modelo se declara; un pull request abierto
+  por un agente en nombre de alguien no es una excepción a esa regla, es el caso
+  que la prueba.
+
+No hay spec todavía porque el comportamiento no está claro: es exactamente el
+caso del punto 1 de este método. Antes de construirlo, se elicita.
+
 ---
 
 *Este archivo describe cómo se trabaja hoy, con un autor y una custodia. Cuando
