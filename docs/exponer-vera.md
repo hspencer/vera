@@ -288,6 +288,9 @@ el 5, y para entonces lo que se expone son archivos.
 
 ## Ver también
 
+- [Acceder desde tu teléfono u otro equipo](acceso-remoto-tailscale.md) — el
+  tutorial de uso del modo 1, para quien instaló Vera y quiere alcanzarla desde
+  otro aparato.
 - [`specs/identity-access.allium`](../specs/identity-access.allium) — cómo se
   autentica una persona, y las seis preguntas abiertas.
 - [`specs/personal-site-projection.allium`](../specs/personal-site-projection.allium)

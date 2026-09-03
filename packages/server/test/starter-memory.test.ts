@@ -21,7 +21,7 @@ describe('memoria inicial distribuida', () => {
     assert.equal(first.version, STARTER_MEMORY_VERSION);
     assert.equal(first.applied, STARTER_CHANGES.length);
     assert.equal(first.duplicates, 0);
-    assert.equal(first.pages, 7);
+    assert.equal(first.pages, 8);
     assert.ok(first.blocks > 30);
 
     const store = openStore({ path: databasePath, graphName: 'mind' });
@@ -31,6 +31,7 @@ describe('memoria inicial distribuida', () => {
       graph.pages().map((one) => one.title).sort(),
       [
         'Vera',
+        'VERA — Acceder desde tus otros dispositivos',
         'VERA — Conectar una inteligencia artificial',
         'VERA — Manual',
         'VERA — Página de ejemplo',
