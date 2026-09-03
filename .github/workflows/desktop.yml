@@ -50,6 +50,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: verify
     runs-on: windows-latest
+    outputs:
+      signed: ${{ steps.sign-check.outputs.signed }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -58,22 +60,42 @@ jobs:
           cache: npm
       - run: npm ci
 
-      - name: Exigir identidad Authenticode
+      - name: Determinar si hay identidad Authenticode
+        id: sign-check
         shell: pwsh
         env:
           WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          if (-not $env:WIN_CSC_LINK -or -not $env:WIN_CSC_KEY_PASSWORD) {
-            throw 'Faltan WINDOWS_CERTIFICATE o WINDOWS_CERTIFICATE_PASSWORD; no se publica Vera sin firma.'
+          $signed = [bool]$env:WIN_CSC_LINK -and [bool]$env:WIN_CSC_KEY_PASSWORD
+          "signed=$($signed.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          if (-not $signed) {
+            Write-Host '::warning::Faltan WINDOWS_CERTIFICATE/WINDOWS_CERTIFICATE_PASSWORD: se construye sin firmar, como AlphaRelease.'
           }
 
-      - name: Construir instalador, portable y manifiesto
+      - name: Construir instalador y portable firmados
+        if: steps.sign-check.outputs.signed == 'true'
         shell: pwsh
         env:
           WIN_CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: npm run pack:windows -- --publish never
+
+      - name: Construir instalador y portable sin firmar
+        if: steps.sign-check.outputs.signed == 'false'
+        shell: pwsh
+        run: npm run pack:windows -- --publish never
+
+      - name: Marcar y limpiar artefactos sin firmar
+        if: steps.sign-check.outputs.signed == 'false'
+        shell: pwsh
+        run: |
+          # Sin firma no hay canal de actualización automática: el manifiesto
+          # de electron-updater no debe publicarse (ver AlphaRelease en
+          # specs/desktop-distribution.allium, que nunca ofrece auto-update).
+          Remove-Item release/latest.yml -ErrorAction SilentlyContinue
+          Remove-Item release/*.blockmap -ErrorAction SilentlyContinue
+          Get-ChildItem release -Filter *.exe | Rename-Item -NewName { $_.Name -replace '\.exe$', ' (sin firmar).exe' }
 
       - name: Checksums
         shell: pwsh
@@ -95,6 +117,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: verify
     runs-on: macos-latest
+    outputs:
+      signed: ${{ steps.sign-check.outputs.signed }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -103,7 +127,8 @@ jobs:
           cache: npm
       - run: npm ci
 
-      - name: Exigir firma y notarización de Apple
+      - name: Determinar si hay firma y notarización de Apple
+        id: sign-check
         env:
           CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
@@ -111,13 +136,15 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          test -n "$CSC_LINK"
-          test -n "$CSC_KEY_PASSWORD"
-          test -n "$APPLE_ID"
-          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-          test -n "$APPLE_TEAM_ID"
+          if [ -n "$CSC_LINK" ] && [ -n "$CSC_KEY_PASSWORD" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Faltan credenciales de firma/notarización de Apple: se construye sin firmar, como AlphaRelease."
+          fi
 
-      - name: Construir DMG universal, ZIP de actualización y manifiesto
+      - name: Construir DMG universal firmado y notarizado
+        if: steps.sign-check.outputs.signed == 'true'
         env:
           CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
@@ -126,9 +153,29 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run pack:mac -- --publish never
 
+      - name: Construir DMG universal sin firmar
+        if: steps.sign-check.outputs.signed == 'false'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run pack:mac -- --publish never -c.mac.notarize=false
+
+      - name: Marcar y limpiar artefactos sin firmar
+        if: steps.sign-check.outputs.signed == 'false'
+        run: |
+          # Sin firma no hay canal de actualización automática ni sentido en
+          # publicar el ZIP (solo existe para que electron-updater arme
+          # latest-mac.yml). Ver AlphaRelease en specs/desktop-distribution.allium.
+          cd release
+          rm -f latest-mac.yml *.zip *.blockmap
+          for f in *.dmg; do
+            [ -e "$f" ] || continue
+            mv "$f" "${f%.dmg} (sin firmar).dmg"
+          done
+
       - name: Checksums
         run: |
           cd release
+          shopt -s nullglob
           shasum -a 256 *.dmg *.zip *.yml *.blockmap > SHA256SUMS-macos.txt
 
       - uses: actions/upload-artifact@v4
@@ -183,7 +230,49 @@ jobs:
           path: release
           merge-multiple: true
 
+      - name: Redactar notas de la release
+        id: notes
+        env:
+          WINDOWS_SIGNED: ${{ needs.windows.outputs.signed }}
+          MACOS_SIGNED: ${{ needs.macos.outputs.signed }}
+        run: |
+          {
+            echo "## Vera $GITHUB_REF_NAME"
+            echo
+            echo "Linux (AppImage, deb) es siempre una release estable: no requiere"
+            echo "firma de código, así que no depende de certificados comerciales."
+            echo
+            if [ "$WINDOWS_SIGNED" = "true" ] && [ "$MACOS_SIGNED" = "true" ]; then
+              echo "Windows y macOS están firmados y notarizados en esta release."
+            else
+              echo "### Estado de firma en esta release"
+              echo
+              if [ "$WINDOWS_SIGNED" = "true" ]; then
+                echo "- **Windows**: firmado (Authenticode)."
+              else
+                echo "- **Windows**: SIN FIRMAR. Windows SmartScreen va a advertir \"Windows protegió tu PC\"."
+              fi
+              if [ "$MACOS_SIGNED" = "true" ]; then
+                echo "- **macOS**: firmado y notarizado."
+              else
+                echo "- **macOS**: SIN FIRMAR ni notarizado. Gatekeeper va a bloquear la apertura directa."
+              fi
+              echo
+              echo "Vera es todavía una alfa de investigación: conseguir firma de código"
+              echo "comercial (Authenticode, notarización de Apple) no es viable ahora"
+              echo "mismo para quien la mantiene. Los instaladores sin firmar son"
+              echo "exactamente el mismo código que los firmados, verificable con los"
+              echo "SHA256SUMS de esta release. Instrucciones para instalar de todas"
+              echo "formas: [Instalación en Windows](https://github.com/mediafranca/vera/blob/$GITHUB_REF_NAME/docs/instalacion-windows.md#instalar-sin-firma),"
+              echo "[Distribución de escritorio](https://github.com/mediafranca/vera/blob/$GITHUB_REF_NAME/docs/distribucion-escritorio.md#instalar-sin-firma)."
+              echo
+              echo "Ninguna versión sin firmar recibe actualización automática:"
+              echo "actualizar significa volver a descargar de esta página."
+            fi
+          } > "$RUNNER_TEMP/release-notes.md"
+          echo "path=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_OUTPUT"
+
       - name: Publicar una sola release multiplataforma
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --notes-file "${{ steps.notes.outputs.path }}"

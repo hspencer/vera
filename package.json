@@ -54,7 +54,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "hspencer",
+        "owner": "mediafranca",
         "repo": "vera"
       }
     ],
