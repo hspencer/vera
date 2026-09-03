@@ -463,6 +463,12 @@ Dicho aparte para no confundir lo construido con lo previsto.
   `POST /operations` y el resto de la API no forman parte de esa puerta.
 - **OAuth.** Es M6. Para los formularios HTTP que aceptan un bearer y cabeceras
   propias no hace falta, así que no bloquea M5.
+- **Una puerta pública sin montar un túnel a mano.** El caso C de este documento
+  asume un frente HTTPS ya configurado, como el de esta instancia. El producto
+  complementario [Vera Conecta](https://github.com/mediafranca/vera-conecta)
+  construye ese mismo camino sin abrir puertos, sin IP pública y sin instalar
+  Tailscale, para quien no quiere montar su propio túnel. Hoy es un walking
+  skeleton (M0/M1): no hay ningún ambiente desplegado todavía.
 
 ---
 
@@ -477,3 +483,5 @@ Dicho aparte para no confundir lo construido con lo previsto.
   privado, público de lectura, público de acceso, y qué exige cada uno.
 - [`docs/portabilidad.md`](portabilidad.md) — levantar una instancia propia y
   exponerla con Tailscale.
+- [Vera Conecta](https://github.com/mediafranca/vera-conecta) — el puente
+  opcional para clientes MCP en Internet sin túnel propio. En desarrollo.

@@ -19,15 +19,16 @@ Si no existe una memoria, Vera pide el nombre de la persona propietaria. No lo
 deduce de Windows: esa identidad firma las futuras contribuciones humanas y
 debe ser una declaración consciente.
 
-Después crea una memoria inicial versionada con siete páginas:
+Después crea una memoria inicial versionada con ocho páginas:
 
 1. `Vera`, portada y orientación;
 2. `VERA — Primeros pasos`;
 3. `VERA — Manual`;
 4. `VERA — Teclado y atajos`;
-5. `VERA — Página de ejemplo`;
-6. `VERA — Conectar una inteligencia artificial`;
-7. `VERA — Principios`.
+5. `VERA — Acceder desde tus otros dispositivos`;
+6. `VERA — Página de ejemplo`;
+7. `VERA — Conectar una inteligencia artificial`;
+8. `VERA — Principios`.
 
 Estas páginas no se copian desde una base binaria. Son operaciones canónicas,
 idempotentes y auditables firmadas por `participant:vera-distribution`. La

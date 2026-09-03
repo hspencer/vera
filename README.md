@@ -85,6 +85,14 @@ conexión MCP, portabilidad, exposición, obligaciones de prueba y planes de
 trabajo. Las [especificaciones Allium](specs/) son la fuente de verdad del
 comportamiento.
 
+## Proyectos relacionados
+
+[Vera Conecta](https://github.com/mediafranca/vera-conecta) es el puente
+opcional entre una instalación local de Vera y clientes MCP en Internet, sin
+abrir puertos, IP pública ni Tailscale. Vive en un repositorio propio porque
+es infraestructura de red con su propio ciclo de despliegue; hoy es un walking
+skeleton (M0/M1), sin ambiente desplegado.
+
 Vera se publica bajo [GNU AGPL-3.0-only](LICENSE). Consulta también
 [LICENCIA.md](LICENCIA.md), [AUTHORS.md](AUTHORS.md),
 [CONTRIBUTING.md](CONTRIBUTING.md) y [NOTICE](NOTICE).

@@ -287,6 +287,11 @@ Así se usa desde el teléfono y desde otra máquina sin abrir nada a internet. 
 servidor avisa al arrancar si le pides escuchar fuera de loopback; no es una
 advertencia decorativa: hoy es la única puerta.
 
+Si instalaste Vera como aplicación de escritorio en vez de levantarla desde el
+código fuente, el mismo procedimiento —con capturas y sin terminal salvo por un
+comando— está en
+[Acceder desde tu teléfono u otro equipo](acceso-remoto-tailscale.md).
+
 ---
 
 ## 7. Llevarte el corpus entre máquinas

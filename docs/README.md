@@ -28,6 +28,7 @@ desplegar y contribuir al programa.
 - [Portabilidad](portabilidad.md)
 - [Instalación en Windows](instalacion-windows.md)
 - [Exponer Vera](exponer-vera.md)
+- [Acceder desde tu teléfono u otro equipo (Tailscale)](acceso-remoto-tailscale.md)
 - [Cobertura y obligaciones de prueba](test-obligations.md)
 - [Benchmark de diseño](benchmark.md)
 
