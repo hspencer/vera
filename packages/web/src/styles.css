@@ -3284,12 +3284,42 @@ code {
 /* Código en bloque: conserva sus blancos, pero se pliega al ancho de lectura.
    Sin `background: none` heredaría la píldora del código en línea. */
 .body pre {
+  position: relative;
   margin: 0.5em 0;
   padding: 0.6rem 0.8rem;
   background: var(--bg-raised);
   border: 1px solid var(--rule);
   border-radius: 4px;
   overflow-x: visible;
+}
+
+pre.copyable-code {
+  position: relative;
+}
+
+.body pre.copyable-code,
+.librarian-reply pre.copyable-code {
+  padding-top: 2.15rem;
+}
+
+.code-copy {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.4rem;
+  z-index: 1;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.16rem 0.45rem;
+  background: var(--bg);
+  color: var(--text-dim);
+  font: 0.72rem var(--font-ui);
+  cursor: pointer;
+}
+
+.code-copy:hover,
+.code-copy:focus-visible {
+  color: var(--text);
+  border-color: var(--text-dim);
 }
 
 .body pre code {
@@ -3344,8 +3374,9 @@ code {
    queda por si no se pudo averiguar el tamaño natural del dibujo, que es el caso
    en que `fitFrame` no toca nada y el marco se queda como Mermaid lo dejó. */
 .mermaid-figure {
+  position: relative;
   margin: 0.6em 0;
-  padding: 0.4rem 0;
+  padding: 2.15rem 0 0.4rem;
   max-width: 100%;
   overflow-x: auto;
 }

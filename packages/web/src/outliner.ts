@@ -46,6 +46,7 @@ import { completeInPlace, editInPlace, placeNear, type Choice } from './fields.t
 import { governingKind, kindSays, renderGoverning } from './governing-table.ts';
 import { answerQueryBlock } from './query-block.ts';
 import { renderMermaid } from './mermaid.ts';
+import { decorateCodeBlocks } from './code-copy.ts';
 import { is, isTextComposing } from './bindings.ts';
 import { icon, type IconName } from './icons.ts';
 import { when } from './dates.ts';
@@ -710,6 +711,7 @@ function librarianTurn(request: LibrarianRequestView): HTMLElement {
     const reply = document.createElement('div');
     reply.className = 'librarian-reply';
     reply.innerHTML = renderMarkdown(request.reply.text);
+    decorateCodeBlocks(reply);
     turn.append(reply);
     if (request.reply.proposal !== null) {
       const count = request.reply.proposal.changes.length;
@@ -2862,6 +2864,7 @@ export function renderOutliner(
     gesture: 'followed_reference' | 'followed_backlink' = 'followed_reference',
   ): void => {
     host.innerHTML = renderMarkdown(source, options);
+    decorateCodeBlocks(host);
     host.addEventListener('click', (event) => {
       const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a');
       if (link === null) return;
@@ -3036,6 +3039,7 @@ export function renderOutliner(
 
     const paint = (content: string): void => {
       text.innerHTML = renderMarkdown(content, options);
+      decorateCodeBlocks(text);
       markMissingImages(text);
       void renderMermaid(text);
     };
@@ -4517,6 +4521,7 @@ export function renderOutliner(
       const text = document.createElement('div');
       text.className = 'body-text';
       text.innerHTML = renderMarkdown(task === null ? node.block.content : task.said, options);
+      decorateCodeBlocks(text);
       markMissingImages(text);
       body.append(text);
 
@@ -6944,6 +6949,7 @@ function startEditing(
     const text = document.createElement('div');
     text.className = 'body-text';
     text.innerHTML = renderMarkdown(content, options);
+    decorateCodeBlocks(text);
     text.addEventListener('click', (event) => {
       const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a');
       if (link === null || link.classList.contains('media-file')) return;
