@@ -3412,11 +3412,13 @@ pre.copyable-code {
   border: 1px solid var(--rule);
   border-radius: 4px;
   background: var(--bg-raised);
+  overflow-x: auto;
 }
 
 .mediawiki-body > :first-child { margin-top: 0; }
 .mediawiki-body > :last-child { margin-bottom: 0; }
 .mediawiki-link { color: var(--accent); text-decoration: underline dotted; }
+.mediawiki-body caption { padding: 0.35rem; font-weight: 600; text-align: left; }
 
 /* Un medio que Vera guarda pero no presenta dentro de la página —un PDF, o un
    archivo cuya extensión mentía— se ofrece como lo que es. Fingir que se

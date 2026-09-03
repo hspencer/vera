@@ -390,6 +390,30 @@ describe('renderMarkdown', () => {
       assert.match(html, /fuente MediaWiki/);
     });
 
+    it('lee tablas MediaWiki con atributos, leyenda, enlaces y celdas multilínea', () => {
+      const source = [
+        '{| class="wikitable sortable" style="width:100%"',
+        '|+ style="text-align:left" | Inventario',
+        '|-',
+        '! scope="col" | Objeto !! scope="col" | Cantidad',
+        '|-',
+        '| rowspan="2" style="color:red" | [[Lápiz|Lápices]]',
+        'azules',
+        '| 12',
+        '|-',
+        '| colspan="2" | Total || 12',
+        '|}',
+      ].join('\n');
+      const html = renderMarkdown(`\`\`\`mediawiki\n${source}\n\`\`\``);
+      assert.match(html, /<caption>Inventario<\/caption>/);
+      assert.match(html, /<th scope="col">Objeto<\/th><th scope="col">Cantidad<\/th>/);
+      assert.match(html, /<td rowspan="2"><span class="mediawiki-link" title="Lápiz">Lápices<\/span> azules<\/td>/);
+      assert.match(html, /<td colspan="2">Total<\/td><td>12<\/td>/);
+      const rendered = /<div class="mediawiki-body">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? '';
+      assert.ok(!rendered.includes('color:red'));
+      assert.ok(!rendered.includes('width:100%'));
+    });
+
     it('sólo ejecuta HTML creado con la valla explícita', () => {
       const live = renderMarkdown('```html-live\n<button onclick="x()">sí</button>\n```');
       assert.match(live, /<iframe [^>]*sandbox="allow-scripts"/);

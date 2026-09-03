@@ -21,22 +21,75 @@ function inlineMediaWiki(source: string): string {
   return text.replace(/\u0000(\d+)\u0000/g, (_whole, at: string) => held[Number(at)] ?? '');
 }
 
+type WikiCell = { tag: 'td' | 'th'; attributes: string; source: string };
+
+/** Separa celdas sin partir el `|` único de `[[destino|etiqueta]]`. */
+function splitCells(source: string, marker: '||' | '!!'): string[] {
+  const cells: string[] = [];
+  let began = 0;
+  let links = 0;
+  for (let at = 0; at < source.length - 1; at += 1) {
+    const pair = source.slice(at, at + 2);
+    if (pair === '[[') { links += 1; at += 1; continue; }
+    if (pair === ']]') { links = Math.max(0, links - 1); at += 1; continue; }
+    if (links === 0 && pair === marker) {
+      cells.push(source.slice(began, at));
+      began = at + 2;
+      at += 1;
+    }
+  }
+  cells.push(source.slice(began));
+  return cells;
+}
+
+/** Conserva sólo atributos estructurales inocuos; estilos y eventos se omiten. */
+function readCell(source: string, tag: 'td' | 'th'): WikiCell {
+  const separator = source.indexOf('|');
+  if (separator === -1) return { tag, attributes: '', source: source.trim() };
+  const candidate = source.slice(0, separator).trim();
+  if (!/^(?:(?:colspan|rowspan|scope|class|style)\s*=)/i.test(candidate)) {
+    return { tag, attributes: '', source: source.trim() };
+  }
+  const attributes: string[] = [];
+  for (const found of candidate.matchAll(/\b(colspan|rowspan)\s*=\s*["']?(\d{1,2})["']?/gi)) {
+    const value = Math.max(1, Math.min(99, Number(found[2] ?? '1')));
+    attributes.push(`${(found[1] ?? '').toLowerCase()}="${value}"`);
+  }
+  const scope = /\bscope\s*=\s*["']?(row|col)["']?/i.exec(candidate)?.[1]?.toLowerCase();
+  if (scope !== undefined) attributes.push(`scope="${scope}"`);
+  return { tag, attributes: attributes.length > 0 ? ` ${attributes.join(' ')}` : '', source: source.slice(separator + 1).trim() };
+}
+
 function readTable(lines: string[], start: number): { html: string; next: number } | null {
   if (!(lines[start] ?? '').trimStart().startsWith('{|')) return null;
   const rows: string[] = [];
-  let cells: string[] = [];
+  let cells: WikiCell[] = [];
+  let caption = '';
   const flush = (): void => {
-    if (cells.length > 0) rows.push(`<tr>${cells.join('')}</tr>`);
+    if (cells.length > 0) rows.push(`<tr>${cells.map((cell) => `<${cell.tag}${cell.attributes}>${inlineMediaWiki(cell.source.replace(/\n/g, ' '))}</${cell.tag}>`).join('')}</tr>`);
     cells = [];
   };
   for (let at = start + 1; at < lines.length; at += 1) {
     const line = (lines[at] ?? '').trim();
-    if (line === '|}') { flush(); return { html: `<table>${rows.join('')}</table>`, next: at + 1 }; }
+    if (line === '|}') {
+      flush();
+      const named = caption === '' ? '' : `<caption>${inlineMediaWiki(caption)}</caption>`;
+      return { html: `<table>${named}${rows.join('')}</table>`, next: at + 1 };
+    }
+    if (line.startsWith('|+')) {
+      const raw = line.slice(2).trim();
+      const separator = raw.indexOf('|');
+      caption = separator >= 0 && /=/.test(raw.slice(0, separator)) ? raw.slice(separator + 1).trim() : raw;
+      continue;
+    }
     if (line.startsWith('|-')) { flush(); continue; }
     if (line.startsWith('!')) {
-      for (const value of line.slice(1).split('!!')) cells.push(`<th>${inlineMediaWiki(value.trim())}</th>`);
+      for (const value of splitCells(line.slice(1), '!!')) cells.push(readCell(value, 'th'));
     } else if (line.startsWith('|')) {
-      for (const value of line.slice(1).split('||')) cells.push(`<td>${inlineMediaWiki(value.trim())}</td>`);
+      for (const value of splitCells(line.slice(1), '||')) cells.push(readCell(value, 'td'));
+    } else if (cells.length > 0 && line !== '') {
+      const last = cells[cells.length - 1];
+      if (last !== undefined) last.source += `\n${line}`;
     }
   }
   return null;
