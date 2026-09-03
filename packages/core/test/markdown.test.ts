@@ -365,6 +365,31 @@ describe('renderMarkdown', () => {
       assert.ok(renderMarkdown(source).includes('graph TD'));
     });
 
+    it('presenta MediaWiki básico sin ejecutar su marcado y conserva la fuente', () => {
+      const source = [
+        '== Título ==',
+        "'''fuerte''' e ''itálica'' con [[Página|enlace interno]]",
+        '* uno',
+        '* dos',
+        '{| class="wikitable"',
+        '! A !! B',
+        '|-',
+        '| 1 || 2',
+        '|}',
+        '<script>alert(1)</script>',
+      ].join('\n');
+      const html = renderMarkdown(`\`\`\`mediawiki\n${source}\n\`\`\``);
+      assert.match(html, /class="mediawiki-figure"/);
+      assert.match(html, /<h3>Título<\/h3>/);
+      assert.match(html, /<strong>fuerte<\/strong> e <em>itálica<\/em>/);
+      assert.match(html, /<span class="mediawiki-link" title="Página">enlace interno<\/span>/);
+      assert.match(html, /<ul><li>uno<\/li><li>dos<\/li><\/ul>/);
+      assert.match(html, /<table><tr><th>A<\/th><th>B<\/th><\/tr><tr><td>1<\/td><td>2<\/td><\/tr><\/table>/);
+      assert.ok(!html.includes('<script>alert'));
+      assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+      assert.match(html, /fuente MediaWiki/);
+    });
+
     it('sólo ejecuta HTML creado con la valla explícita', () => {
       const live = renderMarkdown('```html-live\n<button onclick="x()">sí</button>\n```');
       assert.match(live, /<iframe [^>]*sandbox="allow-scripts"/);

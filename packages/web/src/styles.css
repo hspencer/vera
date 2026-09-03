@@ -3403,6 +3403,21 @@ pre.copyable-code {
   margin: 0.2em 0 0.6em;
 }
 
+/* Wikitext básico: una lectura segura, sin fingir que Vera ejecuta la extensa
+   maquinaria de plantillas y extensiones de MediaWiki. */
+.mediawiki-figure { margin: 0.6em 0; }
+
+.mediawiki-body {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg-raised);
+}
+
+.mediawiki-body > :first-child { margin-top: 0; }
+.mediawiki-body > :last-child { margin-bottom: 0; }
+.mediawiki-link { color: var(--accent); text-decoration: underline dotted; }
+
 /* Un medio que Vera guarda pero no presenta dentro de la página —un PDF, o un
    archivo cuya extensión mentía— se ofrece como lo que es. Fingir que se
    presenta sería peor que decir que hay que abrirlo aparte. */

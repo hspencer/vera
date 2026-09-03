@@ -245,6 +245,7 @@ export const COMMANDS: Command[] = [
     caret: 52,
   },
   { name: 'mermaid', hint: 'diagrama', inserts: '```mermaid\n\n```', caret: 11 },
+  { name: 'mediawiki', hint: 'wikitext', inserts: '```mediawiki\n\n```', caret: 13 },
   { name: 'tabla', hint: 'tabla de dos columnas', inserts: '| a | b |\n| --- | --- |\n|  |  |', caret: 2 },
   { name: 'linea', hint: 'línea horizontal', inserts: '---', caret: 3, group: 'formato' },
   { name: 'lista', hint: 'lista con viñetas', inserts: '- ', caret: 2, group: 'formato' },

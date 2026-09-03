@@ -36,6 +36,7 @@
  * specs/executable-content-sandbox.allium.
  */
 import { drawingSvg, readDrawing } from './drawing.ts';
+import { renderMediaWiki } from './mediawiki.ts';
 import { wikiReference } from './text.ts';
 
 const EMBED = /^\s*<iframe\b([^>]*)>\s*<\/iframe>\s*$/i;
@@ -472,6 +473,9 @@ const FENCE = /^\s*(`{3,}|~{3,})\s*([\w+-]*)\s*$/;
 
 function executableBlock(language: string, source: string): string | null {
   const kind = language.trim().toLowerCase();
+  if (kind === 'mediawiki') {
+    return `<figure class="mediawiki-figure"><div class="mediawiki-body">${renderMediaWiki(source)}</div><details><summary>fuente MediaWiki</summary><pre><code>${escapeHtml(source)}</code></pre></details></figure>`;
+  }
   if (kind !== 'html-live' && kind !== 'p5js' && kind !== 'svg') return null;
 
   const title = kind === 'p5js' ? 'sketch p5.js' : kind === 'svg' ? 'ilustración SVG' : 'HTML';

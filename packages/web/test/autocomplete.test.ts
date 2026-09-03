@@ -217,6 +217,7 @@ describe('matchingCommands', () => {
 
   it('filtra también por lo que hace', () => {
     assert.ok(matchingCommands('diagrama').some((c) => c.name === 'mermaid'));
+    assert.ok(matchingCommands('wikitext').some((c) => c.name === 'mediawiki'));
   });
 
   it('una consulta que no encaja no ofrece nada', () => {
