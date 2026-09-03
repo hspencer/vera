@@ -2222,7 +2222,32 @@ async function drawGraph(): Promise<void> {
       renderGraph3D(container, data, onClick, settings);
     } else if (workspace.graphView === 'graph_d4') {
       cleanupGraph3D();
-      renderGraphD4(container, data, onClick, settings);
+      renderGraphD4(container, data, onClick, {
+        ...settings,
+        relations: {
+          editBlock: async (block: string, content: string): Promise<boolean> => {
+            const result = await api.submit({ kind: 'edit_block', block, content });
+            if (result.status === 'rejected') notice(`No se pudo editar la relación: ${result.reason}`);
+            return result.status !== 'rejected';
+          },
+          createBlock: async (
+            crossing: string,
+            page: string,
+            parent: string | null,
+            position: number,
+          ): Promise<boolean> => {
+            const result = await api.submit({
+              kind: 'create_block', page, crossing, parent, position, content: '',
+            });
+            if (result.status === 'rejected') {
+              notice(`No se pudo añadir el bloque: ${result.reason}`);
+              return false;
+            }
+            await drawGraph();
+            return true;
+          },
+        },
+      });
     } else {
       cleanupGraph3D();
       renderGraph(container, data, onClick, settings);

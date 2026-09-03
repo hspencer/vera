@@ -31,6 +31,9 @@ export interface GraphLink {
   /** Las relaciones explicadas conservan su término y su outline legible. */
   label?: string | null;
   explanation?: string;
+  /** Identidad y árbol canónico de una conectiva explicada. */
+  crossing?: string;
+  blocks?: { stableId: string; parent: string | null; position: number; content: string }[];
 }
 
 export interface GraphData {

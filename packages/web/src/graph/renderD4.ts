@@ -5,6 +5,12 @@ import type { GraphData, GraphLink, GraphNode } from './types.ts';
 type Side = -1 | 0 | 1;
 
 const held = new Map<string, { x: number; y: number }>();
+const openRelations = new Set<string>();
+
+interface RelationActions {
+  editBlock?: (block: string, content: string) => Promise<boolean>;
+  createBlock?: (crossing: string, page: string, parent: string | null, position: number) => Promise<boolean>;
+}
 
 function endpoint(value: string | GraphNode): string {
   return typeof value === 'string' ? value : value.id;
@@ -73,7 +79,7 @@ export function renderGraphD4(
   container: HTMLElement,
   data: GraphData,
   onClickPage: (page: string) => void,
-  options: { dark?: boolean; fontFamily?: string } = {},
+  options: { dark?: boolean; fontFamily?: string; relations?: RelationActions } = {},
 ): void {
   container.innerHTML = '';
   const focus = data.nodes.find((node) => node.central)?.id ?? data.nodes[0]?.id;
@@ -82,8 +88,9 @@ export function renderGraphD4(
   const width = Math.max(container.clientWidth, 960);
   const height = Math.max(container.clientHeight, 640);
   const centreX = width / 2;
-  const columnGap = Math.max(360, Math.min(560, width * 0.34));
-  const boxWidth = Math.max(300, Math.min(460, columnGap - 70));
+  // El vacío entre páginas no es desperdicio: es donde viven las relaciones.
+  const columnGap = Math.max(520, Math.min(760, width * 0.46));
+  const boxWidth = Math.max(300, Math.min(440, columnGap - 230));
   const side = sides(data, focus);
   const projections = new Map(data.nodes.map((node) => [node.id, projectedSentences(node, data)]));
   const dims = new Map<string, { w: number; h: number }>();
@@ -145,7 +152,7 @@ export function renderGraphD4(
   const positionViewportGeometry = (): void => {
     // No confiar tampoco en el repintado de un transform heredado por el <g>:
     // Safari móvil puede conservar sus hijos en la posición anterior.
-    world.selectAll<SVGGraphicsElement, unknown>('.d4-branch, .d4-relation-label')
+    world.selectAll<SVGGraphicsElement, unknown>('.d4-branch, .d4-branch-hit')
       .attr('transform', viewport.toString());
   };
   const touchStarts = new Map<number, { x: number; y: number }>();
@@ -213,6 +220,12 @@ export function renderGraphD4(
     if (index < 0) index = Math.max(0, lines.findIndex((line) => line.block === link.block));
     return pos.y - dim.h / 2 + 48 + index * foldedLineHeight + foldedLineHeight / 2;
   };
+  const relationCards: Array<{
+    link: GraphLink;
+    source: GraphNode;
+    x: number;
+    y: number;
+  }> = [];
   for (const link of data.links) {
     const source = data.nodes.find((node) => node.id === endpoint(link.source));
     const target = data.nodes.find((node) => node.id === endpoint(link.target));
@@ -227,17 +240,30 @@ export function renderGraphD4(
     const y1 = lineY(source, link);
     const y2 = b.y;
     const tension = Math.max(90, Math.abs(x2 - x1) * 0.46);
+    const route = `M${x1},${y1} C${x1 + (forward ? tension : -tension)},${y1} ${x2 - (forward ? tension : -tension)},${y2} ${x2},${y2}`;
     const path = world.append('path')
       .attr('class', `d4-branch ${link.kind ?? 'reference'}`)
-      .attr('d', `M${x1},${y1} C${x1 + (forward ? tension : -tension)},${y1} ${x2 - (forward ? tension : -tension)},${y2} ${x2},${y2}`);
+      .attr('d', route);
     if (link.explanation !== undefined) path.append('title').text(link.explanation);
-    if (link.kind === 'crossing' && link.label?.trim()) {
-      world.append('text')
-        .attr('class', 'd4-relation-label')
-        .attr('x', (x1 + x2) / 2)
-        .attr('y', (y1 + y2) / 2 - 6)
-        .attr('text-anchor', 'middle')
-        .text(link.label);
+    if (link.kind === 'crossing' && link.crossing !== undefined) {
+      world.append('path')
+        .attr('class', 'd4-branch-hit')
+        .attr('d', route)
+        .attr('role', 'button')
+        .attr('tabindex', 0)
+        .attr('aria-label', `Abrir relación${link.label?.trim() ? `: ${link.label}` : ''}`)
+        .on('click', (event: MouseEvent) => {
+          event.stopPropagation();
+          openRelations.add(link.crossing!);
+          renderGraphD4(container, data, onClickPage, options);
+        })
+        .on('keydown', (event: KeyboardEvent) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          openRelations.add(link.crossing!);
+          renderGraphD4(container, data, onClickPage, options);
+        });
+      relationCards.push({ link, source, x: (x1 + x2) / 2, y: (y1 + y2) / 2 });
     }
   }
 
@@ -367,4 +393,95 @@ export function renderGraphD4(
         .text(`${projection.hidden} frase${projection.hidden === 1 ? '' : 's'} fuera de este grado`);
     }
   }
+
+  // Las conectivas se pintan al final: son contenido situado entre páginas y,
+  // cuando se abren, deben quedar delante de ambas sin cambiar su layout.
+  for (const relation of relationCards) {
+    const { link, source, x, y } = relation;
+    const crossing = link.crossing!;
+    const expanded = openRelations.has(crossing);
+    const blocks = link.blocks ?? [];
+    const relationWidth = expanded ? 360 : 190;
+    const relationHeight = expanded ? Math.min(440, Math.max(118, 76 + blocks.length * 48)) : 36;
+    const foreign = svg.append('foreignObject')
+      .attr('class', `d4-relation-card${expanded ? ' expanded' : ''}`)
+      .attr('x', x - relationWidth / 2)
+      .attr('y', y - relationHeight / 2)
+      .attr('width', relationWidth)
+      .attr('height', relationHeight)
+      .style('overflow', 'visible');
+    const card = foreign.append<HTMLElement>('xhtml:article')
+      .attr('class', `d4-relation${expanded ? ' expanded' : ''}`)
+      .style('width', `${relationWidth}px`)
+      .style('height', `${relationHeight}px`)
+      .style('transform-origin', '0 0')
+      .style('font-family', options.fontFamily ?? 'system-ui, sans-serif');
+    viewportCards.push({
+      foreign, card,
+      x: x - relationWidth / 2,
+      y: y - relationHeight / 2,
+      w: relationWidth,
+      h: relationHeight,
+    });
+    const stopMapGesture = (event: Event): void => event.stopPropagation();
+    card.on('pointerdown', stopMapGesture).on('wheel', stopMapGesture);
+    const head = card.append('header');
+    head.append('button')
+      .attr('type', 'button')
+      .attr('class', 'd4-relation-title')
+      .attr('aria-expanded', String(expanded))
+      .on('click', (event: MouseEvent) => {
+        event.stopPropagation();
+        if (expanded) openRelations.delete(crossing); else openRelations.add(crossing);
+        renderGraphD4(container, data, onClickPage, options);
+      })
+      .text(link.label?.trim() || 'relación');
+    if (!expanded) continue;
+    head.append('span').attr('class', 'd4-relation-direction').text(`${source.name} → ${link.targetTitle ?? ''}`);
+    const outline = card.append('div').attr('class', 'd4-relation-outline');
+    const byParent = new Map<string | null, typeof blocks>();
+    for (const block of blocks) {
+      const siblings = byParent.get(block.parent) ?? [];
+      siblings.push(block);
+      byParent.set(block.parent, siblings);
+    }
+    for (const siblings of byParent.values()) siblings.sort((a, b) => a.position - b.position);
+    const drawBlocks = (parent: string | null, depth: number): void => {
+      for (const block of byParent.get(parent) ?? []) {
+        const row = outline.append('div')
+          .attr('class', 'd4-relation-block')
+          .style('--d4-relation-depth', String(depth));
+        row.append('span').attr('class', 'd4-relation-bullet').text('•');
+        const editor = row.append<HTMLTextAreaElement>('textarea')
+          .attr('aria-label', 'Bloque de la relación')
+          .attr('rows', 1)
+          .property('value', block.content);
+        editor.on('input', (event: Event) => {
+          const field = event.currentTarget as HTMLTextAreaElement;
+          field.style.height = 'auto';
+          field.style.height = `${field.scrollHeight}px`;
+        });
+        editor.dispatch('input');
+        editor.on('blur', async (event: FocusEvent) => {
+          const content = (event.currentTarget as HTMLTextAreaElement).value;
+          if (content === block.content || options.relations?.editBlock === undefined) return;
+          if (await options.relations.editBlock(block.stableId, content)) block.content = content;
+        });
+        drawBlocks(block.stableId, depth + 1);
+      }
+    };
+    drawBlocks(null, 0);
+    if (options.relations?.createBlock !== undefined) {
+      card.append('button')
+        .attr('type', 'button')
+        .attr('class', 'd4-relation-add')
+        .on('click', async (event: MouseEvent) => {
+          event.stopPropagation();
+          const roots = blocks.filter((block) => block.parent === null);
+          await options.relations!.createBlock!(crossing, source.id, null, roots.length);
+        })
+        .text('Añadir bloque');
+    }
+  }
+  positionViewportCards();
 }

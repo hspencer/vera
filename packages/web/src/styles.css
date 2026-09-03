@@ -1244,14 +1244,110 @@ button { touch-action: manipulation; }
 }
 .d4-branch.gloss { stroke: var(--accent); stroke-dasharray: 3 3; }
 .d4-branch.crossing { stroke: var(--accent); stroke-width: 3; opacity: 0.62; }
-.d4-relation-label {
-  paint-order: stroke;
-  stroke: var(--bg);
-  stroke-width: 4px;
-  fill: var(--accent);
-  font-family: var(--font-ui);
-  font-size: 0.68rem;
-  font-weight: 650;
+.d4-branch-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 44;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+  pointer-events: stroke;
+}
+.d4-branch-hit:focus-visible {
+  stroke: color-mix(in srgb, var(--accent) 18%, transparent);
+  outline: none;
+}
+.d4-relation-card { overflow: visible; }
+.d4-relation {
+  box-sizing: border-box;
+  overflow: hidden;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-raised) 95%, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--rule));
+  border-radius: 999px;
+  box-shadow: 0 5px 18px rgb(0 0 0 / 14%);
+}
+.d4-relation.expanded {
+  overflow: auto;
+  border-radius: 0.72rem;
+  box-shadow: 0 18px 48px rgb(0 0 0 / 28%);
+}
+.d4-relation header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  min-height: 34px;
+  padding: 0 0.35rem;
+  border-bottom: 1px solid transparent;
+}
+.d4-relation.expanded header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.32rem 0.45rem;
+  background: color-mix(in srgb, var(--bg-raised) 97%, var(--accent));
+  border-bottom-color: var(--rule);
+}
+.d4-relation-title {
+  min-width: 0;
+  padding: 0.42rem 0.55rem;
+  overflow: hidden;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  font: 650 0.72rem/1.2 var(--font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.d4-relation-direction {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font: 500 0.62rem/1.2 var(--font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.d4-relation-outline { padding: 0.55rem 0.55rem 0.25rem; }
+.d4-relation-block {
+  display: grid;
+  grid-template-columns: 0.75rem minmax(0, 1fr);
+  gap: 0.2rem;
+  margin-left: calc(var(--d4-relation-depth) * 1rem);
+  border-left: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.d4-relation-bullet {
+  padding-top: 0.28rem;
+  color: var(--accent);
+  text-align: center;
+}
+.d4-relation-block textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2rem;
+  max-height: 12rem;
+  resize: none;
+  overflow: auto;
+  padding: 0.28rem 0.35rem 0.42rem;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 65%, transparent);
+  border-radius: 0.2rem;
+  font: 0.88rem/1.42 var(--font-body);
+}
+.d4-relation-block textarea:focus {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+}
+.d4-relation-add {
+  margin: 0.15rem 0.75rem 0.7rem 1.3rem;
+  padding: 0.3rem 0.5rem;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--accent) 38%, var(--rule));
+  border-radius: 0.35rem;
+  font: 600 0.68rem/1.2 var(--font-ui);
+  cursor: pointer;
 }
 
 @keyframes d4-genie-open {

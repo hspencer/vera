@@ -6004,6 +6004,13 @@ export function createVeraServer(options: ServerOptions): VeraServer {
                 target: crossing.toPage!,
                 block: crossing.blocks[0]?.stableId ?? null,
                 kind: 'crossing' as const,
+                crossing: crossing.stableId,
+                blocks: crossing.blocks.map((block) => ({
+                  stableId: block.stableId,
+                  parent: block.parent,
+                  position: block.position,
+                  content: block.content,
+                })),
                 targetTitle: graph.page(crossing.toPage!)?.title ?? crossing.toPage!,
                 label: crossing.term,
                 explanation: crossing.blocks.map((block) => block.content).join('\n'),

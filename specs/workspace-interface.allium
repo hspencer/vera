@@ -1332,6 +1332,15 @@ surface VeraWorkspace {
         -- relation reveals its canonical outline without pretending the outline
         -- belongs to either endpoint page.
 
+    @guarantee D4TreatsTheConnectionAsAPlaceToWrite
+        -- An explained relation can be selected on the segment between its two
+        -- pages even when several segments run close together. Opening it reveals
+        -- the same ordered tree of canonical blocks owned by the crossing, with
+        -- hierarchy and block identities intact; it never flattens that tree into
+        -- a label or copies it into either endpoint page. The compact invitation
+        -- may look as small as a text box, but writing there begins the ordinary
+        -- outline and further blocks may grow into a complex relational cluster.
+
     @guarantee TheTraceIsWhereOneIsLocated
         -- Where a participant has been accumulates visibly, and any step of it
         -- can be returned to directly. It belongs with the map, because that is

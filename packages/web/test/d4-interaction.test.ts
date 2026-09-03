@@ -18,7 +18,7 @@ describe('interacción de D4', () => {
   });
 
   it('sincroniza geometría y tarjetas sin transformar foreignObject en iOS', () => {
-    assert.match(renderer, /world\.selectAll<SVGGraphicsElement, unknown>\('\.d4-branch, \.d4-relation-label'\)[\s\S]*?\.attr\('transform', viewport\.toString\(\)\)/);
+    assert.match(renderer, /world\.selectAll<SVGGraphicsElement, unknown>\('\.d4-branch, \.d4-branch-hit'\)[\s\S]*?\.attr\('transform', viewport\.toString\(\)\)/);
     assert.doesNotMatch(renderer, /world\.attr\('transform'/);
     assert.match(renderer, /viewport\.applyX\(entry\.x\)/);
     assert.match(renderer, /viewport\.applyY\(entry\.y\)/);
@@ -41,5 +41,18 @@ describe('interacción de D4', () => {
     assert.match(renderer, /for \(const foreign of reading\) d3\.select\(foreign\)\.raise\(\)/);
     assert.match(renderer, /raiseReadingCards\(foreign\.node\(\)\)/);
     assert.match(renderer, /for \(const sibling of foldedLines\)/);
+  });
+
+  it('hace seleccionable una conectiva con un blanco táctil amplio', () => {
+    assert.match(renderer, /attr\('class', 'd4-branch-hit'\)/);
+    assert.match(styles, /\.d4-branch-hit\s*\{[\s\S]*?stroke-width:\s*44/);
+    assert.match(renderer, /openRelations\.add\(link\.crossing!\)/);
+  });
+
+  it('proyecta el árbol canónico de bloques sin aplanarlo en una etiqueta', () => {
+    assert.match(renderer, /const byParent = new Map<string \| null, typeof blocks>/);
+    assert.match(renderer, /drawBlocks\(block\.stableId, depth \+ 1\)/);
+    assert.match(renderer, /options\.relations\.editBlock\(block\.stableId, content\)/);
+    assert.match(renderer, /options\.relations!\.createBlock!\(crossing, source\.id, null, roots\.length\)/);
   });
 });

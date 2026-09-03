@@ -487,7 +487,7 @@ describe('lecturas', () => {
   it('entrega el grafo en la forma que consume constel', async () => {
     const a = await write({ kind: 'create_page', title: 'NodoA', visibility: 'private' });
     await write({ kind: 'set_property', page: a, propertyKey: 'tipo', propertyValue: 'argumento' });
-    await write({ kind: 'create_page', title: 'NodoB', visibility: 'private' });
+    const b = await write({ kind: 'create_page', title: 'NodoB', visibility: 'private' });
     await write({
       kind: 'create_block',
       page: a,
@@ -495,10 +495,21 @@ describe('lecturas', () => {
       position: 0,
       content: 'ver [[NodoB]]',
     });
+    const crossing = await write({
+      kind: 'create_crossing', fromPage: a, toPage: b,
+      content: 'La relación tiene una raíz.', term: 'desarrolla',
+    });
+    await write({
+      kind: 'create_block', page: a, crossing, parent: null, position: 1,
+      content: 'Y puede crecer como outline.',
+    });
 
     const data = (await get(`/graph/${encodeURIComponent(a)}?depth=1`)) as {
       nodes: { id: string; name: string; central: boolean; trail: boolean; degree: number; blockCount: number }[];
-      links: { source: string; target: string }[];
+      links: {
+        source: string; target: string; kind?: string; crossing?: string;
+        blocks?: { stableId: string; parent: string | null; position: number; content: string }[];
+      }[];
     };
 
     const centre = data.nodes.find((n) => n.central);
@@ -506,7 +517,13 @@ describe('lecturas', () => {
     assert.equal(centre?.name, 'NodoA');
     assert.equal(centre?.trail, true);
     assert.ok(data.nodes.some((n) => n.name === 'NodoB'));
-    assert.equal(data.links.length, 1);
+    assert.equal(data.links.length, 2);
+    const explained = data.links.find((link) => link.kind === 'crossing');
+    assert.equal(explained?.crossing, crossing);
+    assert.deepEqual(explained?.blocks?.map((block) => block.content), [
+      'La relación tiene una raíz.',
+      'Y puede crecer como outline.',
+    ]);
     for (const node of data.nodes) {
       assert.equal(typeof node.degree, 'number');
       assert.equal(typeof node.blockCount, 'number');
