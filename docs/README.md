@@ -6,7 +6,7 @@ desplegar y contribuir al programa.
 
 ## Documentación canónica publicada
 
-- [Presentación de Vera](https://vera.mediafranca.net/vera/)
+- [Presentación de VERA](https://vera.mediafranca.net/vera/)
 - [Manual](https://vera.mediafranca.net/vera-manual/)
 - [Principios](https://vera.mediafranca.net/vera-principios/)
 - [Postura ética](https://vera.mediafranca.net/vera-postura-etica/)

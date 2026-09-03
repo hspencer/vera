@@ -9,7 +9,7 @@
 // se les permite y qué se llevaron. Cuatro páginas serían cuatro copias de los
 // mismos tres campos.
 //
-//     Vera: la puerta MCP
+//     VERA: la puerta MCP
 //       special-kind:: mcp
 //       etapa:: M1 — sólo lectura
 //

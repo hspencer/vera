@@ -22,8 +22,8 @@ describe('inlineMarkdown', () => {
 
   it('separa el destino de las palabras visibles de un enlace wiki', () => {
     assert.equal(
-      inlineMarkdown('participan como [[Vera: Puerta MCP|agentes identificables]]'),
-      'participan como <a class="wiki" data-page="Vera: Puerta MCP" href="#">agentes identificables</a>',
+      inlineMarkdown('participan como [[VERA: Puerta MCP|agentes identificables]]'),
+      'participan como <a class="wiki" data-page="VERA: Puerta MCP" href="#">agentes identificables</a>',
     );
   });
 

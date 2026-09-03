@@ -1302,7 +1302,7 @@ surface OwnerSharedSpaceDirectory {
         -- each whole-card disclosure control, whose icon, status and metrics
         -- make its interactive boundary apparent before opening it. Editing
         -- remains local to the opened space. The same directory is reached from
-        -- Settings → Sharing and `Vera:Publicación`; neither entry maintains a
+        -- Settings → Sharing and `VERA:Publicación`; neither entry maintains a
         -- reduced or independent administration.
 
     @guarantee SharedSpaceCreationUsesTheDirectoryPattern

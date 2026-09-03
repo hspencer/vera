@@ -3606,7 +3606,7 @@ code {
    * separaciones a la vez, y todo conserva su proporción. Ajustar cada cosa por
    * separado habría sido reconstruir el mismo sistema con otras cifras.
    *
-   * El factor es un token editable desde dentro de Vera: cuánto es cómodo
+   * El factor es un token editable desde dentro de VERA: cuánto es cómodo
    * depende del aparato y de quién lo sostiene.
    */
   html {
@@ -6626,7 +6626,7 @@ html[data-working-slow='true']::after {
  *
  * «Exportar a PDF» no genera nada: le pide al navegador que imprima, y lo que
  * hay que decidir aquí es qué se imprime. Todo lo que sirve para moverse por
- * Vera —la barra, el mapa, los controles— no es del documento sino del taller,
+ * VERA —la barra, el mapa, los controles— no es del documento sino del taller,
  * y en un papel sólo estorba.
  *
  * Los colores se fuerzan a tinta sobre blanco. Los tokens son de quien los

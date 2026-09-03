@@ -1,4 +1,4 @@
-# Vera — atajos de la línea de comandos.
+# VERA — atajos de la línea de comandos.
 #
 # Todo lo que hay aquí se puede hacer con npm; esto es para no tener que
 # recordar en qué orden. La única regla con algo propio es `deploy`, y lo propio

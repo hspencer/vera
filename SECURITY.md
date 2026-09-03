@@ -1,7 +1,7 @@
 # Seguridad
 
 La explicación pública del modelo de seguridad vive en
-[Vera — Seguridad](https://vera.mediafranca.net/vera-seguridad/). Este documento
+[VERA — Seguridad](https://vera.mediafranca.net/vera-seguridad/). Este documento
 conserva las advertencias operativas y el canal de reporte del repositorio.
 
 Vera custodia memoria personal. Un defecto de aislamiento, credenciales,

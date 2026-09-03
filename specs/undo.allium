@@ -161,7 +161,7 @@ surface Undoable {
 ------------------------------------------------------------
 
 -- Borrar una página es vaciarla bloque a bloque y después quitarla. Restaurarla
--- es un acto propio que se pide por su nombre en Vera: Registro de Actividad,
+-- es un acto propio que se pide por su nombre en VERA: Registro de Actividad,
 -- enseña antes qué va a devolver y escribe operaciones nuevas con la identidad
 -- de quien restaura. No borra ni reinterpreta el gesto de eliminación.
 

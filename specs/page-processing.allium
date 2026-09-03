@@ -691,7 +691,7 @@ surface PageProcessing {
 -- Open Questions
 ------------------------------------------------------------
 
--- Estas siete las dejó escritas Herbert en «Vera — Procesamiento automático de
+-- Estas siete las dejó escritas Herbert en «VERA — Procesamiento automático de
 -- páginas» bajo el título «Decisiones abiertas que el programador no debe
 -- asumir». Se copian aquí porque una decisión abierta que sólo vive en una
 -- página de la bitácora se resuelve sola, por omisión, el día que alguien

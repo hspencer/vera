@@ -195,7 +195,7 @@ describe('preparar una escritura', () => {
   it('entrega juntas la guía viva y la ontología vigente', async () => {
     const page = {
       id: 'page:guide',
-      title: 'Vera — Escritura por agentes',
+      title: 'VERA — Escritura por agentes',
       visibility: 'private',
       createdAt: 0,
       lastEditedAt: 0,
@@ -206,13 +206,13 @@ describe('preparar una escritura', () => {
       authorship: {},
     };
     const { ask, asked } = fakeVera({
-      '/pages/Vera%20%E2%80%94%20Escritura%20por%20agentes': page,
+      '/pages/VERA%20%E2%80%94%20Escritura%20por%20agentes': page,
       '/ontology': { names: { kind: 'tipo', topic: 'concepto' } },
     });
     const said = await run('vera_preparar_escritura', {}, ask);
     assert.deepEqual(asked.map((one) => one.path).sort(), [
       '/ontology',
-      '/pages/Vera%20%E2%80%94%20Escritura%20por%20agentes',
+      '/pages/VERA%20%E2%80%94%20Escritura%20por%20agentes',
     ]);
     assert.match(said, /Una idea por bloque/);
     assert.match(said, /"topic": "concepto"/);

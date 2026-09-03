@@ -123,7 +123,7 @@ export function embedIn(source: string, hosts: readonly string[] = []): string |
    * `sandbox` con su propio origen y nada más. Lo incrustado corre siendo quien
    * es —puede guardar lo suyo, pedir a su servidor y usar sus propias APIs, que
    * es lo que hace falta para que una herramienta funcione— y no alcanza nada de
-   * Vera: el navegador no le deja cruzar a otro origen, y de ahí que la única
+   * VERA: el navegador no le deja cruzar a otro origen, y de ahí que la única
    * combinación prohibida sea incrustar algo servido desde el origen de Vera,
    * que se comprueba más arriba. @invariant NothingReachesBack.
    *
@@ -431,7 +431,7 @@ export function inlineMarkdown(source: string, options: RenderOptions = {}): str
        * pedir la página al servidor y dejaba un paso en el rastro. Un índice de
        * treinta entradas dejaba treinta veces la misma página.
        *
-       * Viaja como los otros enlaces internos de Vera —una referencia a página,
+       * Viaja como los otros enlaces internos de VERA —una referencia a página,
        * una cita de bloque—: sin dirección, con el destino en un atributo, y lo
        * resuelve quien conoce la página entera. @invariant AnchorsReachTheirHeading.
        */

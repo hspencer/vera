@@ -4,7 +4,7 @@
   "version": "0.6.1",
   "private": true,
   "type": "module",
-  "description": "Dominio de Vera: tipos, reglas e invariantes derivados de specs/*.allium",
+  "description": "Dominio de VERA: tipos, reglas e invariantes derivados de specs/*.allium",
   "exports": {
     ".": "./src/index.ts"
   }

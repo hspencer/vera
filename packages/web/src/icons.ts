@@ -13,7 +13,7 @@
 
 /** El interior de cada icono, tal como viene en `feather-icons@4.29.2`. */
 const SHAPES = {
-  // La marca de Vera: tres nodos y los vínculos entre ellos. Girado, una V.
+  // La marca de VERA: tres nodos y los vínculos entre ellos. Girado, una V.
   'share-2':
     '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/>' +
     '<circle cx="18" cy="19" r="3"/>' +

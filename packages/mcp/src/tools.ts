@@ -372,7 +372,7 @@ export const TOOLS: readonly VeraTool[] = [
       'o confundir frontmatter, bloques, jerarquía y enlaces. No modifica nada.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     async run(_args, ask) {
-      const guideTitle = 'Vera — Escritura por agentes';
+      const guideTitle = 'VERA — Escritura por agentes';
       const [guide, ontology] = await Promise.all([
         ask<Page>(`/pages/${encodeURIComponent(guideTitle)}`),
         ask<unknown>('/ontology'),

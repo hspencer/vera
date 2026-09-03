@@ -171,7 +171,7 @@ export async function renderGoverning(
      * La columna del papel sólo si alguna clase cumple uno.
      *
      * Una clase puede cumplirlo —`day` nombra la clase con que nace un día— y
-     * eso gobierna a Vera: tiene que verse donde está escrito, o es gobierno
+     * eso gobierna a VERA: tiene que verse donde está escrito, o es gobierno
      * invisible. Pero en un corpus donde ninguna lo cumpla, la columna estaría
      * vacía en todas las filas, y una columna vacía se lee como si faltara algo.
      */

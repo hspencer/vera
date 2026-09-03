@@ -148,7 +148,7 @@ para que quede claro que están pendientes y de quién es la decisión.
    confirmación antes de sumar una nueva.
 4. **E-6 — relación entre `peer-networking.allium` y `federated-sharing.allium`**:
    qué costura declarar entre ambas antes del prototipo de red horizontal.
-5. **Identidad federada** ([[Vera — Identidad federada]], ya declarada en el
+5. **Identidad federada** ([[VERA — Identidad federada]], ya declarada en el
    corpus): WebID/Solid-OIDC frente a identificadores portables propios. No es
    un hallazgo nuevo de esta auditoría, pero se cita aquí porque bloquea la
    fase 3 y esta auditoría no encontró evidencia de que la decisión haya

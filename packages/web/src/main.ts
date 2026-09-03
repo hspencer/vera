@@ -628,7 +628,7 @@ async function startDay(date: string, content = ''): Promise<string | null> {
  * Sin página abierta, sólo el nombre: no hay nada más que decir todavía.
  */
 function nameWindow(title: string | null): void {
-  document.title = title === null || title.trim() === '' ? 'Vera' : `Vera — ${title}`;
+  document.title = title === null || title.trim() === '' ? 'VERA' : `VERA — ${title}`;
 }
 
 /**
@@ -1392,7 +1392,7 @@ function callbacksFor(page: PageView): OutlinerCallbacks {
         return;
       }
       const fallback = pages.find((one) => one.title === today())
-        ?? pages.find((one) => one.title === 'Vera: Registro de Actividad');
+        ?? pages.find((one) => one.title === 'VERA: Registro de Actividad');
       if (fallback !== undefined) {
         await openPage(fallback.id, null, { gesture: 'opened_directly', replaceRoute: true });
         return;

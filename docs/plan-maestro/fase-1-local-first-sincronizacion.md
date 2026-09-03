@@ -2,7 +2,7 @@
 
 Estado al escribirlo: 2026-08-30. Esta fase corresponde al punto 1 del encargo
 de auditoría y a la sección 1 del roadmap de Vera
-([[Vera — Soberanía local-first y continuidad sin red]]). Es la fase con más
+([[VERA — Soberanía local-first y continuidad sin red]]). Es la fase con más
 evidencia verificada de todo el repositorio y la que bloquea a todas las
 demás: el propio roadmap lo dice como "dependencia crítica" — la red horizontal
 necesita primero soberanía local-first, identidad humana, permisos de espacios
@@ -141,7 +141,7 @@ configuración compatible — y ese recorrido está probado, no sólo documentad
 
 ### Alcance
 Esta es la unidad más grande de la fase y la que el roadmap marca íntegramente
-pendiente en [[Vera — Respaldo, restauración y portabilidad]]. Incluye:
+pendiente en [[VERA — Respaldo, restauración y portabilidad]]. Incluye:
 - Instantánea coherente de SQLite + almacén de objetos mientras Vera está en
   uso (no un `cp` sobre una base con WAL abierto).
 - Manifiesto de respaldo con sumas de verificación.
@@ -274,7 +274,7 @@ establecen transporte, autorizan un espacio compartido, sincronizan su
 subgrafo, se desconectan, reconcilian al volver, y una puede revocar a la otra.
 
 ### Alcance
-El "corte vertical inicial" que [[Vera — Red horizontal entre instancias]] ya
+El "corte vertical inicial" que [[VERA — Red horizontal entre instancias]] ya
 define, punto por punto. No empieza hasta que 1.1-1.4 estén cerrados: el propio
 roadmap lo declara dependencia crítica, y esta auditoría lo confirma con
 evidencia de código — `peer-networking.allium` y `federated-sharing.allium`
@@ -315,7 +315,7 @@ superficie de red nueva sobre una base donde "sin credencial = dueño" todavía
 es cierto en alguna parte.
 
 ### Criterio de terminado
-El corte vertical de [[Vera — Red horizontal entre instancias]] funciona entre
+El corte vertical de [[VERA — Red horizontal entre instancias]] funciona entre
 dos máquinas reales y cada uno de sus cinco puntos tiene evidencia
 reproducible.
 
@@ -345,7 +345,7 @@ porque varias dependen de decisiones que la fase 1 todavía no cierra.
 - **Specs:** `federated-sharing.allium`, `peer-networking.allium` (con la
   costura de E-6 ya resuelta).
 - **Decisión pendiente declarada:** WebID/Solid-OIDC vs. identificadores
-  portables propios (ver [[Vera — Identidad federada]]).
+  portables propios (ver [[VERA — Identidad federada]]).
 
 ### Fase 4 — Escribir, pensar y recorrer (cerrar lo parcial)
 - **Objetivo:** cerrar las brechas de prueba de fluidez de edición estructural
@@ -381,7 +381,7 @@ porque varias dependen de decisiones que la fase 1 todavía no cierra.
   migraciones, diagnóstico, firma, canales de actualización, matriz de
   plataformas, onboarding y piloto con personas distintas del creador.
 - **Depende de:** 1.3 (respaldo/restauración) es prerrequisito explícito según
-  el propio roadmap y según el diagnóstico TRL de [[Vera — FONDEF IDeA I+D 2027]].
+  el propio roadmap y según el diagnóstico TRL de [[VERA — FONDEF IDeA I+D 2027]].
 - **Estado verificado (2026-09-02):** implementados el empaquetado Windows
   NSIS/portable, el empaquetado macOS universal DMG/ZIP, el workflow único por
   push/tag y el cliente de actualización estable con descarga consentida y

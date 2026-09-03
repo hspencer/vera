@@ -560,7 +560,7 @@ rule ImportHistoricalContentIntoGraph {
     )
 }
 
--- `Vera:Publicación` es la superficie canónica de estas decisiones, no una
+-- `VERA:Publicación` es la superficie canónica de estas decisiones, no una
 -- segunda copia de ellas. Aplicar lo que el dueño decidió allí cambia el
 -- PersonalSite existente; el sitio, sus publicaciones y sus revisiones siguen
 -- siendo las entidades gobernadas por core.allium.
@@ -571,7 +571,7 @@ rule ConfigurePersonalSiteFromPublicationPage {
     requires: owner.kind = human
     requires: publication_page.kind = publication
     requires: publication_page.graph = site.graph
-    requires: publication_page.page.title = "Vera:Publicación"
+    requires: publication_page.page.title = "VERA:Publicación"
     requires: non_blank(title)
     requires: is_absolute_https_origin(canonical_domain)
     requires: entry_point.graph = site.graph
@@ -590,7 +590,7 @@ rule ConfigurePersonalSiteFromPublicationPage {
         -- the canonical public address written here.
 }
 
--- La tabla de páginas de `Vera:Publicación` no inventa otra colección. Publicar
+-- La tabla de páginas de `VERA:Publicación` no inventa otra colección. Publicar
 -- desde ella encadena el mismo acto humano de core y crea la misma Publication
 -- con su frontera histórica, ruta y autor.
 rule PublishPageFromPublicationPage {
@@ -600,7 +600,7 @@ rule PublishPageFromPublicationPage {
     requires: owner.kind = human
     requires: publication_page.kind = publication
     requires: publication_page.graph = site.graph
-    requires: publication_page.page.title = "Vera:Publicación"
+    requires: publication_page.page.title = "VERA:Publicación"
     requires: page.graph = site.graph
     requires: page.visibility = public
     requires: not exists special/SpecialPage{page: page}
@@ -951,11 +951,11 @@ surface VeraPublicationPage {
 
     @guarantee CanonicalSpecialPage
         -- The owner's publication configuration is reached at exactly
-        -- `Vera:Publicación`, declared with special kind `publication`. The kind,
+        -- `VERA:Publicación`, declared with special kind `publication`. The kind,
         -- not a private title check, is what gives the page authority.
 
     @guarantee PublicationPageIsAlsoTheSharingDirectory
-        -- `Vera:Publicación` presents this public site inside the same canonical
+        -- `VERA:Publicación` presents this public site inside the same canonical
         -- sharing directory as authenticated shared spaces. From this page the
         -- owner can add another form of sharing; it is not a public-site-only
         -- administration that can drift from Settings → Sharing.
@@ -975,7 +975,7 @@ surface VeraPublicationPage {
         -- An empty title, a URL that is not an absolute HTTPS origin, a private
         -- or foreign entry point, or a page not already published in this site
         -- does not become effective. The rejected value and its reason remain
-        -- visible on `Vera:Publicación`; the last valid configuration continues.
+        -- visible on `VERA:Publicación`; the last valid configuration continues.
 
     @guarantee PublicationMembershipAndPathsAreExplicit
         -- Public visibility makes a page eligible but never publishes it. Each
@@ -993,7 +993,7 @@ surface VeraPublicationPage {
         -- public projection.
 
     @guarantee DeploymentReadinessIsLegibleHere
-        -- `Vera:Publicación` reports separately whether the shared Vera
+        -- `VERA:Publicación` reports separately whether the shared Vera
         -- application is ready, the `anybody` boundary excludes private data,
         -- delegated DNS resolves and HTTPS reaches that boundary. A failure says
         -- which layer failed and preserves the last known result.

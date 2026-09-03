@@ -1,7 +1,7 @@
 -- allium: 3
 -- mcp-server.allium
 
--- Scope: La puerta por la que una inteligencia artificial entra a Vera — qué
+-- Scope: La puerta por la que una inteligencia artificial entra a VERA — qué
 --   puede descubrir, leer y escribir, con qué identidad, y qué queda registrado
 --   de lo que se llevó
 -- Includes: Qué es MCP para Vera y qué no, de dónde sale la identidad de una
@@ -512,7 +512,7 @@ surface PublicMemoryOverHTTPS {
 ------------------------------------------------------------
 
 -- Las de Herbert, tal como quedaron escritas en el corpus. Ver
--- «Vera — como memoria portable para inteligencias».
+-- «VERA — como memoria portable para inteligencias».
 open question "¿Cuál es la unidad de concesión: página, proyecto, espacio de nombres, consulta guardada, o una combinación?"
 
 open question "¿Cómo se representa una propuesta dentro del grafo, si una propuesta no es todavía contenido y tampoco es una operación aplicada?"

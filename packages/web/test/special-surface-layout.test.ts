@@ -24,10 +24,10 @@ describe('superficies especiales', () => {
   });
 
   it('vincula desde la propia puerta las cuatro guías de conexión por proveedor', () => {
-    assert.match(mcp, /Vera — conectar OpenAI por MCP/);
-    assert.match(mcp, /Vera — conectar Claude por MCP/);
-    assert.match(mcp, /Vera — conectar LM Studio por MCP/);
-    assert.match(mcp, /Vera — conectar Gemini por MCP/);
+    assert.match(mcp, /VERA — conectar OpenAI por MCP/);
+    assert.match(mcp, /VERA — conectar Claude por MCP/);
+    assert.match(mcp, /VERA — conectar LM Studio por MCP/);
+    assert.match(mcp, /VERA — conectar Gemini por MCP/);
     assert.match(mcp, /aria-label', 'guías para conectar inteligencias artificiales'/);
   });
 

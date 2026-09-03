@@ -204,14 +204,14 @@ describe('contraryOf', () => {
 
   it('la contraria de renombrar es el nombre de antes', () => {
     const log = [
-      op(1, { kind: 'create_page', title: 'Vera:Recorridos', visibility: 'private' }, { subject: 'page:1' }),
-      op(2, { kind: 'rename_page', page: 'page:1', title: 'Vera — Recorridos' }, { subject: 'page:1' }),
+      op(1, { kind: 'create_page', title: 'VERA:Recorridos', visibility: 'private' }, { subject: 'page:1' }),
+      op(2, { kind: 'rename_page', page: 'page:1', title: 'VERA — Recorridos' }, { subject: 'page:1' }),
     ];
     const said = contraryOf(log, log[1]!, world());
     assert.deepEqual('change' in said ? said.change : null, {
       kind: 'rename_page',
       page: 'page:1',
-      title: 'Vera:Recorridos',
+      title: 'VERA:Recorridos',
     });
   });
 

@@ -79,7 +79,7 @@ async function enableAutomaticUpdates(): Promise<void> {
 
   autoUpdater.on('error', (error) => {
     window?.setProgressBar(-1);
-    console.error('No se pudo actualizar Vera:', error);
+    console.error('No se pudo actualizar VERA:', error);
     if (downloadingUpdate) {
       downloadingUpdate = false;
       void dialog.showMessageBox(window ?? undefined, {
@@ -112,7 +112,7 @@ async function enableAutomaticUpdates(): Promise<void> {
         await autoUpdater.downloadUpdate();
       } catch (error) {
         downloadingUpdate = false;
-        console.error('No se pudo iniciar la descarga de Vera:', error);
+        console.error('No se pudo iniciar la descarga de VERA:', error);
       }
     }
   });

@@ -11,12 +11,12 @@ import { describe, it } from 'node:test';
 import { suggestTitles } from '../src/text.ts';
 
 const pages = [
-  { title: 'Vera — Manual' },
+  { title: 'VERA — Manual' },
   { title: 'Vera' },
   { title: 'Ontología' },
   { title: 'Propiedades' },
   { title: 'PictoNet' },
-  { title: 'Vera — Queries' },
+  { title: 'VERA — Queries' },
   { title: 'Cotito' },
   { title: 'Accesibilidad cognitiva' },
 ];
@@ -26,7 +26,7 @@ const titles = (query: string, most?: number) =>
 
 describe('suggestTitles', () => {
   it('lo que empieza por lo escrito va antes que lo que sólo lo contiene', () => {
-    assert.deepEqual(titles('vera'), ['Vera', 'Vera — Manual', 'Vera — Queries']);
+    assert.deepEqual(titles('vera'), ['Vera', 'VERA — Manual', 'VERA — Queries']);
   });
 
   it('el título exacto va primero, aunque no fuera el primero de la lista', () => {
@@ -36,9 +36,9 @@ describe('suggestTitles', () => {
   });
 
   it('una palabra de en medio también completa', () => {
-    // «manual» encuentra «Vera — Manual»: nadie recuerda los títulos por su
+    // «manual» encuentra «VERA — Manual»: nadie recuerda los títulos por su
     // principio.
-    assert.deepEqual(titles('manual'), ['Vera — Manual']);
+    assert.deepEqual(titles('manual'), ['VERA — Manual']);
   });
 
   it('sin tildes y sin mayúsculas encuentra igual', () => {
@@ -64,10 +64,10 @@ describe('suggestTitles', () => {
   it('respeta el orden de entrada cuando dos encajan igual', () => {
     // Quien llama trae las páginas ordenadas por conectividad: qué tan central
     // es cada una en el corpus. Ese orden es información y no se pierde.
-    const suyo = [{ title: 'Vera — Queries' }, { title: 'Vera — Manual' }];
+    const suyo = [{ title: 'VERA — Queries' }, { title: 'VERA — Manual' }];
     assert.deepEqual(
       suggestTitles('vera —', suyo).map((one) => one.title),
-      ['Vera — Queries', 'Vera — Manual'],
+      ['VERA — Queries', 'VERA — Manual'],
     );
   });
 

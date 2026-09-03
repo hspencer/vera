@@ -63,7 +63,7 @@ contract EmbeddedContentIsSandboxed {
         -- dijo nada no dijo que sí.
 
     @invariant NothingReachesBack
-        -- Lo incrustado no alcanza nada de Vera: ni el grafo, ni el
+        -- Lo incrustado no alcanza nada de VERA: ni el grafo, ni el
         -- almacenamiento local, ni la sesión, ni la página que lo contiene. Corre
         -- encerrado en su propio origen y lo que sabe es lo que su dirección le
         -- diga. Es la misma frontera que @invariant ExecutableContentIsolation

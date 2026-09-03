@@ -8,7 +8,7 @@ credential="${VERA_BACKUP_CREDENTIAL:-$HOME/.openclaw/credentials/vera-restic.cr
 restic_binary="${RESTIC_BINARY:-$HOME/.local/bin/restic}"
 
 if [[ ! -f "$database" ]]; then
-  echo "No existe la base de Vera: $database" >&2
+  echo "No existe la base de VERA: $database" >&2
   exit 1
 fi
 

@@ -77,13 +77,13 @@ contract SelfDescription {
         -- rule the corpus cannot be audited against.
 
     @invariant SpecialPagesShareAVisibleNamespace
-        -- Every special page is titled `Vera: …`, so configuration pages gather
+        -- Every special page is titled `VERA: …`, so configuration pages gather
         -- visibly in search, links and page lists. The prefix is a convention
         -- for people, never how Vera decides that a page is special: only the
         -- declared special kind carries that authority.
         --
         -- Pages whose subject is Vera but which do not govern it remain ordinary
-        -- prose and may use `Vera — …`; punctuation therefore distinguishes
+        -- prose and may use `VERA — …`; punctuation therefore distinguishes
         -- system governance from writing about the system without creating a
         -- second hidden classification rule.
 
@@ -253,7 +253,7 @@ invariant EachSpecialKindHasAnHonestMode {
 invariant OneCanonicalPublicationPagePerGraph {
     for special in SpecialPages:
         special.kind = publication implies
-            special.page.title = "Vera: Publicación" and
+            special.page.title = "VERA: Publicación" and
             SpecialPages.all(other =>
                 other.kind != publication or
                 other.graph != special.graph or

@@ -1,5 +1,5 @@
 // La administración de todas las formas de compartir, dentro de
-// Vera:Publicación.
+// VERA:Publicación.
 //
 // La página especial y Configuración → Compartir son dos entradas a una sola
 // administración. El componente vive en settings.ts para impedir que una

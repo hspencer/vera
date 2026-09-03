@@ -1,5 +1,5 @@
 #!/usr/bin/env -S node --experimental-strip-types --no-warnings
-// Puerta MCP pública de Vera: Streamable HTTP, sin sesión y cerrada por bearer.
+// Puerta MCP pública de VERA: Streamable HTTP, sin sesión y cerrada por bearer.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 

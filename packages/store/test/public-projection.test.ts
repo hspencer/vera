@@ -123,7 +123,7 @@ describe('proyección pública', () => {
   });
 
   it('propone rutas sin diacríticos cuando una persona publica', () => {
-    assert.equal(publicPathFor('Vera — Instanciación'), 'vera-instanciacion');
+    assert.equal(publicPathFor('VERA — Instanciación'), 'vera-instanciacion');
   });
 
   it('conserva la dirección publicada aunque cambie el título', () => {

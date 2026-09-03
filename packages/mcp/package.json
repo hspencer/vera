@@ -4,7 +4,7 @@
   "version": "0.6.1",
   "private": true,
   "type": "module",
-  "description": "La puerta MCP de Vera: una memoria que otras inteligencias pueden leer y escribir con identidad",
+  "description": "La puerta MCP de VERA: una memoria que otras inteligencias pueden leer y escribir con identidad",
   "exports": {
     ".": "./src/main.ts",
     "./tools": "./src/tools.ts",

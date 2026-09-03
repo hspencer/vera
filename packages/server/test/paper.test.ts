@@ -20,10 +20,10 @@ const bloque = (stableId: string, parent: string | null, position: number, conte
 describe('paperHtml', () => {
   it('lleva el título de la página y el texto de sus bloques', () => {
     const html = paperHtml({
-      title: 'Vera — Manual',
+      title: 'VERA — Manual',
       blocks: [bloque('block:1', null, 0, 'Antes de nada'), bloque('block:2', null, 1, 'Se escribe en bloques.')],
     });
-    assert.match(html, /<h1 class="paper-title">Vera — Manual<\/h1>/);
+    assert.match(html, /<h1 class="paper-title">VERA — Manual<\/h1>/);
     assert.match(html, /Se escribe en bloques\./);
   });
 

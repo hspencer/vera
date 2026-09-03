@@ -188,7 +188,7 @@ const field = (label: string, value: string, placeholder = ''): { label: HTMLLab
 /**
  * Dibuja la administración canónica de todas las formas de compartir.
  *
- * La exportamos porque `Vera:Publicación` y Configuración → Compartir son dos
+ * La exportamos porque `VERA:Publicación` y Configuración → Compartir son dos
  * puertas hacia la misma decisión. Mantener dos paneles fue precisamente lo
  * que permitió que la página especial siguiera enseñando sólo el sitio público.
  */

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Publica Vera: comprueba, compila, commitea, empuja y verifica que lo publicado
+# Publica VERA: comprueba, compila, commitea, empuja y verifica que lo publicado
 # es lo que el servidor está sirviendo.
 #
 # El último paso es el que importa y el que suele faltar. Un despliegue no

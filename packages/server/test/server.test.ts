@@ -105,7 +105,7 @@ describe('POST /operations', () => {
   it('protege una página especial de borrado, recorrido y procesamiento', async () => {
     const page = await write({
       kind: 'create_page',
-      title: 'Vera: Configuración protegida',
+      title: 'VERA: Configuración protegida',
       visibility: 'private',
     });
     await write({

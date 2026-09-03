@@ -1,6 +1,6 @@
 // Recintos de HTML, p5.js y SVG escritos deliberadamente.
 //
-// El iframe no puede leer Vera: sólo recibe una copia de los valores visuales
+// El iframe no puede leer VERA: sólo recibe una copia de los valores visuales
 // y sólo puede responder con la altura que necesita. El origen opaco impuesto
 // por `sandbox` mantiene esa frontera incluso cuando la fuente ejecuta scripts.
 

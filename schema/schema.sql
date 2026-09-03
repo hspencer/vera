@@ -1,4 +1,4 @@
--- Vera: esquema canónico.
+-- VERA: esquema canónico.
 --
 -- Un único archivo aplicado igual en el servidor (node:sqlite) y en la copia de
 -- trabajo del cliente (SQLite WASM + OPFS, todavía sin construir), para que las

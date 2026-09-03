@@ -89,7 +89,7 @@ function reading(seen: SeenClient | null): string {
 /**
  * La configuración de un cliente que corre en otro equipo, dictada entera.
  *
- * El cliente lanza `ssh` y la puerta corre aquí, al lado de Vera: no hay una
+ * El cliente lanza `ssh` y la puerta corre aquí, al lado de VERA: no hay una
  * segunda copia del repositorio que mantener al día en cada equipo desde el que
  * se lea, y `VERA_URL` no aparece porque el loopback por omisión ya es el
  * correcto cuando el proceso nace en esta máquina.
@@ -157,7 +157,7 @@ export function publicLaunch(url: string, client: string, token: string): string
  *
  * Todos los «agregar servidor MCP» piden lo mismo con nombres distintos: tipo,
  * comando, argumentos, variables de entorno y directorio de trabajo. Hasta ahora
- * eso vivía en `packages/mcp/README.md`, o sea fuera de Vera: había que salirse
+ * eso vivía en `packages/mcp/README.md`, o sea fuera de VERA: había que salirse
  * de la aplicación y abrir un archivo del repositorio para saber qué pegar.
  *
  * No se escriben: se calculan de este despliegue. Una prosa con la ruta y el
@@ -199,10 +199,10 @@ function connectPanel(
   guideHeading.textContent = 'Instrucciones por proveedor';
   const guideList = document.createElement('ul');
   for (const [title, label] of [
-    ['Vera — conectar OpenAI por MCP', 'OpenAI · Codex y ChatGPT de escritorio'],
-    ['Vera — conectar Claude por MCP', 'Anthropic · Claude Code por HTTPS o stdio'],
-    ['Vera — conectar LM Studio por MCP', 'LM Studio · modelos locales por HTTPS o stdio'],
-    ['Vera — conectar Gemini por MCP', 'Google · Gemini CLI'],
+    ['VERA — conectar OpenAI por MCP', 'OpenAI · Codex y ChatGPT de escritorio'],
+    ['VERA — conectar Claude por MCP', 'Anthropic · Claude Code por HTTPS o stdio'],
+    ['VERA — conectar LM Studio por MCP', 'LM Studio · modelos locales por HTTPS o stdio'],
+    ['VERA — conectar Gemini por MCP', 'Google · Gemini CLI'],
   ] as const) {
     const item = document.createElement('li');
     const link = document.createElement('a');
@@ -440,7 +440,7 @@ function connectPanel(
     ? 'Esta Vera todavía no tiene una puerta HTTPS pública.'
     : `La puerta HTTPS de este despliegue es ${connect.publicMcp}. Al crear una conexión abajo, ` +
       'Vera genera el JSON completo con esa dirección, la identidad del cliente y su credencial. ' +
-      'Cuando Vera Conecta reemplace la dirección directa, este mismo generador entregará la nueva ' +
+      'Cuando VERA Conecta reemplace la dirección directa, este mismo generador entregará la nueva ' +
       'URL: no habrá una segunda receta que actualizar.';
   host.append(http);
 
@@ -605,7 +605,7 @@ export async function renderMCP(
  *
  * Y lo que devuelve es lo que se pega: la configuración HTTPS completa, con el
  * secreto visible una sola vez. La URL viene del despliegue y no de una receta
- * duplicada, de modo que Vera Conecta podrá sustituirla en un solo lugar.
+ * duplicada, de modo que VERA Conecta podrá sustituirla en un solo lugar.
  */
 function connectForm(
   host: HTMLElement,

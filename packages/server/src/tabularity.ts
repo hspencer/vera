@@ -1,6 +1,6 @@
 // Poner en forma una página: lo que se arregla sin decidir por nadie.
 //
-// Ver la Fase B de «Vera — Procesamiento automático de páginas» y
+// Ver la Fase B de «VERA — Procesamiento automático de páginas» y
 // specs/page-processing.allium. La lectura estructural describe; esto es lo
 // único que además propone hacer, y lo hace con las cuatro transformaciones que
 // Herbert eligió el 7 de agosto de 2026: partir párrafos largos, marcar títulos

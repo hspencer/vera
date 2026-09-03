@@ -96,7 +96,7 @@ Lo mismo con `cwd` y con la ruta de la puerta: absolutas siempre.
 
 ## De dónde se sacan los valores
 
-**De la página «Vera: la puerta MCP»**, dentro de la aplicación, en la sección
+**De la página «VERA: la puerta MCP»**, dentro de la aplicación, en la sección
 «Cómo se enchufa una IA a esta Vera». Escribes ahí cómo se va a llamar la
 conexión, eliges si el cliente corre aquí o en otro equipo, y la página dicta lo
 que hay que pegar.
@@ -207,7 +207,7 @@ env = { VERA_URL = "http://127.0.0.1:4173", VERA_CLIENT = "codex" }
 
 Ese bloque sólo muestra el dialecto TOML. Para usarlo, añade
 `VERA_TOKEN_FILE = "/ruta/privada/vera-codex.token"` al `env`, o copia el bloque
-completo que genera «Vera: Puerta MCP» después de crear la conexión. No dejes
+completo que genera «VERA: Puerta MCP» después de crear la conexión. No dejes
 Codex sin credencial.
 
 **Vera tiene que estar corriendo** (`npm run serve`). El proceso de la puerta no
@@ -224,7 +224,7 @@ y la buena no es la obvia.
 de Vera.
 
 Para Codex, pega en `~/.codex/config.toml` el bloque TOML que dicta
-«Vera: Puerta MCP». En esta instancia ya sale preparado para `codex-andrei`: la
+«VERA: Puerta MCP». En esta instancia ya sale preparado para `codex-andrei`: la
 credencial permanece cifrada en Alexei, se abre al iniciar la puerta y nunca se
 copia a Andrei. `required = true` hace visible un fallo de conexión y
 `default_tools_approval_mode = "auto"` evita una segunda confirmación por cada
@@ -374,7 +374,7 @@ queda deliberadamente pendiente.
 
 ## Emitir una credencial
 
-En la página «Vera: la puerta MCP», sección **«Conectar una IA»**:
+En la página «VERA: la puerta MCP», sección **«Conectar una IA»**:
 
 1. **Nombre** — cómo la vas a reconocer: «Claude Desktop», «Mistral en el
    portátil».
@@ -393,7 +393,7 @@ install -m 600 /dev/null ~/.config/vera/claude-desktop.token
 # pegar el secreto dentro
 ```
 
-Para una credencial nueva de Codex, abre [[Vera: Puerta MCP]], crea «Codex en
+Para una credencial nueva de Codex, abre [[VERA: Puerta MCP]], crea «Codex en
 Andrei», elige los alcances `read` y `write`, y copia el secreto que Vera muestra
 al terminar. El token no se calcula en Andrei ni se obtiene de la URL: Vera lo
 genera aleatoriamente, guarda sólo su digest y nunca puede volver a mostrarlo.

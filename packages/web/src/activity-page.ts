@@ -11,7 +11,7 @@ export function isActivityPage(properties: readonly { key: string; value: string
 type Restore = (changes: readonly Change[]) => Promise<boolean>;
 type ActivityTab = 'changes' | 'deletions';
 
-const ACTIVITY_PAGE = 'Vera: Registro de Actividad';
+const ACTIVITY_PAGE = 'VERA: Registro de Actividad';
 
 export function participantActivityPath(participant: string): string {
   return `/p/${encodeURIComponent(ACTIVITY_PAGE)}?participant=${encodeURIComponent(participant)}`;

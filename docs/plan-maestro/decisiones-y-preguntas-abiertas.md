@@ -143,7 +143,7 @@ exactamente lo que el método del repositorio busca evitar.
 
 ### E-7. Cifras técnicas desactualizadas en documentos y en el perfil FONDEF
 Tres lugares afirman cifras de specs/tests que ya no son ciertas:
-- [[Vera — FONDEF IDeA I+D 2027]] (2026-08-24): "35 especificaciones Allium,
+- [[VERA — FONDEF IDeA I+D 2027]] (2026-08-24): "35 especificaciones Allium,
   1.206 pruebas automatizadas aprobadas". Hoy: **38 specs, 1298 pruebas**.
 - `docs/test-obligations.md:39,52`: "34 specs". Hoy: **38**.
 - `docs/plan-recorridos.md:3` y `docs/plan-local-first.md:3` son snapshots
@@ -199,7 +199,7 @@ saltar a la spec para saber cuáles son.
   misma conversación o requieren traspaso explícito; qué conversaciones se
   conservan, destilan o caducan; dónde vive la primera interfaz; cuándo una
   respuesta puede escribir directamente y cuándo debe proponer.
-- **`Vera — Identidad federada`:** identidad anclada al dominio (simple, pero
+- **`VERA — Identidad federada`:** identidad anclada al dominio (simple, pero
   se rompe al mudarse) vs. WebID/Solid-OIDC vs. identificadores portables
   propios.
 - **`service-connections.allium`:** tratamiento de secretos de servicios —
@@ -214,5 +214,5 @@ saltar a la spec para saber cuáles son.
   soberana. Vigente; E-1 y E-5 son consecuencias de aplicarlo bien, no
   cuestionamientos del principio.
 - **Precompetitivo, no interés público**, como modalidad FONDEF preferida —
-  documentado en [[Vera — FONDEF IDeA I+D 2027]], fuera del alcance técnico de
+  documentado en [[VERA — FONDEF IDeA I+D 2027]], fuera del alcance técnico de
   esta auditoría.

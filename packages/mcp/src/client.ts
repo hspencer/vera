@@ -1,4 +1,4 @@
-// Cómo el adaptador MCP habla con Vera: por la API, como cualquiera.
+// Cómo el adaptador MCP habla con VERA: por la API, como cualquiera.
 //
 // No abre la base de datos. Podría —está en el mismo disco— y sería más rápido,
 // y sería el error. @invariant MCPIsADoorAndNotASecondMemory: todo lo que MCP

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 const activity = readFileSync(new URL('../src/activity-page.ts', import.meta.url), 'utf8');
 
-describe('Vera: Registro de Actividad', () => {
+describe('VERA: Registro de Actividad', () => {
   it('separa cambios y eliminaciones en pestañas accesibles', () => {
     assert.match(activity, /setAttribute\('role', 'tablist'\)/);
     assert.match(activity, /textContent = 'Creaciones y ediciones'/);

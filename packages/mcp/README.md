@@ -124,7 +124,7 @@ env = { VERA_URL = "http://127.0.0.1:4173", VERA_CLIENT = "codex", VERA_TOKEN_FI
 ```
 
 **Codex en otro equipo** — no copies el secreto ni el repositorio. Abre
-«Vera: Puerta MCP», elige «otro equipo» y copia el bloque TOML calculado para
+«VERA: Puerta MCP», elige «otro equipo» y copia el bloque TOML calculado para
 esa conexión. En el despliegue de Alexei, `codex-andrei` arranca la puerta por
 SSH y descifra allí `vera-codex.cred`; el bloque deja la conexión como
 `required = true` y evita aprobaciones MCP redundantes. Comprueba el resultado
@@ -149,7 +149,7 @@ configuración. ChatGPT de escritorio también puede usar los servidores MCP
 configurados en el host de Codex. ChatGPT web no lee `~/.codex/config.toml`: usa
 plugins alojados y queda fuera de esta receta local.
 
-El token lo genera Vera al crear la conexión en «Vera: Puerta MCP» y se muestra
+El token lo genera Vera al crear la conexión en «VERA: Puerta MCP» y se muestra
 una sola vez. Para la conexión ya existente «Codex en Andrei» hay una copia
 cifrada en Alexei; no hace falta emitir otra. Si el secreto se pierde, no se
 recupera: se revoca la credencial y se crea una nueva. La instalación pública en
@@ -222,7 +222,7 @@ vez de disimular la ausencia.
 
 ## Lo que queda anotado
 
-Cada lectura escribe una fila en el registro de exposición de Vera: quién,
+Cada lectura escribe una fila en el registro de exposición de VERA: quién,
 con qué credencial, qué cliente dijo ser, qué se entregó y cuánto medía. Se
 mira en `GET /exposures`, y al revés —quién ha leído esto— en
 `GET /exposures?subject=page:1234`.

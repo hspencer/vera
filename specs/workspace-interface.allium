@@ -1175,7 +1175,7 @@ surface VeraWorkspace {
         -- the fallback when no preceding page remains.
 
     @guarantee TheCanonicalLogIsTheActivityRegister
-        -- Vera: Registro de Actividad makes every canonical creation, edition,
+        -- VERA: Registro de Actividad makes every canonical creation, edition,
         -- movement and deletion readable without copying it into a second log.
         -- Deleted pages remain present there as tombs even though they are no
         -- longer pages in the corpus. Living-page changes and deleted-page tombs

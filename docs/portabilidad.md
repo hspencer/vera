@@ -1,7 +1,7 @@
 # Portabilidad — hacer tuyo este repositorio
 
 La entrada pública para probar e instalar está en
-[Vera — Probar e instalar](https://vera.mediafranca.net/vera-probar-e-instalar/).
+[VERA — Probar e instalar](https://vera.mediafranca.net/vera-probar-e-instalar/).
 Este documento conserva el procedimiento técnico para levantar, adaptar,
 respaldar y mover una instancia.
 

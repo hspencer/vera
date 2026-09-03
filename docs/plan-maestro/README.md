@@ -16,7 +16,7 @@ Separarlas es lo que permite corregir una sin reescribir las demás.
 ## Qué hay aquí y qué no
 
 **Esto no es el roadmap de producto.** El roadmap vive en el propio corpus de
-Vera —[Vera — Roadmap de producto y desarrollo](https://vera.mediafranca.net/vera-roadmap-de-producto-y-desarrollo/),
+VERA —[VERA — Roadmap de producto y desarrollo](https://vera.mediafranca.net/vera-roadmap-de-producto-y-desarrollo/),
 mantenido por Cotito con fecha de revisión y checkboxes verificables— y
 `docs/README.md` ya fija el criterio: la explicación de producto se corrige en
 Vera y se publica una sola vez. Repetirla aquí produciría exactamente la
@@ -35,8 +35,8 @@ código en el momento de tocarlo. Este plan los cita y no los repite.
 
 | Dominio | Fuente de verdad | Naturaleza |
 | --- | --- | --- |
-| Visión, principios, postura ética | [Vera — Principios](https://vera.mediafranca.net/vera-principios/), [Postura ética](https://vera.mediafranca.net/vera-postura-etica/) | Corpus de Vera, editorial |
-| Roadmap de producto por capacidades | [Vera — Roadmap de producto y desarrollo](https://vera.mediafranca.net/vera-roadmap-de-producto-y-desarrollo/) | Corpus de Vera, vigente, con fecha de revisión |
+| Visión, principios, postura ética | [VERA — Principios](https://vera.mediafranca.net/vera-principios/), [Postura ética](https://vera.mediafranca.net/vera-postura-etica/) | Corpus de Vera, editorial |
+| Roadmap de producto por capacidades | [VERA — Roadmap de producto y desarrollo](https://vera.mediafranca.net/vera-roadmap-de-producto-y-desarrollo/) | Corpus de Vera, vigente, con fecha de revisión |
 | Comportamiento exigible de cada capacidad | `specs/*.allium` (38 archivos) | Allium — manda sobre el código |
 | Arquitectura de implementación | [`docs/architecture.md`](../architecture.md) | Repositorio |
 | Cobertura y obligaciones de prueba | [`docs/test-obligations.md`](../test-obligations.md) | Repositorio — cifras desactualizadas, ver hallazgo E-7 |
@@ -46,8 +46,8 @@ código en el momento de tocarlo. Este plan los cita y no los repite.
 | Deuda técnica puntual ya medida | [`docs/plan-local-first.md`](../plan-local-first.md), [`plan-recorridos.md`](../plan-recorridos.md), [`plan-nadie-por-omision.md`](../plan-nadie-por-omision.md) | Repositorio, snapshots fechados |
 | Proceso de contribución, ramas, PR, seguridad | [`CONTRIBUTING.md`](../../CONTRIBUTING.md), [`SECURITY.md`](../../SECURITY.md) | Repositorio |
 | Autoría y licencia | [`AUTHORS.md`](../../AUTHORS.md), [`LICENCIA.md`](../../LICENCIA.md) | Repositorio |
-| Configuración humana de Cotito | [[Cotito]], [[Cotito - SOUL]], [[Cotito - IDENTITY]], [[Cotito - USER]], [[Cotito - TOOLS]], [[Cotito - LOOP]] | Corpus de Vera — fuente canónica; OpenClaw aún no la deriva (ver fase 6) |
-| Postulación FONDEF | [[Vera — FONDEF IDeA I+D 2027]] | Corpus de Vera, perfil en formulación — cifras técnicas desactualizadas, ver E-7 |
+| Configuración humana de Cotito | [[Cotito]], [[Cotito - SOUL]], [[Cotito - IDENTITY]], [[Cotito - USER]], [[Cotito - TOOLS]], [[Cotito - LOOP]] | Corpus de VERA — fuente canónica; OpenClaw aún no la deriva (ver fase 6) |
+| Postulación FONDEF | [[VERA — FONDEF IDeA I+D 2027]] | Corpus de Vera, perfil en formulación — cifras técnicas desactualizadas, ver E-7 |
 
 ## Piezas de este plan maestro
 

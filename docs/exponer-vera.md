@@ -1,7 +1,7 @@
 # Exponer Vera
 
 La explicación canónica de la proyección pública vive en
-[Vera — Publicación](https://vera.mediafranca.net/vera-publicacion/). Este
+[VERA — Publicación](https://vera.mediafranca.net/vera-publicacion/). Este
 documento conserva la configuración de red y despliegue del repositorio.
 
 Tres modos de estar alcanzable, qué exige cada uno, y por qué el que casi todo el
@@ -84,7 +84,7 @@ matter hace el segundo gesto: asigna una dirección estable, la publica, permite
 elegirla como portada y permite retirarla. Cada cambio posterior de una página
 publicada reconstruye el sitio.
 
-La decisión editorial vive en la página especial `Vera:Publicación`: ahí se
+La decisión editorial vive en la página especial `VERA:Publicación`: ahí se
 definen el título, la URL canónica y el punto de entrada, y se ve el inventario
 de páginas publicadas con su ruta, frontera y autoría. El mismo servidor sirve
 la misma aplicación bajo dos autoridades: el origen privado conserva al dueño;
@@ -140,7 +140,7 @@ Es la misma lección que ya se aprendió una vez en este repositorio, en el
 en cuanto apareció una lectura nueva, y hubo que invertirla. Una lista de lo que
 se permite envejece mal; una regla sobre la forma de la cosa, no.
 
-**c) La forma canónica es la misma Vera — construida.** No hay segundo diseño ni
+**c) La forma canónica es la misma VERA — construida.** No hay segundo diseño ni
 segundo cliente. `anybody` recibe sólo el subgrafo inducido por las publicaciones;
 un enlace privado conserva sus palabras y pierde toda capacidad de confirmar un
 nodo, una ruta, un retroenlace, una búsqueda o una arista.

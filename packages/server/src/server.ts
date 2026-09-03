@@ -640,7 +640,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
     };
   };
 
-  /** La página Vera:Publicación lee esta vista; no guarda una segunda copia. */
+  /** La página VERA:Publicación lee esta vista; no guarda una segunda copia. */
   const publicationSiteView = () => {
     const site = publicSite();
     const title = site?.title ?? options.publicSite?.title ?? '';
@@ -2127,7 +2127,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
         return;
       }
       if (publicSite() === undefined && options.publicSite === undefined) {
-        send(response, 409, { error: 'configura primero el sitio en Vera:Publicación' });
+        send(response, 409, { error: 'configura primero el sitio en VERA:Publicación' });
         return;
       }
       const page = graph.page(publicationPage);
@@ -3815,7 +3815,7 @@ export function createVeraServer(options: ServerOptions): VeraServer {
       /*
        * La puesta en forma, que ocurre sin preguntar.
        *
-       * Es la Fase B de «Vera — Procesamiento automático de páginas»: partir
+       * Es la Fase B de «VERA — Procesamiento automático de páginas»: partir
        * párrafos largos, marcar títulos implícitos, enderezar jerarquías
        * torcidas, separar unidades pegadas y borrar los huecos. Ninguna añade ni
        * quita sentido, y por eso pueden aplicarse solas.

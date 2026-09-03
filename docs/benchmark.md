@@ -19,7 +19,7 @@ La comparación se ordena por cinco criterios rectores:
 5. **Extensibilidad:** una comunidad puede añadir capacidades sin bifurcar el
    núcleo ni convertir cada extensión en una puerta trasera.
 
-Se distinguen tres estados de Vera:
+Se distinguen tres estados de VERA:
 
 - **Construido:** está en el árbol, tiene pruebas y corre sobre el corpus real.
 - **Parcial:** existe un camino completo limitado o falta una superficie.

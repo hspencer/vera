@@ -1571,7 +1571,7 @@ async function processPage(
            * cambia de sitio—, y por eso no hay nada que decidir.
            *
            * Se aplica aquí, operación por operación y contra POST /operations,
-           * porque ésa es la única entrada de escritura de Vera: cada paso queda
+           * porque ésa es la única entrada de escritura de VERA: cada paso queda
            * en el log con su autoría y su secuencia, como cualquier edición
            * hecha a mano. Sin botón de deshacer y sin capa de inversas: lo que
            * quedó mal se corrige escribiendo, como todo lo demás.

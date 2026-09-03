@@ -218,7 +218,7 @@ variant NotTerm : QueryExpression {
 
 -- Cómo se lee una respuesta.
 --
--- Selección y presentación son dos cosas —lo dice «Vera — Queries»— y por eso la
+-- Selección y presentación son dos cosas —lo dice «VERA — Queries»— y por eso la
 -- forma va detrás de un `;` y no entre las condiciones: cambiar la proyección no
 -- cambia qué cumple la pregunta, y tiene que verse que no la cambia.
 --

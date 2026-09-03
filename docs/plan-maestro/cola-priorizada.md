@@ -227,7 +227,7 @@ dependencia real, no de número.
   previo, no falla por falta de `dist/`.
 
 ### ud.3 — Actualizar cifras en el perfil FONDEF
-- **Archivos previstos:** página [[Vera — FONDEF IDeA I+D 2027]] en el
+- **Archivos previstos:** página [[VERA — FONDEF IDeA I+D 2027]] en el
   corpus de Vera, no en este repositorio.
 - **Nota:** esta unidad no se reclama con una rama de git — se escribe
   directamente en Vera, como toda decisión editorial de ese documento.

@@ -22,12 +22,12 @@ debe ser una declaración consciente.
 Después crea una memoria inicial versionada con siete páginas:
 
 1. `Vera`, portada y orientación;
-2. `Vera — Primeros pasos`;
-3. `Vera — Manual`;
-4. `Vera — Teclado y atajos`;
-5. `Vera — Página de ejemplo`;
-6. `Vera — Conectar una inteligencia artificial`;
-7. `Vera — Principios`.
+2. `VERA — Primeros pasos`;
+3. `VERA — Manual`;
+4. `VERA — Teclado y atajos`;
+5. `VERA — Página de ejemplo`;
+6. `VERA — Conectar una inteligencia artificial`;
+7. `VERA — Principios`.
 
 Estas páginas no se copian desde una base binaria. Son operaciones canónicas,
 idempotentes y auditables firmadas por `participant:vera-distribution`. La

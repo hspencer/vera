@@ -31,12 +31,12 @@ describe('memoria inicial distribuida', () => {
       graph.pages().map((one) => one.title).sort(),
       [
         'Vera',
-        'Vera — Conectar una inteligencia artificial',
-        'Vera — Manual',
-        'Vera — Página de ejemplo',
-        'Vera — Primeros pasos',
-        'Vera — Principios',
-        'Vera — Teclado y atajos',
+        'VERA — Conectar una inteligencia artificial',
+        'VERA — Manual',
+        'VERA — Página de ejemplo',
+        'VERA — Primeros pasos',
+        'VERA — Principios',
+        'VERA — Teclado y atajos',
       ].sort(),
     );
     const authored = graph.operations().filter((operation) =>
