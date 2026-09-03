@@ -29,7 +29,7 @@ una conversación.
 ```sh
 # en GitHub: Fork
 git clone git@github.com:TU-USUARIO/vera.git && cd vera
-git remote add upstream git@github.com:hspencer/vera.git
+git remote add upstream git@github.com:mediafranca/vera.git
 ```
 
 `upstream` te deja traer cambios de aquí sin perder los tuyos:

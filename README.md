@@ -38,7 +38,7 @@ servicio multiusuario listo para producción.
 Requiere Node.js 24 o posterior.
 
 ```sh
-git clone https://github.com/hspencer/vera.git
+git clone https://github.com/mediafranca/vera.git
 cd vera
 npm install
 cp .env.example .env          # define VERA_OWNER y VERA_OWNER_NAME
