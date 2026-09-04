@@ -471,6 +471,11 @@ export function renderGraphD4(
           : ' relation-context'
       }`)
       .style('width', `${dim.w}px`)
+      // El foreignObject crece para alojar la tarjeta escalada, pero el HTML
+      // debe conservar su caja de layout original. Con `height: 100%`, Safari
+      // resolvía primero la altura contra el viewport ya ampliado y luego
+      // volvía a aplicar `scale(k)`: la tarjeta crecía k² sólo en vertical.
+      .style('height', `${dim.h}px`)
       .style('transform-origin', '0 0')
       .style('font-family', options.fontFamily ?? 'system-ui, sans-serif');
     viewportCards.push({
