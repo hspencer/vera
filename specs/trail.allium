@@ -1172,6 +1172,16 @@ surface TrailOnTheMap {
         -- por partes. Es también lo que hace que un recorrido se recuerde: por su
         -- dibujo, como se recuerda una región del mapa.
 
+    @guarantee TheKnotsKeepTheArgumentsOrder
+        -- El hilo une cada parada con la que le sigue en el argumento, no con la
+        -- que haya quedado más cerca en el dibujo. Cada nudo conserva su ordinal
+        -- y volver a una misma página produce otro nudo: una repetición puede ser
+        -- un retorno decisivo y no se colapsa como si fuera una arista duplicada.
+        --
+        -- Esta garantía vale en todas las proyecciones del mapa. Una vista puede
+        -- ordenar sus páginas en columnas y otra mediante fuerzas, pero ninguna
+        -- recompone el argumento a partir de la geometría que obtuvo.
+
     @guarantee TheThreadSewsWhatWasNotSewn
         -- El hilo une páginas que el corpus no unía. Ésa es la aportación entera de
         -- un recorrido dibujado: no enseña el grafo, enseña qué le faltaba al grafo

@@ -1,6 +1,7 @@
 import * as d3 from 'd3';
 import { renderMarkdown } from '@vera/core';
 import type { GraphData, GraphLink, GraphNode } from './types.ts';
+import type { ThreadSettings } from './render.ts';
 
 type Side = -1 | 0 | 1;
 
@@ -81,7 +82,12 @@ export function renderGraphD4(
   container: HTMLElement,
   data: GraphData,
   onClickPage: (page: string) => void,
-  options: { dark?: boolean; fontFamily?: string; relations?: RelationActions } = {},
+  options: {
+    dark?: boolean;
+    fontFamily?: string;
+    relations?: RelationActions;
+    thread?: ThreadSettings | null;
+  } = {},
 ): void {
   container.innerHTML = '';
   const focus = data.nodes.find((node) => node.central)?.id ?? data.nodes[0]?.id;
@@ -93,6 +99,11 @@ export function renderGraphD4(
   // El vacío entre páginas no es desperdicio: es donde viven las relaciones.
   const columnGap = Math.max(520, Math.min(760, width * 0.46));
   const boxWidth = Math.max(300, Math.min(440, columnGap - 230));
+  const thread = options.thread ?? null;
+  const threadOrder = new Map<string, number>();
+  for (const stop of thread?.stops ?? []) {
+    if (stop.page !== null && !threadOrder.has(stop.page)) threadOrder.set(stop.page, stop.ordinal);
+  }
   const side = sides(data, focus);
   const projections = new Map(data.nodes.map((node) => [node.id, projectedSentences(node, data)]));
   const dims = new Map<string, { w: number; h: number }>();
@@ -113,7 +124,12 @@ export function renderGraphD4(
     columns.set(column, list);
   }
   for (const [column, nodes] of columns) {
-    nodes.sort((a, b) => (held.get(a.id)?.y ?? 0) - (held.get(b.id)?.y ?? 0) || a.name.localeCompare(b.name));
+    nodes.sort((a, b) => {
+      const ao = threadOrder.get(a.id);
+      const bo = threadOrder.get(b.id);
+      if (ao !== undefined || bo !== undefined) return (ao ?? Number.MAX_SAFE_INTEGER) - (bo ?? Number.MAX_SAFE_INTEGER);
+      return (held.get(a.id)?.y ?? 0) - (held.get(b.id)?.y ?? 0) || a.name.localeCompare(b.name);
+    });
     // El blanco táctil del cable mide 44 px. Dejar menos aire entre páginas
     // produce zonas interactivas superpuestas aunque los trazos aún parezcan
     // distintos; el layout debe responder a la interacción, no a una altura
@@ -158,7 +174,7 @@ export function renderGraphD4(
   const positionViewportGeometry = (): void => {
     // No confiar tampoco en el repintado de un transform heredado por el <g>:
     // Safari móvil puede conservar sus hijos en la posición anterior.
-    world.selectAll<SVGGraphicsElement, unknown>('.d4-branch, .d4-branch-hit')
+    world.selectAll<SVGGraphicsElement, unknown>('.d4-branch, .d4-branch-hit, .d4-thread, .d4-thread-stop')
       .attr('transform', viewport.toString());
   };
   const touchStarts = new Map<number, { x: number; y: number }>();
@@ -259,6 +275,7 @@ export function renderGraphD4(
     const source = data.nodes.find((node) => node.id === endpoint(link.source));
     const target = data.nodes.find((node) => node.id === endpoint(link.target));
     if (source === undefined || target === undefined) continue;
+    if (thread !== null && (source.id === thread.page || target.id === thread.page)) continue;
     const a = held.get(source.id)!;
     const b = held.get(target.id)!;
     const ad = dims.get(source.id)!;
@@ -296,7 +313,42 @@ export function renderGraphD4(
     }
   }
 
+  // D4 ordena el vecindario en columnas, pero el argumento no nace de esa
+  // geometría: conserva la secuencia que declaró su texto. El hilo se superpone
+  // sin entrar a `data.links`, de modo que no altera grados ni distancias.
+  // @guarantee TheKnotsKeepTheArgumentsOrder.
+  if (thread !== null) {
+    thread.kinds.forEach((kind, index) => {
+      const from = thread.stops[index]?.page;
+      const to = thread.stops[index + 1]?.page;
+      const a = from === null || from === undefined ? undefined : held.get(from);
+      const b = to === null || to === undefined ? undefined : held.get(to);
+      if (a === undefined || b === undefined) return;
+      world.append('path')
+        .attr('class', `d4-thread ${kind === 'by_path' ? 'by-path' : 'open-ground'}`)
+        .attr('d', `M${a.x},${a.y} L${b.x},${b.y}`);
+    });
+    const ordinalsByPage = new Map<string, number[]>();
+    for (const stop of thread.stops) {
+      if (stop.page === null) continue;
+      const ordinals = ordinalsByPage.get(stop.page) ?? [];
+      ordinals.push(stop.ordinal);
+      ordinalsByPage.set(stop.page, ordinals);
+    }
+    for (const [page, ordinals] of ordinalsByPage) {
+      const at = held.get(page);
+      if (at === undefined) continue;
+      world.append('text')
+        .attr('class', 'd4-thread-stop')
+        .attr('x', at.x)
+        .attr('y', at.y - dims.get(page)!.h / 2 - 8)
+        .attr('text-anchor', 'middle')
+        .text(ordinals.join(' · '));
+    }
+  }
+
   for (const node of data.nodes) {
+    if (thread !== null && node.id === thread.page) continue;
     const pos = held.get(node.id)!;
     const dim = dims.get(node.id)!;
     const foreign = svg.append('foreignObject')

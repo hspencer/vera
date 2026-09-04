@@ -18,7 +18,7 @@ describe('interacción de D4', () => {
   });
 
   it('sincroniza geometría y tarjetas sin transformar foreignObject en iOS', () => {
-    assert.match(renderer, /world\.selectAll<SVGGraphicsElement, unknown>\('\.d4-branch, \.d4-branch-hit'\)[\s\S]*?\.attr\('transform', viewport\.toString\(\)\)/);
+    assert.match(renderer, /world\.selectAll<SVGGraphicsElement, unknown>\('\.d4-branch, \.d4-branch-hit, \.d4-thread, \.d4-thread-stop'\)[\s\S]*?\.attr\('transform', viewport\.toString\(\)\)/);
     assert.doesNotMatch(renderer, /world\.attr\('transform'/);
     assert.match(renderer, /viewport\.applyX\(entry\.x\)/);
     assert.match(renderer, /viewport\.applyY\(entry\.y\)/);
@@ -63,5 +63,16 @@ describe('interacción de D4', () => {
     assert.match(renderer, /drawBlocks\(block\.stableId, depth \+ 1\)/);
     assert.match(renderer, /options\.relations\.editBlock\(block\.stableId, content\)/);
     assert.match(renderer, /options\.relations!\.createBlock!\(crossing, source\.id, null, roots\.length\)/);
+  });
+
+  it('dibuja el recorrido completo como hilo ordenado y no como aristas nuevas', () => {
+    assert.match(renderer, /const thread = options\.thread \?\? null/);
+    assert.match(renderer, /thread\.kinds\.forEach\(\(kind, index\) =>/);
+    assert.match(renderer, /thread\.stops\[index \+ 1\]/);
+    assert.match(renderer, /attr\('class', `d4-thread \$\{kind === 'by_path' \? 'by-path' : 'open-ground'\}`\)/);
+    assert.match(renderer, /attr\('class', 'd4-thread-stop'\)/);
+    assert.match(renderer, /\.text\(ordinals\.join\(' · '\)\)/);
+    assert.match(renderer, /thread !== null && node\.id === thread\.page/);
+    assert.doesNotMatch(renderer, /data\.links\.push\([^)]*thread/s);
   });
 });
