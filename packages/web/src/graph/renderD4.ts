@@ -232,20 +232,13 @@ export function renderGraphD4(
   let viewport = d3.zoomIdentity;
   const viewportCards: Array<{
     foreign: d3.Selection<SVGForeignObjectElement, unknown, null, undefined>;
-    card: d3.Selection<HTMLElement, unknown, null, undefined>;
-    x: number;
-    y: number;
-    w: number;
-    h: number;
   }> = [];
   const positionViewportCards = (): void => {
     for (const entry of viewportCards) {
-      entry.foreign
-        .attr('x', viewport.applyX(entry.x))
-        .attr('y', viewport.applyY(entry.y))
-        .attr('width', entry.w * viewport.k)
-        .attr('height', entry.h * viewport.k);
-      entry.card.style('transform', `scale(${viewport.k})`);
+      // Una sola matriz SVG, aplicada directamente al foreignObject. Safari
+      // separa con facilidad la capa HTML si se combinan x/y SVG con scale CSS;
+      // ésa era la fuente del pan inmóvil y del pseudo-parallax en la PWA.
+      entry.foreign.attr('transform', viewport.toString());
     }
   };
   const positionViewportGeometry = (): void => {
@@ -478,14 +471,7 @@ export function renderGraphD4(
       .style('height', `${dim.h}px`)
       .style('transform-origin', '0 0')
       .style('font-family', options.fontFamily ?? 'system-ui, sans-serif');
-    viewportCards.push({
-      foreign,
-      card,
-      x: pos.x - dim.w / 2,
-      y: pos.y - dim.h / 2,
-      w: dim.w,
-      h: dim.h,
-    });
+    viewportCards.push({ foreign });
     positionViewportCards();
     const focusNow = (): void => {
       // La navegación trae después el nuevo vecindario, pero el gesto no debe
@@ -603,7 +589,7 @@ export function renderGraphD4(
     const relationWidth = expanded
       ? (focusedLink === undefined ? 360 : Math.max(300, Math.min(420, width - boxWidth * 2 - 72)))
       : 190;
-    const relationHeight = expanded ? Math.min(440, Math.max(118, 76 + blocks.length * 48)) : 36;
+    const relationHeight = expanded ? Math.min(height * 0.8, Math.max(118, 76 + blocks.length * 48)) : 36;
     const foreign = svg.append('foreignObject')
       .attr('class', `d4-relation-card${expanded ? ' expanded' : ''}`)
       .attr('x', x - relationWidth / 2)
@@ -617,13 +603,15 @@ export function renderGraphD4(
       .style('height', `${relationHeight}px`)
       .style('transform-origin', '0 0')
       .style('font-family', options.fontFamily ?? 'system-ui, sans-serif');
-    viewportCards.push({
-      foreign, card,
-      x: x - relationWidth / 2,
-      y: y - relationHeight / 2,
-      w: relationWidth,
-      h: relationHeight,
-    });
+    viewportCards.push({ foreign });
+    const resizeRelation = (): void => {
+      if (!expanded) return;
+      const maximum = height * 0.8;
+      const required = Math.max(118, card.node()?.scrollHeight ?? relationHeight);
+      const nextHeight = Math.min(maximum, required);
+      foreign.attr('y', y - nextHeight / 2).attr('height', nextHeight);
+      card.style('height', `${nextHeight}px`);
+    };
     const stopMapGesture = (event: Event): void => event.stopPropagation();
     card.on('pointerdown', stopMapGesture).on('wheel', stopMapGesture);
     const head = card.append('header');
@@ -668,6 +656,7 @@ export function renderGraphD4(
           const field = event.currentTarget as HTMLTextAreaElement;
           field.style.height = 'auto';
           field.style.height = `${field.scrollHeight}px`;
+          resizeRelation();
         });
         editor.dispatch('input');
         editor.on('blur', async (event: FocusEvent) => {
@@ -690,6 +679,7 @@ export function renderGraphD4(
         })
         .text('Añadir bloque');
     }
+    resizeRelation();
   }
   positionViewportCards();
 }

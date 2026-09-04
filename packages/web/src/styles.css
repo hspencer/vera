@@ -1351,9 +1351,9 @@ button { touch-action: manipulation; }
   box-sizing: border-box;
   width: 100%;
   min-height: 2rem;
-  max-height: 12rem;
+  max-height: none;
   resize: none;
-  overflow: auto;
+  overflow: hidden;
   padding: 0.28rem 0.35rem 0.42rem;
   color: var(--text);
   background: transparent;

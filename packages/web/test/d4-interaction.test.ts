@@ -17,17 +17,23 @@ describe('interacción de D4', () => {
     assert.doesNotMatch(styles, /@keyframes\s+d4-arrive/);
   });
 
-  it('sincroniza geometría y tarjetas sin transformar foreignObject en iOS', () => {
+  it('sincroniza geometría y tarjetas con la misma matriz directa en iOS', () => {
     assert.match(renderer, /world\.selectAll<SVGGraphicsElement, unknown>\('\.d4-branch, \.d4-branch-hit, \.d4-thread, \.d4-thread-stop'\)[\s\S]*?\.attr\('transform', viewport\.toString\(\)\)/);
     assert.doesNotMatch(renderer, /world\.attr\('transform'/);
-    assert.match(renderer, /viewport\.applyX\(entry\.x\)/);
-    assert.match(renderer, /viewport\.applyY\(entry\.y\)/);
-    assert.match(renderer, /entry\.w \* viewport\.k/);
-    assert.match(renderer, /style\('transform', `scale\(\$\{viewport\.k\}\)`\)/);
+    assert.match(renderer, /entry\.foreign\.attr\('transform', viewport\.toString\(\)\)/);
+    assert.doesNotMatch(renderer, /viewport\.applyX\(entry\.x\)/);
+    assert.doesNotMatch(renderer, /style\('transform', `scale\(\$\{viewport\.k\}\)`\)/);
     assert.match(renderer, /style\('height', `\$\{dim\.h\}px`\)/);
     assert.match(renderer, /svg\.append\('foreignObject'\)[\s\S]*?\.attr\('class', 'd4-card'\)/);
     assert.doesNotMatch(renderer, /world\.append\('foreignObject'\)/);
     assert.doesNotMatch(renderer, /\.attr\('transform', viewport\.toString\(\)\)[\s;]*\n\s*foreign/);
+  });
+
+  it('deja un solo scroll vertical en el editor de una relación', () => {
+    assert.match(renderer, /const maximum = height \* 0\.8/);
+    assert.match(renderer, /field\.style\.height = `\$\{field\.scrollHeight\}px`/);
+    assert.match(styles, /\.d4-relation-block textarea\s*\{[\s\S]*?max-height:\s*none;[\s\S]*?overflow:\s*hidden;/);
+    assert.match(styles, /\.d4-relation\.expanded\s*\{[\s\S]*?overflow:\s*auto;/);
   });
 
   it('elige el hover por la franja colapsada e ignora la proyección desplegada', () => {
