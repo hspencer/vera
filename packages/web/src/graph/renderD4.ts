@@ -12,6 +12,8 @@ let focusedRelation: string | null = null;
 interface RelationActions {
   editBlock?: (block: string, content: string) => Promise<boolean>;
   createBlock?: (crossing: string, page: string, parent: string | null, position: number) => Promise<boolean>;
+  createRelation?: (fromPage: string, toPage: string) => Promise<string | null>;
+  refresh?: () => Promise<void>;
 }
 
 function endpoint(value: string | GraphNode): string {
@@ -148,6 +150,47 @@ export function renderGraphD4(
     }
   }
 
+  // Las columnas son la semilla semántica del dibujo, no rieles rígidos. Una
+  // relajación determinista separa las tarjetas en ambas dimensiones y luego
+  // las atrae suavemente hacia su grado original. Así el mapa conserva la
+  // dirección general sin apilar cajas ni depender de una simulación animada.
+  const anchors = new Map([...held].map(([id, position]) => [id, { ...position }]));
+  const movable = data.nodes.filter((node) => !node.central);
+  for (let pass = 0; pass < 96; pass += 1) {
+    for (let left = 0; left < data.nodes.length; left += 1) {
+      const aNode = data.nodes[left]!;
+      const a = held.get(aNode.id)!;
+      const ad = dims.get(aNode.id)!;
+      for (let right = left + 1; right < data.nodes.length; right += 1) {
+        const bNode = data.nodes[right]!;
+        const b = held.get(bNode.id)!;
+        const bd = dims.get(bNode.id)!;
+        const overlapX = (ad.w + bd.w) / 2 + 34 - Math.abs(b.x - a.x);
+        const overlapY = (ad.h + bd.h) / 2 + nodeGap - Math.abs(b.y - a.y);
+        if (overlapX <= 0 || overlapY <= 0) continue;
+        const separateX = overlapX < overlapY;
+        const amount = (separateX ? overlapX : overlapY) / 2 + 0.5;
+        const sign = separateX
+          ? (b.x === a.x ? (bNode.name.localeCompare(aNode.name) || 1) : Math.sign(b.x - a.x))
+          : (b.y === a.y ? (bNode.name.localeCompare(aNode.name) || 1) : Math.sign(b.y - a.y));
+        if (!aNode.central) {
+          if (separateX) a.x -= sign * amount;
+          else a.y -= sign * amount;
+        }
+        if (!bNode.central) {
+          if (separateX) b.x += sign * amount;
+          else b.y += sign * amount;
+        }
+      }
+    }
+    for (const node of movable) {
+      const position = held.get(node.id)!;
+      const anchor = anchors.get(node.id)!;
+      position.x += (anchor.x - position.x) * 0.055;
+      position.y += (anchor.y - position.y) * 0.018;
+    }
+  }
+
   // Al trabajar una relación, sus páginas dejan de obedecer temporalmente al
   // stack de su grado y se enfrentan alrededor del editor. No cambia el grafo ni
   // se guardan estas posiciones: es el equivalente espacial de enfocar un campo.
@@ -175,6 +218,17 @@ export function renderGraphD4(
   // foreignObject. La geometría conserva la matriz SVG; las tarjetas mueven su
   // viewport con coordenadas y escalan el HTML interior mediante CSS.
   const world = svg.append('g').attr('class', 'd4-geometry');
+  const defs = svg.append('defs');
+  defs.append('marker')
+    .attr('id', 'd4-relation-arrow')
+    .attr('viewBox', '0 -5 10 10')
+    .attr('refX', 9)
+    .attr('refY', 0)
+    .attr('markerWidth', 7)
+    .attr('markerHeight', 7)
+    .attr('orient', 'auto')
+    .append('path')
+    .attr('d', 'M0,-5L10,0L0,5Z');
   let viewport = d3.zoomIdentity;
   const viewportCards: Array<{
     foreign: d3.Selection<SVGForeignObjectElement, unknown, null, undefined>;
@@ -316,29 +370,43 @@ export function renderGraphD4(
     const path = world.append('path')
       .attr('class', `d4-branch ${link.kind ?? 'reference'}${isFocused ? ' focused' : focusedLink === undefined ? '' : ' context'}`)
       .attr('d', route);
+    path.attr('marker-end', 'url(#d4-relation-arrow)');
     if (link.explanation !== undefined) path.append('title').text(link.explanation);
+    const openRelation = async (): Promise<void> => {
+      let crossing = link.crossing;
+      if (crossing === undefined && options.relations?.createRelation !== undefined) {
+        crossing = await options.relations.createRelation(source.id, target.id) ?? undefined;
+        if (crossing === undefined) return;
+        focusedRelation = crossing;
+        openRelations.clear();
+        openRelations.add(crossing);
+        await options.relations.refresh?.();
+        return;
+      }
+      if (crossing === undefined) return;
+      openRelations.clear();
+      openRelations.add(crossing);
+      focusedRelation = crossing;
+      renderGraphD4(container, data, onClickPage, options);
+    };
+    world.append('path')
+      .attr('class', 'd4-branch-hit')
+      .attr('d', route)
+      .attr('role', 'button')
+      .attr('tabindex', 0)
+      .attr('aria-label', link.crossing === undefined
+        ? `Crear relación hacia ${target.name}`
+        : `Abrir relación${link.label?.trim() ? `: ${link.label}` : ''}`)
+      .on('click', (event: MouseEvent) => {
+        event.stopPropagation();
+        void openRelation();
+      })
+      .on('keydown', (event: KeyboardEvent) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        void openRelation();
+      });
     if (link.kind === 'crossing' && link.crossing !== undefined) {
-      world.append('path')
-        .attr('class', 'd4-branch-hit')
-        .attr('d', route)
-        .attr('role', 'button')
-        .attr('tabindex', 0)
-        .attr('aria-label', `Abrir relación${link.label?.trim() ? `: ${link.label}` : ''}`)
-        .on('click', (event: MouseEvent) => {
-          event.stopPropagation();
-          openRelations.clear();
-          openRelations.add(link.crossing!);
-          focusedRelation = link.crossing!;
-          renderGraphD4(container, data, onClickPage, options);
-        })
-        .on('keydown', (event: KeyboardEvent) => {
-          if (event.key !== 'Enter' && event.key !== ' ') return;
-          event.preventDefault();
-          openRelations.clear();
-          openRelations.add(link.crossing!);
-          focusedRelation = link.crossing!;
-          renderGraphD4(container, data, onClickPage, options);
-        });
       relationCards.push({
         link,
         source,

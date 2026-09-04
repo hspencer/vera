@@ -46,7 +46,7 @@ describe('interacción de D4', () => {
   it('hace seleccionable una conectiva con un blanco táctil amplio', () => {
     assert.match(renderer, /attr\('class', 'd4-branch-hit'\)/);
     assert.match(styles, /\.d4-branch-hit\s*\{[\s\S]*?stroke-width:\s*44/);
-    assert.match(renderer, /openRelations\.add\(link\.crossing!\)/);
+    assert.match(renderer, /openRelations\.add\(crossing\)/);
   });
 
   it('enfoca una relación como lugar de trabajo y rectifica su cable', () => {
@@ -54,7 +54,7 @@ describe('interacción de D4', () => {
     assert.match(renderer, /held\.set\(source, \{ x: centreX - editorHalfWidth/);
     assert.match(renderer, /held\.set\(target, \{ x: centreX \+ editorHalfWidth/);
     assert.match(renderer, /isFocused\s*\? `M\$\{x1\},\$\{height \/ 2\} L\$\{x2\},\$\{height \/ 2\}`/);
-    assert.match(renderer, /focusedRelation = link\.crossing!/);
+    assert.match(renderer, /focusedRelation = crossing/);
     assert.match(renderer, /if \(focusedRelation === crossing\) focusedRelation = null/);
     assert.match(styles, /\.d4-map\.relation-focused \.d4-branch\.context\s*\{[^}]*opacity:\s*0\.1/);
     assert.match(styles, /\.d4-page\.relation-context\s*\{[^}]*opacity:\s*0\.16/);
@@ -67,6 +67,23 @@ describe('interacción de D4', () => {
     assert.match(renderer, /const targetY = \(node: GraphNode, link: GraphLink\): number =>/);
     assert.match(renderer, /const y2 = targetY\(target, link\)/);
     assert.doesNotMatch(renderer, /const y2 = b\.y/);
+  });
+
+  it('relaja las columnas como anclas blandas y evita colisiones entre tarjetas', () => {
+    assert.match(renderer, /const anchors = new Map/);
+    assert.match(renderer, /for \(let pass = 0; pass < 96; pass \+= 1\)/);
+    assert.match(renderer, /const overlapX =/);
+    assert.match(renderer, /const overlapY =/);
+    assert.match(renderer, /position\.x \+= \(anchor\.x - position\.x\) \* 0\.055/);
+  });
+
+  it('declara la dirección y permite abrir incluso una relación vacía desde el cable', () => {
+    assert.match(renderer, /attr\('id', 'd4-relation-arrow'\)/);
+    assert.match(renderer, /path\.attr\('marker-end', 'url\(#d4-relation-arrow\)'\)/);
+    assert.match(renderer, /if \(link\.kind === 'crossing' && link\.crossing !== undefined\) \{/);
+    assert.match(renderer, /attr\('class', 'd4-branch-hit'\)/);
+    assert.match(renderer, /options\.relations\.createRelation\(source\.id, target\.id\)/);
+    assert.match(renderer, /attr\('aria-label', link\.crossing === undefined/);
   });
 
   it('proyecta el árbol canónico de bloques sin aplanarlo en una etiqueta', () => {

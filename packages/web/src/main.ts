@@ -2271,6 +2271,17 @@ async function drawGraph(): Promise<void> {
             await drawGraph();
             return true;
           },
+          createRelation: async (fromPage: string, toPage: string): Promise<string | null> => {
+            const result = await api.submit({
+              kind: 'create_crossing', fromPage, toPage, content: '',
+            });
+            if (result.status === 'rejected') {
+              notice(`No se pudo crear la relación: ${result.reason}`);
+              return null;
+            }
+            return result.subjectId;
+          },
+          refresh: drawGraph,
         },
       });
     } else {

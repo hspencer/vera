@@ -1352,6 +1352,24 @@ surface VeraWorkspace {
         -- reversible arrangement of the view, not a move of either page and not
         -- a change to the graph.
 
+    @guarantee D4RelaxesColumnsWithoutErasingDirection
+        -- Degree columns are the starting anchors of D4 rather than immovable
+        -- rails. The drawing may relax pages away from those anchors to keep
+        -- their reading cards from colliding, while a gentle attraction retains
+        -- the neighbourhood's broad dendritic order.
+        --
+        -- Every directed relation carries its own arrow, so its sense remains
+        -- explicit even where the relaxed geometry no longer reads simply as
+        -- left relates toward right.
+
+    @guarantee AnEmptyRelationIsStillAPlaceToWrite
+        -- A relation with no blocks still exposes the same generous selectable
+        -- cable as a written relation. Its silence removes neither its direction
+        -- nor the gesture that focuses it and begins its canonical outline.
+        -- A plain directed link exposes that gesture too: selecting its cable
+        -- creates the empty canonical relation in that same direction and opens
+        -- it for writing, without requiring a separate creation mode.
+
     @guarantee TheTraceIsWhereOneIsLocated
         -- Where a participant has been accumulates visibly, and any step of it
         -- can be returned to directly. It belongs with the map, because that is
