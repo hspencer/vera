@@ -1341,6 +1341,17 @@ surface VeraWorkspace {
         -- may look as small as a text box, but writing there begins the ordinary
         -- outline and further blocks may grow into a complex relational cluster.
 
+    @guarantee D4FocusesARelationBeforeItAsksForWriting
+        -- Selecting an explained relation temporarily makes that relation the
+        -- centre of D4: its endpoint pages face each other, the segment between
+        -- them becomes straight, and the canonical outline opens in the space
+        -- between them. Other pages and segments remain as subdued context
+        -- instead of competing with the writing surface.
+        --
+        -- Closing the relation restores the dendritic drawing. Focusing is a
+        -- reversible arrangement of the view, not a move of either page and not
+        -- a change to the graph.
+
     @guarantee TheTraceIsWhereOneIsLocated
         -- Where a participant has been accumulates visibly, and any step of it
         -- can be returned to directly. It belongs with the map, because that is

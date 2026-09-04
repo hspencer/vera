@@ -1244,6 +1244,12 @@ button { touch-action: manipulation; }
 }
 .d4-branch.gloss { stroke: var(--accent); stroke-dasharray: 3 3; }
 .d4-branch.crossing { stroke: var(--accent); stroke-width: 3; opacity: 0.62; }
+.d4-map.relation-focused .d4-branch.context { opacity: 0.1; }
+.d4-map.relation-focused .d4-branch.focused {
+  stroke-width: 4;
+  opacity: 1;
+}
+.d4-page.relation-context { opacity: 0.16; }
 .d4-thread {
   fill: none;
   stroke: var(--accent);
@@ -1286,6 +1292,10 @@ button { touch-action: manipulation; }
   overflow: auto;
   border-radius: 0.72rem;
   box-shadow: 0 18px 48px rgb(0 0 0 / 28%);
+}
+.d4-map.relation-focused .d4-relation.expanded {
+  border-color: var(--accent);
+  box-shadow: 0 22px 58px rgb(0 0 0 / 34%);
 }
 .d4-relation header {
   display: flex;

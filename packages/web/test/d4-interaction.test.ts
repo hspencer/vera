@@ -49,6 +49,17 @@ describe('interacción de D4', () => {
     assert.match(renderer, /openRelations\.add\(link\.crossing!\)/);
   });
 
+  it('enfoca una relación como lugar de trabajo y rectifica su cable', () => {
+    assert.match(renderer, /let focusedRelation: string \| null = null/);
+    assert.match(renderer, /held\.set\(source, \{ x: centreX - editorHalfWidth/);
+    assert.match(renderer, /held\.set\(target, \{ x: centreX \+ editorHalfWidth/);
+    assert.match(renderer, /isFocused\s*\? `M\$\{x1\},\$\{height \/ 2\} L\$\{x2\},\$\{height \/ 2\}`/);
+    assert.match(renderer, /focusedRelation = link\.crossing!/);
+    assert.match(renderer, /if \(focusedRelation === crossing\) focusedRelation = null/);
+    assert.match(styles, /\.d4-map\.relation-focused \.d4-branch\.context\s*\{[^}]*opacity:\s*0\.1/);
+    assert.match(styles, /\.d4-page\.relation-context\s*\{[^}]*opacity:\s*0\.16/);
+  });
+
   it('separa páginas y puertos según la geometría interactiva, no la altura del viewport', () => {
     assert.match(renderer, /const branchHitWidth = 44/);
     assert.match(renderer, /const nodeGap = branchHitWidth \+ 12/);

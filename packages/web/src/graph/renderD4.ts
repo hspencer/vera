@@ -7,6 +7,7 @@ type Side = -1 | 0 | 1;
 
 const held = new Map<string, { x: number; y: number }>();
 const openRelations = new Set<string>();
+let focusedRelation: string | null = null;
 
 interface RelationActions {
   editBlock?: (block: string, content: string) => Promise<boolean>;
@@ -100,6 +101,10 @@ export function renderGraphD4(
   const columnGap = Math.max(520, Math.min(760, width * 0.46));
   const boxWidth = Math.max(300, Math.min(440, columnGap - 230));
   const thread = options.thread ?? null;
+  const focusedLink = focusedRelation === null
+    ? undefined
+    : data.links.find((link) => link.kind === 'crossing' && link.crossing === focusedRelation);
+  if (focusedRelation !== null && focusedLink === undefined) focusedRelation = null;
   const threadOrder = new Map<string, number>();
   for (const stop of thread?.stops ?? []) {
     if (stop.page !== null && !threadOrder.has(stop.page)) threadOrder.set(stop.page, stop.ordinal);
@@ -143,8 +148,26 @@ export function renderGraphD4(
     }
   }
 
+  // Al trabajar una relación, sus páginas dejan de obedecer temporalmente al
+  // stack de su grado y se enfrentan alrededor del editor. No cambia el grafo ni
+  // se guardan estas posiciones: es el equivalente espacial de enfocar un campo.
+  if (focusedLink !== undefined) {
+    const source = endpoint(focusedLink.source);
+    const target = endpoint(focusedLink.target);
+    const sourceDim = dims.get(source);
+    const targetDim = dims.get(target);
+    if (sourceDim !== undefined && targetDim !== undefined) {
+      const editorHalfWidth = Math.max(
+        150,
+        Math.min(210, (width - sourceDim.w - targetDim.w - 72) / 2),
+      );
+      held.set(source, { x: centreX - editorHalfWidth - sourceDim.w / 2 - 18, y: height / 2 });
+      held.set(target, { x: centreX + editorHalfWidth + targetDim.w / 2 + 18, y: height / 2 });
+    }
+  }
+
   const svg = d3.select(container).append('svg')
-    .attr('class', 'd4-map')
+    .attr('class', `d4-map${focusedLink === undefined ? '' : ' relation-focused'}`)
     .attr('viewBox', `0 0 ${width} ${height}`)
     .attr('role', 'img')
     .attr('aria-label', 'D4: mapa dendrítico por grados');
@@ -280,15 +303,18 @@ export function renderGraphD4(
     const b = held.get(target.id)!;
     const ad = dims.get(source.id)!;
     const bd = dims.get(target.id)!;
+    const isFocused = link.crossing !== undefined && link.crossing === focusedRelation;
     const forward = a.x <= b.x;
     const x1 = a.x + (forward ? ad.w / 2 : -ad.w / 2);
     const x2 = b.x + (forward ? -bd.w / 2 : bd.w / 2);
     const y1 = lineY(source, link);
     const y2 = targetY(target, link);
     const tension = Math.max(90, Math.abs(x2 - x1) * 0.46);
-    const route = `M${x1},${y1} C${x1 + (forward ? tension : -tension)},${y1} ${x2 - (forward ? tension : -tension)},${y2} ${x2},${y2}`;
+    const route = isFocused
+      ? `M${x1},${height / 2} L${x2},${height / 2}`
+      : `M${x1},${y1} C${x1 + (forward ? tension : -tension)},${y1} ${x2 - (forward ? tension : -tension)},${y2} ${x2},${y2}`;
     const path = world.append('path')
-      .attr('class', `d4-branch ${link.kind ?? 'reference'}`)
+      .attr('class', `d4-branch ${link.kind ?? 'reference'}${isFocused ? ' focused' : focusedLink === undefined ? '' : ' context'}`)
       .attr('d', route);
     if (link.explanation !== undefined) path.append('title').text(link.explanation);
     if (link.kind === 'crossing' && link.crossing !== undefined) {
@@ -300,16 +326,25 @@ export function renderGraphD4(
         .attr('aria-label', `Abrir relación${link.label?.trim() ? `: ${link.label}` : ''}`)
         .on('click', (event: MouseEvent) => {
           event.stopPropagation();
+          openRelations.clear();
           openRelations.add(link.crossing!);
+          focusedRelation = link.crossing!;
           renderGraphD4(container, data, onClickPage, options);
         })
         .on('keydown', (event: KeyboardEvent) => {
           if (event.key !== 'Enter' && event.key !== ' ') return;
           event.preventDefault();
+          openRelations.clear();
           openRelations.add(link.crossing!);
+          focusedRelation = link.crossing!;
           renderGraphD4(container, data, onClickPage, options);
         });
-      relationCards.push({ link, source, x: (x1 + x2) / 2, y: (y1 + y2) / 2 });
+      relationCards.push({
+        link,
+        source,
+        x: (x1 + x2) / 2,
+        y: isFocused ? height / 2 : (y1 + y2) / 2,
+      });
     }
   }
 
@@ -347,7 +382,12 @@ export function renderGraphD4(
     }
   }
 
-  for (const node of data.nodes) {
+  const nodesToDraw = [...data.nodes].sort((a, b) => {
+    if (focusedLink === undefined) return 0;
+    const endpoints = new Set([endpoint(focusedLink.source), endpoint(focusedLink.target)]);
+    return Number(endpoints.has(a.id)) - Number(endpoints.has(b.id));
+  });
+  for (const node of nodesToDraw) {
     if (thread !== null && node.id === thread.page) continue;
     const pos = held.get(node.id)!;
     const dim = dims.get(node.id)!;
@@ -357,7 +397,11 @@ export function renderGraphD4(
       .attr('width', dim.w).attr('height', dim.h);
     foreign.style('overflow', 'visible');
     const card = foreign.append<HTMLElement>('xhtml:article')
-      .attr('class', `d4-page${node.central ? ' focus' : ''}`)
+      .attr('class', `d4-page${node.central ? ' focus' : ''}${
+        focusedLink === undefined || node.id === endpoint(focusedLink.source) || node.id === endpoint(focusedLink.target)
+          ? ''
+          : ' relation-context'
+      }`)
       .style('width', `${dim.w}px`)
       .style('transform-origin', '0 0')
       .style('font-family', options.fontFamily ?? 'system-ui, sans-serif');
@@ -480,9 +524,12 @@ export function renderGraphD4(
   for (const relation of relationCards) {
     const { link, source, x, y } = relation;
     const crossing = link.crossing!;
+    if (focusedLink !== undefined && crossing !== focusedRelation) continue;
     const expanded = openRelations.has(crossing);
     const blocks = link.blocks ?? [];
-    const relationWidth = expanded ? 360 : 190;
+    const relationWidth = expanded
+      ? (focusedLink === undefined ? 360 : Math.max(300, Math.min(420, width - boxWidth * 2 - 72)))
+      : 190;
     const relationHeight = expanded ? Math.min(440, Math.max(118, 76 + blocks.length * 48)) : 36;
     const foreign = svg.append('foreignObject')
       .attr('class', `d4-relation-card${expanded ? ' expanded' : ''}`)
@@ -513,7 +560,14 @@ export function renderGraphD4(
       .attr('aria-expanded', String(expanded))
       .on('click', (event: MouseEvent) => {
         event.stopPropagation();
-        if (expanded) openRelations.delete(crossing); else openRelations.add(crossing);
+        if (expanded) {
+          openRelations.delete(crossing);
+          if (focusedRelation === crossing) focusedRelation = null;
+        } else {
+          openRelations.clear();
+          openRelations.add(crossing);
+          focusedRelation = crossing;
+        }
         renderGraphD4(container, data, onClickPage, options);
       })
       .text(link.label?.trim() || 'relación');
