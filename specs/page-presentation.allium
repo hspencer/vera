@@ -14,9 +14,11 @@
 --   - Remote control, audience synchronisation and PDF export
 -- Dependencies: Page, Block and Participant are governed by core.allium;
 --   block rendering by workspace-interface.allium; media by content-media.allium;
---   semantic page types by controlled-ontology.allium
+--   semantic page types by controlled-ontology.allium; presenter notes are the
+--   canonical block glosses governed by block-gloss.allium
 
 use "./core.allium" as core
+use "./block-gloss.allium" as gloss
 
 ------------------------------------------------------------
 -- Contracts
@@ -41,6 +43,11 @@ contract PagePresentationProjection {
         -- A presentation has the identity, title, address, properties, visibility
         -- and publication life of its source page. A block may link to or embed
         -- that page's presentation, but cannot become a parallel canonical deck.
+
+    @invariant PresenterNotesAreGlosses
+        -- The gloss attached to a first-level block is the presenter note for its
+        -- slide. Vera creates no second note field, notes block or Reveal-specific
+        -- copy. Editing the gloss changes the note everywhere that gloss is read.
 
     @invariant OrdinaryBlockMeaningSurvives
         -- Markdown, links, images, SVG, Mermaid, video and explicitly executable
@@ -111,7 +118,7 @@ entity PresentationSlide {
     source: core/Block
     ordinal: Integer
     content: core/Block with page = deck.page
-    notes: core/Block with page = deck.page
+    presenter_notes: gloss/Gloss?
 }
 
 entity PresentationSession {
@@ -296,9 +303,9 @@ invariant ASessionSelectsItsOwnSlide {
         session.current.deck = session.deck
 }
 
-invariant NotesAreNeverAudienceContentByAccident {
+invariant ASlidesPresenterNotesAreItsSourceGloss {
     for slide in PresentationSlides:
-        slide.notes.all(note => presentation_role(note) = "notes")
+        slide.presenter_notes = gloss/Gloss{block: slide.source}
 }
 
 invariant ADeckRemembersHowItWasEntered {
@@ -369,9 +376,10 @@ surface PresentationViewer {
         -- whole sequence. Indentation inside a slide never creates a hidden route.
 
     @guarantee PresenterNotesRemainPrivateToThePresenter
-        -- Notes are absent from the audience stage. When the presenter asks for
-        -- them, they are shown in a presenter context that also identifies the
-        -- current and upcoming slide.
+        -- The current first-level block's gloss is absent from the audience
+        -- stage. When the presenter asks for notes, that same canonical gloss is
+        -- shown in a presenter context that also identifies the current and
+        -- upcoming slide. A slide whose source block has no gloss has no notes.
 
     @guarantee DeepLinksOpenAtTheirSlide
         -- A valid presentation address enters at its named slide. An address for
@@ -388,7 +396,6 @@ surface PresentationViewer {
 -- Open Questions
 ------------------------------------------------------------
 
-open question "What explicit, portable block convention distinguishes presenter notes from audience content among a slide's descendants without making ordinary prose look like configuration?"
 open question "When a source page changes on another device during an active presentation, does the session keep its opening revision until exit or offer to refresh?"
 open question "Should preview remain available for every ordinary readable page, or only for pages whose outline already contains presentation-role declarations?"
 open question "Which presentation choices belong to the page —theme and aspect ratio— and which belong only to the presenter's current device —fullscreen, controls and notes window?"
