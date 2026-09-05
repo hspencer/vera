@@ -1,0 +1,374 @@
+-- allium: 3
+-- page-presentation.allium
+
+-- Scope: Reading a Vera page as a slide presentation without creating a second
+--   presentation document
+-- Includes: Eligibility, entry and exit, derivation of slides from blocks,
+--   two-dimensional navigation, presenter notes, media, deep links, overview,
+--   fullscreen and failure-safe return to the ordinary page
+-- Excludes:
+--   - Authoring a separate deck format or storing generated slide markup
+--   - Theme implementation and the choice of presentation runtime
+--   - Editing while the presentation viewer is active
+--   - Remote control, audience synchronisation and PDF export
+-- Dependencies: Page, Block and Participant are governed by core.allium;
+--   block rendering by workspace-interface.allium; media by content-media.allium;
+--   semantic page types by controlled-ontology.allium
+
+use "./core.allium" as core
+
+------------------------------------------------------------
+-- Contracts
+------------------------------------------------------------
+
+-- A presentation is another way of reading the page, never another copy of it.
+contract PagePresentationProjection {
+    project: (page: core/Page) -> PresentationDeck
+
+    @invariant ThePageRemainsTheSource
+        -- Every slide, note, caption, link and piece of media is derived from the
+        -- current page and its blocks. Entering, navigating or leaving the viewer
+        -- writes nothing to the graph and creates no parallel slide document.
+
+    @invariant PresentationDoesNotFlattenTheOutline
+        -- The projection preserves authored block order and hierarchy. It does
+        -- not concatenate descendants into anonymous text or infer a narrative
+        -- order from visual dimensions.
+
+    @invariant OrdinaryBlockMeaningSurvives
+        -- Markdown, links, images, SVG, Mermaid, video and explicitly executable
+        -- blocks keep the presentation behaviour they have on the ordinary page.
+        -- The slide viewer changes their spatial context, not their meaning,
+        -- custody, safety boundary or canonical source.
+
+    @invariant AViewerFailureCannotHideThePage
+        -- If a slide, media resource or specialised block cannot be presented,
+        -- the viewer identifies that block and still permits navigation and exit.
+        -- A failure in the derived view never makes the source page inaccessible.
+}
+
+contract PresentationNavigation {
+    enter: (participant: core/Participant, page: core/Page, address: SlideAddress?) -> PresentationSession
+    move: (session: PresentationSession, direction: Direction) -> SlideAddress
+    overview: (session: PresentationSession) -> PresentationSession
+    leave: (session: PresentationSession) -> core/Page
+
+    @invariant TheAddressNamesTheArgument
+        -- A stable presentation address identifies both the page and the
+        -- horizontal and vertical position within its argument. Reloading or
+        -- following that address reaches the same authored block while it exists.
+
+    @invariant NavigationNeverEscapesTheDeck
+        -- A move at an outer edge leaves the current slide selected. It never
+        -- changes page, wraps silently or falls into an empty presentation state.
+
+    @invariant ExitReturnsToTheSource
+        -- Leaving by an explicit action or Escape returns to the same Vera page.
+        -- When possible it reveals the block represented by the last visible
+        -- slide, so presenting does not lose the reader's place in the outline.
+
+    @invariant PresentationIsOperableWithoutAPointer
+        -- Entry, horizontal and vertical movement, overview, presenter notes,
+        -- fullscreen and exit are keyboard operable and expose their current
+        -- state to assistive technology.
+}
+
+------------------------------------------------------------
+-- Enumerations
+------------------------------------------------------------
+
+enum Direction { previous | next | left | right | up | down }
+enum PresentationStatus { active | left }
+enum PresentationAvailability { declared | preview }
+
+------------------------------------------------------------
+-- Values and entities
+------------------------------------------------------------
+
+value SlideAddress {
+    page: core/Page
+    horizontal: Integer
+    vertical: Integer
+    block: core/Block
+}
+
+-- A derived reading of one page at one revision of the local replica.
+entity PresentationDeck {
+    page: core/Page
+    source_revision: Integer
+    availability: PresentationAvailability
+    slides: PresentationSlide with deck = this
+}
+
+entity PresentationSlide {
+    deck: PresentationDeck
+    source: core/Block
+    horizontal: Integer
+    vertical: Integer
+    content: core/Block with page = deck.page
+    notes: core/Block with page = deck.page
+}
+
+entity PresentationSession {
+    participant: core/Participant
+    deck: PresentationDeck
+    current: PresentationSlide
+    status: PresentationStatus
+    fullscreen: Boolean
+    notes_visible: Boolean
+    overview_visible: Boolean
+}
+
+entity PresentationRefusal {
+    page: core/Page
+    participant: core/Participant
+    reason: String
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- Declaring the semantic type makes presentation a first-class reading mode.
+-- The declaration affects neither the blocks nor their ordinary page rendering.
+rule ProjectADeclaredPresentationPage {
+    when: ParticipantPresentsPage(participant, page, address?)
+
+    let membership = core/Membership{graph: page.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: semantic_type(page) = "presentación"
+
+    ensures:
+        PresentationDeck.created(
+            page: page,
+            source_revision: current_revision(page),
+            availability: declared
+        )
+        PresentationDeckCreated(
+            deck: project(page),
+            participant: participant,
+            address: address
+        )
+}
+
+-- Preview is deliberately weaker than declaring the page a presentation. It
+-- lets a person inspect whether an ordinary outline reads well as slides without
+-- silently changing what that page is in the corpus.
+rule PreviewAnOrdinaryPageAsPresentation {
+    when: ParticipantPreviewsPageAsPresentation(participant, page, address?)
+
+    let membership = core/Membership{graph: page.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: semantic_type(page) != "presentación"
+
+    ensures:
+        PresentationDeck.created(
+            page: page,
+            source_revision: current_revision(page),
+            availability: preview
+        )
+        PresentationDeckCreated(
+            deck: project(page),
+            participant: participant,
+            address: address
+        )
+}
+
+rule EnterThePresentationViewer {
+    when: PresentationDeckCreated(deck, participant, address?)
+
+    requires: deck.slides.count > 0
+
+    ensures: PresentationSession.created(
+        participant: participant,
+        deck: deck,
+        current: addressed_or_first_slide(deck, address),
+        status: active,
+        fullscreen: false,
+        notes_visible: false,
+        overview_visible: false
+    )
+}
+
+rule RefuseAnEmptyPresentation {
+    when: PresentationDeckCreated(deck, participant, address?)
+
+    requires: deck.slides.count = 0
+
+    ensures: PresentationRefusal.created(
+        page: deck.page,
+        participant: participant,
+        reason: "la página no contiene ningún bloque que pueda ser una lámina"
+    )
+}
+
+rule NavigateWithinThePresentation {
+    when: ParticipantMovesInPresentation(session, direction)
+
+    requires: session.status = active
+
+    ensures: session.current = adjacent_or_same(session.deck, session.current, direction)
+}
+
+rule SelectASlideFromOverview {
+    when: ParticipantSelectsOverviewSlide(session, slide)
+
+    requires: session.status = active
+    requires: slide.deck = session.deck
+
+    ensures:
+        session.current = slide
+        session.overview_visible = false
+}
+
+rule OpenPresentationOverview {
+    when: ParticipantOpensPresentationOverview(session)
+
+    requires: session.status = active
+
+    ensures: session.overview_visible = true
+}
+
+rule LeaveThePresentationViewer {
+    when: ParticipantLeavesPresentation(session)
+
+    requires: session.status = active
+
+    ensures:
+        session.status = left
+        reveal_on_page(session.deck.page, session.current.source)
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+invariant OneSourceBlockPerSlide {
+    for slide in PresentationSlides:
+        slide.source.page = slide.deck.page
+}
+
+invariant SlideCoordinatesAreUniqueWithinADeck {
+    for slide in PresentationSlides:
+        for other in PresentationSlides:
+            (slide.deck = other.deck and
+             slide.horizontal = other.horizontal and
+             slide.vertical = other.vertical) implies slide = other
+}
+
+invariant SlideCoordinatesAreNonNegative {
+    for slide in PresentationSlides:
+        slide.horizontal >= 0 and slide.vertical >= 0
+}
+
+invariant EveryDeckSlideComesFromTheSamePage {
+    for deck in PresentationDecks:
+        deck.slides.all(slide => slide.source.page = deck.page)
+}
+
+invariant ASessionSelectsItsOwnSlide {
+    for session in PresentationSessions:
+        session.current.deck = session.deck
+}
+
+invariant NotesAreNeverAudienceContentByAccident {
+    for slide in PresentationSlides:
+        slide.notes.all(note => presentation_role(note) = "notes")
+}
+
+invariant ADeckRemembersHowItWasEntered {
+    for deck in PresentationDecks:
+        deck.availability = declared or deck.availability = preview
+}
+
+invariant ADeckNamesTheRevisionItProjects {
+    for deck in PresentationDecks:
+        deck.source_revision >= 0
+}
+
+invariant SlideContentBelongsToItsSourcePage {
+    for slide in PresentationSlides:
+        slide.content.all(block => block.page = slide.source.page)
+}
+
+invariant ARefusalExplainsItself {
+    for refusal in PresentationRefusals:
+        refusal.reason != ""
+}
+
+------------------------------------------------------------
+-- Surface
+------------------------------------------------------------
+
+surface PresentationViewer {
+    facing participant: core/Participant
+    context page: core/Page
+
+    exposes:
+        page.title
+        PresentationSession.current
+        PresentationSession.fullscreen
+        PresentationSession.notes_visible
+        PresentationSession.overview_visible
+
+    provides:
+        ParticipantPresentsPage(participant, page, address?)
+        ParticipantPreviewsPageAsPresentation(participant, page, address?)
+        ParticipantMovesInPresentation(session, direction)
+        ParticipantOpensPresentationOverview(session)
+        ParticipantSelectsOverviewSlide(session, slide)
+        ParticipantLeavesPresentation(session)
+
+    contracts:
+        fulfils PagePresentationProjection
+        fulfils PresentationNavigation
+
+    @guarantee DeclaredPresentationsOfferPresentationProminently
+        -- A page whose semantic type is `presentación` exposes Presentar as a
+        -- primary page action. The participant need not know a URL convention or
+        -- edit source markup to enter the viewer.
+
+    @guarantee PreviewDoesNotCompeteWithOrdinaryReading
+        -- On a page of another semantic type, viewing it as slides is secondary
+        -- and explicitly described as a preview. It is not shown as though every
+        -- note, daily log or administrative page were intended for an audience.
+
+    @guarantee TheViewerUsesTheWholeAvailableStage
+        -- The active slide occupies the presentation stage without Vera's text,
+        -- graph or editing chrome competing with it. Fullscreen is optional and
+        -- leaving it does not leave the presentation session.
+
+    @guarantee HorizontalAndVerticalStructureIsLegible
+        -- Chapters and their vertical slides remain distinguishable in movement,
+        -- progress and overview. A two-dimensional argument is never reported as
+        -- a misleading single linear count.
+
+    @guarantee PresenterNotesRemainPrivateToThePresenter
+        -- Notes are absent from the audience stage. When the presenter asks for
+        -- them, they are shown in a presenter context that also identifies the
+        -- current and upcoming slide.
+
+    @guarantee DeepLinksOpenAtTheirSlide
+        -- A valid presentation address enters at its named slide. An address for
+        -- a removed or moved source block falls back to the first slide and says
+        -- that the requested position no longer exists.
+
+    @guarantee ContentUpdatesRequireNoDeckMigration
+        -- Editing and reordering the page changes the next derived deck. There is
+        -- no export, rebuild or synchronisation gesture between the outline and
+        -- its presentation view.
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "What explicit, portable block convention distinguishes a horizontal chapter, a vertical slide, its content and presenter notes without making ordinary prose look like configuration?"
+open question "When a source page changes on another device during an active presentation, does the session keep its opening revision until exit or offer to refresh?"
+open question "Should preview remain available for every ordinary readable page, or only for pages whose outline already contains presentation-role declarations?"
+open question "Which presentation choices belong to the page —theme and aspect ratio— and which belong only to the presenter's current device —fullscreen, controls and notes window?"
+open question "Should a public presentation page open directly in its viewer, or first as an ordinary published Vera page with Presentar available?"
