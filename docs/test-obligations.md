@@ -38,8 +38,8 @@ integrados viven junto a cada paquete en `packages/*/test/`.
 - **La identidad humana remota sigue abierta.** La aplicación privada presupone
   loopback; las credenciales de agentes sí se prueban.
 - **La cobertura de una spec no es exhaustiva por definición.** Que todas las
-  pruebas pasen no implica que cada regla, negativa y pregunta abierta de las 34
-  specs tenga una prueba directa.
+  pruebas pasen no implica que cada regla, negativa y pregunta abierta de todas
+  las specs tenga una prueba directa.
 
 Estas ausencias no convierten lo construido en falso; delimitan lo que la suite
 permite afirmar. Las decisiones pendientes están en [ROADMAP.md](../ROADMAP.md)
@@ -49,7 +49,8 @@ en el código, no esconderse aquí como una cifra tranquilizadora.
 ## Ejecutar las comprobaciones
 
 ```sh
-npm run spec       # valida las 34 specs; los diagnósticos informativos no fallan
+npm run spec       # valida todas las specs; los diagnósticos informativos no fallan
+npm run traceability:check # exige una fila de matriz por cada spec
 npm run typecheck  # TypeScript en la raíz y la PWA
 npm test           # unidades e integración
 npm run build      # construcción de la aplicación web

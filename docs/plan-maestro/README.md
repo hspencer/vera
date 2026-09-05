@@ -1,11 +1,9 @@
 # Plan maestro de Vera
 
-Estado al escribirlo: 2026-08-30, rama `worktree-vera-repository-audit` sobre
-`v0.6-federacion`. `allium check specs/` con 0 errores y 21 warnings sobre 38
-specs; `npm test` con 1298/1298 en verde tras `npm run build`; `npm run
-typecheck` limpio. Auditoría hecha por cuatro agentes de lectura (uno por
-dominio) más lectura directa del corpus de Vera vía MCP. Nada de esto edita
-código de producto ni specs: es un mapa, no una implementación.
+Auditoría base: 2026-08-30, rama `worktree-vera-repository-audit` sobre
+`v0.6-federacion`; reconciliada con el repositorio el 2026-09-05. La evidencia
+vigente no es una cifra copiada aquí: se obtiene con `npm run spec`, `npm test`,
+`npm run typecheck`, `npm run build` y `npm run traceability:check`.
 
 Este directorio existe porque una auditoría de este tamaño no cabe en un solo
 documento sin volverse ilegible, y porque cada pieza tiene un ritmo de cambio
@@ -37,7 +35,7 @@ código en el momento de tocarlo. Este plan los cita y no los repite.
 | --- | --- | --- |
 | Visión, principios, postura ética | [VERA — Principios](https://vera.mediafranca.net/vera-principios/), [Postura ética](https://vera.mediafranca.net/vera-postura-etica/) | Corpus de Vera, editorial |
 | Roadmap de producto por capacidades | [VERA — Roadmap de producto y desarrollo](https://vera.mediafranca.net/vera-roadmap-de-producto-y-desarrollo/) | Corpus de Vera, vigente, con fecha de revisión |
-| Comportamiento exigible de cada capacidad | `specs/*.allium` (38 archivos) | Allium — manda sobre el código |
+| Comportamiento exigible de cada capacidad | `specs/*.allium` | Allium — manda sobre el código |
 | Arquitectura de implementación | [`docs/architecture.md`](../architecture.md) | Repositorio |
 | Cobertura y obligaciones de prueba | [`docs/test-obligations.md`](../test-obligations.md) | Repositorio — cifras desactualizadas, ver hallazgo E-7 |
 | Exposición de red y modos públicos | [`docs/exponer-vera.md`](../exponer-vera.md) | Repositorio |
@@ -52,7 +50,7 @@ código en el momento de tocarlo. Este plan los cita y no los repite.
 ## Piezas de este plan maestro
 
 - **[matriz-trazabilidad.md](matriz-trazabilidad.md)** — capacidad → spec →
-  implementación → tests → estado → evidencia, para las 38 specs y las
+  implementación → tests → estado → evidencia, para todas las specs y las
   capacidades del roadmap. Es la pieza D del encargo.
 - **[fase-1-local-first-sincronizacion.md](fase-1-local-first-sincronizacion.md)**
   — plan de ejecución detallado para el punto 1 (soberanía local-first, cola
@@ -86,3 +84,9 @@ mientan, corríjelas en la misma rama que hizo el cambio — igual que un
 entera queda obsoleta (por ejemplo, cuando la fase 1 se cierre), no se borra:
 se marca cerrada en su propio encabezado y se abre la siguiente, para que quien
 llegue después pueda leer qué pasó y por qué, no sólo qué es cierto hoy.
+
+La cobertura estructural ya no depende sólo de memoria humana:
+`npm run traceability:check` falla si aparece o desaparece una spec sin corregir
+su fila en la matriz, y la CI ejecuta ese control. El juicio de estado
+—VERIFICADO, PARCIAL o HUÉRFANA— sigue requiriendo lectura spec–código; una
+expresión regular puede detectar olvido, no certificar semántica.

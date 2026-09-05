@@ -1,13 +1,10 @@
 # Matriz de trazabilidad — capacidad → spec → implementación → tests → estado
 
-Estado al escribirlo: 2026-08-30. Construida por cuatro agentes de auditoría de
-solo lectura, uno por dominio, cada uno leyendo las specs asignadas, grepeando
-`packages/`, y corriendo `node --test` sobre los archivos relevantes.
-`allium check specs/`: 0 errores, 21 warnings, 38 specs. `npm test` completo:
-1298/1298 en verde **después de `npm run build`** — en limpio, sin build
-previo, falla 1/1298 (`shared-space-access.test.ts:230`, porque el servidor de
-test sirve `packages/web/dist` y ese directorio no existe todavía). `npm run
-typecheck`: limpio.
+Auditoría base: 2026-08-30. Reconciliada con código y specs el 2026-09-05.
+`npm run traceability:check` comprueba que cada archivo de `specs/` tenga una
+sola fila aquí; la CI lo ejecuta en cada cambio. El estado de una corrida no se
+congela en este documento: `npm run spec`, `npm test`, `npm run typecheck` y
+`npm run build` son la autoridad y deben pasar antes de actualizar un estado.
 
 ## Cómo leer el estado
 
@@ -22,7 +19,7 @@ typecheck`: limpio.
 - **HUÉRFANA** — la spec existe, es válida, y no hay ningún código que la
   implemente (subconjunto de NO ENCONTRADO, a nivel de spec completa).
 
-## Por spec (las 38)
+## Por spec
 
 | Spec | `allium check` | Implementación | Tests | Estado |
 | --- | --- | --- | --- | --- |
@@ -32,12 +29,13 @@ typecheck`: limpio.
 | `block-as-request` | limpio | `server/src/answer.ts` | `server/test/answer.test.ts` | VERIFICADO — ver contradicción sobre `TheModelIsLocalOrThereIsNone` en decisiones-y-preguntas-abiertas.md |
 | `block-editing` | limpio | `web/src/caret.ts:3`, `core/src/list.ts:3`, `web/src/outliner.ts:768` | `web/test/caret.test.ts` | VERIFICADO |
 | `block-gloss` | warning (`GlossDisclosure` sin usar) | núcleo en `core/graph.ts` (`#glosses`, `set_block_gloss`), UI en `outliner.ts:2692-2864` | `core/test/block-gloss.test.ts` | VERIFICADO |
-| `change-application` | limpio | `core/src/types.ts:2,53`, `core/src/invariants.ts:227` | `core/test/change-application.test.ts` | VERIFICADO — `admit_batch` (lote atómico) declarado como deuda por la propia spec, cero líneas de código |
+| `change-application` | limpio | `core/src/types.ts`, `core/src/invariants.ts`, `server/src/server.ts` (`POST /operations/batch`) | `core/test/change-application.test.ts`, `server/test/server.test.ts` | VERIFICADO — el lote idempotente y atómico ya está implementado |
 | `confined-writing` | limpio | `server/src/confinement.ts:3`, `web/src/api.ts:1522` | `server/test/confined-writing.test.ts` (14/14) | VERIFICADO |
 | `content-media` | limpio | `store/src/objects.ts:6` (`@invariant SourceFidelity`), `web/src/media-dialog.ts`, `executable-frames.ts` | `core/test/markdown.test.ts` (parcial) | VERIFICADO por dominio, sin cita explícita del nombre de spec |
 | `controlled-ontology` | warning (`RelationAssertion` sin usar) | `server/src/answer.ts:19`, `process.ts:4`, `core/src/ontology.ts` | `core/test/ontology.test.ts` | VERIFICADO |
 | `core` | warning (`PageReference` sin usar) | 11 archivos citan `core.allium` explícitamente | `core/test/core-model.test.ts`, `change-application.test.ts` | VERIFICADO — spec fundacional, la más referenciada |
 | `daily-log` | limpio | `web/src/main.ts`, `autocomplete.ts`, `core/src/text.ts` | sin `.test.ts` dedicado (cobertura indirecta probable) | IMPLEMENTADO SIN TEST SUFICIENTE |
+| `desktop-distribution` | limpio | `scripts/build-desktop.mjs`, `.github/workflows/desktop.yml`, configuración `build` en `package.json` | verificación de tag y builds de release en CI | PARCIAL — empaquetado alfa construido; firma comercial de Windows/macOS no disponible |
 | `document-import` | limpio | `importer/src/document.ts:1`, `server/src/server.ts` | `importer/test/document.test.ts` | VERIFICADO |
 | `executable-content-sandbox` | limpio | `core/src/markdown.ts:3`, `web/src/outliner.ts`, `server/src/server.ts` | `core/test/markdown.test.ts` | VERIFICADO |
 | `federated-sharing` | limpio | ninguna | ninguno | HUÉRFANA — excluida explícitamente por `shared-space-access.allium:14-15` (complementaria, no contradictoria) |
@@ -46,9 +44,10 @@ typecheck`: limpio.
 | `identity-access` | limpio | `server/src/human-auth.ts` (WebAuthn completo), `main.ts:38`, `graph.ts:164` | `server/test/issue-owner.test.ts`; uso indirecto en `shared-space-access.test.ts` | PARCIAL — funciona para invitados; el dueño no tiene ceremonia de alta propia (ver decisiones-y-preguntas-abiertas.md, hallazgo E-1) |
 | `librarian-round` | limpio | ninguna funcional — un comentario de diseño en `outliner.ts:1002` | ninguno | HUÉRFANA |
 | `logseq-block-identity-reference` | limpio | `store/src/projection.ts:1` (cita explícita), `importer/src/import.ts`, `web/src/keys.ts` | `web/test/naming.test.ts`, `importer/test/logseq.test.ts` | VERIFICADO |
-| `mcp-server` | warning (4: bindings/valores sin usar) | `mcp/src/tools.ts:1`, `main.ts`, `client.ts`, `server/src/mcp-page.ts`, `mcp-connect.ts` | `mcp/test/tools.test.ts`, `connection.test.ts`, `server/test/mcp-page.test.ts` (37/37) | VERIFICADO — lote atómico declarado como deuda por la propia spec |
+| `mcp-server` | información | `mcp/src/tools.ts`, `main.ts`, `client.ts`, `server/src/mcp-page.ts`, `mcp-connect.ts`; lote en `server/src/server.ts` | `mcp/test/tools.test.ts`, `connection.test.ts`, `server/test/mcp-page.test.ts`, `server/test/server.test.ts` | VERIFICADO — escritura individual y por lote implementadas |
 | `offline-reconciliation` | limpio | `web/src/replica.ts`, `reconcile.ts`, `outbox.ts`, `held.ts`, `behind.ts` | `web/test/replica.test.ts`, `outbox.test.ts`, `behind.test.ts` (599/599 en el batch core+store+web relevante) | PARCIAL — ver fase 1, unidades 1.2 y 1.3 |
 | `page-on-paper` | limpio | `server/src/paper.ts` (coincide literalmente, sin cita de nombre) | `server/test/paper.test.ts` | VERIFICADO por contenido — falta trazabilidad explícita en el código |
+| `page-presentation` | limpio | `web/src/presentation.ts`, activación semántica en `web/src/outliner.ts` | `web/test/presentation.test.ts`; suite de renderers indirecta | PARCIAL — construidos botón, proyección, navegación Reveal, overview, progreso, salida y glosas; faltan preview ordinario, deep links, refresco estable, controles propios y retorno al último bloque |
 | `page-processing` | limpio | `server/src/structure.ts:2` (cita explícita), `tabularity.ts` | `server/test/structure.test.ts`, `tabularity.test.ts` | VERIFICADO — no confundir con `processing-forms` (huérfana) |
 | `peer-networking` | warning (4: `PeerInvitation`, `Reachability`, `PeerExchange`, `RelayedPassage` sin usar) | ninguna | ninguno | HUÉRFANA — coincide con el roadmap: "prototipo de red horizontal" pendiente |
 | `personal-site-projection` | warning (3) | `core/src/types.ts`, `store/src/public-projection.ts`, `publication-page.ts` | `server/test/publication.test.ts`, `store/test/public-projection.test.ts` | VERIFICADO |
@@ -94,23 +93,21 @@ typecheck`: limpio.
    restricción), el grafo en memoria del proceso diverge del disco de forma
    silenciosa y persistente hasta el reinicio. El único punto que sí lo maneja
    es `server.ts:1452-1476`.
-2. `admit_batch` (lote atómico) no existe en ningún archivo — declarado como
-   deuda por `change-application.allium` y `mcp-server.allium` desde 2026-08-19.
-3. El servidor es un singleton en memoria (`let graph = loadGraph(...)`) sin
+2. El servidor es un singleton en memoria (`let graph = loadGraph(...)`) sin
    coordinación multi-proceso: dos instancias contra el mismo SQLite
    escribirían sin protección.
-4. Secretos de servicios de terceros en texto plano
+3. Secretos de servicios de terceros en texto plano
    (`store/src/secrets.ts:52-67`, columna `secret TEXT`).
-5. Sin rate-limiting en ninguna puerta: API, `/human-auth/*`, invitaciones, MCP
+4. Sin rate-limiting en ninguna puerta: API, `/human-auth/*`, invitaciones, MCP
    HTTP.
-6. Sin límite de tiempo por petición en la puerta MCP pública
+5. Sin límite de tiempo por petición en la puerta MCP pública
    (`mcp/src/http.ts`) — contradice explícitamente `ThePublicDoorHasBounds`.
-7. `issue-owner.ts` emite un token raíz nuevo en cada ejecución sin revocar los
+6. `issue-owner.ts` emite un token raíz nuevo en cada ejecución sin revocar los
    anteriores.
-8. El dueño no tiene ninguna vía de autenticación humana propia — toda la
+7. El dueño no tiene ninguna vía de autenticación humana propia — toda la
    superficie de `AuthenticatedOwner` depende de un flujo de *bootstrap* de
    passkey que no existe; hoy funciona sólo porque todo corre en loopback.
-9. Cero cobertura de test de interacción DOM real en `packages/web` (no hay
+8. Cero cobertura de test de interacción DOM real en `packages/web` (no hay
    jsdom/happy-dom en ningún `package.json`).
-10. Arrastre de subárbol no funciona en touch; sin alternativa de teclado para
+9. Arrastre de subárbol no funciona en touch; sin alternativa de teclado para
     reparentar a una posición arbitraria distinta de "arriba/abajo".

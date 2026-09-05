@@ -20,6 +20,9 @@
   "scripts": {
     "spec": "allium check specs/",
     "spec:analyse": "allium analyse specs/",
+    "traceability:check": "node scripts/check-traceability.mjs",
+    "upstream:check": "node scripts/check-upstream.mjs --fetch",
+    "preflight": "npm run upstream:check && npm run traceability:check",
     "test": "node --test \"packages/*/test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit && tsc --noEmit -p packages/web",
     "build": "npm run build --workspace @vera/web",

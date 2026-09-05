@@ -36,6 +36,8 @@ jobs:
             ((.findings // []) | length == 0) and
             ((.diagnostics // []) | all(.severity != "error")))' \
             "$RUNNER_TEMP/allium-check.json"
+      - name: Verificar cobertura de la matriz de trazabilidad
+        run: npm run traceability:check
       - run: npm run build
       # Algunas suites levantan servidores y sesiones con identidades fijas;
       # en CI deben ejecutarse por archivo para no compartir estado efímero.

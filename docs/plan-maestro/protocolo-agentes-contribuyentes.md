@@ -153,11 +153,13 @@ de pasada un commit reciente, no porque el proceso lo obligara. El fondo del
 problema no era falta de mensajes: era que nada obligaba a mirar
 `origin/main` antes de seguir trabajando.
 
-- **Antes de empezar o retomar cualquier tarea, haz `git fetch` y revisa qué
-  cambió** en la rama de la que partes, en este repositorio y en cualquier
-  otro repositorio relacionado que tu tarea toque. Esto ya es una regla
-  global en `~/.claude/CLAUDE.md` («Antes de empezar: leer origin/main»), no
-  sólo una costumbre de este repositorio.
+- **Antes de empezar, retomar o publicar cualquier tarea, ejecuta `npm run
+  preflight`.** Hace `git fetch --prune` y compara contra el upstream real de
+  la rama; si no existe, usa `origin/HEAD`. No presupone `origin/main`, porque
+  hoy este repositorio sigue `origin/v0.6-federacion`. Repite el control al
+  final: otra persona puede haber publicado mientras trabajabas. En cualquier
+  otro repositorio relacionado hay que ejecutar su preflight equivalente o,
+  si no existe, hacer el fetch y la comparación explícitamente.
 - **Cuando resuelvas una pregunta abierta de una spec Allium, anúncialo
   activamente** a las sesiones que puedan depender de ella (`ListAgents` +
   `SendMessage`), en el momento de decidirlo — no basta con que quede en el

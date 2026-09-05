@@ -76,6 +76,19 @@ cuando algo salió mal.
 
 ## 2. Ramas
 
+### Antes de empezar o retomar
+
+```sh
+npm run preflight
+```
+
+El preflight hace `git fetch --prune`, descubre la rama remota que esta rama
+realmente sigue —sin suponer que se llama `main`— y falla si el trabajo quedó
+detrás. También comprueba que la matriz tenga exactamente una fila por spec.
+Se repite antes de publicar: otra persona puede haber movido la referencia
+durante la sesión. Integrar puede ser merge o rebase según la rama; ocultar la
+divergencia con un force-push no es una integración.
+
 ### El mapa
 
 | Rama | Qué es | Quién la mueve |
@@ -188,6 +201,7 @@ de este repositorio son documentación y se leen como tal.
 
 ```sh
 make check      # typecheck + pruebas + allium check, sin publicar nada
+npm run preflight # remoto vigente + cobertura de trazabilidad
 ```
 
 En verde. Los tres.
@@ -195,6 +209,12 @@ En verde. Los tres.
 - **`npm run typecheck`** — `tsc --noEmit`, raíz y PWA.
 - **`npm test`** — `node --test`, sin build.
 - **`npm run spec`** — `allium check specs/`.
+- **`npm run traceability:check`** — toda spec aparece una vez en la matriz.
+
+Si cambió comportamiento, implementación o pruebas, revisa además la fila
+correspondiente en `docs/plan-maestro/matriz-trazabilidad.md`. La CI detecta
+specs ausentes o duplicadas; decidir si algo está VERIFICADO, PARCIAL o todavía
+es aspiracional exige el ciclo `weed` y no puede delegarse a un contador.
 
 Y a mano, lo que ninguna de las tres ve:
 

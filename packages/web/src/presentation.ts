@@ -15,6 +15,9 @@ export function isPresentation(
   properties: readonly { key: string; value: string }[],
   kindProperty: string,
 ): boolean {
+  // La ontología nombra la clase; este adaptador le da una proyección. Reveal
+  // no forma parte del significado guardado en el corpus.
+  // @guarantee DeclaredPresentationsOfferPresentationProminently
   const kind = properties
     .find((property) => property.key.trim().toLowerCase() === kindProperty.trim().toLowerCase())
     ?.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
@@ -61,6 +64,9 @@ export async function presentPage(
   options: RenderOptions,
   onNavigate: (title: string) => void,
 ): Promise<void> {
+  // @invariant ThePageRemainsTheSource
+  // @invariant PresentationDoesNotFlattenTheOutline
+  // @invariant PresenterNotesAreGlosses
   document.querySelector('.vera-presentation')?.remove();
   const roots = treeOf(page.blocks);
   if (roots.length === 0) return;

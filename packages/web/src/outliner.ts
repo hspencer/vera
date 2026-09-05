@@ -3266,6 +3266,7 @@ export function renderOutliner(
   propertiesToggle.title = 'Mostrar propiedades';
   heading.append(propertiesToggle);
   if (isPresentation(page.properties, corpusNames().kind)) {
+    // @guarantee DeclaredPresentationsOfferPresentationProminently
     heading.classList.add('has-presentation');
     const present = document.createElement('button');
     present.type = 'button';

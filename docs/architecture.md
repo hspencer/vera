@@ -76,6 +76,32 @@ La decisión explícita del service worker de v0: **no** cachea respuestas de
 `/operations` ni lecturas del grafo. Servir grafo viejo sin poder escribir sería
 peor que declarar que no hay red.
 
+### La junta entre ontología y superficies — construido
+
+El corpus declara **qué es una cosa**; el programa aporta **qué sabe hacer con
+ella**. En Presentaciones, la entidad canónica sigue siendo una página y la
+cadena completa es:
+
+1. `VERA: Objetos` reconoce `Presentación` como clase semántica.
+2. Una página afirma `tipo:: Presentación`; no guarda HTML de diapositivas ni
+   el nombre de una biblioteca visual.
+3. `page-presentation.allium` expresa esa afirmación como
+   `semantic_type(page) = "presentación"` y exige la acción **Presentar**.
+4. `web/src/outliner.ts` lee el nombre vigente de la propiedad de tipo y
+   `web/src/presentation.ts` reconoce el valor, deriva una lámina por cada
+   bloque raíz y monta el visor.
+
+La ontología no dice “Reveal.js”: esa dependencia puede cambiar sin cambiar lo
+que una Presentación significa. Reveal es hoy el adaptador espacial. Si Vera
+llegara a admitir varias proyecciones elegibles para una misma clase, entonces
+sí haría falta modelar una relación ontológica de visualización y un registro
+de adaptadores; una propiedad sin intérprete sólo fingiría esa extensibilidad.
+
+El estado exacto de cumplimiento está en la
+[matriz de trazabilidad](plan-maestro/matriz-trazabilidad.md): la primera
+vertical está construida, mientras varias garantías avanzadas de la spec siguen
+marcadas como parciales.
+
 ## Cliente offline — parte construida
 
 El navegador sostiene una réplica del dominio en memoria, retiene en IndexedDB
