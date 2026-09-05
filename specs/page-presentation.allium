@@ -4,9 +4,10 @@
 -- Scope: Reading a Vera page as a slide presentation without creating a second
 --   presentation document
 -- Includes: Eligibility, entry and exit, derivation of slides from blocks,
---   two-dimensional navigation, presenter notes, media, deep links, overview,
+--   linear navigation, presenter notes, media, deep links, overview,
 --   fullscreen and failure-safe return to the ordinary page
 -- Excludes:
+--   - Treating an individual block as the canonical presentation container
 --   - Authoring a separate deck format or storing generated slide markup
 --   - Theme implementation and the choice of presentation runtime
 --   - Editing while the presentation viewer is active
@@ -31,9 +32,15 @@ contract PagePresentationProjection {
         -- writes nothing to the graph and creates no parallel slide document.
 
     @invariant PresentationDoesNotFlattenTheOutline
-        -- The projection preserves authored block order and hierarchy. It does
-        -- not concatenate descendants into anonymous text or infer a narrative
-        -- order from visual dimensions.
+        -- Each first-level block is exactly one slide, in page order. All of its
+        -- descendants are the content of that slide and retain their relative
+        -- hierarchy. A descendant never becomes another slide merely because it
+        -- is a heading or has children of its own.
+
+    @invariant TheDeckIsAPageNotABlock
+        -- A presentation has the identity, title, address, properties, visibility
+        -- and publication life of its source page. A block may link to or embed
+        -- that page's presentation, but cannot become a parallel canonical deck.
 
     @invariant OrdinaryBlockMeaningSurvives
         -- Markdown, links, images, SVG, Mermaid, video and explicitly executable
@@ -55,8 +62,8 @@ contract PresentationNavigation {
 
     @invariant TheAddressNamesTheArgument
         -- A stable presentation address identifies both the page and the
-        -- horizontal and vertical position within its argument. Reloading or
-        -- following that address reaches the same authored block while it exists.
+        -- first-level block within its argument. Reloading or following that
+        -- address reaches the same authored block while it exists.
 
     @invariant NavigationNeverEscapesTheDeck
         -- A move at an outer edge leaves the current slide selected. It never
@@ -68,7 +75,7 @@ contract PresentationNavigation {
         -- slide, so presenting does not lose the reader's place in the outline.
 
     @invariant PresentationIsOperableWithoutAPointer
-        -- Entry, horizontal and vertical movement, overview, presenter notes,
+        -- Entry, previous and next movement, overview, presenter notes,
         -- fullscreen and exit are keyboard operable and expose their current
         -- state to assistive technology.
 }
@@ -77,7 +84,7 @@ contract PresentationNavigation {
 -- Enumerations
 ------------------------------------------------------------
 
-enum Direction { previous | next | left | right | up | down }
+enum Direction { previous | next | left | right }
 enum PresentationStatus { active | left }
 enum PresentationAvailability { declared | preview }
 
@@ -87,8 +94,7 @@ enum PresentationAvailability { declared | preview }
 
 value SlideAddress {
     page: core/Page
-    horizontal: Integer
-    vertical: Integer
+    ordinal: Integer
     block: core/Block
 }
 
@@ -103,8 +109,7 @@ entity PresentationDeck {
 entity PresentationSlide {
     deck: PresentationDeck
     source: core/Block
-    horizontal: Integer
-    vertical: Integer
+    ordinal: Integer
     content: core/Block with page = deck.page
     notes: core/Block with page = deck.page
 }
@@ -252,17 +257,33 @@ invariant OneSourceBlockPerSlide {
         slide.source.page = slide.deck.page
 }
 
-invariant SlideCoordinatesAreUniqueWithinADeck {
+invariant SlideOrdinalsAreUniqueWithinADeck {
     for slide in PresentationSlides:
         for other in PresentationSlides:
             (slide.deck = other.deck and
-             slide.horizontal = other.horizontal and
-             slide.vertical = other.vertical) implies slide = other
+             slide.ordinal = other.ordinal) implies slide = other
 }
 
-invariant SlideCoordinatesAreNonNegative {
+invariant SlideOrdinalsAreNonNegative {
     for slide in PresentationSlides:
-        slide.horizontal >= 0 and slide.vertical >= 0
+        slide.ordinal >= 0
+}
+
+invariant EveryFirstLevelBlockIsExactlyOneSlide {
+    for deck in PresentationDecks:
+        first_level_blocks(deck.page).all(block =>
+            deck.slides.count(slide => slide.source = block) = 1
+        )
+}
+
+invariant OnlyFirstLevelBlocksBeginSlides {
+    for slide in PresentationSlides:
+        slide.source.parent = null
+}
+
+invariant SlideOrderIsPageOrder {
+    for slide in PresentationSlides:
+        slide.ordinal = slide.source.position
 }
 
 invariant EveryDeckSlideComesFromTheSamePage {
@@ -342,10 +363,10 @@ surface PresentationViewer {
         -- graph or editing chrome competing with it. Fullscreen is optional and
         -- leaving it does not leave the presentation session.
 
-    @guarantee HorizontalAndVerticalStructureIsLegible
-        -- Chapters and their vertical slides remain distinguishable in movement,
-        -- progress and overview. A two-dimensional argument is never reported as
-        -- a misleading single linear count.
+    @guarantee ThePageOrderIsTheSlideOrder
+        -- Previous and next follow the order of first-level blocks. The overview
+        -- shows that same order, and progress reports the selected slide among the
+        -- whole sequence. Indentation inside a slide never creates a hidden route.
 
     @guarantee PresenterNotesRemainPrivateToThePresenter
         -- Notes are absent from the audience stage. When the presenter asks for
@@ -367,7 +388,7 @@ surface PresentationViewer {
 -- Open Questions
 ------------------------------------------------------------
 
-open question "What explicit, portable block convention distinguishes a horizontal chapter, a vertical slide, its content and presenter notes without making ordinary prose look like configuration?"
+open question "What explicit, portable block convention distinguishes presenter notes from audience content among a slide's descendants without making ordinary prose look like configuration?"
 open question "When a source page changes on another device during an active presentation, does the session keep its opening revision until exit or offer to refresh?"
 open question "Should preview remain available for every ordinary readable page, or only for pages whose outline already contains presentation-role declarations?"
 open question "Which presentation choices belong to the page —theme and aspect ratio— and which belong only to the presenter's current device —fullscreen, controls and notes window?"
