@@ -68,6 +68,7 @@ import {
 import { renderTrailBand, trailMarks, type TrailMark } from './trail-page.ts';
 import { pendingLine, saySeconds } from './waiting.ts';
 import { createPage } from './pages.ts';
+import { isPresentation, presentPage } from './presentation.ts';
 import { removePageAndBlocks } from './remove-page.ts';
 import { createSession, type SaveIntent } from './session.ts';
 import {
@@ -3264,6 +3265,17 @@ export function renderOutliner(
   propertiesToggle.setAttribute('aria-expanded', 'false');
   propertiesToggle.title = 'Mostrar propiedades';
   heading.append(propertiesToggle);
+  if (isPresentation(page.properties, corpusNames().kind)) {
+    heading.classList.add('has-presentation');
+    const present = document.createElement('button');
+    present.type = 'button';
+    present.className = 'present-page';
+    present.textContent = 'Presentar';
+    present.addEventListener('click', () => {
+      void presentPage(page, options, callbacks.onNavigate);
+    });
+    heading.append(present);
+  }
   header.append(heading);
 
   // El front matter no es decoración: son propiedades del grafo, y se editan.

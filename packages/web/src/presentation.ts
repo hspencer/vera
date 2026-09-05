@@ -1,0 +1,146 @@
+import Reveal from 'reveal.js';
+import RevealNotes from 'reveal.js/plugin/notes';
+
+import { renderMarkdown, type RenderOptions } from '@vera/core';
+import type { BlockView, PageView } from './api.ts';
+import { decorateCodeBlocks } from './code-copy.ts';
+import { renderMermaid } from './mermaid.ts';
+
+interface PresentationNode {
+  block: BlockView;
+  children: PresentationNode[];
+}
+
+export function isPresentation(
+  properties: readonly { key: string; value: string }[],
+  kindProperty: string,
+): boolean {
+  const kind = properties
+    .find((property) => property.key.trim().toLowerCase() === kindProperty.trim().toLowerCase())
+    ?.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  return kind === 'presentacion';
+}
+
+function treeOf(blocks: readonly BlockView[]): PresentationNode[] {
+  const nodes = new Map<string, PresentationNode>();
+  for (const block of blocks) nodes.set(block.stableId, { block, children: [] });
+  const roots: PresentationNode[] = [];
+  for (const block of blocks) {
+    const node = nodes.get(block.stableId)!;
+    const parent = block.parent === null ? undefined : nodes.get(block.parent);
+    if (parent === undefined) roots.push(node);
+    else parent.children.push(node);
+  }
+  const sort = (held: PresentationNode[]): void => {
+    held.sort((a, b) => a.block.position - b.block.position);
+    for (const node of held) sort(node.children);
+  };
+  sort(roots);
+  return roots;
+}
+
+function renderNode(node: PresentationNode, options: RenderOptions, depth = 0): HTMLElement {
+  const host = document.createElement('div');
+  host.className = `presentation-block presentation-depth-${Math.min(depth, 4)}`;
+  host.dataset['block'] = node.block.stableId;
+  const body = document.createElement('div');
+  body.className = 'body';
+  body.innerHTML = renderMarkdown(node.block.content, options);
+  host.append(body);
+  if (node.children.length > 0) {
+    const children = document.createElement('div');
+    children.className = 'presentation-children';
+    for (const child of node.children) children.append(renderNode(child, options, depth + 1));
+    host.append(children);
+  }
+  return host;
+}
+
+export async function presentPage(
+  page: PageView,
+  options: RenderOptions,
+  onNavigate: (title: string) => void,
+): Promise<void> {
+  document.querySelector('.vera-presentation')?.remove();
+  const roots = treeOf(page.blocks);
+  if (roots.length === 0) return;
+
+  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const overlay = document.createElement('div');
+  overlay.className = 'vera-presentation';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', `Presentación: ${page.title}`);
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'presentation-close';
+  close.textContent = 'Salir';
+
+  const reveal = document.createElement('div');
+  reveal.className = 'reveal';
+  const slides = document.createElement('div');
+  slides.className = 'slides';
+  reveal.append(slides);
+  overlay.append(reveal, close);
+  document.body.append(overlay);
+
+  for (const root of roots) {
+    const slide = document.createElement('section');
+    slide.dataset['block'] = root.block.stableId;
+    slide.append(renderNode(root, options));
+    const gloss = page.glosses?.[root.block.stableId]?.content.trim() ?? '';
+    if (gloss !== '') {
+      const notes = document.createElement('aside');
+      notes.className = 'notes';
+      notes.innerHTML = renderMarkdown(gloss, options);
+      slide.append(notes);
+    }
+    slides.append(slide);
+  }
+
+  decorateCodeBlocks(overlay);
+  await renderMermaid(overlay);
+
+  const deck = new Reveal(reveal, {
+    embedded: true,
+    controls: true,
+    progress: true,
+    center: true,
+    hash: false,
+    history: false,
+    transition: 'slide',
+    backgroundTransition: 'fade',
+    plugins: [RevealNotes],
+  });
+
+  let closed = false;
+  const leave = async (): Promise<void> => {
+    if (closed) return;
+    closed = true;
+    removeEventListener('keydown', onKey, true);
+    await deck.destroy();
+    overlay.remove();
+    document.documentElement.classList.remove('presenting');
+    previousFocus?.focus({ preventScroll: true });
+  };
+  const onKey = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void leave();
+  };
+
+  close.addEventListener('click', () => void leave());
+  overlay.addEventListener('click', (event) => {
+    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a.wiki');
+    if (link === null) return;
+    event.preventDefault();
+    const title = link.dataset['page'] ?? '';
+    void leave().then(() => onNavigate(title));
+  });
+  addEventListener('keydown', onKey, true);
+  document.documentElement.classList.add('presenting');
+  await deck.initialize();
+  close.focus({ preventScroll: true });
+}
