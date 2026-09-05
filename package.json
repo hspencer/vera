@@ -1,10 +1,14 @@
 {
   "name": "vera",
-  "version": "0.6.3",
+  "version": "0.6.6",
   "private": true,
   "type": "module",
   "description": "Memoria personal soberana: corpus versionado, editable, replicable y auditable",
-  "author": "Herbert Spencer y colaboradores de Vera",
+  "author": {
+    "name": "Herbert Spencer y colaboradores de Vera",
+    "email": "hspencer@ead.cl"
+  },
+  "homepage": "https://vera.mediafranca.net/vera/",
   "main": "dist/desktop/main.mjs",
   "license": "AGPL-3.0-only",
   "engines": {
@@ -54,7 +58,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "hspencer",
+        "owner": "mediafranca",
         "repo": "vera"
       }
     ],
