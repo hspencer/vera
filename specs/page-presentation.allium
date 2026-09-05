@@ -5,13 +5,15 @@
 --   presentation document
 -- Includes: Eligibility, entry and exit, derivation of slides from blocks,
 --   linear navigation, presenter notes, media, deep links, overview,
---   fullscreen and failure-safe return to the ordinary page
+--   fullscreen, stable active revisions, local controls, public entry and
+--   failure-safe return to the ordinary page
 -- Excludes:
 --   - Treating an individual block as the canonical presentation container
 --   - Authoring a separate deck format or storing generated slide markup
 --   - Theme implementation and the choice of presentation runtime
 --   - Editing while the presentation viewer is active
 --   - Remote control, audience synchronisation and PDF export
+--   - Presenter-window transport and audience-device pairing
 -- Dependencies: Page, Block and Participant are governed by core.allium;
 --   block rendering by workspace-interface.allium; media by content-media.allium;
 --   semantic page types by controlled-ontology.allium; presenter notes are the
@@ -59,6 +61,25 @@ contract PagePresentationProjection {
         -- If a slide, media resource or specialised block cannot be presented,
         -- the viewer identifies that block and still permits navigation and exit.
         -- A failure in the derived view never makes the source page inaccessible.
+
+    @invariant AnActiveDeckIsAStableReading
+        -- A session keeps presenting the page structure and content revision from
+        -- which it opened. Later edits never rearrange or replace a live talk
+        -- without consent; canonical glosas remain the presenter's live marginalia.
+        -- The viewer reports that a newer revision exists and lets the presenter
+        -- refresh explicitly; the next entry always derives the newest revision.
+
+    @invariant AuthoredChoicesAndDeviceChoicesStayDistinct
+        -- Choices that express the deck as a work, such as its theme and aspect
+        -- ratio, belong to the presentation page. Fullscreen, control visibility,
+        -- overview and presenter-note visibility belong only to the current
+        -- reading session and never write presentation properties.
+
+    @invariant PublicReadingPrecedesPublicPerformance
+        -- A published presentation keeps its ordinary canonical page as the
+        -- default public destination. Presentar and a direct presentation address
+        -- may open the viewer, but publication never traps readers in slide mode
+        -- or makes the accessible page projection secondary or undiscoverable.
 }
 
 contract PresentationNavigation {
@@ -127,8 +148,10 @@ entity PresentationSession {
     current: PresentationSlide
     status: PresentationStatus
     fullscreen: Boolean
+    controls_visible: Boolean
     notes_visible: Boolean
     overview_visible: Boolean
+    newer_revision_available: Boolean
 }
 
 entity PresentationRefusal {
@@ -142,8 +165,8 @@ entity PresentationRefusal {
 ------------------------------------------------------------
 
 -- Declaring the semantic type makes presentation a first-class reading mode.
--- The declaration affects neither the blocks nor their ordinary page rendering.
-rule ProjectADeclaredPresentationPage {
+-- A non-empty page enters directly, avoiding an unowned intermediate event.
+rule EnterADeclaredPresentationPage {
     when: ParticipantPresentsPage(participant, page, address?)
 
     let membership = core/Membership{graph: page.graph, participant: participant}
@@ -151,24 +174,48 @@ rule ProjectADeclaredPresentationPage {
     requires: exists membership
     requires: membership.status = active
     requires: semantic_type(page) = "presentación"
+    requires: first_level_blocks(page).count > 0
 
     ensures:
-        PresentationDeck.created(
+        let deck = PresentationDeck.created(
             page: page,
             source_revision: current_revision(page),
             availability: declared
         )
-        PresentationDeckCreated(
-            deck: project(page),
+        PresentationSession.created(
             participant: participant,
-            address: address
+            deck: deck,
+            current: addressed_or_first_slide(deck, address),
+            status: active,
+            fullscreen: false,
+            controls_visible: true,
+            notes_visible: false,
+            overview_visible: false,
+            newer_revision_available: false
         )
+}
+
+rule RefuseAnEmptyDeclaredPresentation {
+    when: ParticipantPresentsPage(participant, page, address?)
+
+    let membership = core/Membership{graph: page.graph, participant: participant}
+
+    requires: exists membership
+    requires: membership.status = active
+    requires: semantic_type(page) = "presentación"
+    requires: first_level_blocks(page).count = 0
+
+    ensures: PresentationRefusal.created(
+        page: page,
+        participant: participant,
+        reason: "la página no contiene ningún bloque que pueda ser una lámina"
+    )
 }
 
 -- Preview is deliberately weaker than declaring the page a presentation. It
 -- lets a person inspect whether an ordinary outline reads well as slides without
 -- silently changing what that page is in the corpus.
-rule PreviewAnOrdinaryPageAsPresentation {
+rule EnterAnOrdinaryPagePresentationPreview {
     when: ParticipantPreviewsPageAsPresentation(participant, page, address?)
 
     let membership = core/Membership{graph: page.graph, participant: participant}
@@ -176,43 +223,39 @@ rule PreviewAnOrdinaryPageAsPresentation {
     requires: exists membership
     requires: membership.status = active
     requires: semantic_type(page) != "presentación"
+    requires: first_level_blocks(page).count > 0
 
     ensures:
-        PresentationDeck.created(
+        let deck = PresentationDeck.created(
             page: page,
             source_revision: current_revision(page),
             availability: preview
         )
-        PresentationDeckCreated(
-            deck: project(page),
+        PresentationSession.created(
             participant: participant,
-            address: address
+            deck: deck,
+            current: addressed_or_first_slide(deck, address),
+            status: active,
+            fullscreen: false,
+            controls_visible: true,
+            notes_visible: false,
+            overview_visible: false,
+            newer_revision_available: false
         )
 }
 
-rule EnterThePresentationViewer {
-    when: PresentationDeckCreated(deck, participant, address?)
+rule RefuseAnEmptyPresentationPreview {
+    when: ParticipantPreviewsPageAsPresentation(participant, page, address?)
 
-    requires: deck.slides.count > 0
+    let membership = core/Membership{graph: page.graph, participant: participant}
 
-    ensures: PresentationSession.created(
-        participant: participant,
-        deck: deck,
-        current: addressed_or_first_slide(deck, address),
-        status: active,
-        fullscreen: false,
-        notes_visible: false,
-        overview_visible: false
-    )
-}
-
-rule RefuseAnEmptyPresentation {
-    when: PresentationDeckCreated(deck, participant, address?)
-
-    requires: deck.slides.count = 0
+    requires: exists membership
+    requires: membership.status = active
+    requires: semantic_type(page) != "presentación"
+    requires: first_level_blocks(page).count = 0
 
     ensures: PresentationRefusal.created(
-        page: deck.page,
+        page: page,
         participant: participant,
         reason: "la página no contiene ningún bloque que pueda ser una lámina"
     )
@@ -243,6 +286,84 @@ rule OpenPresentationOverview {
     requires: session.status = active
 
     ensures: session.overview_visible = true
+}
+
+rule ClosePresentationOverview {
+    when: ParticipantClosesPresentationOverview(session)
+
+    requires: session.status = active
+    requires: session.overview_visible = true
+
+    ensures: session.overview_visible = false
+}
+
+rule SetPresentationFullscreen {
+    when: ParticipantSetsPresentationFullscreen(session, enabled)
+
+    requires: session.status = active
+    requires: session.fullscreen != enabled
+
+    ensures: session.fullscreen = enabled
+}
+
+rule SetPresenterNotesVisibility {
+    when: ParticipantSetsPresenterNotesVisibility(session, visible)
+
+    requires: session.status = active
+    requires: session.notes_visible != visible
+
+    ensures: session.notes_visible = visible
+}
+
+rule SetPresentationControlsVisibility {
+    when: ParticipantSetsPresentationControlsVisibility(session, visible)
+
+    requires: session.status = active
+    requires: session.controls_visible != visible
+
+    ensures: session.controls_visible = visible
+}
+
+rule MarkANewerSourceRevisionAvailable {
+    when: PresentationSourceRevisionObserved(session, revision)
+
+    requires: session.status = active
+    requires: revision > session.deck.source_revision
+    requires: session.newer_revision_available = false
+
+    ensures: session.newer_revision_available = true
+}
+
+rule RefreshAnActivePresentationExplicitly {
+    when: ParticipantRefreshesPresentation(session)
+
+    requires: session.status = active
+    requires: session.newer_revision_available = true
+    requires: first_level_blocks(session.deck.page).count > 0
+
+    ensures:
+        let deck = PresentationDeck.created(
+            page: session.deck.page,
+            source_revision: current_revision(session.deck.page),
+            availability: session.deck.availability
+        )
+        session.deck = deck
+        session.current = corresponding_or_first_slide(deck, session.current.source)
+        session.newer_revision_available = false
+}
+
+rule RefuseARefreshThatWouldEmptyThePresentation {
+    when: ParticipantRefreshesPresentation(session)
+
+    requires: session.status = active
+    requires: session.newer_revision_available = true
+    requires: first_level_blocks(session.deck.page).count = 0
+
+    ensures: PresentationRefusal.created(
+        page: session.deck.page,
+        participant: session.participant,
+        reason: "la revisión más reciente no contiene ninguna lámina; se conserva la presentación actual"
+    )
 }
 
 rule LeaveThePresentationViewer {
@@ -278,19 +399,19 @@ invariant SlideOrdinalsAreNonNegative {
 
 invariant EveryFirstLevelBlockIsExactlyOneSlide {
     for deck in PresentationDecks:
-        first_level_blocks(deck.page).all(block =>
+        first_level_blocks_at(deck.page, deck.source_revision).all(block =>
             deck.slides.count(slide => slide.source = block) = 1
         )
 }
 
 invariant OnlyFirstLevelBlocksBeginSlides {
     for slide in PresentationSlides:
-        slide.source.parent = null
+        parent_at(slide.source, slide.deck.source_revision) = null
 }
 
 invariant SlideOrderIsPageOrder {
     for slide in PresentationSlides:
-        slide.ordinal = slide.source.position
+        slide.ordinal = position_at(slide.source, slide.deck.source_revision)
 }
 
 invariant EveryDeckSlideComesFromTheSamePage {
@@ -301,6 +422,12 @@ invariant EveryDeckSlideComesFromTheSamePage {
 invariant ASessionSelectsItsOwnSlide {
     for session in PresentationSessions:
         session.current.deck = session.deck
+}
+
+invariant ASessionOnlyReportsANewerRevisionWhenOneExists {
+    for session in PresentationSessions:
+        session.newer_revision_available implies
+            current_revision(session.deck.page) > session.deck.source_revision
 }
 
 invariant ASlidesPresenterNotesAreItsSourceGloss {
@@ -323,6 +450,11 @@ invariant SlideContentBelongsToItsSourcePage {
         slide.content.all(block => block.page = slide.source.page)
 }
 
+invariant SlideContentIsExactlyItsSourceSubtree {
+    for slide in PresentationSlides:
+        slide.content = subtree_at(slide.source, slide.deck.source_revision)
+}
+
 invariant ARefusalExplainsItself {
     for refusal in PresentationRefusals:
         refusal.reason != ""
@@ -340,15 +472,23 @@ surface PresentationViewer {
         page.title
         PresentationSession.current
         PresentationSession.fullscreen
+        PresentationSession.controls_visible
         PresentationSession.notes_visible
         PresentationSession.overview_visible
+        PresentationSession.newer_revision_available
 
     provides:
         ParticipantPresentsPage(participant, page, address?)
         ParticipantPreviewsPageAsPresentation(participant, page, address?)
         ParticipantMovesInPresentation(session, direction)
         ParticipantOpensPresentationOverview(session)
+        ParticipantClosesPresentationOverview(session)
         ParticipantSelectsOverviewSlide(session, slide)
+        ParticipantSetsPresentationFullscreen(session, enabled)
+        ParticipantSetsPresentationControlsVisibility(session, visible)
+        ParticipantSetsPresenterNotesVisibility(session, visible)
+        PresentationSourceRevisionObserved(session, revision)
+        ParticipantRefreshesPresentation(session)
         ParticipantLeavesPresentation(session)
 
     contracts:
@@ -361,9 +501,10 @@ surface PresentationViewer {
         -- edit source markup to enter the viewer.
 
     @guarantee PreviewDoesNotCompeteWithOrdinaryReading
-        -- On a page of another semantic type, viewing it as slides is secondary
-        -- and explicitly described as a preview. It is not shown as though every
-        -- note, daily log or administrative page were intended for an audience.
+        -- Every ordinary readable page may be tested as slides, but the action is
+        -- secondary and explicitly described as a preview. It is not shown as
+        -- though every note, daily log or administrative page were intended for
+        -- an audience, and previewing never changes the page's semantic type.
 
     @guarantee TheViewerUsesTheWholeAvailableStage
         -- The active slide occupies the presentation stage without Vera's text,
@@ -390,13 +531,24 @@ surface PresentationViewer {
         -- Editing and reordering the page changes the next derived deck. There is
         -- no export, rebuild or synchronisation gesture between the outline and
         -- its presentation view.
+
+    @guarantee ANewRevisionNeverInterruptsTheTalk
+        -- If the source changes after entry, the current sequence and visible
+        -- slide remain stable. The presenter receives a quiet refresh affordance.
+        -- Refreshing derives the newest sequence and preserves the current source
+        -- block when it still exists, otherwise it returns to the first slide.
+
+    @guarantee LocalControlsLeaveNoGraphTrace
+        -- Fullscreen, overview, controls and note visibility are session state.
+        -- Reloading may forget them; changing them creates no graph operation.
+
+    @guarantee PublicPresentationsRemainPages
+        -- A public canonical URL opens the ordinary published page. Presentar or
+        -- a presentation deep link opens the same published revision in the
+        -- viewer, with private glosas omitted from every public response.
+
+    @guarantee ReadingNeedsSurviveTheChangeOfMode
+        -- The viewer preserves meaningful heading, list, link and media semantics,
+        -- keeps keyboard focus on the current slide, labels every control and
+        -- honours reduced-motion preferences without changing slide order.
 }
-
-------------------------------------------------------------
--- Open Questions
-------------------------------------------------------------
-
-open question "When a source page changes on another device during an active presentation, does the session keep its opening revision until exit or offer to refresh?"
-open question "Should preview remain available for every ordinary readable page, or only for pages whose outline already contains presentation-role declarations?"
-open question "Which presentation choices belong to the page —theme and aspect ratio— and which belong only to the presenter's current device —fullscreen, controls and notes window?"
-open question "Should a public presentation page open directly in its viewer, or first as an ordinary published Vera page with Presentar available?"
